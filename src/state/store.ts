@@ -4,6 +4,7 @@ import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
 import { applyPreset, deserialize, newProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
 import type { Composition, Surface } from '../core/compose';
 import type { PourLayer } from '../core/mould';
+import { isIdentity, type PartMove } from '../core/moves';
 import { mulberry32 } from '../core/rng';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 
@@ -29,6 +30,10 @@ export interface UiState {
   compareA: string; // variant id or 'current'
   compareB: string;
   toast: string | null;
+  /** Hand placement of plates in the 3D view. */
+  moveMode: boolean;
+  gizmoMode: 'translate' | 'rotate';
+  gizmoSpace: 'world' | 'local';
 }
 
 /** A whole master setup (project) open in its own tab. The active one lives in `project`. */
@@ -52,6 +57,9 @@ interface Store {
   setParams: (patch: Record<string, RawValue>, label?: string) => void;
   toggleLock: (id: string) => void;
   setPour: (pour: PourLayer[]) => void;
+  /** Place one plate by hand (null puts it back where it was designed). */
+  movePart: (key: string, move: PartMove | null) => void;
+  resetMoves: () => void;
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
   replaceProject: (p: Project) => void;
@@ -61,7 +69,8 @@ interface Store {
   redo: () => void;
   randomise: () => void;
   shuffleGentle: () => void;
-  loadPreset: (p: Preset) => void;
+  /** `images` (e.g. a preset's sound picture) are set in the same undo step. */
+  loadPreset: (p: Preset, images?: Project['images']) => void;
   saveVariant: (name: string) => void;
   loadVariant: (id: string) => void;
   deleteVariant: (id: string) => void;
@@ -188,6 +197,9 @@ export const useStore = create<Store>((set, get) => {
       compareA: 'current',
       compareB: 'current',
       toast: null,
+      moveMode: false,
+      gizmoMode: 'translate',
+      gizmoSpace: 'world',
       ...loadUi(),
     },
     setParam: (id, value) => {
@@ -204,6 +216,19 @@ export const useStore = create<Store>((set, get) => {
       commit({ ...p, locks: { ...p.locks, [id]: !p.locks[id] } }, `lock:${id}:${performance.now()}`);
     },
     setPour: (pour) => commit({ ...get().project, pour }, 'pour'),
+    movePart: (key, move) => {
+      const p = get().project;
+      const moves = { ...p.moves };
+      if (!move || isIdentity(move)) delete moves[key];
+      else moves[key] = move;
+      commit({ ...p, moves: Object.keys(moves).length ? moves : undefined }, `move:${key}:${performance.now()}`);
+    },
+    resetMoves: () => {
+      const p = get().project;
+      if (!p.moves) return;
+      commit({ ...p, moves: undefined }, `moves:${performance.now()}`);
+      get().toast('Every plate is back where it was designed');
+    },
     setName: (name) => commit({ ...get().project, name }, 'name'),
     setAsset: (kind, slot, asset) => {
       const p = get().project;
@@ -294,9 +319,9 @@ export const useStore = create<Store>((set, get) => {
       commit({ ...p, params: { ...p.params, ...patch } }, `gentle:${performance.now()}`);
       get().toast(p.images.top ? 'Shuffled a gentle impression (undo to step back)' : 'Shuffled gentle strata. Load a top image to press it in.');
     },
-    loadPreset: (preset) => {
+    loadPreset: (preset, images) => {
       const p = get().project;
-      commit(applyPreset(p, preset), `preset:${performance.now()}`);
+      commit(applyPreset(p, preset, images), `preset:${performance.now()}`);
       // re-frame the camera: presets range from 6 cm to 80 cm across
       const ui = get().ui;
       set({ ui: { ...ui, snap: { dir: ui.snap.dir, n: ui.snap.n + 1, follow: true } } });
@@ -310,6 +335,7 @@ export const useStore = create<Store>((set, get) => {
         params: { ...p.params },
         locks: { ...p.locks },
         pour: p.pour.map((x) => ({ ...x })),
+        moves: p.moves,
         createdAt: new Date().toISOString(),
       };
       commit({ ...p, variants: [...p.variants, v] }, `variant:${v.id}`);
@@ -319,7 +345,7 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       const v = p.variants.find((x) => x.id === id);
       if (!v) return;
-      commit({ ...p, params: { ...p.params, ...v.params }, locks: { ...v.locks }, pour: v.pour.map((x) => ({ ...x })) }, `loadvar:${performance.now()}`);
+      commit({ ...p, params: { ...p.params, ...v.params }, locks: { ...v.locks }, pour: v.pour.map((x) => ({ ...x })), moves: v.moves }, `loadvar:${performance.now()}`);
       get().toast(`Loaded variant "${v.name}"`);
     },
     deleteVariant: (id) => {

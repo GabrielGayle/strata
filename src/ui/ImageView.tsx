@@ -8,6 +8,8 @@ import PatternModal, { patternDataUrl } from './PatternModal';
 import { PATTERN_PRESETS, type PatternSpec } from '../core/pattern';
 import { readImage, topAspectGuess } from './surfaces';
 import ComposerModal, { seedComposition } from './ComposerModal';
+import SoundModal from './SoundModal';
+import { DEFAULT_SOUND, type SoundSpec } from '../core/sound';
 import type { Composition, Surface } from '../core/compose';
 import { DEPTH_URL, depthFromPhoto, invertDataUrl } from '../core/depth';
 
@@ -47,11 +49,12 @@ export default function ImageView() {
   const v = model.v;
   // Image = an uploaded picture; Graphic = a pattern made here. Both end up as the same greyscale input.
   // Composer = several blocks placed freely on the surface (and moved between surfaces).
-  const [source, setSource] = useState<Partial<Record<Slot, 'image' | 'graphic' | 'compose'>>>({});
+  const [source, setSource] = useState<Partial<Record<Slot, 'image' | 'graphic' | 'sound' | 'compose'>>>({});
   const [editing, setEditing] = useState<Slot | null>(null);
+  const [hearing, setHearing] = useState<Slot | null>(null);
   const [composing, setComposing] = useState<{ comp: Composition; surface: Surface } | null>(null);
   const openComposer = async (surface: Surface) => setComposing({ comp: await seedComposition(useStore.getState().project, topAspectGuess(v)), surface });
-  const sourceOf = (slot: Slot) => source[slot] ?? (project.images[slot]?.composed ? 'compose' : project.images[slot]?.pattern ? 'graphic' : 'image');
+  const sourceOf = (slot: Slot) => source[slot] ?? (project.images[slot]?.composed ? 'compose' : project.images[slot]?.pattern ? 'graphic' : project.images[slot]?.sound ? 'sound' : 'image');
   const [depthBusy, setDepthBusy] = useState<Slot | null>(null);
   const [depthError, setDepthError] = useState<{ slot: Slot; msg: string } | null>(null);
   const loadDepth = async (slot: Slot, enable: Record<string, string>) => {
@@ -139,6 +142,9 @@ export default function ImageView() {
                     <button className={`btn sm ${sourceOf(s.slot) === 'graphic' ? 'on' : ''}`} onClick={() => setSource({ ...source, [s.slot]: 'graphic' })}>
                       Graphic
                     </button>
+                    <button className={`btn sm ${sourceOf(s.slot) === 'sound' ? 'on' : ''}`} onClick={() => setSource({ ...source, [s.slot]: 'sound' })} title="A tone, chord or recording drawn as a picture">
+                      Sound
+                    </button>
                     <button className={`btn sm ${sourceOf(s.slot) === 'compose' ? 'on' : ''}`} onClick={() => setSource({ ...source, [s.slot]: 'compose' })} title="Several images, patterns and drawings placed freely">
                       Composer
                     </button>
@@ -149,6 +155,10 @@ export default function ImageView() {
                   {sourceOf(s.slot) === 'compose' ? (
                     <button className="btn primary" onClick={() => openComposer(s.slot)}>
                       {project.composition?.blocks.some((b) => b.surface === s.slot) ? 'Edit composition…' : 'Open composer…'}
+                    </button>
+                  ) : sourceOf(s.slot) === 'sound' ? (
+                    <button className="btn primary" onClick={() => setHearing(s.slot)}>
+                      {asset?.sound ? 'Edit sound…' : 'Make from sound…'}
                     </button>
                   ) : sourceOf(s.slot) === 'graphic' ? (
                     <button className="btn primary" onClick={() => setEditing(s.slot)}>
@@ -295,6 +305,19 @@ export default function ImageView() {
         </div>
       </div>
       {composing && <ComposerModal initial={composing.comp} initialSurface={composing.surface} stackAspect={topAspectGuess(v)} onClose={() => setComposing(null)} />}
+      {hearing && (
+        <SoundModal
+          title={`${slots.find((x) => x.slot === hearing)!.title}: sound`}
+          initial={project.images[hearing]?.sound ?? { ...DEFAULT_SOUND, drawn: hearing !== 'side', view: hearing === 'top' ? 'spectrum' : 'bars', aspect: hearing === 'top' ? topAspectGuess(v) : DEFAULT_SOUND.aspect }}
+          onClose={() => setHearing(null)}
+          onApply={(spec: SoundSpec, dataUrl: string) => {
+            const slot = slots.find((x) => x.slot === hearing)!;
+            setAsset('image', hearing, { name: spec.source === 'file' && spec.fileName ? `${spec.fileName}.png` : 'sound.png', dataUrl, sound: spec });
+            open(slot.enable);
+            setHearing(null);
+          }}
+        />
+      )}
       {editing && (
         <PatternModal
           title={`${slots.find((x) => x.slot === editing)!.title}: pattern`}

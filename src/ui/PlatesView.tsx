@@ -6,6 +6,8 @@ import { fitShape, download, partDxf, shapeSvg } from '../core/exporters';
 import { countArcs } from '../core/arcs';
 import type { Part } from '../core/slicer';
 import { embedOf } from '../core/slicer';
+import { asCut } from './TuningTable';
+import { playStrike } from './audio';
 
 function Thumb({ part }: { part: Part }) {
   const bb = part.bbox;
@@ -22,7 +24,9 @@ function Detail({ part }: { part: Part }) {
   const v = model.v;
   const [showFit, setShowFit] = useState(true);
   const [showKerf, setShowKerf] = useState(false);
-  const plate = model.sliced.plates.find((p) => p.def.key === part.plateKey);
+  const plateIdx = model.sliced.plates.findIndex((p) => p.def.key === part.plateKey);
+  const plate = model.sliced.plates[plateIdx];
+  const tune = model.sliced.tuning?.[plateIdx] ?? null;
   const issues = model.issues.filter((i) => i.partId === part.id || (i.plateKey === part.plateKey && i.type === 'collision'));
   const fitted = useMemo(() => (showFit || showKerf ? fitShape(part.shape, v) : null), [part, v.kerf, v.arcTolerance, showFit, showKerf]); // eslint-disable-line react-hooks/exhaustive-deps
   const counts = useMemo(() => {
@@ -147,6 +151,15 @@ function Detail({ part }: { part: Part }) {
             </>
           )}
         </dl>
+        {tune && (
+          <div className="note" style={{ flex: '1 1 200px', borderLeft: '1px solid var(--line-soft)' }}>
+            Tuned to <b className="mono">{tune.name}</b> ({fmt(tune.hz, 1)} Hz): {fmt(tune.length, 1)} mm above the concrete, cut at {fmt(tune.cut, 1)} mm so it rings about{' '}
+            <span className="mono">{asCut(tune)}</span> before trimming. A prediction only: tune by ear or with a tuner.{' '}
+            <button className="btn sm" onClick={() => playStrike(tune.hz)} aria-label={`Play ${tune.name}`}>
+              ▶ Hear it
+            </button>
+          </div>
+        )}
         <div style={{ flex: '1 1 260px', borderLeft: '1px solid var(--line-soft)', maxHeight: 130, overflow: 'auto' }}>
           {issues.length === 0 ? (
             <div className="note ok">✓ Laser-ready: no issues on this part.</div>
@@ -189,6 +202,11 @@ export default function PlatesView() {
     }
     return m;
   }, [model.issues]);
+  const tuneOf = useMemo(() => {
+    const t = model.sliced.tuning;
+    if (!t) return null;
+    return new Map(model.sliced.plates.map((p, i) => [p.def.key, t[i]]).filter(([, x]) => x) as [string, NonNullable<(typeof t)[number]>][]);
+  }, [model.sliced]);
   const selIdx = Math.max(0, parts.findIndex((p) => p.id === ui.selected));
   const part = parts[selIdx];
   useEffect(() => {
@@ -228,6 +246,7 @@ export default function PlatesView() {
             <tr>
               <th>Part</th>
               <th className="num">W × H</th>
+              {tuneOf && <th>Note</th>}
               <th />
             </tr>
           </thead>
@@ -240,6 +259,7 @@ export default function PlatesView() {
                   <td className="num">
                     {fmt(p.bbox.maxX - p.bbox.minX, 0)}×{fmt(p.bbox.maxY - p.bbox.minY, 0)}
                   </td>
+                  {tuneOf && <td className="mono">{tuneOf.get(p.plateKey)?.name ?? ''}</td>}
                   <td>{c ? <span className={`dot ${c.e ? 'error' : 'warn'}`} style={{ display: 'inline-block', width: 9, height: 9, border: '1px solid var(--line)' }} /> : null}</td>
                 </tr>
               );
