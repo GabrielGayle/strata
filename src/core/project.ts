@@ -67,7 +67,40 @@ export interface Preset {
   name: string;
   note: string;
   params: Record<string, RawValue>;
+  /** Listed under "Small (under 10 cm)" in the Presets menu. */
+  small?: boolean;
 }
+
+/**
+ * Shared settings for tabletop pieces under 100 mm. Stock and tolerances that
+ * Master size never touches (ply, dowels, labels, min part size) drop to
+ * what a small laser-cut mould and a hand-held part can use; the base keeps
+ * at least 8 mm of concrete under the plates and room for one anchor hole.
+ */
+const SMALL: Record<string, RawValue> = {
+  baseHeight: '18',
+  thickness: '1.5',
+  endMargin: '6',
+  sideMargin: '5',
+  embedDepth: '10',
+  anchorHoles: '1',
+  anchorDia: '3',
+  sampleStep: '0.5',
+  bandHeight: '3',
+  clearance: '0.3',
+  slotGap: '0.3',
+  slotClearance: '0.1',
+  minFeature: '1',
+  minPartSize: '5',
+  partSpacing: '3',
+  labelHeight: '3',
+  plyThickness: '3',
+  mouldWall: '6',
+  dowelDia: '3',
+  tabsPerSide: '1',
+  tabSize: '12',
+  jigClearance: '0.15',
+};
 
 export const PRESETS: Preset[] = [
   { name: 'Vermilion 40', note: '40 eroded corten plates, central fin, 3-band pour', params: {} },
@@ -93,6 +126,39 @@ export const PRESETS: Preset[] = [
     name: 'Image cliff',
     note: 'Side profile + front cut-outs from an image',
     params: { imgSideMode: 'heightmap', imgMix: '0.7', imgFrontMode: 'layers', etchMode: 'hatch', insShape: 'none', plateCount: '48', thickness: '1.5' },
+  },
+  {
+    name: 'Mini Vermilion',
+    note: '90 × 40 mm, 14 plates around a small fin',
+    small: true,
+    params: {
+      ...SMALL, baseLength: '90', baseWidth: '40', plateCount: '14', stackHeight: '50', erosionAmp: '8', erosionScale: '35', crest: '6',
+      insLength: '58', insWidth: '8', insHeight: '62', insSweep: '12', insCamber: '3', insBend: '3',
+    },
+  },
+  {
+    name: 'Mini radial',
+    note: '80 mm round, 12 plates around a cone',
+    small: true,
+    params: {
+      ...SMALL, sliceMode: 'radial', radialCount: '12', radialHub: '9', baseLength: '80', baseWidth: '80', stackHeight: '40', erosionAmp: '6', erosionScale: '30',
+      crest: '10', coherence: '0.6', insShape: 'cone', insWidth: '16', insHeight: '64', insTaper: '0.15', insSweep: '0',
+    },
+  },
+  {
+    name: 'Mini waffle',
+    note: '70 mm square interlocking grid, no insert',
+    small: true,
+    params: { ...SMALL, sliceMode: 'waffle', insShape: 'none', endMargin: '9', baseLength: '70', baseWidth: '70', plateCount: '7', crossCount: '3', stackHeight: '38', erosionAmp: '6', crest: '5', erosionScale: '30', banding: '0.8' },
+  },
+  {
+    name: 'Mini vessel',
+    note: 'A 60 mm revolved form sliced into 16 plates',
+    small: true,
+    params: {
+      ...SMALL, stackSource: 'form', srcShape: 'revolve', srcWidth: '56', srcHeight: '70', srcTaper: '0.55', srcCamber: '14', plateCount: '16',
+      pitch: '(srcWidth - 4) / (plateCount - 1)', insShape: 'none', baseLength: '80', baseWidth: '80',
+    },
   },
 ];
 

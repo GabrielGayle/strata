@@ -28,6 +28,30 @@ const thinRegions = (s: Shape, mf: number) =>
   cached(s, `thin:${mf}`, () => regions(difference(s, offset(offset(s, -mf / 2, 'miter'), mf / 2, 'miter')), mf * mf * 0.6));
 const gapRegions = (s: Shape, kerf: number) =>
   cached(s, `gap:${kerf}`, () => regions(difference(offset(offset(s, kerf / 2, 'miter'), -kerf / 2, 'miter'), s), kerf * kerf * 4));
+/** Thinnest concrete floor left under the embedded plates before it is likely to crack. */
+export const MIN_FLOOR = 5;
+
+// Limits that only bite on small pieces, where the base gets thin and the
+// embedded tab gets too shallow for anchor holes.
+function baseChecks(v: Values): Issue[] {
+  const issues: Issue[] = [];
+  if (!v.baseOn || v.embedDepth <= 0) return issues;
+  const floor = v.baseHeight - v.embedDepth;
+  if (floor <= 0) {
+    issues.push({ partId: null, type: 'general', severity: 'error', message: `Plates are embedded ${v.embedDepth} mm into a ${v.baseHeight} mm base: they go straight through.` });
+  } else if (floor < MIN_FLOOR) {
+    issues.push({ partId: null, type: 'general', severity: 'warn', message: `Only ${floor.toFixed(1)} mm of concrete under the plates (min ${MIN_FLOOR}). Raise the base or embed less.` });
+  }
+  if (v.embedMode === 'cast' && v.anchorHoles > 0 && v.embedDepth <= v.anchorDia + 2 * v.minFeature) {
+    issues.push({
+      partId: null,
+      type: 'hole',
+      severity: 'warn',
+      message: `Embedded tab (${v.embedDepth} mm) is too shallow for Ø${v.anchorDia} mm anchor holes, so they are left out. Embed deeper, use a smaller hole, or cast slots and glue.`,
+    });
+  }
+  return issues;
+}
 
 export function runChecks(v: Values, sliced: SliceResult): Issue[] {
   const issues: Issue[] = [];
@@ -35,6 +59,7 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
   const kerf = v.kerf;
   const sheetMax = Math.max(v.sheetW, v.sheetH);
   const sheetMin = Math.min(v.sheetW, v.sheetH);
+  issues.push(...baseChecks(v));
 
   for (const plate of sliced.plates) {
     if (plate.collision > 0) {

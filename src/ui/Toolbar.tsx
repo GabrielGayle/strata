@@ -233,20 +233,27 @@ export default function Toolbar() {
         <Menu label="Presets">
           {(close) => (
             <>
-              <div className="head">Start from</div>
-              {PRESETS.map((p) => (
-                <button
-                  key={p.name}
-                  className="item"
-                  onClick={() => {
-                    loadPreset(p);
-                    close();
-                  }}
-                >
-                  <span>{p.name}</span>
-                  <small>{p.note}</small>
-                </button>
-              ))}
+              {[
+                { head: 'Start from', list: PRESETS.filter((p) => !p.small) },
+                { head: 'Small (under 10 cm)', list: PRESETS.filter((p) => p.small) },
+              ].map(({ head, list }) => [
+                <div key={head} className="head">
+                  {head}
+                </div>,
+                ...list.map((p) => (
+                  <button
+                    key={p.name}
+                    className="item"
+                    onClick={() => {
+                      loadPreset(p);
+                      close();
+                    }}
+                  >
+                    <span>{p.name}</span>
+                    <small>{p.note}</small>
+                  </button>
+                )),
+              ])}
             </>
           )}
         </Menu>
