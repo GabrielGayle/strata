@@ -1,9 +1,10 @@
 // Fabrication fit checks: everything that would make a part uncuttable or
 // make it not fit once it's cut.
-import { difference, offset, shapeArea, shapeBBox, signedArea, type Shape, type Vec2 } from './geom2d';
+import { difference, offset, pointInShape, shapeArea, shapeBBox, signedArea, type Shape, type Vec2 } from './geom2d';
 import { cached } from './memo';
 import type { Values } from './params';
-import type { SliceResult } from './slicer';
+import type { Part, SliceResult } from './slicer';
+import { planeToWorld, type V3 } from './section';
 import { baseChamfers, planClearance } from './base';
 
 export type Severity = 'error' | 'warn' | 'info';
@@ -189,6 +190,83 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
       issues.push({ partId: missed[0].parts[0].id, plateKey: missed[0].def.key, type: 'general', severity: 'warn', message: `${missed.length} plate(s) don't cross the support ring, so it doesn't hold them. Widen the ring.` });
     if (v.embedMode === 'slot') issues.push({ partId: null, type: 'general', severity: 'warn', message: 'The support ring is cast in with the plates: set Concrete › Plate fixing to "Cast in".' });
   }
+  issues.push(...moveChecks(v, sliced));
   for (const w of sliced.warnings) issues.push({ partId: null, type: 'general', severity: 'warn', message: w });
+  return issues;
+}
+
+const dot3 = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/** Grid points across a part's face (plate coords), at most ~1200 of them. */
+function facePoints(p: Part): Vec2[] {
+  const { minX, minY, maxX, maxY } = p.bbox;
+  const step = Math.max(2, Math.sqrt(((maxX - minX) * (maxY - minY)) / 1200));
+  const pts: Vec2[] = [];
+  for (let y = minY + step / 2; y < maxY; y += step) for (let x = minX + step / 2; x < maxX; x += step) if (pointInShape([x, y], p.shape)) pts.push([x, y]);
+  for (const [x, y] of p.shape[0].outer) pts.push([x, y]);
+  return pts;
+}
+
+/** First point of `a` (through its thickness) that sits inside the solid of `b`, in a's plate coords. */
+function overlapAt(a: Part, b: Part): Vec2 | null {
+  const P = b.plane;
+  const tol = b.thickness / 2 - 0.05;
+  const rel = (w: V3): V3 => [w[0] - P.origin[0], w[1] - P.origin[1], w[2] - P.origin[2]];
+  // quick reject: a's whole box on one side of b's slab
+  const { minX, minY, maxX, maxY } = a.bbox;
+  const ws: number[] = [];
+  for (const [x, y] of [[minX, minY], [maxX, minY], [minX, maxY], [maxX, maxY]])
+    for (const w of [-a.thickness / 2, a.thickness / 2]) ws.push(dot3(rel(planeToWorld(a.plane, x, y, w)), P.normal));
+  if (Math.min(...ws) > tol || Math.max(...ws) < -tol) return null;
+  for (const [x, y] of facePoints(a)) {
+    for (const w of [-a.thickness / 2 + 0.05, 0, a.thickness / 2 - 0.05]) {
+      const r = rel(planeToWorld(a.plane, x, y, w));
+      if (Math.abs(dot3(r, P.normal)) >= tol) continue;
+      if (pointInShape([dot3(r, P.u), dot3(r, P.v)], b.shape)) return [x, y];
+    }
+  }
+  return null;
+}
+
+/** Plates moved by hand: they must not run into each other, and must still sit in the base. */
+function moveChecks(v: Values, sliced: SliceResult): Issue[] {
+  const issues: Issue[] = [];
+  const moved = sliced.plates.filter((p) => p.def.home && p.parts.length);
+  const loose = sliced.parts.filter((p) => p.home);
+  if (!moved.length && !loose.length) return issues;
+  const all = sliced.parts.filter((p) => p.family !== 'S');
+  const seen = new Set<string>();
+  const clashes = (a: Part) => {
+    for (const b of all) {
+      if (b.plateKey === a.plateKey) continue;
+      const pair = [a.id, b.id].sort().join('|');
+      if (seen.has(pair)) continue;
+      seen.add(pair);
+      const at = overlapAt(a, b);
+      const back = at ? null : overlapAt(b, a);
+      if (at || back)
+        issues.push({
+          partId: at ? a.id : b.id,
+          plateKey: at ? a.plateKey : b.plateKey,
+          type: 'collision',
+          severity: 'error',
+          message: `Moved part ${a.id} runs into ${b.id}.`,
+          at: at ?? back ?? undefined,
+        });
+    }
+  };
+  loose.forEach(clashes);
+  for (const plate of moved) {
+    plate.parts.forEach(clashes);
+    if (v.baseOn) {
+      const top = v.baseHeight;
+      const low = Math.min(...plate.parts.flatMap((p) => p.shape[0].outer.map(([x, y]) => planeToWorld(p.plane, x, y)[1])));
+      const p0 = plate.parts[0];
+      if (low > top - 0.5 && plate.parts.some((p) => p.anchored))
+        issues.push({ partId: p0.id, plateKey: plate.def.key, type: 'unanchored', severity: 'error', message: `Moved plate ${p0.id} no longer reaches into the base (${(low - top).toFixed(1)} mm above it).` });
+      else if (low < 0)
+        issues.push({ partId: p0.id, plateKey: plate.def.key, type: 'general', severity: 'error', message: `Moved plate ${p0.id} pokes ${(-low).toFixed(1)} mm out of the bottom of the base.` });
+    }
+  }
   return issues;
 }

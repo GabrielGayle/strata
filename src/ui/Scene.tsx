@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useThree, type ThreeEvent } from '@react-three/fiber';
 import { Edges, Grid } from '@react-three/drei';
@@ -12,6 +12,7 @@ import { baseGeometry } from '../core/base';
 import { shapeBBox } from '../core/geom2d';
 import { makeConcreteMaterial, METALS, PLY, type Band } from './materials';
 import { useStore } from '../state/store';
+import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 
 export interface SceneOpts {
   selected: string | null;
@@ -21,6 +22,8 @@ export interface SceneOpts {
   xray: boolean;
   showIssues: boolean;
   showSource: boolean;
+  /** Hand placement: the selected plate gets a move / rotate gizmo. */
+  moveMode?: boolean;
 }
 
 export function cssVar(name: string, fallback: string): string {
@@ -57,7 +60,7 @@ const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selecte
       onClick={
         onSelect
           ? (e: ThreeEvent<MouseEvent>) => {
-              if (e.delta > 4) return;
+              if (e.delta > 4 || gizmoIsBusy()) return;
               e.stopPropagation();
               onSelect(part.id);
             }
@@ -216,6 +219,8 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   useEffect(() => () => material.dispose(), [material]);
   const gridA = useMemo(() => cssVar('--grid-a', '#cfcbc2'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const gridB = useMemo(() => cssVar('--grid-b', '#a9a49a'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
+  const preview = useRef<THREE.Group>(null);
+  const dragKey = opts.moveMode ? (moveTarget(model, opts.selected)?.key ?? null) : null;
   return (
     <>
       <Env />
@@ -224,9 +229,17 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       <directionalLight position={[-900, 500, -600]} intensity={0.45} />
       <Grid args={[20000, 20000]} cellSize={10} sectionSize={100} cellColor={gridA} sectionColor={gridB} cellThickness={0.6} sectionThickness={1} fadeDistance={7000} fadeStrength={1.5} infiniteGrid position={[0, -0.05, 0]} />
       {v.baseOn && <Base model={model} xray={opts.xray} />}
-      {model.sliced.parts.map((p) => (
+      {model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
         <PlateMesh key={p.id} part={p} material={material} selMaterial={selMaterial} selected={opts.selected === p.id} onSelect={opts.onSelect} />
       ))}
+      {/* the plate under the gizmo, carried rigidly while it is dragged */}
+      <group ref={preview} matrixAutoUpdate={false}>
+        {dragKey &&
+          model.sliced.parts.filter((p) => p.plateKey === dragKey).map((p) => (
+            <PlateMesh key={p.id} part={p} material={material} selMaterial={selMaterial} selected onSelect={opts.onSelect} />
+          ))}
+      </group>
+      {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
       <Etches parts={model.sliced.parts} />
       <Insert model={model} />
       {opts.showSource && model.source && v.stackSource === 'form' && (

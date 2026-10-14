@@ -40,7 +40,7 @@ export default function CompareView() {
   const resolve = (id: string): { p: Project; name: string } => {
     const v = project.variants.find((x) => x.id === id);
     if (!v) return { p: project, name: 'Current' };
-    return { p: { ...project, params: { ...project.params, ...v.params }, pour: v.pour }, name: v.name };
+    return { p: { ...project, params: { ...project.params, ...v.params }, pour: v.pour, moves: v.moves }, name: v.name };
   };
   const A = resolve(ui.compareA);
   const B = resolve(ui.compareB);

@@ -3,6 +3,7 @@ import { defaultRaw, PARAM_MAP, type RawValue } from './params';
 import type { PourLayer } from './mould';
 import type { PatternSpec } from './pattern';
 import type { Composition } from './compose';
+import { cleanMoves, type PartMoves } from './moves';
 import type { SoundSpec } from './sound';
 
 export interface ImageAsset {
@@ -29,6 +30,7 @@ export interface Variant {
   params: Record<string, RawValue>;
   locks: Record<string, boolean>;
   pour: PourLayer[];
+  moves?: PartMoves;
   createdAt: string;
 }
 
@@ -44,6 +46,8 @@ export interface Project {
   variants: Variant[];
   /** Image blocks placed on the surfaces; each used surface is also rendered into images[surface]. */
   composition?: Composition;
+  /** Plates moved by hand in the 3D view, keyed by plate key (P3, X1, R5…). */
+  moves?: PartMoves;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -179,7 +183,7 @@ export const PRESETS: Preset[] = [
 
 /** Images that come with a preset (e.g. a sound picture) replace those slots. */
 export function applyPreset(p: Project, preset: Preset, images: Project['images'] = {}): Project {
-  return { ...p, name: preset.name, params: { ...defaultRaw(), ...preset.params }, locks: {}, images: { ...p.images, ...images } };
+  return { ...p, name: preset.name, params: { ...defaultRaw(), ...preset.params }, locks: {}, images: { ...p.images, ...images }, moves: undefined };
 }
 
 export function serialize(p: Project): string {
@@ -202,5 +206,6 @@ export function deserialize(text: string): Project {
     meshes: raw.meshes ?? {},
     variants: Array.isArray(raw.variants) ? raw.variants : [],
     composition: raw.composition?.kind === 'composition' ? raw.composition : undefined,
+    moves: cleanMoves(raw.moves),
   };
 }
