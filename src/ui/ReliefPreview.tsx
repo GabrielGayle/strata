@@ -76,7 +76,7 @@ const Plate = memo(function Plate({ part, material }: { part: Part; material: TH
 });
 
 function Rig({ frame, tilt, plateHeight, stack }: { frame: Frame; tilt: number; plateHeight: number; stack: [number, number] }) {
-  const { camera, size } = useThree();
+  const { camera, size, invalidate } = useThree();
   useEffect(() => {
     const t = (tilt * Math.PI) / 180;
     // 0° = plan view with the front plate at the bottom; tilting drops the camera towards the
@@ -93,7 +93,8 @@ function Rig({ frame, tilt, plateHeight, stack }: { frame: Frame; tilt: number; 
     const projH = frame.stackExt * Math.cos(t) + plateHeight * Math.sin(t);
     cam.zoom = Math.min(size.width / (frame.acrossExt * 1.1), size.height / (Math.max(1, projH) * 1.15));
     cam.updateProjectionMatrix();
-  }, [camera, size, frame, tilt, plateHeight, stack]);
+    invalidate();
+  }, [camera, size, frame, tilt, plateHeight, stack, invalidate]);
   return null;
 }
 
@@ -114,7 +115,7 @@ export default function ReliefPreview({ model, tilt, tint }: { model: Model; til
   const sun = new THREE.Vector3(-stack[1] - 0.35 * stack[0], 0.75, stack[0] - 0.35 * stack[1]).normalize().multiplyScalar(frame.span * 1.5);
   const r = frame.span * 0.8 + frame.center.length();
   return (
-    <Canvas orthographic shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: 'absolute', inset: 0 }}>
+    <Canvas orthographic frameloop="demand" shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: 'absolute', inset: 0 }}>
       <Rig frame={frame} tilt={tilt} stack={stack} plateHeight={frame.hi - (v.baseOn ? v.baseHeight : 0) + (v.baseOn ? v.baseHeight * 0.6 : 0)} />
       <Env />
       <ambientLight intensity={0.3} />

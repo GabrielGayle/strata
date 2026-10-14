@@ -102,7 +102,15 @@ export function createPipeline() {
     }
     const pick = (v: Values, keys: string[]) => keys.map((k) => v[k]);
 
-    const ev = stage('Parameters', [project.params], () => evaluateParams(project.params));
+    // the top image's on-surface aspect (width across the plates / length along the stack), for "Fit stack to image"
+    const imgAspect = (() => {
+      const g = assets.topImg;
+      if (!g) return 1;
+      const q = (id: string) => (((Math.round(Number(project.params[id] ?? 0) / 90) % 2) + 2) % 2);
+      const swap = (q('imgRotate') + q('topRotate')) % 2 === 1;
+      return swap ? g.h / g.w : g.w / g.h;
+    })();
+    const ev = stage('Parameters', [project.params, imgAspect], () => evaluateParams(project.params, { imgAspect }));
     const v = ev.values;
 
     const mkForm = (prefix: 'ins' | 'src', mesh: THREE.BufferGeometry | null): FormBuild | null => {

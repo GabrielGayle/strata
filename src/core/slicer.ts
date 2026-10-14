@@ -16,6 +16,7 @@ import {
   shapePerimeter,
   union,
   unionShapes,
+  simplifyShape,
   xor,
   type BBox,
   type ExPoly,
@@ -171,6 +172,21 @@ function strataOutline(def: PlateDef, hf: HeightField, v: Values): Shape {
     const p = planeToWorld(plane, u, 0);
     top.push([u, hf.at(p[0], p[2])]);
   }
+  // strata flow: low-pass the top line (two box passes ≈ a gentle gaussian) into long curves
+  const win = Math.round(v.edgeFlow / 2 / ((u1 - u0) / n));
+  if (win >= 1) {
+    for (let pass = 0; pass < 2; pass++) {
+      const h = top.map((q) => q[1]);
+      for (let k = 0; k < top.length; k++) {
+        let sum = 0, cnt = 0;
+        for (let j = Math.max(0, k - win); j <= Math.min(top.length - 1, k + win); j++) {
+          sum += h[j];
+          cnt++;
+        }
+        top[k][1] = sum / cnt;
+      }
+    }
+  }
   const e = embedOf(v);
   const inset = Math.max(0, Math.min(v.tabInset, (u1 - u0) / 2 - 5));
   const poly: Path = [];
@@ -179,7 +195,7 @@ function strataOutline(def: PlateDef, hf: HeightField, v: Values): Shape {
   else poly.push([u0, 0], [u1, 0]);
   for (let k = top.length - 1; k >= 0; k--) poly.push(top[k]);
   if (e > 0 && inset > 0) poly.push([u0, 0], [u0 + inset, 0]);
-  return union([poly]);
+  return simplifyShape(union([poly]), 0.01);
 }
 
 function formOutline(def: PlateDef, mesh: IndexedMesh, v: Values): Shape {
@@ -473,20 +489,33 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
     polys.push([...lower, [ub, ceiling], [ua, ceiling]]);
     k++;
   }
-  return polys.length ? union(polys) : [];
+  return polys.length ? simplifyShape(union(polys), 0.02) : [];
+}
+
+/** Chord tolerance for smoothing offsets: well inside the DXF arc tolerance, far fewer points. */
+const SMOOTH_TOL = 0.03;
+
+/**
+ * Round the image-driven cut region itself (closing + opening of radius r),
+ * then cut it out. Only the cut's own edges change (step edges, recess floors,
+ * pixel stair-steps); the plate's outer edges are never touched.
+ */
+function smoothImageCuts(plate: Shape, cut: Shape, r: number): Shape {
+  if (!(r > 0.05)) return difference(plate, cut);
+  const rounded = offset(offset(offset(unionShapes(cut), r, 'round', SMOOTH_TOL), -2 * r, 'round', SMOOTH_TOL), r, 'round', SMOOTH_TOL);
+  return simplifyShape(difference(plate, rounded), SMOOTH_TOL / 2);
 }
 
 /**
- * Cut the image-driven shapes out of a plate, then round every corner they
- * create with radius r (closing + opening). Only the material near those cuts
- * is touched, so cavities, anchor holes and slots cut later stay crisp.
+ * Round every corner of the material (closing + opening of radius r). Where two
+ * rounded bumps meet, the opening leaves a needle-thin inside cusp; a final
+ * 0.3 mm closing blunts it so no gap is narrower than the kerf.
  */
-function smoothImageCuts(plate: Shape, cut: Shape, r: number): Shape {
-  const carved = difference(plate, cut);
-  if (!(r > 0.05) || !carved.length) return carved;
-  const rounded = offset(offset(offset(carved, r), -2 * r), r);
-  const zone = offset(unionShapes(cut), 2 * r + 0.5);
-  return unionShapes(intersection(rounded, zone), difference(carved, zone));
+export function roundAll(shape: Shape, r: number): Shape {
+  if (!(r > 0.05) || !shape.length) return shape;
+  const opened = offset(offset(offset(simplifyShape(shape, SMOOTH_TOL / 2), r, 'round', SMOOTH_TOL), -2 * r, 'round', SMOOTH_TOL), r, 'round', SMOOTH_TOL);
+  const c = Math.min(0.3, r / 2);
+  return simplifyShape(offset(offset(opened, c, 'round', SMOOTH_TOL), -c, 'round', SMOOTH_TOL), SMOOTH_TOL / 2);
 }
 
 function distToBoundary(p: Vec2, ex: ExPoly): number {
@@ -658,6 +687,8 @@ export function slice(input: SliceInput): SliceResult {
       if (carve.length) imageCuts.push(carve);
     }
     if (imageCuts.length) shape = smoothImageCuts(shape, imageCuts.flat(), v.cutSmooth);
+    // all-edges rounding happens before the functional cuts below, so they stay crisp
+    shape = roundAll(shape, v.edgeRound);
 
     // 5. anchor holes in the embedded tab
     if (e > 0 && v.embedMode === 'cast' && v.anchorHoles > 0 && e > v.anchorDia + 2 * v.minFeature) {

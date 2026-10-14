@@ -43,6 +43,7 @@ interface Store {
   undo: () => void;
   redo: () => void;
   randomise: () => void;
+  shuffleGentle: () => void;
   loadPreset: (p: Preset) => void;
   saveVariant: (name: string) => void;
   loadVariant: (id: string) => void;
@@ -170,6 +171,46 @@ export const useStore = create<Store>((set, get) => {
       }
       commit({ ...p, params: { ...p.params, ...patch } }, `rand:${performance.now()}`);
       get().toast(`Randomised ${Object.keys(patch).length} unlocked values`);
+    },
+    shuffleGentle: () => {
+      // a curated range that lands on soft, flowing impressions: shallow, smooth,
+      // low erosion with neighbours that follow each other, rounded edges
+      const p = get().project;
+      const rnd = mulberry32((Date.now() ^ (Math.random() * 1e9)) >>> 0);
+      const r = (lo: number, hi: number, d = 2) => String(+(lo + (hi - lo) * rnd()).toFixed(d));
+      const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
+      const ranges: Record<string, () => RawValue> = {
+        topDepth: () => r(5, 20, 1),
+        topSteps: () => pick(['0', '0', '0', '2', '3']),
+        topFloor: () => pick(['follow', 'follow', 'flat']),
+        topThreshold: () => r(0.05, 0.3),
+        cutSmooth: () => r(2, 10, 1),
+        edgeRound: () => r(0.5, 4, 1),
+        edgeFlow: () => r(6, 40, 0),
+        imgSmooth: () => pick(['1', '2', '2', '3', '4']),
+        imgContrast: () => r(0.75, 1.5),
+        erosionAmp: () => r(2, 14, 1),
+        erosionScale: () => r(150, 420, 0),
+        octaves: () => pick(['2', '3', '3', '4']),
+        roughness: () => r(0.3, 0.55),
+        banding: () => r(0, 0.4),
+        bandHeight: () => r(10, 30, 0),
+        coherence: () => r(0.8, 0.97),
+        crest: () => r(-10, 40, 0),
+        slope: () => r(-20, 20, 0),
+        seed: () => String(Math.floor(rnd() * 9999)),
+      };
+      const patch: Record<string, RawValue> = {};
+      for (const [id, gen] of Object.entries(ranges)) {
+        if (p.locks[id]) continue;
+        const d = PARAM_MAP[id];
+        const cur = String(p.params[id] ?? d.def);
+        if (d.kind === 'number' && !isLiteral(cur)) continue; // linked values stay linked
+        patch[id] = gen();
+      }
+      if (p.images.top && String(p.params.imgTopMode ?? 'off') === 'off') patch.imgTopMode = 'carve';
+      commit({ ...p, params: { ...p.params, ...patch } }, `gentle:${performance.now()}`);
+      get().toast(p.images.top ? 'Shuffled a gentle impression (undo to step back)' : 'Shuffled gentle strata. Load a top image to press it in.');
     },
     loadPreset: (preset) => {
       const p = get().project;

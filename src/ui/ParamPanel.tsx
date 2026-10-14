@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { GROUPS, PARAMS, type ParamDef, type Values } from '../core/params';
+import { GROUPS, PARAMS, scaleFactorFor, type ParamDef, type Values } from '../core/params';
 import { isLiteral } from '../core/expr';
 import { useStore } from '../state/store';
 import { useModel } from './model';
@@ -11,7 +11,29 @@ function fmtVal(x: number, step = 1): string {
   return String(+x.toFixed(d));
 }
 
-const NumberParam = memo(function NumberParam({ def, raw, value, error, clamped, locked, focus }: { def: ParamDef; raw: string; value: number; error?: string; clamped?: boolean; locked: boolean; focus: boolean }) {
+const NumberParam = memo(function NumberParam({
+  def,
+  raw,
+  value,
+  error,
+  clamped,
+  locked,
+  focus,
+  factor,
+  override,
+}: {
+  def: ParamDef;
+  raw: string;
+  value: number;
+  error?: string;
+  clamped?: boolean;
+  locked: boolean;
+  focus: boolean;
+  /** Master size multiplier on this literal; shown values are scaled, stored ones are not. */
+  factor: number;
+  /** Expression imposed by "Fit stack to image" (read-only while active). */
+  override?: string;
+}) {
   const setParam = useStore((s) => s.setParam);
   const toggleLock = useStore((s) => s.toggleLock);
   const literal = isLiteral(raw);
@@ -27,6 +49,8 @@ const NumberParam = memo(function NumberParam({ def, raw, value, error, clamped,
     if (focus) row.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [focus]);
   const step = def.step ?? 1;
+  // literals are stored at Master size 1, so what you type is what you see at the current size
+  const store = (shown: number) => setParam(def.id, String(+(shown / factor).toFixed(6)));
   const commitText = (t: string) => {
     editing.current = false;
     const v = t.trim();
@@ -34,8 +58,26 @@ const NumberParam = memo(function NumberParam({ def, raw, value, error, clamped,
       setText(raw);
       return;
     }
-    setParam(def.id, v);
+    if (isLiteral(v) && factor !== 1) store(parseFloat(v));
+    else setParam(def.id, v);
   };
+  if (override)
+    return (
+      <div className={`prow ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
+        <div className="plabel">
+          <span>{def.label}</span>
+          <span className="pid">{def.id}</span>
+        </div>
+        <div className="ctrls">
+          <span className="pill" title="Set by Image › Fit stack to image">image fit</span>
+        </div>
+        <div className="full">
+          <input className="exprbox" value={override} readOnly aria-label={`${def.label} (set by image fit)`} />
+          <span className="evald">= {fmtVal(value, step)}</span>
+          <span className="unit">{def.unit}</span>
+        </div>
+      </div>
+    );
   return (
     <div className={`prow ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
       <div className="plabel">
@@ -80,7 +122,7 @@ const NumberParam = memo(function NumberParam({ def, raw, value, error, clamped,
               step={step}
               value={value}
               disabled={locked}
-              onChange={(e) => setParam(def.id, e.target.value)}
+              onChange={(e) => (factor !== 1 ? store(Number(e.target.value)) : setParam(def.id, e.target.value))}
               aria-label={def.label}
             />
             <input
@@ -99,7 +141,8 @@ const NumberParam = memo(function NumberParam({ def, raw, value, error, clamped,
                   e.preventDefault();
                   const k = (e.shiftKey ? 10 : 1) * step * (e.key === 'ArrowUp' ? 1 : -1);
                   const nv = Math.min(def.max ?? Infinity, Math.max(def.min ?? -Infinity, value + k));
-                  setParam(def.id, String(+nv.toFixed(6)));
+                  if (factor !== 1) store(nv);
+                  else setParam(def.id, String(+nv.toFixed(6)));
                   setText(fmtVal(nv, step));
                 }
               }}
@@ -135,6 +178,25 @@ function OtherParam({ def, value }: { def: ParamDef; value: any }) {
         {def.kind === 'toggle' && <input className="chk" type="checkbox" checked={!!value} onChange={(e) => setParam(def.id, e.target.checked)} aria-label={def.label} />}
         {def.kind === 'color' && <input type="color" value={value} onChange={(e) => setParam(def.id, e.target.value)} aria-label={def.label} />}
         {def.kind === 'text' && <input className="inp" style={{ width: 90 }} value={value} onChange={(e) => setParam(def.id, e.target.value)} aria-label={def.label} />}
+      </div>
+    </div>
+  );
+}
+
+function MasterButtons({ value }: { value: number }) {
+  const setParam = useStore((s) => s.setParam);
+  const sizes: [string, number][] = [['1:4', 0.25], ['1:3', 1 / 3], ['1:2', 0.5], ['3:4', 0.75], ['1:1', 1], ['1.5:1', 1.5], ['2:1', 2]];
+  return (
+    <div className="prow">
+      <div className="full" style={{ flexWrap: 'wrap', gap: 0 }}>
+        {sizes.map(([label, k]) => (
+          <button key={label} className={`btn sm ${Math.abs(value - k) < 0.005 ? 'on' : ''}`} style={{ marginRight: -1 }} onClick={() => setParam('masterScale', String(+k.toFixed(4)))}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="perr" style={{ color: 'var(--muted)' }}>
+        Everything scales except tolerances and stock (kerf, fit clearance, min feature, sheet and ply sizes).
       </div>
     </div>
   );
@@ -184,11 +246,14 @@ export default function ParamPanel() {
                       clamped={model.ev.clamped[d.id]}
                       locked={!!project.locks[d.id]}
                       focus={ui.focusParam === d.id}
+                      factor={scaleFactorFor(d.id, project.params)}
+                      override={model.ev.overrides[d.id]}
                     />
                   ) : (
                     <OtherParam key={d.id} def={d} value={v[d.id]} />
                   ),
                 )}
+                {g === 'Master' && <MasterButtons value={v.masterScale} />}
                 {g === 'Concrete' && <PourEditor compact />}
               </div>
             )}

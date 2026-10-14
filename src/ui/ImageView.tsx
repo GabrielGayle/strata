@@ -171,6 +171,15 @@ export default function ImageView() {
                   <button className="btn" onClick={() => setUi({ tab: '3d', snap: { dir: s.snap, n: Date.now() } })}>
                     View {s.snap}
                   </button>
+                  {s.slot === 'top' && asset && v.sliceMode !== 'radial' && (
+                    <button
+                      className={`btn ${v.imgFit !== 'off' ? 'on' : ''}`}
+                      title="Size the plate footprint (and base) to this image's proportions so it fills the top"
+                      onClick={() => setParams({ imgFit: v.imgFit === 'off' ? 'width' : 'off' }, 'fit')}
+                    >
+                      Fit stack to image
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -208,6 +217,9 @@ export default function ImageView() {
                   Depth colour
                 </button>
               </span>
+              <button className="btn sm primary" onClick={() => useStore.getState().shuffleGentle()} title="Shuffle a soft, shallow, flowing impression (locked values stay)">
+                Shuffle gentle
+              </button>
             </span>
           </div>
           <div style={{ position: 'relative', height: 'min(56vh, 460px)', background: 'var(--viewport)', borderBottom: '1px solid var(--line)' }}>

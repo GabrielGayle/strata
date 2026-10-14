@@ -177,9 +177,20 @@ export default function Toolbar() {
             </>
           )}
         </Menu>
-        <button className="tb" onClick={randomise} title="Randomise unlocked literal values (locked and linked values stay)">
-          Randomise
-        </button>
+        <Menu label="Shuffle">
+          {(close) => (
+            <>
+              <button className="item" onClick={() => (randomise(), close())}>
+                <span>Randomise</span>
+                <small>unlocked values, anything goes</small>
+              </button>
+              <button className="item" onClick={() => (useStore.getState().shuffleGentle(), close())}>
+                <span>Gentle impression</span>
+                <small>soft, shallow, flowing relief</small>
+              </button>
+            </>
+          )}
+        </Menu>
       </div>
       <div className="group">
         <button className="tb" onClick={open}>

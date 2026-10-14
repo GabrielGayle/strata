@@ -96,10 +96,10 @@ export function xor(a: Shape, b: Shape): Shape {
 }
 
 /** Offset a shape (positive grows outers and shrinks holes). */
-export function offset(shape: Shape, delta: number, join: 'round' | 'miter' | 'square' = 'round'): Shape {
+export function offset(shape: Shape, delta: number, join: 'round' | 'miter' | 'square' = 'round', arcTol = 0.01): Shape {
   if (Math.abs(delta) < 1e-6) return shape;
   const jt = join === 'round' ? C.JoinType.jtRound : join === 'miter' ? C.JoinType.jtMiter : C.JoinType.jtSquare;
-  const co = new C.ClipperOffset(2, 0.01 * S);
+  const co = new C.ClipperOffset(2, arcTol * S);
   co.AddPaths(shapeToPaths(shape).map(toIP), jt, C.EndType.etClosedPolygon);
   const tree = new C.PolyTree();
   co.Execute(tree, delta * S);
@@ -212,4 +212,47 @@ export function cleanShape(shape: Shape, dist = 0.005): Shape {
   return shape
     .map((e) => ({ outer: cleanPath(e.outer), holes: e.holes.map(cleanPath).filter((h) => h.length >= 3), depth: e.depth }))
     .filter((e) => e.outer.length >= 3);
+}
+
+/** Ramer–Douglas–Peucker on a closed ring: drops points within tol of the simplified outline. */
+export function simplifyPath(p: Path, tol: number): Path {
+  const n = p.length;
+  if (n < 5) return p;
+  // split the ring at point 0 and the point farthest from it
+  let far = 0, best = -1;
+  for (let i = 1; i < n; i++) {
+    const d = (p[i][0] - p[0][0]) ** 2 + (p[i][1] - p[0][1]) ** 2;
+    if (d > best) {
+      best = d;
+      far = i;
+    }
+  }
+  const keep = new Uint8Array(n);
+  keep[0] = keep[far] = 1;
+  const stack: [number, number][] = [[0, far], [far, n]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    const A = p[a], B = p[b % n];
+    const dx = B[0] - A[0], dy = B[1] - A[1];
+    const L = Math.hypot(dx, dy);
+    let idx = -1, dmax = tol;
+    for (let i = a + 1; i < b; i++) {
+      const d = L > 1e-12 ? Math.abs((p[i][0] - A[0]) * dy - (p[i][1] - A[1]) * dx) / L : Math.hypot(p[i][0] - A[0], p[i][1] - A[1]);
+      if (d > dmax) {
+        dmax = d;
+        idx = i;
+      }
+    }
+    if (idx >= 0) {
+      keep[idx] = 1;
+      stack.push([a, idx], [idx, b]);
+    }
+  }
+  const out: Path = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(p[i]);
+  return out.length >= 3 ? out : p;
+}
+
+export function simplifyShape(shape: Shape, tol: number): Shape {
+  return shape.map((e) => ({ outer: simplifyPath(e.outer, tol), holes: e.holes.map((h) => simplifyPath(h, tol)), depth: e.depth }));
 }

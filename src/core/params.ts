@@ -20,14 +20,20 @@ export interface ParamDef {
   help?: string;
   /** Included when "Randomise" is pressed (if unlocked and a literal). */
   rand?: boolean;
+  /** Physical tolerance or stock size: never changed by Master size. */
+  noScale?: boolean;
+  /** A count that follows Master size (when "Scale plate count" is on). */
+  scaleCount?: boolean;
   show?: (v: Values) => boolean;
 }
 
 export const GROUPS = [
+  'Master',
   'Base',
   'Plates',
   'Slicer',
   'Strata',
+  'Edges',
   'Insert',
   'Source form',
   'Image',
@@ -93,6 +99,16 @@ const isParallelish = (v: Values) => v.sliceMode !== 'radial';
 const strataSource = (v: Values) => v.stackSource === 'strata';
 
 export const PARAMS: ParamDef[] = [
+  // Master
+  num('masterScale', 'Master size', 'Master', 1, 0.05, 4, {
+    step: 0.01,
+    unit: '×',
+    noScale: true,
+    help: 'Scales the whole piece: base, plates, heights, erosion, impression. Tolerances (kerf, clearance) and stock (sheet, ply) stay real.',
+  }),
+  { id: 'masterCount', label: 'Scale plate count', group: 'Master', kind: 'toggle', def: true, help: 'Fewer plates when smaller (pitch stays similar)' },
+  { id: 'masterThickness', label: 'Scale plate thickness', group: 'Master', kind: 'toggle', def: true },
+
   // Base
   { id: 'baseOn', label: 'Concrete base', group: 'Base', kind: 'toggle', def: true },
   num('baseLength', 'Length', 'Base', 800, 100, 3000),
@@ -106,7 +122,7 @@ export const PARAMS: ParamDef[] = [
     { value: 'corten', label: 'Corten' },
   ]),
   num('thickness', 'Thickness', 'Plates', 3, 0.5, 12, { step: 0.5, help: 'Common: 1.5, 3, 6 mm' }),
-  num('plateCount', 'Plate count', 'Plates', 40, 2, 300, { int: true, unit: '', show: isParallelish }),
+  num('plateCount', 'Plate count', 'Plates', 40, 2, 300, { int: true, unit: '', show: isParallelish, scaleCount: true }),
   num('endMargin', 'End margin', 'Plates', 40, 0, 1000, { show: isParallelish }),
   num('stackLength', 'Stack run', 'Plates', 'alongWidth ? baseWidth : baseLength', 1, 5000, { show: isParallelish, help: 'Base length the plates are stacked along (alongWidth = 1 when slicing across)' }),
   num('acrossLength', 'Across run', 'Plates', 'alongWidth ? baseLength : baseWidth', 1, 5000, { show: isParallelish }),
@@ -132,11 +148,11 @@ export const PARAMS: ParamDef[] = [
     { value: 'strata', label: 'Eroded strata block' },
     { value: 'form', label: 'Source form' },
   ]),
-  num('radialCount', 'Radial plates', 'Slicer', 24, 3, 180, { int: true, unit: '', show: (v) => v.sliceMode === 'radial' }),
+  num('radialCount', 'Radial plates', 'Slicer', 24, 3, 180, { int: true, unit: '', show: (v) => v.sliceMode === 'radial', scaleCount: true }),
   num('radialHub', 'Hub radius', 'Slicer', 30, 0, 500, { show: (v) => v.sliceMode === 'radial' }),
-  num('crossCount', 'Cross plates', 'Slicer', 'max(2, floor(plateWidth / 55))', 1, 200, { int: true, unit: '', show: (v) => v.sliceMode === 'waffle' }),
-  num('slotClearance', 'Slot allowance', 'Slicer', 0.2, 0, 3, { step: 0.05, show: (v) => v.sliceMode === 'waffle', help: 'Added to slot width (kerf allowance) for interlocking slots' }),
-  num('sampleStep', 'Profile resolution', 'Slicer', 2, 0.5, 20, { step: 0.5 }),
+  num('crossCount', 'Cross plates', 'Slicer', 'max(2, floor(plateWidth / 55))', 1, 200, { int: true, unit: '', show: (v) => v.sliceMode === 'waffle', scaleCount: true }),
+  num('slotClearance', 'Slot allowance', 'Slicer', 0.2, 0, 3, { step: 0.05, show: (v) => v.sliceMode === 'waffle', help: 'Added to slot width (kerf allowance) for interlocking slots', noScale: true }),
+  num('sampleStep', 'Profile resolution', 'Slicer', 2, 0.5, 20, { step: 0.5, noScale: true }),
 
   // Strata / erosion
   num('stackHeight', 'Plate height', 'Strata', 220, 10, 2000, { show: strataSource }),
@@ -151,6 +167,19 @@ export const PARAMS: ParamDef[] = [
   num('slope', 'Slope', 'Strata', 0, -500, 500, { show: strataSource, rand: true, help: 'Height change from one end to the other' }),
   num('seed', 'Seed', 'Strata', 7, 0, 9999, { int: true, unit: '', rand: true }),
 
+  // Edges
+  num('edgeFlow', 'Strata flow', 'Edges', 0, 0, 120, {
+    step: 0.5,
+    show: strataSource,
+    rand: true,
+    help: 'Smooths the eroded top line itself into long, gentle curves (a window in mm along each plate)',
+  }),
+  num('edgeRound', 'Round all corners', 'Edges', 0, 0, 50, {
+    step: 0.25,
+    rand: true,
+    help: 'Rounds every corner of every plate, image cuts included. The insert cavity, anchor holes and slots stay crisp so parts still fit.',
+  }),
+
   // Insert
   ...formParams('ins', 'Insert', () => true, { shape: 'fin', length: 330, width: 56, height: 360, taper: 0.35, sweep: 90, camber: 22, bend: 18 }),
   choice('insMaterial', 'Material', 'Insert', 'concrete', [
@@ -158,7 +187,7 @@ export const PARAMS: ParamDef[] = [
     { value: 'metal', label: 'Metal' },
     { value: 'void', label: 'Void (cut only)' },
   ], { show: (v) => v.insShape !== 'none' }),
-  num('clearance', 'Fit clearance', 'Insert', 0.5, 0, 20, { step: 0.1, show: (v) => v.insShape !== 'none', help: 'Gap between the insert and each plate cavity' }),
+  num('clearance', 'Fit clearance', 'Insert', 0.5, 0, 20, { step: 0.1, show: (v) => v.insShape !== 'none', help: 'Gap between the insert and each plate cavity', noScale: true }),
   choice('cavityMode', 'Cavity section', 'Insert', 'larger', [
     { value: 'larger', label: 'Larger of front/back (slides in)' },
     { value: 'smaller', label: 'Smaller of front/back (tight)' },
@@ -208,10 +237,15 @@ export const PARAMS: ParamDef[] = [
   num('topX', 'Image offset X', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
   num('topZ', 'Image offset Z', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
   num('topMargin', 'Top margin', 'Image', 10, 0, 300, { show: (v) => v.imgTopMode !== 'off' }),
+  choice('imgFit', 'Fit stack to image', 'Image', 'off', [
+    { value: 'off', label: 'Off' },
+    { value: 'width', label: 'Keep length, set width from image' },
+    { value: 'length', label: 'Keep width, set length from image' },
+  ], { show: (v) => v.imgTopMode !== 'off' && v.sliceMode !== 'radial', help: 'Sizes the plate footprint (and base) to the top image proportions so the image fills the top' }),
   num('cutSmooth', 'Cut edge smoothing', 'Image', 0, 0, 25, {
     step: 0.25,
     show: (v) => v.imgTopMode !== 'off' || (v.sliceMode === 'parallel' && v.imgFrontMode !== 'off'),
-    help: 'Rounds the corners of the image cuts (step edges, recess floors, pixel stair-steps) with this radius. Independent of image blur.',
+    help: 'Rounds the edges of the image cuts only (steps, recess floors, pixel stair-steps). Outer plate edges are untouched: use Edges › Round all corners for those.',
   }),
   choice('imgFrontMode', 'Front view', 'Image', 'off', [
     { value: 'off', label: 'Off' },
@@ -241,14 +275,14 @@ export const PARAMS: ParamDef[] = [
     { value: 'cast', label: 'Cast in (anchor holes)' },
     { value: 'slot', label: 'Cast slots, fit later' },
   ]),
-  num('slotGap', 'Slot gap', 'Concrete', 1, 0, 10, { step: 0.1, show: (v) => v.embedMode === 'slot', help: 'Slot width = thickness + gap' }),
+  num('slotGap', 'Slot gap', 'Concrete', 1, 0, 10, { step: 0.1, show: (v) => v.embedMode === 'slot', help: 'Slot width = thickness + gap', noScale: true }),
 
   // Mould
   { id: 'mouldOn', label: 'Generate moulds', group: 'Mould', kind: 'toggle', def: true },
-  num('plyThickness', 'Plywood thickness', 'Mould', 18, 3, 50, { step: 0.5 }),
+  num('plyThickness', 'Plywood thickness', 'Mould', 18, 3, 50, { step: 0.5, noScale: true }),
   num('mouldWall', 'Wall thickness', 'Mould', 40, 10, 300),
   num('draft', 'Draft', 'Mould', 0.5, 0, 10, { unit: '°', step: 0.1 }),
-  num('dowelDia', 'Dowel Ø', 'Mould', 8, 2, 30),
+  num('dowelDia', 'Dowel Ø', 'Mould', 8, 2, 30, { noScale: true }),
   num('tabsPerSide', 'Clamp tabs / side', 'Mould', 2, 0, 8, { int: true, unit: '' }),
   num('tabSize', 'Tab size', 'Mould', 40, 10, 200),
   choice('mouldSplit', 'Split rings', 'Mould', 'halves', [
@@ -256,9 +290,9 @@ export const PARAMS: ParamDef[] = [
     { value: 'halves', label: 'Halves (opens to release)' },
   ]),
   { id: 'jigOn', label: 'Plate jig board', group: 'Mould', kind: 'toggle', def: true, help: 'Board with slots that holds plates at pitch while concrete cures' },
-  num('jigClearance', 'Jig slot clearance', 'Mould', 0.3, 0, 5, { step: 0.05 }),
-  num('plySheetW', 'Ply sheet length', 'Mould', 2440, 300, 5000),
-  num('plySheetH', 'Ply sheet width', 'Mould', 1220, 300, 3000),
+  num('jigClearance', 'Jig slot clearance', 'Mould', 0.3, 0, 5, { step: 0.05, noScale: true }),
+  num('plySheetW', 'Ply sheet length', 'Mould', 2440, 300, 5000, { noScale: true }),
+  num('plySheetH', 'Ply sheet width', 'Mould', 1220, 300, 3000, { noScale: true }),
 
   // Unfold / flatten
   choice('unfoldTarget', 'Unroll which form', 'Unfold', 'insert', [
@@ -272,14 +306,14 @@ export const PARAMS: ParamDef[] = [
   num('bendRadius', 'Inside bend radius', 'Unfold', 'unfoldThickness', 0, 50, { step: 0.1 }),
 
   // Fabrication
-  num('kerf', 'Kerf', 'Fabrication', 0.15, 0, 3, { step: 0.01, help: 'Laser beam width; outlines are offset by half' }),
-  num('arcTolerance', 'Arc fit tolerance', 'Fabrication', 0.05, 0.005, 2, { step: 0.005 }),
-  num('minFeature', 'Min feature', 'Fabrication', 2, 0, 50, { step: 0.1, help: 'Narrowest web of material the laser can leave' }),
-  num('minPartSize', 'Min part size', 'Fabrication', 15, 0, 500),
-  num('sheetW', 'Sheet length', 'Fabrication', 2500, 100, 6000),
-  num('sheetH', 'Sheet width', 'Fabrication', 1250, 100, 3000),
-  num('partSpacing', 'Part spacing', 'Fabrication', 6, 0, 100),
-  num('labelHeight', 'Label height', 'Fabrication', 6, 2, 50, { step: 0.5 }),
+  num('kerf', 'Kerf', 'Fabrication', 0.15, 0, 3, { step: 0.01, help: 'Laser beam width; outlines are offset by half', noScale: true }),
+  num('arcTolerance', 'Arc fit tolerance', 'Fabrication', 0.05, 0.005, 2, { step: 0.005, noScale: true }),
+  num('minFeature', 'Min feature', 'Fabrication', 2, 0, 50, { step: 0.1, help: 'Narrowest web of material the laser can leave', noScale: true }),
+  num('minPartSize', 'Min part size', 'Fabrication', 15, 0, 500, { noScale: true }),
+  num('sheetW', 'Sheet length', 'Fabrication', 2500, 100, 6000, { noScale: true }),
+  num('sheetH', 'Sheet width', 'Fabrication', 1250, 100, 3000, { noScale: true }),
+  num('partSpacing', 'Part spacing', 'Fabrication', 6, 0, 100, { noScale: true }),
+  num('labelHeight', 'Label height', 'Fabrication', 6, 2, 50, { step: 0.5, noScale: true }),
   { id: 'partPrefix', label: 'Part prefix', group: 'Fabrication', kind: 'text', def: 'S' },
   choice('dxfMode', 'DXF entities', 'Fabrication', 'polyline', [
     { value: 'polyline', label: 'Closed polylines with arcs' },
@@ -295,6 +329,8 @@ export function defaultRaw(): Record<string, RawValue> {
 
 export interface EvalResult {
   values: Values;
+  /** Parameters currently driven by "Fit stack to image", with the expression used. */
+  overrides: Record<string, string>;
   errors: Record<string, string>;
   clamped: Record<string, boolean>;
   deps: Record<string, string[]>;
@@ -318,18 +354,69 @@ function cachedParse(src: string): Node {
 }
 
 /** Read-only numeric flags derived from choice parameters, usable in expressions. */
-export function flagsFor(raw: Record<string, RawValue>): Record<string, number> {
+export function flagsFor(raw: Record<string, RawValue>, extra: Record<string, number> = {}): Record<string, number> {
   const get = (id: string) => String(raw[id] ?? PARAM_MAP[id].def);
   return {
     alongWidth: get('sliceAxis') === 'width' ? 1 : 0,
     isRadial: get('sliceMode') === 'radial' ? 1 : 0,
     isWaffle: get('sliceMode') === 'waffle' ? 1 : 0,
+    imgAspect: 1,
+    ...extra,
   };
 }
-export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle'];
+
+function masterOf(raw: Record<string, RawValue>): number {
+  const r = String(raw.masterScale ?? PARAM_MAP.masterScale.def);
+  const x = isLiteral(r) ? parseFloat(r) : NaN;
+  const d = PARAM_MAP.masterScale;
+  return Number.isFinite(x) ? Math.min(d.max!, Math.max(d.min!, x)) : 1;
+}
+
+const isOn = (raw: Record<string, RawValue>, id: string) => {
+  const r = raw[id] ?? PARAM_MAP[id].def;
+  return r === true || r === 'true';
+};
+
+/** How much Master size multiplies this parameter's literal value. */
+export function scaleFactorFor(id: string, raw: Record<string, RawValue>): number {
+  const d = PARAM_MAP[id];
+  if (!d || d.kind !== 'number' || d.noScale) return 1;
+  const m = masterOf(raw);
+  if (m === 1) return 1;
+  if (d.scaleCount) return isOn(raw, 'masterCount') ? m : 1;
+  if (id === 'thickness') return isOn(raw, 'masterThickness') ? m : 1;
+  return d.unit === 'mm' ? m : 1;
+}
+
+/**
+ * Expressions that replace a parameter while "Fit stack to image" is on. The
+ * footprint is sized so (plate width - 2 margins) / (stack run - 2 margins)
+ * equals the top image's on-surface aspect (imgAspect).
+ */
+export function fitOverrides(raw: Record<string, RawValue>): Record<string, string> {
+  const fit = String(raw.imgFit ?? 'off');
+  const top = String(raw.imgTopMode ?? 'off');
+  if (fit === 'off' || top === 'off' || String(raw.sliceMode ?? 'parallel') === 'radial') return {};
+  const alongWidth = String(raw.sliceAxis ?? 'length') === 'width';
+  const run = alongWidth ? 'baseWidth' : 'baseLength'; // base side the plates stack along
+  const across = alongWidth ? 'baseLength' : 'baseWidth';
+  if (fit === 'width') return { [across]: `imgAspect * (${run} - 2*endMargin - 2*topMargin) + 2*topMargin + 2*sideMargin` };
+  return { [run]: `(${across} - 2*sideMargin - 2*topMargin) / imgAspect + 2*topMargin + 2*endMargin` };
+}
+
+export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'imgAspect'];
 
 /** Evaluate the whole parameter graph in dependency order. */
-export function evaluateParams(raw: Record<string, RawValue>): EvalResult {
+export function evaluateParams(rawIn: Record<string, RawValue>, extra: Record<string, number> = {}): EvalResult {
+  // Master size multiplies literal values; image fit swaps in expressions
+  const overrides = fitOverrides(rawIn);
+  const raw: Record<string, RawValue> = { ...rawIn, ...overrides };
+  for (const d of PARAMS) {
+    if (d.kind !== 'number' || overrides[d.id]) continue;
+    const r = String(raw[d.id] ?? d.def);
+    const k = scaleFactorFor(d.id, rawIn);
+    if (k !== 1 && isLiteral(r)) raw[d.id] = String(parseFloat(r) * k);
+  }
   const values: Values = {};
   const errors: Record<string, string> = {};
   const clamped: Record<string, boolean> = {};
@@ -337,7 +424,7 @@ export function evaluateParams(raw: Record<string, RawValue>): EvalResult {
   const nodes: Record<string, Node> = {};
   const numIds = PARAMS.filter((p) => p.kind === 'number').map((p) => p.id);
   const numSet = new Set(numIds);
-  const flags = flagsFor(raw);
+  const flags = flagsFor(raw, extra);
 
   for (const p of PARAMS) {
     const r = raw[p.id] ?? p.def;
@@ -417,7 +504,7 @@ export function evaluateParams(raw: Record<string, RawValue>): EvalResult {
     scope[id] = v;
     values[id] = v;
   }
-  return { values, errors, clamped, deps, order: fullOrder };
+  return { values, overrides, errors, clamped, deps, order: fullOrder };
 }
 
 /** Parameters downstream of `id` (everything that depends on it, transitively). */
