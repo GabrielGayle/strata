@@ -100,6 +100,10 @@ const SMALL: Record<string, RawValue> = {
   tabsPerSide: '1',
   tabSize: '12',
   jigClearance: '0.15',
+  // the embedded support ring, if switched on, stays inside the small base
+  supportOuter: 'min(baseLength, baseWidth)/2 - sideMargin - 4',
+  supportDepth: 'embedDepth',
+  supportLand: '3',
 };
 
 export const PRESETS: Preset[] = [
