@@ -1067,3 +1067,365 @@ canvas.thumb {
 .pm-seg {
   flex-wrap: wrap;
 }
+
+/* composer */
+.pm.cm {
+  width: min(1280px, 100%);
+  height: min(860px, 100%);
+}
+.cm-head {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cm-count {
+  font-family: var(--mono);
+  opacity: 0.7;
+}
+.cm-add {
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+}
+.cm-add-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+.cm-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  min-height: 0;
+  flex: 1;
+}
+@media (max-width: 860px) {
+  .cm-body {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+}
+.cm-stage-wrap {
+  background: var(--viewport);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+}
+.cm-stage {
+  position: relative;
+  width: min(100%, calc((min(62vh, 600px) - 48px) * var(--fa)));
+  border: 1px solid var(--line);
+  touch-action: none;
+  user-select: none;
+}
+.cm-stage > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.cm-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 20px;
+  pointer-events: none;
+}
+.cm-box {
+  position: absolute;
+  outline: 1px dashed var(--line-soft);
+  cursor: move;
+  touch-action: none;
+}
+.cm-box:hover {
+  outline-color: var(--accent);
+}
+.cm-box.on {
+  outline: 2px solid var(--accent);
+}
+.cm-box.hidden {
+  outline-style: dotted;
+  opacity: 0.5;
+}
+.cm-h {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border: 1px solid var(--line);
+  touch-action: none;
+}
+.cm-scale {
+  right: -7px;
+  bottom: -7px;
+  cursor: nwse-resize;
+}
+.cm-rot {
+  left: calc(50% - 6px);
+  top: -26px;
+  border-radius: 50%;
+  cursor: grab;
+}
+.cm-rot::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 11px;
+  width: 1px;
+  height: 14px;
+  background: var(--accent);
+}
+.cm-label {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 2px);
+  font: 11px var(--mono);
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.cm-side {
+  overflow: auto;
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+.cm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cm-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  cursor: grab;
+  font-size: 12px;
+}
+.cm-item:hover {
+  background: var(--panel-2);
+}
+.cm-item.on {
+  border-color: var(--accent);
+}
+.cm-thumb {
+  width: 34px;
+  height: 26px;
+  object-fit: contain;
+  background: var(--viewport);
+  border: 1px solid var(--line-soft);
+  flex: none;
+}
+.cm-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* composer: node view */
+.nv {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--viewport) radial-gradient(var(--line-soft) 1px, transparent 1px) 0 0 / 18px 18px;
+  user-select: none;
+}
+.nv-wires {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+.nv-wire {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+}
+.nv-wire.on,
+.nv-wire.live {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.nv-wire.off {
+  stroke-dasharray: 4 4;
+}
+.nv-wire.ghost {
+  opacity: 0.25;
+}
+.nv-node,
+.nv-out {
+  position: absolute;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 3px 3px 0 var(--line);
+  font-size: 12px;
+}
+.nv-node.on {
+  outline: 2px solid var(--accent);
+}
+.nv-node.hidden {
+  opacity: 0.6;
+}
+.nv-out.hover {
+  outline: 3px solid var(--accent);
+}
+.nv-head {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--panel-2);
+  cursor: grab;
+  height: 26px;
+  box-sizing: border-box;
+}
+.nv-out .nv-head {
+  cursor: default;
+}
+.nv-kind {
+  font: 10px var(--mono);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nv-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.nv-port {
+  position: absolute;
+  right: -8px;
+  top: 15px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1px solid var(--line);
+  cursor: crosshair;
+  z-index: 1;
+}
+.nv-port.in {
+  left: -8px;
+  right: auto;
+  background: var(--panel);
+  cursor: default;
+}
+.nv-body {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+}
+.nv-thumb {
+  display: block;
+  max-width: 100%;
+  background: var(--viewport);
+  border: 1px solid var(--line-soft);
+  object-fit: contain;
+}
+.nv-out .nv-thumb {
+  margin: 6px auto;
+  max-width: calc(100% - 12px);
+}
+.nv-ops {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.nv-ops input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* drawing pad */
+.draw-stack {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  height: 100%;
+  border: 1px solid var(--line-soft);
+}
+.draw-stack canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.draw-live {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* master setup tabs */
+.setup-tabs {
+  display: flex;
+  align-items: stretch;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  min-height: 30px;
+  flex: none;
+}
+.setup-tab {
+  display: flex;
+  align-items: stretch;
+  border-right: 1px solid var(--line-soft);
+  max-width: 220px;
+}
+.setup-tab.active {
+  background: var(--panel);
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+.setup-name {
+  border: 0;
+  background: transparent;
+  padding: 4px 6px 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.setup-tab.active .setup-name {
+  color: var(--ink);
+  font-weight: 700;
+}
+.setup-x {
+  border: 0;
+  background: transparent;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.setup-x:hover,
+.setup-name:hover {
+  color: var(--accent);
+}
+.setup-add {
+  border: 0;
+  background: transparent;
+  padding: 0 12px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.setup-add:hover {
+  background: var(--ink);
+  color: var(--panel);
+}
