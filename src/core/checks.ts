@@ -176,10 +176,13 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
   const sup = sliced.support;
   if (sup) {
     const cover = v.baseHeight + sup.tenonBottom;
+    // 15 / 10 mm of cover on a full-size base, relaxing to MIN_FLOOR on small pieces
+    const underMin = Math.max(MIN_FLOOR, Math.min(15, v.baseHeight / 4));
+    const sideMin = Math.max(MIN_FLOOR, Math.min(10, Math.min(v.baseLength, v.baseWidth) / 10));
     if (cover <= 0) issues.push({ partId: null, type: 'general', severity: 'error', message: `Support ring and tenons reach ${(-cover).toFixed(1)} mm out of the bottom of the base.` });
-    else if (cover < 15) issues.push({ partId: null, type: 'general', severity: 'warn', message: `Only ${cover.toFixed(1)} mm of concrete under the support ring tenons.` });
+    else if (cover < underMin) issues.push({ partId: null, type: 'general', severity: 'warn', message: `Only ${cover.toFixed(1)} mm of concrete under the support ring tenons (min ${underMin.toFixed(1)}).` });
     const side = planClearance(v, 0, 0, 0) - sup.outer;
-    if (side < 10) issues.push({ partId: null, type: 'general', severity: side < 0 ? 'error' : 'warn', message: side < 0 ? 'Support ring is wider than the base.' : `Only ${side.toFixed(1)} mm of concrete beside the support ring.` });
+    if (side < sideMin) issues.push({ partId: null, type: 'general', severity: side < 0 ? 'error' : 'warn', message: side < 0 ? 'Support ring is wider than the base.' : `Only ${side.toFixed(1)} mm of concrete beside the support ring.` });
     const missed = sliced.plates.filter((p) => p.parts.length && p.tenons === 0);
     if (missed.length)
       issues.push({ partId: missed[0].parts[0].id, plateKey: missed[0].def.key, type: 'general', severity: 'warn', message: `${missed.length} plate(s) don't cross the support ring, so it doesn't hold them. Widen the ring.` });

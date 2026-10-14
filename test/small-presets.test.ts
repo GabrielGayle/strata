@@ -31,6 +31,16 @@ describe('small presets', () => {
     });
   }
 
+  it('keeps the support ring inside a small base when it is switched on', () => {
+    for (const preset of small) {
+      const p = applyPreset(newProject(), preset);
+      p.params = { ...p.params, supportMode: 'radial' };
+      const m = createPipeline()(p, assets);
+      const cover = m.issues.filter((i) => /support ring|out of the bottom/.test(i.message) && !/don't cross/.test(i.message));
+      expect(cover.map((i) => `${preset.name}: ${i.message}`)).toEqual([]);
+    }
+  });
+
   it('Master size can now shrink the default piece below 10 cm without clamping the base', () => {
     const p = newProject();
     p.params = { ...p.params, masterScale: '0.1' };
