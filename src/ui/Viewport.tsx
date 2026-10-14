@@ -6,6 +6,7 @@ import { useStore, type Snap } from '../state/store';
 import { stackFrame } from '../core/heightfield';
 import type { Model } from '../core/pipeline';
 import Scene, { modelBounds } from './Scene';
+import { gizmoIsBusy, movablePlate } from './PlateGizmo';
 import { useModel, fmt } from './model';
 
 export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
@@ -75,15 +76,34 @@ export default function Viewport() {
       xray: ui.xray,
       showIssues: ui.showIssues,
       showSource: ui.showSource,
+      moveMode: ui.moveMode,
     }),
-    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, setUi],
+    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.moveMode, setUi],
   );
+  const movedCount = Object.keys(useStore((s) => s.project.moves) ?? {}).length;
+  useEffect(() => {
+    if (!ui.moveMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (e.metaKey || e.ctrlKey || e.altKey || el.closest('input, textarea, select, [contenteditable="true"]')) return;
+      const k = e.key.toLowerCase();
+      const st = useStore.getState().ui;
+      if (k === 'w') setUi({ gizmoMode: 'translate' });
+      else if (k === 'e') setUi({ gizmoMode: 'rotate' });
+      else if (k === 'q') setUi({ gizmoSpace: st.gizmoSpace === 'world' ? 'local' : 'world' });
+      else if (k === 'escape') setUi({ selected: null });
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [ui.moveMode, setUi]);
   const heights = model.sliced.parts.map((p) => p.bbox.maxY);
   const hMin = heights.length ? Math.min(...heights) : 0;
   const hMax = heights.length ? Math.max(...heights) : 0;
   return (
     <>
-      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
+      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => !gizmoIsBusy() && setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
         <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={1} far={60000} position={[1500, 1100, 1800]} />
         <OrthographicCamera makeDefault={ui.ortho} near={-50000} far={50000} position={[1500, 1100, 1800]} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
@@ -101,6 +121,9 @@ export default function Viewport() {
         </button>
       </div>
       <div className="overlay tr col">
+        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
+          Move plates{movedCount ? ` (${movedCount})` : ''}
+        </button>
         <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
           X-ray concrete
         </button>
@@ -133,6 +156,7 @@ export default function Viewport() {
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
       </div>
+      {ui.moveMode && <MovePanel />}
       {v.pourView !== 'plain' && model.pour.rows.length > 0 && (
         <div className="overlay br info">
           {[...model.pour.rows].reverse().map((r) => (
@@ -143,5 +167,52 @@ export default function Viewport() {
         </div>
       )}
     </>
+  );
+}
+
+/** What the move gizmo is acting on, and the ways back. */
+function MovePanel() {
+  const model = useModel();
+  const ui = useStore((s) => s.ui);
+  const setUi = useStore((s) => s.setUi);
+  const moves = useStore((s) => s.project.moves);
+  const movePart = useStore((s) => s.movePart);
+  const resetMoves = useStore((s) => s.resetMoves);
+  const plate = movablePlate(model, ui.selected);
+  const key = plate?.def.key;
+  const m = key ? moves?.[key] : undefined;
+  const count = Object.keys(moves ?? {}).length;
+  const deg = m ? (2 * Math.acos(Math.min(1, Math.abs(m.q[3]))) * 180) / Math.PI : 0;
+  const label = plate?.parts[0]?.id.replace(/[a-z]$/, '');
+  return (
+    <div className="overlay tc movepanel">
+      <div className="mp-row">
+        <button className={`btn sm ${ui.gizmoMode === 'translate' ? 'on' : ''}`} onClick={() => setUi({ gizmoMode: 'translate' })} title="Move (W)">
+          Move
+        </button>
+        <button className={`btn sm ${ui.gizmoMode === 'rotate' ? 'on' : ''}`} onClick={() => setUi({ gizmoMode: 'rotate' })} title="Rotate (E)">
+          Rotate
+        </button>
+        <button className="btn sm" onClick={() => setUi({ gizmoSpace: ui.gizmoSpace === 'world' ? 'local' : 'world' })} title="Gizmo axes (Q)">
+          {ui.gizmoSpace === 'world' ? 'World axes' : 'Plate axes'}
+        </button>
+        <button className="btn sm" disabled={!m} onClick={() => key && movePart(key, null)} title="Put this plate back where it was designed">
+          Reset plate
+        </button>
+        <button className="btn sm" disabled={!count} onClick={resetMoves} title="Put every moved plate back">
+          Reset all
+        </button>
+      </div>
+      <div className="mp-info">
+        {!plate
+          ? ui.selected
+            ? 'The support ring follows the plates; pick a plate to move it.'
+            : 'Click a plate (or cross plate) to move it.'
+          : m
+            ? `${label}: moved ${fmt(m.t[0], 1)}, ${fmt(m.t[1], 1)}, ${fmt(m.t[2], 1)} mm, turned ${fmt(deg, 1)}°`
+            : `${label}: where it was designed`}
+        {count > 0 && ` · ${count} plate${count > 1 ? 's' : ''} moved`}
+      </div>
+    </div>
   );
 }

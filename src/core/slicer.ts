@@ -33,6 +33,7 @@ import type { IndexedMesh } from './forms';
 import { distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
 import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
+import { movePlane, type PartMoves } from './moves';
 
 export type Family = 'P' | 'X' | 'R' | 'S';
 
@@ -44,6 +45,8 @@ export interface PlateDef {
   plane: Plane;
   u0: number;
   u1: number;
+  /** Where the plate was designed, when a move has carried it elsewhere (plane is then the moved one). */
+  home?: Plane;
 }
 
 export interface Part {
@@ -103,6 +106,8 @@ export interface SliceInput {
   insert: IndexedMesh | null;
   front: Gray | null;
   top?: Gray | null;
+  /** Per-plate placement overrides, keyed by plate key (P3, X1, R5…). */
+  moves?: PartMoves;
 }
 
 const UP: V3 = [0, 1, 0];
@@ -115,6 +120,36 @@ function makePlane(origin: V3, normal: V3): Plane {
 export const baseTop = (v: Values) => (v.baseOn ? v.baseHeight : 0);
 // flat layers sit on the base (held by registration pins) rather than sinking into it
 export const embedOf = (v: Values) => (v.baseOn && v.sliceMode !== 'flat' ? v.embedDepth : 0);
+
+/** The point a plate turns about when moved: mid-span, at the base top. */
+export const platePivot = (d: PlateDef): V3 => planeToWorld(d.home ?? d.plane, (d.u0 + d.u1) / 2, 0);
+
+/** Apply placement overrides: the moved plane becomes `plane`, the designed one is kept as `home`. */
+export function placeDefs(defs: PlateDef[], moves: PartMoves | undefined): PlateDef[] {
+  if (!moves) return defs;
+  return defs.map((d) => {
+    const plane = movePlane(d.plane, moves[d.key], platePivot(d));
+    return plane === d.plane ? d : { ...d, plane, home: d.plane };
+  });
+}
+
+/** Where two plates' mid-planes cross at a given world height, as u on each; null if parallel or off the line. */
+export function crossingAt(a: Plane, b: Plane, y: number): { ua: number; ub: number } | null {
+  const na = a.normal, nb = b.normal;
+  const d: V3 = [na[1] * nb[2] - na[2] * nb[1], na[2] * nb[0] - na[0] * nb[2], na[0] * nb[1] - na[1] * nb[0]];
+  const dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+  if (dd < 1e-6 || Math.abs(d[1]) < 1e-3) return null;
+  const ha = na[0] * a.origin[0] + na[1] * a.origin[1] + na[2] * a.origin[2];
+  const hb = nb[0] * b.origin[0] + nb[1] * b.origin[1] + nb[2] * b.origin[2];
+  // a point on the line: (ha (nb×d) + hb (d×na)) / |d|²
+  const c1: V3 = [nb[1] * d[2] - nb[2] * d[1], nb[2] * d[0] - nb[0] * d[2], nb[0] * d[1] - nb[1] * d[0]];
+  const c2: V3 = [d[1] * na[2] - d[2] * na[1], d[2] * na[0] - d[0] * na[2], d[0] * na[1] - d[1] * na[0]];
+  const p0: V3 = [(ha * c1[0] + hb * c2[0]) / dd, (ha * c1[1] + hb * c2[1]) / dd, (ha * c1[2] + hb * c2[2]) / dd];
+  const k = (y - p0[1]) / d[1];
+  const W: V3 = [p0[0] + d[0] * k, y, p0[2] + d[2] * k];
+  const uOf = (p: Plane) => (W[0] - p.origin[0]) * p.u[0] + (W[1] - p.origin[1]) * p.u[1] + (W[2] - p.origin[2]) * p.u[2];
+  return { ua: uOf(a), ub: uOf(b) };
+}
 
 export function plateDefs(v: Values): PlateDef[] {
   const top = baseTop(v);
@@ -686,7 +721,10 @@ export function partLabel(v: Values, family: Family, index: number, count: numbe
 export function slice(input: SliceInput): SliceResult {
   const { v, hf } = input;
   const warnings: string[] = [];
-  const defs = plateDefs(v);
+  // design-side work (outlines, image cuts) happens where each plate was designed;
+  // fit-side work (cavities, slots, tenons) where it has been moved to
+  const homeDefs = plateDefs(v);
+  const defs = placeDefs(homeDefs, input.moves);
   const t = v.thickness;
   const e = embedOf(v);
   const useForm = v.stackSource === 'form';
@@ -699,7 +737,7 @@ export function slice(input: SliceInput): SliceResult {
 
   // 1. outlines
   const isFlat = v.sliceMode === 'flat';
-  const topWin = input.top && v.imgTopMode !== 'off' ? topWindow(v, input.top, defs) : null;
+  const topWin = input.top && v.imgTopMode !== 'off' ? topWindow(v, input.top, homeDefs) : null;
   const topField = topWin && input.top ? topProfileField(v, input.top, topWin) : null;
 
   // flat stack: one sampled surface (strata top, stamped by the image) serves every layer
@@ -716,7 +754,7 @@ export function slice(input: SliceInput): SliceResult {
     const top = flat.H.reduce((m, h) => Math.max(m, h), 0);
     if (defs.length * t < top - t) warnings.push(`Flat stack: ${defs.length} layers × ${t} mm only reach ${(defs.length * t).toFixed(0)} mm of the ${top.toFixed(0)} mm block; raise Plate count to keep the top.`);
   }
-  const outlines = defs.map((d) => {
+  const outlines = homeDefs.map((d) => {
     if (useForm) return input.source ? formOutline(d, input.source, v) : [];
     if (isFlat) return flat ? flatOutline(flat, flatFootprint(v), (d.index + 0.5) * t) : [];
     return hf ? strataOutline(d, hf, v) : [];
@@ -739,11 +777,10 @@ export function slice(input: SliceInput): SliceResult {
       if (p.family !== 'P') return;
       defs.forEach((x, xi) => {
         if (x.family !== 'X') return;
-        // world point on both planes at base top
-        const po = p.plane.origin, xo = x.plane.origin;
-        const W: V3 = [po[0] + xo[0], po[1], po[2] + xo[2]];
-        const uP = (W[0] - po[0]) * p.plane.u[0] + (W[2] - po[2]) * p.plane.u[2];
-        const uX = (W[0] - xo[0]) * x.plane.u[0] + (W[2] - xo[2]) * x.plane.u[2];
+        // where the two plates cross at base top
+        const c = crossingAt(p.plane, x.plane, baseTop(v));
+        if (!c) return;
+        const uP = c.ua, uX = c.ub;
         if (uP < p.u0 || uP > p.u1 || uX < x.u0 || uX > x.u1) return;
         const colP = intersection(outlines[pi], rect(uP - sw / 2, -BIG, uP + sw / 2, BIG));
         const colX = intersection(outlines[xi], rect(uX - sw / 2, -BIG, uX + sw / 2, BIG));
@@ -756,11 +793,11 @@ export function slice(input: SliceInput): SliceResult {
     });
   }
 
-  const front = frontContext(v, input.front, defs, hf);
+  const front = frontContext(v, input.front, homeDefs, hf);
   // datum for flat impression floors: the lowest plate top inside the image window
   let topDatum = Infinity;
   if (topWin && !isFlat)
-    defs.forEach((d, di) => {
+    homeDefs.forEach((d, di) => {
       for (let u = d.u0; u <= d.u1; u += 2) {
         const p = planeToWorld(d.plane, u, 0);
         if (!topUV(topWin, p)) continue;
@@ -813,10 +850,10 @@ export function slice(input: SliceInput): SliceResult {
     let etch: Path[] = [];
     if (front) {
       if (v.imgFrontMode !== 'off') {
-        const cut = frontCut(def, outlines[di], v, front);
+        const cut = frontCut(homeDefs[di], outlines[di], v, front);
         if (cut.length) imageCuts.push(cut);
       }
-      etch = frontEtch(def, v, front);
+      etch = frontEtch(homeDefs[di], v, front);
     }
 
     // 4b. image impression into the top surface (flat stack: pressed down through the layers)
@@ -824,7 +861,7 @@ export function slice(input: SliceInput): SliceResult {
       const cut = flatStampCut(flat, (def.index + 0.5) * t, v.minFeature, t);
       if (cut.length) imageCuts.push(cut);
     } else if (topWin && input.top) {
-      const carve = topCarve(def, outlines[di], v, topField!, topWin, Number.isFinite(topDatum) ? topDatum : 0);
+      const carve = topCarve(homeDefs[di], outlines[di], v, topField!, topWin, Number.isFinite(topDatum) ? topDatum : 0);
       if (carve.length) imageCuts.push(carve);
     }
     if (imageCuts.length) shape = smoothImageCuts(shape, imageCuts.flat(), v.cutSmooth);
