@@ -111,9 +111,9 @@ export const PARAMS: ParamDef[] = [
 
   // Base
   { id: 'baseOn', label: 'Concrete base', group: 'Base', kind: 'toggle', def: true },
-  num('baseLength', 'Length', 'Base', 800, 100, 3000),
-  num('baseWidth', 'Width', 'Base', 300, 50, 1500),
-  num('baseHeight', 'Height', 'Base', 120, 10, 600),
+  num('baseLength', 'Length', 'Base', 800, 20, 3000),
+  num('baseWidth', 'Width', 'Base', 300, 20, 1500),
+  num('baseHeight', 'Height', 'Base', 120, 5, 600),
 
   // Plates
   choice('plateMaterial', 'Material', 'Plates', 'corten', [
@@ -291,11 +291,11 @@ export const PARAMS: ParamDef[] = [
   // Mould
   { id: 'mouldOn', label: 'Generate moulds', group: 'Mould', kind: 'toggle', def: true },
   num('plyThickness', 'Plywood thickness', 'Mould', 18, 3, 50, { step: 0.5, noScale: true }),
-  num('mouldWall', 'Wall thickness', 'Mould', 40, 10, 300),
+  num('mouldWall', 'Wall thickness', 'Mould', 40, 3, 300),
   num('draft', 'Draft', 'Mould', 0.5, 0, 10, { unit: '°', step: 0.1 }),
   num('dowelDia', 'Dowel Ø', 'Mould', 8, 2, 30, { noScale: true }),
   num('tabsPerSide', 'Clamp tabs / side', 'Mould', 2, 0, 8, { int: true, unit: '' }),
-  num('tabSize', 'Tab size', 'Mould', 40, 10, 200),
+  num('tabSize', 'Tab size', 'Mould', 40, 5, 200),
   choice('mouldSplit', 'Split rings', 'Mould', 'halves', [
     { value: 'none', label: 'Whole rings' },
     { value: 'halves', label: 'Halves (opens to release)' },

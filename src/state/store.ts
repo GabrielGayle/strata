@@ -13,7 +13,7 @@ export interface UiState {
   tab: Tab;
   selected: string | null; // part id
   ortho: boolean;
-  snap: { dir: Snap; n: number };
+  snap: { dir: Snap; n: number; follow?: boolean };
   showMoulds: boolean;
   explode: boolean;
   xray: boolean;
@@ -221,6 +221,9 @@ export const useStore = create<Store>((set, get) => {
     loadPreset: (preset) => {
       const p = get().project;
       commit(applyPreset(p, preset), `preset:${performance.now()}`);
+      // re-frame the camera: presets range from 6 cm to 80 cm across
+      const ui = get().ui;
+      set({ ui: { ...ui, snap: { dir: ui.snap.dir, n: ui.snap.n + 1, follow: true } } });
       get().toast(`Preset: ${preset.name}`);
     },
     saveVariant: (name) => {
