@@ -40,6 +40,10 @@ npm run build    # static site in dist/
 - **Edges and size.** Strata flow (low-pass of the eroded top line) and round-all-corners
   smoothing that leaves the insert cavity, anchor holes and slots crisp. Master size scales the
   whole piece, including plate count and thickness, while tolerances and stock sizes stay real.
+- **Base and support.** Chamfered base corners and top edge (cut into every mould ring, with a
+  chamfer strip note for the top edge). An optional radial support ring cut from the same sheet is
+  cast into the concrete at a set depth; each plate drops a tenon through a slot in it, so the
+  stack keeps its spacing and angles.
 - **Unfold.** Unrolls cylinders, cones, straight lofts and fins into flat patterns; faceted
   versions get bend lines with K-factor bend allowance. Double-curved forms are detected by the
   stretch they would need.

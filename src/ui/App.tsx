@@ -12,6 +12,7 @@ import MouldView from './MouldView';
 import UnfoldView from './UnfoldView';
 import ImageView from './ImageView';
 import GraphView from './GraphView';
+import SetupTabs from './SetupTabs';
 
 const Viewport = lazy(() => import('./Viewport'));
 const CompareView = lazy(() => import('./CompareView'));
@@ -22,7 +23,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'nest', label: 'Nest' },
   { id: 'mould', label: 'Mould + pour' },
   { id: 'unfold', label: 'Unfold' },
-  { id: 'image', label: 'Image' },
+  { id: 'image', label: 'Image / Graphic' },
   { id: 'graph', label: 'Graph' },
   { id: 'compare', label: 'Compare' },
 ];
@@ -87,6 +88,7 @@ export default function App() {
           <ParamPanel />
         </aside>
         <main className="main">
+          <SetupTabs />
           <nav className="tabs" role="tablist">
             {TABS.map((t, i) => (
               <button key={t.id} role="tab" aria-selected={ui.tab === t.id} className={`tab ${ui.tab === t.id ? 'active' : ''}`} onClick={() => setUi({ tab: t.id })} title={`${t.label} (${i + 1})`}>

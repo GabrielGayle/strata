@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { GROUPS, PARAMS, scaleFactorFor, type ParamDef, type Values } from '../core/params';
+import { GROUPS, PARAMS, overrideSource, scaleFactorFor, type ParamDef, type Values } from '../core/params';
 import { isLiteral } from '../core/expr';
 import { useStore } from '../state/store';
 import { useModel } from './model';
@@ -31,7 +31,7 @@ const NumberParam = memo(function NumberParam({
   focus: boolean;
   /** Master size multiplier on this literal; shown values are scaled, stored ones are not. */
   factor: number;
-  /** Expression imposed by "Fit stack to image" (read-only while active). */
+  /** Expression imposed by "Fit stack to image" or a fixed plate gap (read-only while active). */
   override?: string;
 }) {
   const setParam = useStore((s) => s.setParam);
@@ -61,7 +61,9 @@ const NumberParam = memo(function NumberParam({
     if (isLiteral(v) && factor !== 1) store(parseFloat(v));
     else setParam(def.id, v);
   };
-  if (override)
+  if (override) {
+    const bySpacing = overrideSource(def.id) === 'spacing';
+    const by = bySpacing ? 'Plates › Spacing' : 'Image › Fit stack to image';
     return (
       <div className={`prow ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
         <div className="plabel">
@@ -69,15 +71,16 @@ const NumberParam = memo(function NumberParam({
           <span className="pid">{def.id}</span>
         </div>
         <div className="ctrls">
-          <span className="pill" title="Set by Image › Fit stack to image">image fit</span>
+          <span className="pill" title={`Set by ${by}`}>{bySpacing ? 'fixed gap' : 'image fit'}</span>
         </div>
         <div className="full">
-          <input className="exprbox" value={override} readOnly aria-label={`${def.label} (set by image fit)`} />
+          <input className="exprbox" value={override} readOnly aria-label={`${def.label} (set by ${by})`} />
           <span className="evald">= {fmtVal(value, step)}</span>
           <span className="unit">{def.unit}</span>
         </div>
       </div>
     );
+  }
   return (
     <div className={`prow ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
       <div className="plabel">

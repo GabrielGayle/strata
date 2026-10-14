@@ -2,6 +2,7 @@
 // Every outline and every cavity is computed per plate in 2D, then extruded
 // straight through the sheet, so every edge is cut at 90°.
 import type { Values } from './params';
+import { cached } from './memo';
 import {
   bboxOf,
   circlePath,
@@ -30,8 +31,9 @@ import { stackFrame, type HeightField } from './heightfield';
 import type { IndexedMesh } from './forms';
 import { distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
+import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
 
-export type Family = 'P' | 'X' | 'R';
+export type Family = 'P' | 'X' | 'R' | 'S';
 
 export interface PlateDef {
   key: string;
@@ -73,6 +75,8 @@ export interface PlateInfo {
   islands: number;
   cavity: Shape;
   sweptInsert: Shape;
+  /** Tenons dropped into the embedded support ring. */
+  tenons: number;
 }
 
 export interface FrontWindow {
@@ -88,6 +92,7 @@ export interface SliceResult {
   warnings: string[];
   front: FrontWindow | null;
   top: TopWindow | null;
+  support: SupportSpec | null;
 }
 
 export interface SliceInput {
@@ -114,13 +119,17 @@ export function plateDefs(v: Values): PlateDef[] {
   const defs: PlateDef[] = [];
   if (v.sliceMode === 'radial') {
     const n = v.radialCount;
-    const hx = Math.max(1, v.baseLength / 2 - v.sideMargin);
-    const hz = Math.max(1, v.baseWidth / 2 - v.sideMargin);
+    const ch = v.baseOn ? baseChamfers(v) : { corner: 0, edge: 0 };
+    const m = Math.max(v.sideMargin, ch.edge);
+    const hx = Math.max(1, v.baseLength / 2 - m);
+    const hz = Math.max(1, v.baseWidth / 2 - m);
+    // stay the same margin inside a chamfered corner
+    const diag = ch.corner > 0 ? v.baseLength / 2 + v.baseWidth / 2 - ch.corner - m * Math.SQRT2 : Infinity;
     for (let k = 0; k < n; k++) {
       const th = (k / n) * Math.PI * 2;
       const c = Math.cos(th);
       const s = Math.sin(th);
-      const R = Math.min(Math.abs(c) > 1e-9 ? hx / Math.abs(c) : Infinity, Math.abs(s) > 1e-9 ? hz / Math.abs(s) : Infinity);
+      const R = Math.min(Math.abs(c) > 1e-9 ? hx / Math.abs(c) : Infinity, Math.abs(s) > 1e-9 ? hz / Math.abs(s) : Infinity, diag / (Math.abs(c) + Math.abs(s)));
       const normal: V3 = [-s, 0, c];
       const plane: Plane = { origin: [0, top, 0], normal, u: [c, 0, s], v: UP };
       defs.push({ key: `R${k}`, family: 'R', index: k, count: n, plane, u0: Math.min(v.radialHub, R - 5), u1: R });
@@ -268,11 +277,27 @@ function fieldLoops(ctx: FrontCtx, level: number, strength: number): { loops: Pa
 
 function frontCut(def: PlateDef, outline: Shape, v: Values, ctx: FrontCtx): Shape {
   if (def.family !== 'P' || def.index >= v.frontDepth) return [];
+  const cut = imageCut(def, v, ctx);
+  if (!cut.length) return [];
+  return intersection(cut, offset(outline, -v.frontMargin));
+}
+
+/**
+ * The image-driven cut-out for one plate before it is framed by the plate's
+ * outline. It depends only on the image, its window and a few image settings,
+ * so it is cached on the image and survives edits to the strata, edges, etc.
+ */
+function imageCut(def: PlateDef, v: Values, ctx: FrontCtx): Shape {
+  const { win } = ctx;
+  const level = v.imgFrontMode === 'layers' ? (def.index + 0.5) / v.frontDepth : 0;
+  const key = [win.u0, win.u1, win.v0, win.v1, v.imgFrontMode, level, v.imgFrontStrength, v.minFeature, v.halftoneSpacing].join(',');
+  return cached(ctx.img, key, () => imageCutUncached(level, v, ctx));
+}
+
+function imageCutUncached(level: number, v: Values, ctx: FrontCtx): Shape {
   const strength = v.imgFrontStrength;
-  const frame = offset(outline, -v.frontMargin);
   let cut: Shape = [];
   if (v.imgFrontMode === 'layers') {
-    const level = (def.index + 0.5) / v.frontDepth;
     const { loops } = fieldLoops(ctx, level, strength);
     if (!loops.length) return [];
     cut = union(loops, 'evenodd');
@@ -294,7 +319,7 @@ function frontCut(def: PlateDef, outline: Shape, v: Values, ctx: FrontCtx): Shap
     if (!circles.length) return [];
     cut = union(circles);
   }
-  return intersection(cut, frame);
+  return cut;
 }
 
 function frontEtch(def: PlateDef, v: Values, ctx: FrontCtx): Path[] {
@@ -525,6 +550,38 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
   return polys.length ? simplifyShape(union(polys), 0.02) : [];
 }
 
+interface Cavity {
+  cavity: Shape;
+  swept: Shape;
+  /** The swept insert outside the cavity: anything of the plate in here collides. */
+  sweptOutside: Shape;
+  bevel: number;
+}
+
+/**
+ * The insert cavity through one plate, from sections across its thickness.
+ * It only depends on the insert and the plate's plane, so it is cached on the
+ * insert mesh and survives edits to everything else (strata, image, edges...).
+ */
+function insertCavity(insert: IndexedMesh, plane: Plane, t: number, cavityMode: unknown, clearance: number): Cavity | null {
+  const key = [...plane.origin, ...plane.normal, ...plane.u, ...plane.v, t, cavityMode, clearance].join(',');
+  return cached(insert, key, () => {
+    const offs = [-t / 2, -t / 4, 0, t / 4, t / 2];
+    const secs = offs.map((d) => sectionShape(insert, offsetPlane(plane, d)));
+    if (!secs.some((s) => s.length)) return null;
+    const [frontS, , mid, , back] = secs;
+    const swept = unionShapes(...secs);
+    let chosen: Shape;
+    if (cavityMode === 'smaller') chosen = intersection(frontS, back);
+    else if (cavityMode === 'mid') chosen = mid;
+    else chosen = unionShapes(frontS, mid, back);
+    const cavity = offset(chosen, clearance);
+    const per = (shapePerimeter(frontS) + shapePerimeter(back)) / 2;
+    const bevel = per > 0 ? shapeArea(xor(frontS, back)) / per : 0;
+    return { cavity, swept, sweptOutside: difference(swept, cavity), bevel };
+  });
+}
+
 /** Chord tolerance for smoothing offsets: well inside the DXF arc tolerance, far fewer points. */
 const SMOOTH_TOL = 0.03;
 
@@ -615,11 +672,25 @@ export function slice(input: SliceInput): SliceResult {
   const e = embedOf(v);
   const useForm = v.stackSource === 'form';
   if (useForm && !input.source) warnings.push('Source form is missing (import a mesh or pick a shape).');
+  if (v.sliceMode !== 'radial') {
+    const run = (v.plateCount - 1) * v.pitch + t;
+    const { stackLen } = stackFrame(v);
+    if (v.baseOn && run > stackLen + 1e-6) warnings.push(`Plates span ${run.toFixed(1)} mm but the base is only ${stackLen.toFixed(1)} mm long: the end plates overhang.`);
+  }
 
   // 1. outlines
   const outlines = defs.map((d) => {
     if (useForm) return input.source ? formOutline(d, input.source, v) : [];
     return hf ? strataOutline(d, hf, v) : [];
+  });
+
+  // 1b. tenons down into the embedded support ring
+  const support = supportSpec(v, baseTop(v));
+  const tenons = defs.map((d, di) => {
+    if (!support) return { plane: d.plane, spans: [] as [number, number][] };
+    const r = addTenons(outlines[di], d.plane, support, v, e);
+    outlines[di] = r.outline;
+    return { plane: d.plane, spans: r.spans };
   });
 
   // 2. waffle slots (computed from the shared intersection line, so both halves agree)
@@ -667,7 +738,7 @@ export function slice(input: SliceInput): SliceResult {
 
   defs.forEach((def, di) => {
     let shape = outlines[di];
-    const info: PlateInfo = { def, parts: [], bevel: 0, collision: 0, collisionAt: null, islands: 0, cavity: [], sweptInsert: [] };
+    const info: PlateInfo = { def, parts: [], bevel: 0, collision: 0, collisionAt: null, islands: 0, cavity: [], sweptInsert: [], tenons: tenons[di].spans.length };
     if (!shape.length) {
       plates.push(info);
       return;
@@ -680,22 +751,14 @@ export function slice(input: SliceInput): SliceResult {
 
     // 3. insert cavity, per plate, in 2D
     if (insertOn) {
-      const offs = [-t / 2, -t / 4, 0, t / 4, t / 2];
-      const secs = offs.map((d) => sectionShape(input.insert!, offsetPlane(def.plane, d)));
-      if (secs.some((s) => s.length)) {
-        const [frontS, , mid, , back] = secs;
-        const swept = unionShapes(...secs);
-        let chosen: Shape;
-        if (v.cavityMode === 'smaller') chosen = intersection(frontS, back);
-        else if (v.cavityMode === 'mid') chosen = mid;
-        else chosen = unionShapes(frontS, mid, back);
-        const cavity = offset(chosen, v.clearance);
+      const cav = insertCavity(input.insert!, def.plane, t, v.cavityMode, v.clearance);
+      if (cav) {
+        const { cavity, swept } = cav;
         info.cavity = cavity;
         info.sweptInsert = swept;
-        const per = (shapePerimeter(frontS) + shapePerimeter(back)) / 2;
-        info.bevel = per > 0 ? shapeArea(xor(frontS, back)) / per : 0;
+        info.bevel = cav.bevel;
         cuts.push(cavity);
-        const hit = intersection(difference(swept, cavity), difference(shape, cavity));
+        const hit = intersection(cav.sweptOutside, difference(shape, cavity));
         const hitArea = shapeArea(hit);
         if (hitArea > 0.05) {
           info.collision = hitArea;
@@ -789,5 +852,39 @@ export function slice(input: SliceInput): SliceResult {
     plates.push(info);
   });
 
-  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin };
+  // 8. the support ring, cut from the same sheet, with a mortise for every tenon
+  if (support) {
+    const ring = ringShape(support, v, tenons);
+    const pieces = ring.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
+    if (pieces.length > 1) warnings.push(`Support ring falls apart into ${pieces.length} pieces: widen it or raise the slot end land.`);
+    const plane = supportPlane(support);
+    const base = partLabel(v, 'S', 0, 1);
+    const hLab = Math.min(v.labelHeight, (support.outer - support.inner) * 0.4);
+    pieces.forEach((ex, pi) => {
+      const id = pieces.length > 1 ? `${base}${String.fromCharCode(97 + (pi % 26))}` : base;
+      const bb = bboxOf([ex.outer]);
+      const lab = placeLabel(id, ex, [0, (support.inner + support.outer) / 2], hLab);
+      const part: Part = {
+        id,
+        plateKey: 'S0',
+        family: 'S',
+        index: 0,
+        piece: pi,
+        plane,
+        thickness: support.thickness,
+        shape: [ex],
+        etch: [],
+        labelPaths: lab?.paths ?? [],
+        labelAt: lab?.at ?? null,
+        area: shapeArea([ex]),
+        perimeter: shapePerimeter([ex]),
+        bbox: bb,
+        anchored: true,
+        kind: 'plate',
+      };
+      allParts.push(part);
+    });
+  }
+
+  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin, support };
 }

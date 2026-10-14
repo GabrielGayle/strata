@@ -6,6 +6,7 @@ import { cutListCsv, MATERIAL_NAME } from '../core/bom';
 import { serialize } from '../core/project';
 import { zipSync, strToU8 } from 'fflate';
 import type { Issue } from '../core/checks';
+import { PriceEstimate } from './PriceEstimate';
 
 function Section({ title, count, children, open: initial = true }: { title: string; count?: React.ReactNode; children: React.ReactNode; open?: boolean }) {
   const [open, setOpen] = useState(initial);
@@ -129,6 +130,10 @@ export default function Inspector() {
           {bevelMax > 0.01 && ` Largest bevel avoided: ${fmt(bevelMax, 2)} mm (cavities use the ${v.cavityMode} section + ${fmt(v.clearance, 1)} mm clearance).`}
           {infos.length > 0 && ` ${infos.length} info notes.`}
         </div>
+      </Section>
+
+      <Section title="Chop Chop price" count="estimate">
+        <PriceEstimate bom={b} material={v.plateMaterial} thickness={v.thickness} />
       </Section>
 
       {sel && (

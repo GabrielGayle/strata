@@ -12,6 +12,7 @@ import type { MouldPart } from './mould';
 import type { Values } from './params';
 import { extrudeOnPlane, extrudePlan, mergeGeometries } from './geometry3d';
 import { cutListCsv } from './bom';
+import { baseGeometry } from './base';
 import { serialize, type Project } from './project';
 import { strokeTextCentered } from './strokefont';
 import type { UnfoldPiece } from './unfold';
@@ -156,9 +157,7 @@ export function modelStl(model: Model): Uint8Array {
   const v = model.v;
   const geos: THREE.BufferGeometry[] = model.sliced.parts.map((p) => extrudeOnPlane(p.shape, p.thickness, p.plane));
   if (v.baseOn) {
-    const b = new THREE.BoxGeometry(v.baseLength, v.baseHeight, v.baseWidth);
-    b.translate(0, v.baseHeight / 2, 0);
-    geos.push(b);
+    geos.push(baseGeometry(v));
   }
   if (model.insert) geos.push(model.insert.form.geometry.clone());
   return geomToStl(mergeGeometries(geos));
