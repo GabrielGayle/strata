@@ -186,6 +186,22 @@ export const PARAMS: ParamDef[] = [
     { value: '180', label: 'Rotate 180°' },
     { value: '270', label: 'Rotate 270°' },
   ]),
+  choice('imgTopMode', 'Top surface', 'Image', 'off', [
+    { value: 'off', label: 'Off' },
+    { value: 'carve', label: 'Carve in (dark sinks)' },
+    { value: 'raise', label: 'Raise (dark stands proud)' },
+  ]),
+  choice('topFloor', 'Impression floor', 'Image', 'flat', [
+    { value: 'flat', label: 'Flat terraces (reads like a stamp)' },
+    { value: 'follow', label: 'Follow the eroded surface' },
+  ], { show: (v) => v.imgTopMode !== 'off' }),
+  num('topDepth', 'Impression depth', 'Image', 18, 1, 300, { show: (v) => v.imgTopMode !== 'off', help: 'How far the darkest areas are cut down into the top surface' }),
+  num('topSteps', 'Depth steps', 'Image', 4, 0, 20, { int: true, unit: '', show: (v) => v.imgTopMode !== 'off', help: '0 = smooth; N = crisp terraces like layered cut-outs' }),
+  num('topThreshold', 'Ignore lighter than', 'Image', 0.15, 0, 0.95, { step: 0.01, unit: '', show: (v) => v.imgTopMode !== 'off', help: 'Darkness below this is left flat (keeps a white background uncut)' }),
+  num('topScale', 'Image size', 'Image', 0.9, 0.1, 1, { step: 0.01, unit: '×', show: (v) => v.imgTopMode !== 'off' }),
+  num('topX', 'Image offset X', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
+  num('topZ', 'Image offset Z', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
+  num('topMargin', 'Top margin', 'Image', 10, 0, 300, { show: (v) => v.imgTopMode !== 'off' }),
   choice('imgFrontMode', 'Front view', 'Image', 'off', [
     { value: 'off', label: 'Off' },
     { value: 'layers', label: 'Layered cut-outs (depth = dark)' },

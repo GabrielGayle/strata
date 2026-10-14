@@ -7,6 +7,8 @@ export type Seg =
   | { kind: 'arc'; a: Vec2; b: Vec2; c: Vec2; r: number; sweep: number }; // sweep > 0 = CCW (radians)
 
 const RMAX = 20000;
+/** Largest angle one polyline step may span inside an arc. */
+const MAX_STEP = Math.PI / 4;
 
 function circleFrom3(a: Vec2, b: Vec2, c: Vec2): { c: Vec2; r: number } | null {
   const ax = a[0], ay = a[1], bx = b[0], by = b[1], cx = c[0], cy = c[1];
@@ -32,6 +34,13 @@ function lineFits(P: Path, i: number, j: number, tol: number): boolean {
   return true;
 }
 
+/**
+ * Try to replace P[i..j] with one arc. The arc must stay within `tol` of the
+ * polyline everywhere, not just at its vertices: each vertex must sit on the
+ * circle AND each chord between vertices must be short enough that the arc
+ * bulges less than `tol` away from it. (Checking vertices alone lets a
+ * rectangle's four corners pass as one big circumscribed arc.)
+ */
 function arcFit(P: Path, i: number, j: number, tol: number): { c: Vec2; r: number; sweep: number } | null {
   if (j - i < 3) return null;
   const m = (i + j) >> 1;
@@ -41,12 +50,18 @@ function arcFit(P: Path, i: number, j: number, tol: number): { c: Vec2; r: numbe
   let sweep = 0;
   let prev = Math.atan2(P[i][1] - c[1], P[i][0] - c[0]);
   let sign = 0;
+  // half the budget for vertices off the circle, half for the bulge over each chord,
+  // so arc and polyline never differ by more than tol in total
+  const half = tol / 2;
   for (let k = i + 1; k <= j; k++) {
-    if (Math.abs(Math.hypot(P[k][0] - c[0], P[k][1] - c[1]) - r) > tol) return null;
+    if (Math.abs(Math.hypot(P[k][0] - c[0], P[k][1] - c[1]) - r) > half) return null;
     const ang = Math.atan2(P[k][1] - c[1], P[k][0] - c[0]);
     let d = ang - prev;
     while (d > Math.PI) d -= 2 * Math.PI;
     while (d < -Math.PI) d += 2 * Math.PI;
+    if (Math.abs(d) > MAX_STEP) return null;
+    // sagitta of the arc over this chord
+    if (r * (1 - Math.cos(d / 2)) > half) return null;
     const s = Math.sign(d);
     if (s !== 0) {
       if (sign === 0) sign = s;
@@ -55,7 +70,8 @@ function arcFit(P: Path, i: number, j: number, tol: number): { c: Vec2; r: numbe
     sweep += d;
     prev = ang;
   }
-  if (Math.abs(sweep) > Math.PI * 1.98 || Math.abs(sweep) < 1e-4) return null;
+  // at most a half circle per arc keeps every bulge within ±1
+  if (Math.abs(sweep) > Math.PI + 1e-9 || Math.abs(sweep) < 1e-4) return null;
   return { c, r, sweep };
 }
 

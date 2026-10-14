@@ -17,6 +17,7 @@ import type { Project } from './project';
 export interface Assets {
   sideImg: Gray | null;
   frontImg: Gray | null;
+  topImg?: Gray | null;
   insMesh: THREE.BufferGeometry | null;
   srcMesh: THREE.BufferGeometry | null;
 }
@@ -42,6 +43,7 @@ export interface Model {
   source: FormBuild | null;
   sideImg: Gray | null;
   frontImg: Gray | null;
+  topImg: Gray | null;
   hf: HeightField | null;
   sliced: SliceResult;
   issues: Issue[];
@@ -116,9 +118,10 @@ export function createPipeline() {
     const opts = () => ({ contrast: v.imgContrast, smooth: v.imgSmooth, invert: v.imgInvert, rotate: Number(v.imgRotate) });
     const sideImg = stage('Side image', [assets.sideImg, ...pick(v, IMG_KEYS)], () => (assets.sideImg ? processImage(assets.sideImg, opts()) : null));
     const frontImg = stage('Front image', [assets.frontImg, ...pick(v, IMG_KEYS)], () => (assets.frontImg ? processImage(assets.frontImg, opts()) : null));
+    const topImg = stage('Top image', [assets.topImg ?? null, ...pick(v, IMG_KEYS)], () => (assets.topImg ? processImage(assets.topImg, opts()) : null));
     const hf = stage('Strata field', [...pick(v, STRATA_KEYS), sideImg], () => (v.stackSource === 'strata' ? buildHeightField(v, sideImg) : null));
-    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg], () =>
-      slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg }),
+    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg], () =>
+      slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg }),
     );
     const issues = stage('Fit checks', [sliced, ...pick(v, CHECK_KEYS)], () => runChecks(v, sliced), true);
     const nested = stage('Nest sheets', [sliced, v.sheetW, v.sheetH, v.partSpacing], () =>
@@ -153,6 +156,6 @@ export function createPipeline() {
       buildBom(v, sliced, nested, moulds, mouldNest, insert?.volume ?? 0, pour.rows),
       true,
     );
-    return { ev, v, insert, source, sideImg, frontImg, hf, sliced, issues, nested, moulds, mouldNest, unfolded, pour, bom, stages, totalMs: performance.now() - t0, stale };
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced, issues, nested, moulds, mouldNest, unfolded, pour, bom, stages, totalMs: performance.now() - t0, stale };
   };
 }

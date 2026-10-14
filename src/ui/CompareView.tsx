@@ -14,7 +14,7 @@ function MiniView({ model, label }: { model: Model; label: string }) {
   const opts = { selected: null, showMoulds: false, explode: false, xray: false, showIssues: false, showSource: false };
   return (
     <div style={{ position: 'relative', minHeight: 280, borderRight: '1px solid var(--line)', background: 'var(--viewport)' }}>
-      <Canvas dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: 'absolute', inset: 0 }}>
+      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: 'absolute', inset: 0 }}>
         <PerspectiveCamera makeDefault fov={32} near={1} far={60000} position={[1500, 1100, 1800]} />
         <OrbitControls makeDefault enableDamping />
         <CameraRig model={model} snap={{ dir: 'iso', n: 0 }} ortho={false} />

@@ -25,9 +25,11 @@ npm run build    # static site in dist/
   would have left is reported, and insert collisions are flagged.
 - **Erosion.** Layered noise with amplitude, wavelength, octaves, roughness, banding (strata
   terraces), neighbour follow, crest and slope.
-- **Image-driven plates.** Side profile (image as height, one strip per plate, or traced
-  silhouette) mixed with the strata; front view across the stack as layered cut-outs whose depth
-  follows darkness, halftone holes, and etched hatch / contour lines.
+- **Image-driven plates.** Top surface impression (each plate's top edge is cut down where its
+  strip of the image is dark, so the picture reads looking down on the stack; carve or raise,
+  stepped or smooth, flat terraces or following the strata); front face as layered cut-outs whose
+  depth follows darkness, halftone holes, and etched hatch / contour lines; side profile (image as
+  overall plate height, or traced silhouette) mixed with the strata.
 - **Unfold.** Unrolls cylinders, cones, straight lofts and fins into flat patterns; faceted
   versions get bend lines with K-factor bend allowance. Double-curved forms are detected by the
   stretch they would need.
@@ -53,4 +55,5 @@ STEP import isn't supported yet (it needs a CAD kernel); export STL in mm from F
   (mesh-plane sections), `heightfield.ts`, `image.ts`, `slicer.ts`, `checks.ts`, `arcs.ts` +
   `dxf.ts`, `nest.ts`, `mould.ts`, `unfold.ts`, `bom.ts`, `pipeline.ts`, `exporters.ts`.
 - `src/ui/` — React + React Three Fiber views.
-- `test/` — vitest tests for the engine.
+- `test/` — vitest tests for the engine, including a DXF round trip that reads the exported files
+  back (bulges, LINE, ARC) and checks them against the true outlines.

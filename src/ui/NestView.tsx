@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useStore } from '../state/store';
 import { useFullModel, useModel, fmt } from './model';
-import { download, mouldPartDxf, sheetDxf } from '../core/exporters';
-import { shapeD, pathD } from './svg';
+import { download, fitShape, mouldPartDxf, sheetDxf } from '../core/exporters';
+import { shapeD, pathD, segsD } from './svg';
 import type { Shape, Path } from '../core/geom2d';
 import type { NestResult } from '../core/nest';
 import { zipSync, strToU8 } from 'fflate';
@@ -10,6 +10,8 @@ import { zipSync, strToU8 } from 'fflate';
 interface Item {
   id: string;
   shape: Shape;
+  /** The exact cut path written to the DXF (kerf-compensated lines + arcs), when available. */
+  cutD?: string;
   etch: Path[];
   bb: { minX: number; minY: number; maxX: number; maxY: number };
 }
@@ -33,7 +35,7 @@ function SheetSvg({ nest, index, items, selected, onSelect, color }: { nest: Nes
         const sel = selected === pl.id;
         return (
           <g key={pl.id} transform={tf} onClick={() => onSelect(pl.id)} style={{ cursor: 'pointer' }}>
-            <path d={shapeD(it.shape)} fill={sel ? 'var(--sel)' : color} stroke={sel ? 'var(--accent)' : 'var(--svg-cut)'} strokeWidth={sw * (sel ? 2.2 : 1)} fillRule="evenodd" />
+            <path d={it.cutD ?? shapeD(it.shape)} fill={sel ? 'var(--sel)' : color} stroke={sel ? 'var(--accent)' : 'var(--svg-cut)'} strokeWidth={sw * (sel ? 2.2 : 1)} fillRule="evenodd" />
             {it.etch.map((p, k) => (
               <path key={k} d={pathD(p)} fill="none" stroke="var(--svg-etch)" strokeWidth={sw * 0.8} />
             ))}
@@ -51,14 +53,18 @@ export default function NestView() {
   const setUi = useStore((s) => s.setUi);
   const [which, setWhich] = useState<'metal' | 'ply'>('metal');
   const v = model.v;
-  const metalItems = new Map<string, Item>(model.sliced.parts.map((p) => [p.id, { id: p.id, shape: p.shape, etch: p.labelPaths, bb: p.bbox }]));
-  const plyItems = new Map<string, Item>(
+  // draw what the sheet DXF actually contains, so the preview can't drift from the file
+  const metalItems = useMemo(
+    () => new Map<string, Item>(model.sliced.parts.map((p) => [p.id, { id: p.id, shape: p.shape, cutD: segsD(fitShape(p.shape, v)), etch: p.labelPaths, bb: p.bbox }])),
+    [model.sliced.parts, v.kerf, v.arcTolerance], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const plyItems = useMemo(() => new Map<string, Item>(
     model.moulds.parts.map((p) => {
       const pts = p.shape[0].outer;
       const bb = pts.reduce((a, [x, y]) => ({ minX: Math.min(a.minX, x), minY: Math.min(a.minY, y), maxX: Math.max(a.maxX, x), maxY: Math.max(a.maxY, y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
       return [p.id, { id: p.id, shape: p.shape, etch: [], bb }];
     }),
-  );
+  ), [model.moulds.parts]);
   const nest = which === 'metal' ? model.nested : model.mouldNest;
   const items = which === 'metal' ? metalItems : plyItems;
   return (
@@ -121,7 +127,7 @@ export default function NestView() {
         ))}
         {!nest.sheets.length && <div className="empty">Nothing to nest.</div>}
         <div className="note">
-          Skyline bottom-left nesting of part bounding boxes with {fmt(which === 'metal' ? v.partSpacing : Math.max(v.partSpacing, 8), 0)} mm spacing; parts may rotate 90°. Sheet DXFs carry each part's number on
+          Shown exactly as written to the DXF (kerf-compensated lines and arcs). Skyline bottom-left nesting of part bounding boxes with {fmt(which === 'metal' ? v.partSpacing : Math.max(v.partSpacing, 8), 0)} mm spacing; parts may rotate 90°. Sheet DXFs carry each part's number on
           the ETCH layer and the sheet outline on SHEET.
         </div>
       </div>

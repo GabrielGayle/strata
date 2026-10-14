@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Path, Shape } from '../core/geom2d';
+import type { Seg } from '../core/arcs';
 
 /** SVG path data for a shape, flipping Y so +Y points up on screen. */
 export function shapeD(shape: Shape): string {
@@ -75,4 +76,20 @@ export function fitBox(minX: number, minY: number, maxX: number, maxY: number, p
   const h = Math.max(1, maxY - minY);
   const p = Math.max(w, h) * pad;
   return { x: minX - p, y: -maxY - p, w: w + 2 * p, h: h + 2 * p };
+}
+
+/** SVG path data for fitted DXF segments (true arcs), Y flipped like shapeD. */
+export function segsD(contours: { segs: Seg[] }[]): string {
+  let d = '';
+  for (const c of contours) {
+    if (!c.segs.length) continue;
+    const s0 = c.segs[0];
+    d += `M${s0.a[0].toFixed(3)},${(-s0.a[1]).toFixed(3)}`;
+    for (const s of c.segs) {
+      if (s.kind === 'line') d += `L${s.b[0].toFixed(3)},${(-s.b[1]).toFixed(3)}`;
+      else d += `A${s.r.toFixed(3)},${s.r.toFixed(3)} 0 ${Math.abs(s.sweep) > Math.PI ? 1 : 0} ${s.sweep > 0 ? 0 : 1} ${s.b[0].toFixed(3)},${(-s.b[1]).toFixed(3)}`;
+    }
+    d += 'Z';
+  }
+  return d;
 }

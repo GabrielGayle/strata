@@ -20,7 +20,7 @@ function Thumb({ part }: { part: Part }) {
 function Detail({ part }: { part: Part }) {
   const model = useModel();
   const v = model.v;
-  const [showFit, setShowFit] = useState(false);
+  const [showFit, setShowFit] = useState(true);
   const [showKerf, setShowKerf] = useState(false);
   const plate = model.sliced.plates.find((p) => p.def.key === part.plateKey);
   const issues = model.issues.filter((i) => i.partId === part.id || (i.plateKey === part.plateKey && i.type === 'collision'));
@@ -101,8 +101,8 @@ function Detail({ part }: { part: Part }) {
           </g>
         </PanZoom>
         <div className="overlay tl">
-          <button className={`btn sm ${showFit ? 'on' : ''}`} onClick={() => setShowFit(!showFit)} title="Show the DXF geometry: black lines, orange arcs">
-            Lines + arcs
+          <button className={`btn sm ${showFit ? 'on' : ''}`} onClick={() => setShowFit(!showFit)} title="The exact DXF cut geometry: black lines, orange arcs">
+            DXF lines + arcs
           </button>
           <button className={`btn sm ${showKerf ? 'on' : ''}`} onClick={() => setShowKerf(!showKerf)}>
             Kerf path

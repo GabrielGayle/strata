@@ -47,9 +47,10 @@ export function parseMesh(asset: MeshAsset): THREE.BufferGeometry {
 }
 
 export function useAssets(project: Project): Assets {
-  const [assets, setAssets] = useState<Assets>({ sideImg: null, frontImg: null, insMesh: null, srcMesh: null });
+  const [assets, setAssets] = useState<Assets>({ sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null });
   const sideUrl = project.images.side?.dataUrl;
   const frontUrl = project.images.front?.dataUrl;
+  const topUrl = project.images.top?.dataUrl;
   const insData = project.meshes.ins;
   const srcData = project.meshes.src;
   useEffect(() => {
@@ -78,15 +79,15 @@ export function useAssets(project: Project): Assets {
         }
         return meshCache.get(key)!;
       };
-      const next: Assets = { sideImg: await img(sideUrl), frontImg: await img(frontUrl), insMesh: mesh(insData), srcMesh: mesh(srcData) };
+      const next: Assets = { sideImg: await img(sideUrl), frontImg: await img(frontUrl), topImg: await img(topUrl), insMesh: mesh(insData), srcMesh: mesh(srcData) };
       if (alive)
         setAssets((prev) =>
-          prev.sideImg === next.sideImg && prev.frontImg === next.frontImg && prev.insMesh === next.insMesh && prev.srcMesh === next.srcMesh ? prev : next,
+          prev.sideImg === next.sideImg && prev.frontImg === next.frontImg && prev.topImg === next.topImg && prev.insMesh === next.insMesh && prev.srcMesh === next.srcMesh ? prev : next,
         );
     })();
     return () => {
       alive = false;
     };
-  }, [sideUrl, frontUrl, insData, srcData]);
+  }, [sideUrl, frontUrl, topUrl, insData, srcData]);
   return assets;
 }

@@ -190,7 +190,8 @@ export function rectPath(x0: number, y0: number, x1: number, y1: number): Path {
   ];
 }
 export function circlePath(cx: number, cy: number, r: number, segs?: number): Path {
-  const n = segs ?? Math.max(12, Math.min(96, Math.ceil(r * 2.5)));
+  // enough sides that each chord is within 0.01 mm of the true circle
+  const n = segs ?? Math.max(16, Math.min(256, Math.ceil(Math.PI / Math.acos(Math.max(-1, 1 - 0.01 / Math.max(r, 0.01))))));
   const out: Path = [];
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;

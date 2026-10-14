@@ -86,6 +86,7 @@ export interface SliceResult {
   parts: Part[];
   warnings: string[];
   front: FrontWindow | null;
+  top: TopWindow | null;
 }
 
 export interface SliceInput {
@@ -94,6 +95,7 @@ export interface SliceInput {
   source: IndexedMesh | null;
   insert: IndexedMesh | null;
   front: Gray | null;
+  top?: Gray | null;
 }
 
 const UP: V3 = [0, 1, 0];
@@ -270,7 +272,7 @@ function frontCut(def: PlateDef, outline: Shape, v: Values, ctx: FrontCtx): Shap
       for (let u = win.u0 + sp / 2 + (row % 2 ? sp / 2 : 0); u <= win.u1 - sp / 2 + 1e-6; u += sp) {
         const d = darkAt(ctx, u, vv);
         const r = 0.5 * (sp - v.minFeature) * Math.sqrt(Math.min(1, d * strength * 1.6));
-        if (2 * r >= minD) circles.push(circlePath(u, vv, r, Math.max(12, Math.min(32, Math.ceil(r * 3)))));
+        if (2 * r >= minD) circles.push(circlePath(u, vv, r));
       }
     }
     if (!circles.length) return [];
@@ -305,6 +307,136 @@ function frontEtch(def: PlateDef, v: Values, ctx: FrontCtx): Path[] {
   const level = (def.index + 0.5) / def.count;
   const { loops } = fieldLoops(ctx, level, strength);
   return loops.filter((l) => l.length > 4).map((l) => [...l, l[0]]);
+}
+
+// ---------------------------------------------------------------------------
+// Top-surface impression: looking down on the stack, every plate's top edge is
+// cut down where its strip of the image is dark, so the image reads across the
+// whole top surface. Steps give crisp vertical risers, like layered cut-outs.
+
+export interface TopWindow {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+
+/** Image rectangle on the footprint (world X/Z), as seen from the Top view (image up = -Z). */
+export function topWindow(v: Values, img: Gray, defs: PlateDef[]): TopWindow | null {
+  if (!defs.length) return null;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const d of defs)
+    for (const u of [d.u0, d.u1]) {
+      const p = planeToWorld(d.plane, u, 0);
+      x0 = Math.min(x0, p[0]);
+      x1 = Math.max(x1, p[0]);
+      z0 = Math.min(z0, p[2]);
+      z1 = Math.max(z1, p[2]);
+    }
+  x0 += v.topMargin;
+  x1 -= v.topMargin;
+  z0 += v.topMargin;
+  z1 -= v.topMargin;
+  if (x1 - x0 < 2 || z1 - z0 < 2) return null;
+  const ar = img.w / img.h;
+  let w = x1 - x0, h = z1 - z0;
+  if (w / h > ar) w = h * ar;
+  else h = w / ar;
+  w *= v.topScale;
+  h *= v.topScale;
+  const cx = (x0 + x1) / 2 + v.topX, cz = (z0 + z1) / 2 + v.topZ;
+  return { x0: cx - w / 2, x1: cx + w / 2, z0: cz - h / 2, z1: cz + h / 2 };
+}
+
+/** Highest point of the outline above u (the top edge), or null if the vertical misses it. */
+export function topAt(shape: Shape, u: number): number | null {
+  let best = -Infinity;
+  for (const ex of shape) {
+    const p = ex.outer;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+      const a = p[j], b = p[i];
+      if (a[0] <= u !== b[0] <= u) {
+        const y = a[1] + ((u - a[0]) / (b[0] - a[0])) * (b[1] - a[1]);
+        if (y > best) best = y;
+      }
+    }
+  }
+  return best === -Infinity ? null : best;
+}
+
+function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopWindow, datum: number): Shape {
+  const step = Math.min(1, v.sampleStep);
+  const n = Math.max(2, Math.ceil((def.u1 - def.u0) / step));
+  const us: number[] = [];
+  const tops: number[] = [];
+  const lv: number[] = [];
+  const steps = Math.round(v.topSteps);
+  const thr = Math.min(0.99, v.topThreshold);
+  for (let k = 0; k <= n; k++) {
+    const u = def.u0 + ((def.u1 - def.u0) * k) / n;
+    const t = topAt(outline, u);
+    us.push(u);
+    tops.push(t ?? 0);
+    const p = planeToWorld(def.plane, u, 0);
+    let f = 0;
+    if (t !== null && t > 0 && p[0] >= win.x0 && p[0] <= win.x1 && p[2] >= win.z0 && p[2] <= win.z1) {
+      const dark = 1 - sample(img, (p[0] - win.x0) / (win.x1 - win.x0), (p[2] - win.z0) / (win.z1 - win.z0));
+      const level = Math.max(0, Math.min(1, (dark - thr) / (1 - thr)));
+      f = v.imgTopMode === 'raise' ? 1 - level : level;
+      if (steps > 0) f = Math.round(f * steps) / steps;
+    }
+    lv.push(f);
+  }
+  // drop runs narrower than the minimum feature (slivers of material or of cut)
+  const minRun = Math.max(1, Math.ceil(Math.max(v.minFeature, 0.5) / step));
+  for (let pass = 0; pass < 2; pass++) {
+    let a = 0;
+    while (a < lv.length) {
+      let b = a;
+      while (b + 1 < lv.length && lv[b + 1] === lv[a]) b++;
+      if (b - a + 1 < minRun && (a > 0 || b < lv.length - 1)) {
+        const fill = a > 0 ? lv[a - 1] : lv[b + 1];
+        for (let k = a; k <= b; k++) lv[k] = fill;
+      }
+      a = b + 1;
+    }
+  }
+  // flat: every step is a level terrace below the lowest top inside the image; follow: offset from the local top
+  const depthAt = (k: number) => {
+    if (lv[k] <= 0) return 0;
+    const d = v.topFloor === 'follow' ? lv[k] * v.topDepth : tops[k] - (datum - lv[k] * v.topDepth);
+    return Math.max(0, Math.min(d, tops[k] - 5));
+  };
+  const ceiling = Math.max(...tops) + 50;
+  const polys: Path[] = [];
+  let k = 0;
+  while (k < lv.length) {
+    if (depthAt(k) <= 0) {
+      k++;
+      continue;
+    }
+    const k0 = k;
+    while (k + 1 < lv.length && depthAt(k + 1) > 0) k++;
+    const k1 = k;
+    const ua = k0 > 0 ? (us[k0 - 1] + us[k0]) / 2 : us[k0] - 1;
+    const ub = k1 < lv.length - 1 ? (us[k1] + us[k1 + 1]) / 2 : us[k1] + 1;
+    const ta = topAt(outline, ua) ?? tops[k0];
+    const tb = topAt(outline, ub) ?? tops[k1];
+    const lower: Path = [[ua, ta - depthAt(k0)]];
+    for (let q = k0; q <= k1; q++) {
+      if (q > k0 && lv[q] !== lv[q - 1]) {
+        // crisp riser between depth steps
+        const um = (us[q - 1] + us[q]) / 2;
+        const tm = topAt(outline, um) ?? tops[q];
+        lower.push([um, tm - depthAt(q - 1)], [um, tm - depthAt(q)]);
+      }
+      lower.push([us[q], tops[q] - depthAt(q)]);
+    }
+    lower.push([ub, tb - depthAt(k1)]);
+    polys.push([...lower, [ub, ceiling], [ua, ceiling]]);
+    k++;
+  }
+  return polys.length ? union(polys) : [];
 }
 
 function distToBoundary(p: Vec2, ex: ExPoly): number {
@@ -404,6 +536,18 @@ export function slice(input: SliceInput): SliceResult {
   }
 
   const front = frontContext(v, input.front, defs, hf);
+  const topWin = input.top && v.imgTopMode !== 'off' ? topWindow(v, input.top, defs) : null;
+  // datum for flat impression floors: the lowest plate top inside the image window
+  let topDatum = Infinity;
+  if (topWin)
+    defs.forEach((d, di) => {
+      for (let u = d.u0; u <= d.u1; u += 2) {
+        const p = planeToWorld(d.plane, u, 0);
+        if (p[0] < topWin.x0 || p[0] > topWin.x1 || p[2] < topWin.z0 || p[2] > topWin.z1) continue;
+        const t = topAt(outlines[di], u);
+        if (t !== null && t > 0) topDatum = Math.min(topDatum, t);
+      }
+    });
   const plates: PlateInfo[] = [];
   const allParts: Part[] = [];
   const insertOn = input.insert && v.insShape !== 'none';
@@ -454,6 +598,12 @@ export function slice(input: SliceInput): SliceResult {
         if (cut.length) cuts.push(cut);
       }
       etch = frontEtch(def, v, front);
+    }
+
+    // 4b. image impression into the top surface
+    if (topWin && input.top) {
+      const carve = topCarve(def, outlines[di], v, input.top, topWin, Number.isFinite(topDatum) ? topDatum : 0);
+      if (carve.length) cuts.push(carve);
     }
 
     // 5. anchor holes in the embedded tab
@@ -521,5 +671,5 @@ export function slice(input: SliceInput): SliceResult {
     plates.push(info);
   });
 
-  return { plates, parts: allParts, warnings, front: front ? front.win : null };
+  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin };
 }

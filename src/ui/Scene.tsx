@@ -49,6 +49,8 @@ const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selecte
   return (
     <mesh
       geometry={geo}
+      castShadow
+      receiveShadow
       material={selected ? selMaterial : material}
       onClick={
         onSelect
@@ -103,7 +105,7 @@ function Base({ model, xray }: { model: Model; xray: boolean }) {
   mat.opacity = xray ? 0.28 : 1;
   mat.depthWrite = !xray;
   return (
-    <mesh geometry={geo} material={mat}>
+    <mesh geometry={geo} material={mat} receiveShadow castShadow={!xray}>
       <Edges color="#1b1b1b" threshold={15} />
     </mesh>
   );
@@ -130,7 +132,7 @@ function Insert({ model }: { model: Model }) {
     );
   }
   mat.setBands([{ top: 1e9, color: v.insTint }], 0);
-  return <mesh geometry={ins.form.geometry} material={mat} />;
+  return <mesh geometry={ins.form.geometry} material={mat} castShadow receiveShadow />;
 }
 
 function explodeOffset(mp: MouldPart, center: THREE.Vector2, model: Model): THREE.Vector3 {
@@ -217,7 +219,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
     <>
       <Env />
       <ambientLight intensity={0.35} />
-      <directionalLight position={[600, 1400, 900]} intensity={1.6} />
+      <ShadowSun model={model} />
       <directionalLight position={[-900, 500, -600]} intensity={0.45} />
       <Grid args={[20000, 20000]} cellSize={10} sectionSize={100} cellColor={gridA} sectionColor={gridB} cellThickness={0.6} sectionThickness={1} fadeDistance={7000} fadeStrength={1.5} infiniteGrid position={[0, -0.05, 0]} />
       {v.baseOn && <Base model={model} xray={opts.xray} />}
@@ -234,6 +236,31 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       {opts.showMoulds && <Moulds model={model} explode={opts.explode} />}
       {opts.showIssues && <IssueMarkers model={model} />}
     </>
+  );
+}
+
+/** Key light with a shadow camera fitted to the design, so carved recesses and cavities read. */
+function ShadowSun({ model }: { model: Model }) {
+  const { center, size } = modelBounds(model);
+  const dir = new THREE.Vector3(-0.75, 0.9, 0.35).normalize(); // rakes across from the far side so recesses cast visible shadows
+  // the light aims at the origin (its default target); the frustum is sized to cover the whole piece around it
+  const pos = dir.multiplyScalar(size * 1.6);
+  const r = size * 0.75 + center.length();
+  return (
+    <directionalLight
+      position={pos}
+      intensity={1.7}
+      castShadow
+      shadow-mapSize={[2048, 2048]}
+      shadow-bias={-0.0004}
+      shadow-normalBias={0.6}
+      shadow-camera-left={-r}
+      shadow-camera-right={r}
+      shadow-camera-top={r}
+      shadow-camera-bottom={-r}
+      shadow-camera-near={1}
+      shadow-camera-far={size * 4}
+    />
   );
 }
 

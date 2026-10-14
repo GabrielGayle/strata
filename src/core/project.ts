@@ -30,7 +30,7 @@ export interface Project {
   params: Record<string, RawValue>;
   locks: Record<string, boolean>;
   pour: PourLayer[];
-  images: { side?: ImageAsset; front?: ImageAsset };
+  images: { side?: ImageAsset; front?: ImageAsset; top?: ImageAsset };
   meshes: { ins?: MeshAsset; src?: MeshAsset };
   variants: Variant[];
 }

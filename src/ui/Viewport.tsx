@@ -71,7 +71,7 @@ export default function Viewport() {
   const hMax = heights.length ? Math.max(...heights) : 0;
   return (
     <>
-      <Canvas dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
+      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
         <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={1} far={60000} position={[1500, 1100, 1800]} />
         <OrthographicCamera makeDefault={ui.ortho} near={-50000} far={50000} position={[1500, 1100, 1800]} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
