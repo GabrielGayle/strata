@@ -85,7 +85,7 @@ export const PRESETS: Preset[] = [
     name: 'Stamped stack',
     note: 'Plates laid flat face to face; a top image presses down through the layers',
     params: {
-      sliceMode: 'flat', insShape: 'none', thickness: '3', stackHeight: '60', erosionAmp: '4', crest: '0', slope: '0', baseLength: '520', baseWidth: '380', baseHeight: '60',
+      sliceMode: 'flat', plateCount: '20', insShape: 'none', thickness: '3', stackHeight: '60', erosionAmp: '4', crest: '0', slope: '0', baseLength: '520', baseWidth: '380', baseHeight: '60',
       endMargin: '30', sideMargin: '30', imgTopMode: 'carve', topDepth: '45', topSteps: '0', topFloor: 'flat', topMargin: '25',
     },
   },

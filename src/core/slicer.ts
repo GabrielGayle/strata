@@ -27,15 +27,12 @@ import {
 } from './geom2d';
 import { offsetPlane, planeToWorld, sectionShape, type Plane, type V3 } from './section';
 import { stackFrame, type HeightField } from './heightfield';
+import { flatFootprint, flatGrid, flatOutline, flatPinPoints, flatStampCut, outlinePaths, pinFits, type FlatGrid } from './flatstack';
 import type { IndexedMesh } from './forms';
 import { distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
-import { flatFootprint, flatGrid, flatOutline, flatPinPoints, flatStampCut, outlinePaths, pinFits, type FlatGrid } from './flatstack';
 
-export { flatFootprint };
-
-/** P: parallel plates, X: waffle cross plates, R: radial, L: flat layers stacked face to face. */
-export type Family = 'P' | 'X' | 'R' | 'L';
+export type Family = 'P' | 'X' | 'R';
 
 export interface PlateDef {
   key: string;
@@ -134,11 +131,12 @@ export function plateDefs(v: Values): PlateDef[] {
   }
   if (v.sliceMode === 'flat') {
     const fp = flatFootprint(v);
-    const n = Math.max(1, Math.round(v.layerCount));
+    const n = Math.max(1, Math.round(v.plateCount));
     for (let i = 0; i < n; i++) {
-      // horizontal plane: plan coords (x, -z), extruded upwards, centred on the layer
+      // horizontal plane: plan coords (x, -z), extruded upwards, centred on the layer.
+      // Layers are plates of the main stack (family P), just laid flat.
       const plane: Plane = { origin: [0, top + (i + 0.5) * v.thickness, 0], normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1] };
-      defs.push({ key: `L${i}`, family: 'L', index: i, count: n, plane, u0: fp.minX, u1: fp.maxX });
+      defs.push({ key: `L${i}`, family: 'P', index: i, count: n, plane, u0: fp.minX, u1: fp.maxX });
     }
     return defs;
   }
@@ -636,8 +634,9 @@ export function slice(input: SliceInput): SliceResult {
   const e = embedOf(v);
   const useForm = v.stackSource === 'form';
   if (useForm && !input.source) warnings.push('Source form is missing (import a mesh or pick a shape).');
-  const isFlat = v.sliceMode === 'flat';
 
+  // 1. outlines
+  const isFlat = v.sliceMode === 'flat';
   const topWin = input.top && v.imgTopMode !== 'off' ? topWindow(v, input.top, defs) : null;
   const topField = topWin && input.top ? topProfileField(v, input.top, topWin) : null;
 
@@ -652,11 +651,9 @@ export function slice(input: SliceInput): SliceResult {
     }
     const stamp = topWin && topField ? { uv: (p: V3) => topUV(topWin, p), field: topField } : null;
     flat = flatGrid(v, flatFootprint(v), useForm ? null : hf, formTop, stamp);
-    const top = Math.max(...flat.H);
-    if (defs.length * t < top - t) warnings.push(`Flat stack: ${defs.length} layers × ${t} mm only reach ${(defs.length * t).toFixed(0)} mm of the ${top.toFixed(0)} mm block; add layers to keep the top.`);
+    const top = flat.H.reduce((m, h) => Math.max(m, h), 0);
+    if (defs.length * t < top - t) warnings.push(`Flat stack: ${defs.length} layers × ${t} mm only reach ${(defs.length * t).toFixed(0)} mm of the ${top.toFixed(0)} mm block; raise Plate count to keep the top.`);
   }
-
-  // 1. outlines
   const outlines = defs.map((d) => {
     if (useForm) return input.source ? formOutline(d, input.source, v) : [];
     if (isFlat) return flat ? flatOutline(flat, flatFootprint(v), (d.index + 0.5) * t) : [];

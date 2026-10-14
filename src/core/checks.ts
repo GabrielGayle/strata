@@ -70,7 +70,7 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
       issues.push({ partId: part.id, type: 'sheet', severity: 'error', message: `Part (${w.toFixed(0)} × ${h.toFixed(0)}) does not fit the sheet.` });
     }
     if (!part.anchored) {
-      const message = part.family === 'L' ? 'Piece overhangs the layer below: nothing to glue it to.' : 'Piece does not reach the concrete: nothing holds it in place.';
+      const message = v.sliceMode === 'flat' ? 'Piece overhangs the layer below: nothing to glue it to.' : 'Piece does not reach the concrete: nothing holds it in place.';
       issues.push({ partId: part.id, type: 'unanchored', severity: 'error', message, at: [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2] });
     }
     if (!part.labelAt) {

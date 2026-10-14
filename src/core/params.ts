@@ -124,7 +124,7 @@ export const PARAMS: ParamDef[] = [
     { value: 'corten', label: 'Corten' },
   ]),
   num('thickness', 'Thickness', 'Plates', 3, 0.5, 12, { step: 0.5, help: 'Common: 1.5, 3, 6 mm' }),
-  num('plateCount', 'Plate count', 'Plates', 40, 2, 300, { int: true, unit: '', show: isUpright, scaleCount: true }),
+  num('plateCount', 'Plate count', 'Plates', 40, 2, 300, { int: true, unit: '', show: isParallelish, scaleCount: true }),
   num('endMargin', 'End margin', 'Plates', 40, 0, 1000, { show: isParallelish }),
   num('stackLength', 'Stack run', 'Plates', 'alongWidth ? baseWidth : baseLength', 1, 5000, { show: isParallelish, help: 'Base length the plates are stacked along (alongWidth = 1 when slicing across)' }),
   num('acrossLength', 'Across run', 'Plates', 'alongWidth ? baseLength : baseWidth', 1, 5000, { show: isParallelish }),
@@ -142,8 +142,7 @@ export const PARAMS: ParamDef[] = [
     { value: 'radial', label: 'Radial' },
     { value: 'waffle', label: 'Waffle (interlocking)' },
     { value: 'flat', label: 'Flat stack (face to face)' },
-  ], { help: 'Flat stack lays the plates flat on top of each other; a top image is pressed down through the layers like a stamp' }),
-  num('layerCount', 'Layers', 'Slicer', 'max(2, ceil(stackHeight / thickness))', 1, 400, { int: true, unit: '', show: isFlat, scaleCount: true, help: 'Plates stacked flat, face to face; each is one plate thickness tall' }),
+  ], { help: 'Flat stack lays the plates flat on top of each other (Plate count = layers); a top image is pressed down through the layers like a stamp' }),
   num('flatPins', 'Registration pins', 'Slicer', 2, 0, 8, { int: true, unit: '', show: isFlat, help: 'Holes through every layer they fit, for pins or threaded rod that line the stack up and fix it to the base' }),
   num('pinDia', 'Pin Ø', 'Slicer', 8, 2, 40, { show: (v) => isFlat(v) && v.flatPins > 0 }),
   { id: 'flatGuides', label: 'Etch glue-up guides', group: 'Slicer', kind: 'toggle', def: true, show: isFlat, help: 'Etches the outline of the layer above onto each layer' },
@@ -378,7 +377,6 @@ export function flagsFor(raw: Record<string, RawValue>, extra: Record<string, nu
     alongWidth: get('sliceAxis') === 'width' ? 1 : 0,
     isRadial: get('sliceMode') === 'radial' ? 1 : 0,
     isWaffle: get('sliceMode') === 'waffle' ? 1 : 0,
-    isFlat: get('sliceMode') === 'flat' ? 1 : 0,
     imgAspect: 1,
     ...extra,
   };
@@ -423,7 +421,7 @@ export function fitOverrides(raw: Record<string, RawValue>): Record<string, stri
   return { [run]: `(${across} - 2*sideMargin - 2*topMargin) / imgAspect + 2*topMargin + 2*endMargin` };
 }
 
-export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'isFlat', 'imgAspect'];
+export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'imgAspect'];
 
 /** Evaluate the whole parameter graph in dependency order. */
 export function evaluateParams(rawIn: Record<string, RawValue>, extra: Record<string, number> = {}): EvalResult {

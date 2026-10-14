@@ -30,9 +30,9 @@ describe('flat stack (face to face) with an image stamp', () => {
   const t = m.v.thickness;
 
   it('lays the plates flat, one thickness apart, on top of the base', () => {
-    expect(layers.length).toBe(Math.ceil(m.v.stackHeight / t));
+    expect(layers.length).toBe(20);
     layers.forEach((pl, i) => {
-      expect(pl.def.family).toBe('L');
+      expect(pl.def.key).toBe(`L${i}`);
       expect(pl.def.plane.normal).toEqual([0, 1, 0]);
       expect(pl.def.plane.origin[1]).toBeCloseTo(baseTop(m.v) + (i + 0.5) * t, 6);
       expect(pl.parts.length).toBeGreaterThan(0);
