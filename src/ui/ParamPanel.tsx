@@ -181,7 +181,7 @@ function OtherParam({ def, value }: { def: ParamDef; value: any }) {
         )}
         {def.kind === 'toggle' && <input className="chk" type="checkbox" checked={!!value} onChange={(e) => setParam(def.id, e.target.checked)} aria-label={def.label} />}
         {def.kind === 'color' && <input type="color" value={value} onChange={(e) => setParam(def.id, e.target.value)} aria-label={def.label} />}
-        {def.kind === 'text' && <input className="inp" style={{ width: def.id === 'tuneNotes' ? 150 : 90 }} value={value} onChange={(e) => setParam(def.id, e.target.value)} aria-label={def.label} />}
+        {def.kind === 'text' && <input className="inp" style={{ width: def.id === 'tuneNotes' ? 150 : String(def.def).length > 12 ? 170 : 90 }} value={value} onChange={(e) => setParam(def.id, e.target.value)} aria-label={def.label} />}
       </div>
     </div>
   );

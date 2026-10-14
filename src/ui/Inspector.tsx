@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useStore } from '../state/store';
 import { useFullModel, useModel, fmt, fmtInt } from './model';
 import { buildZip, download, modelStl, partDxf, pourPlanText, sheetDxf } from '../core/exporters';
-import { cutListCsv, MATERIAL_NAME } from '../core/bom';
+import { cutListCsv, hardwareCsv, MATERIAL_NAME } from '../core/bom';
 import { serialize } from '../core/project';
 import { zipSync, strToU8 } from 'fflate';
 import type { Issue } from '../core/checks';
@@ -131,6 +131,44 @@ export default function Inspector() {
           {infos.length > 0 && ` ${infos.length} info notes.`}
         </div>
       </Section>
+
+      {model.sliced.brace && (b.hardware.length > 0 || (model.sliced.brace.spacers?.parts.length ?? 0) > 0) && (
+        <Section title="Bracing" count={b.hardware.length ? `${b.hardware.reduce((a, r) => a + r.qty, 0)} hardware` : 'spacers'}>
+          {b.hardware.length > 0 && (
+            <dl className="kv">
+              {b.hardware.map((r) => (
+                <Fragment key={r.item + r.spec}>
+                  <dt>{r.item}</dt>
+                  <dd>
+                    {r.qty} × {r.spec}
+                    {r.note && <small style={{ display: 'block', color: 'var(--muted)' }}>{r.note}</small>}
+                  </dd>
+                </Fragment>
+              ))}
+            </dl>
+          )}
+          <div className="note">
+            {model.sliced.brace.rods && model.sliced.brace.rods.rods.length > 0 && (() => {
+              const rods = model.sliced.brace.rods.rods;
+              const steel = rods.filter((r) => !r.embedded).length;
+              return `Rods snap to the shortest stock length that spans the stack and its nuts and stays inside the base, or get cut down. ${steel ? `${steel} of ${rods.length} run through the exposed steel. ` : ''}`;
+            })()}
+            {(() => {
+              const sp = model.sliced.brace.spacers?.parts ?? [];
+              const c = sp.filter((p) => p.family === 'C').length;
+              const t = sp.filter((p) => p.family === 'T').length;
+              return [c && `${c} cross piece${c > 1 ? 's' : ''} (cast in)`, t && `${t} spacing template${t > 1 ? 's' : ''} (lift off)`].filter(Boolean).join(' and ') + (c || t ? ' cut with the plates.' : '');
+            })()}
+          </div>
+          {b.hardware.length > 0 && (
+            <div className="btnrow">
+              <button className="btn sm" onClick={() => download(`${base}-hardware.csv`, hardwareCsv(fullModel().bom), 'text/csv')}>
+                Hardware CSV
+              </button>
+            </div>
+          )}
+        </Section>
+      )}
 
       <Section title="Chop Chop price" count="estimate">
         <PriceEstimate bom={b} material={v.plateMaterial} thickness={v.thickness} />

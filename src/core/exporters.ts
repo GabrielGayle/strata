@@ -11,7 +11,7 @@ import type { Part } from './slicer';
 import type { MouldPart } from './mould';
 import type { Values } from './params';
 import { extrudeOnPlane, extrudePlan, mergeGeometries } from './geometry3d';
-import { cutListCsv } from './bom';
+import { cutListCsv, hardwareCsv } from './bom';
 import { baseGeometry } from './base';
 import { serialize, type Project } from './project';
 import { strokeTextCentered } from './strokefont';
@@ -187,6 +187,7 @@ export function buildZip(model: Model, project: Project): Uint8Array {
   if (model.unfolded.ok && model.unfolded.pieces.length) files['unfold/flat-pattern.dxf'] = strToU8(unfoldDxf([...model.unfolded.pieces, ...model.unfolded.caps], v));
   files['model.stl'] = modelStl(model);
   files['cutlist.csv'] = strToU8(cutListCsv(v, model.bom));
+  if (model.bom.hardware.length) files['hardware.csv'] = strToU8(hardwareCsv(model.bom));
   files['pour-plan.txt'] = strToU8(pourPlanText(model));
   files['project.strata.json'] = strToU8(serialize(project));
   return zipSync(files, { level: 6 });

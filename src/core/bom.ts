@@ -5,6 +5,7 @@ import type { SliceResult } from './slicer';
 import type { NestResult } from './nest';
 import type { MouldResult, PourPlanRow } from './mould';
 import { embedOf } from './slicer';
+import type { HardwareRow } from './brace';
 
 export const DENSITY: Record<string, number> = { steel: 7850, aluminium: 2700, corten: 7850 };
 export const MATERIAL_NAME: Record<string, string> = { steel: 'Mild steel', aluminium: 'Aluminium', corten: 'Corten steel' };
@@ -38,6 +39,8 @@ export interface Bom {
   dowels: number;
   bolts: number;
   pour: PourPlanRow[];
+  /** Bought-in bracing hardware: threaded rods, nuts, washers. */
+  hardware: HardwareRow[];
 }
 
 export function buildBom(
@@ -66,7 +69,8 @@ export function buildBom(
   const plateArea = rows.reduce((a, r) => a + r.area, 0) / 1e6;
   const plateMass = rows.reduce((a, r) => a + r.mass, 0);
   const embedVol = sliced.parts.reduce((a, p) => {
-    if (p.family === 'S') return a + p.area * p.thickness; // the support ring is all inside the concrete
+    if (p.family === 'S' || p.family === 'C') return a + p.area * p.thickness; // the support ring and cross pieces are all inside the concrete
+    if (p.family === 'T') return a; // the spacing template comes off after the cure
     const e = embedOf(v);
     if (e <= 0) return a;
     return a + (p.bbox.maxX - p.bbox.minX) * Math.min(e, Math.max(0, -p.bbox.minY)) * p.thickness;
@@ -93,7 +97,15 @@ export function buildBom(
     dowels: moulds.dowels,
     bolts: moulds.bolts,
     pour,
+    hardware: sliced.brace?.hardware ?? [],
   };
+}
+
+export function hardwareCsv(bom: Bom): string {
+  const q = (s: string) => (/[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  const lines = ['item,spec,qty,note'];
+  for (const r of bom.hardware) lines.push([r.item, r.spec, String(r.qty), r.note ?? ''].map(q).join(','));
+  return lines.join('\n') + '\n';
 }
 
 export function cutListCsv(v: Values, bom: Bom): string {
