@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import type { Gray } from '../core/image';
 import type { Snap } from '../state/store';
 import { sampleCliff } from './sample';
+import { DEPTH_URL, depthFromPhoto, invertDataUrl } from '../core/depth';
 
 function GrayCanvas({ g }: { g: Gray | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -27,7 +28,7 @@ function GrayCanvas({ g }: { g: Gray | null }) {
   return <canvas ref={ref} className="thumb" style={{ aspectRatio: `${g.w} / ${g.h}`, maxHeight: 260, objectFit: 'contain' }} />;
 }
 
-async function readImage(): Promise<{ name: string; dataUrl: string } | null> {
+async function readImage(maxSide = 640): Promise<{ name: string; dataUrl: string } | null> {
   return new Promise((resolve) => {
     const inp = document.createElement('input');
     inp.type = 'file';
@@ -39,7 +40,7 @@ async function readImage(): Promise<{ name: string; dataUrl: string } | null> {
       const url = URL.createObjectURL(f);
       const img = new Image();
       img.onload = () => {
-        const k = Math.min(1, 640 / Math.max(img.width, img.height));
+        const k = Math.min(1, maxSide / Math.max(img.width, img.height));
         const cv = document.createElement('canvas');
         cv.width = Math.round(img.width * k);
         cv.height = Math.round(img.height * k);
@@ -69,6 +70,26 @@ export default function ImageView() {
   const setUi = useStore((s) => s.setUi);
   const ui = useStore((s) => s.ui);
   const v = model.v;
+  const [depthBusy, setDepthBusy] = useState<Slot | null>(null);
+  const [depthError, setDepthError] = useState<{ slot: Slot; msg: string } | null>(null);
+  const loadDepth = async (slot: Slot, enable: Record<string, string>) => {
+    const photo = await readImage(1536);
+    if (!photo) return;
+    setDepthBusy(slot);
+    setDepthError(null);
+    try {
+      const { png } = await depthFromPhoto(photo.dataUrl);
+      // side profile reads bright as high, the other slots read dark as deep / proud
+      const dataUrl = slot === 'side' ? await invertDataUrl(png) : png;
+      setAsset('image', slot, { name: `depth · ${photo.name}`, dataUrl });
+      // near parts of the photo stand proud on the top surface rather than sinking
+      open(slot === 'top' ? { ...enable, imgTopMode: 'raise' } : enable);
+    } catch (e) {
+      setDepthError({ slot, msg: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setDepthBusy(null);
+    }
+  };
   const slots: { slot: Slot; title: string; g: Gray | null; desc: string; enable: Record<string, string>; off: Record<string, string>; snap: Snap }[] = [
     {
       slot: 'top',
@@ -125,6 +146,7 @@ export default function ImageView() {
                 </div>
                 <GrayCanvas g={s.g} />
                 <div className="note">{s.desc}</div>
+                {depthError?.slot === s.slot && <div className="note" style={{ color: 'var(--err)' }}>Depth from photo failed: {depthError.msg}</div>}
                 <div className="btnrow">
                   <button
                     className="btn"
@@ -136,6 +158,18 @@ export default function ImageView() {
                     }}
                   >
                     Load image…
+                  </button>
+                  <button
+                    className="btn"
+                    disabled={!DEPTH_URL || depthBusy !== null}
+                    title={
+                      DEPTH_URL
+                        ? 'Pick a photo: Depth Pro turns it into a relief (near = proud), background left uncut'
+                        : 'Depth service not configured (set VITE_DEPTH_URL)'
+                    }
+                    onClick={() => loadDepth(s.slot, s.enable)}
+                  >
+                    {depthBusy === s.slot ? 'Reading depth…' : 'Depth from photo…'}
                   </button>
                   {other && !asset && (
                     <button
