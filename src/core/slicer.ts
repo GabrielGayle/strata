@@ -2,6 +2,7 @@
 // Every outline and every cavity is computed per plate in 2D, then extruded
 // straight through the sheet, so every edge is cut at 90°.
 import type { Values } from './params';
+import { cached } from './memo';
 import {
   bboxOf,
   circlePath,
@@ -268,11 +269,27 @@ function fieldLoops(ctx: FrontCtx, level: number, strength: number): { loops: Pa
 
 function frontCut(def: PlateDef, outline: Shape, v: Values, ctx: FrontCtx): Shape {
   if (def.family !== 'P' || def.index >= v.frontDepth) return [];
+  const cut = imageCut(def, v, ctx);
+  if (!cut.length) return [];
+  return intersection(cut, offset(outline, -v.frontMargin));
+}
+
+/**
+ * The image-driven cut-out for one plate before it is framed by the plate's
+ * outline. It depends only on the image, its window and a few image settings,
+ * so it is cached on the image and survives edits to the strata, edges, etc.
+ */
+function imageCut(def: PlateDef, v: Values, ctx: FrontCtx): Shape {
+  const { win } = ctx;
+  const level = v.imgFrontMode === 'layers' ? (def.index + 0.5) / v.frontDepth : 0;
+  const key = [win.u0, win.u1, win.v0, win.v1, v.imgFrontMode, level, v.imgFrontStrength, v.minFeature, v.halftoneSpacing].join(',');
+  return cached(ctx.img, key, () => imageCutUncached(level, v, ctx));
+}
+
+function imageCutUncached(level: number, v: Values, ctx: FrontCtx): Shape {
   const strength = v.imgFrontStrength;
-  const frame = offset(outline, -v.frontMargin);
   let cut: Shape = [];
   if (v.imgFrontMode === 'layers') {
-    const level = (def.index + 0.5) / v.frontDepth;
     const { loops } = fieldLoops(ctx, level, strength);
     if (!loops.length) return [];
     cut = union(loops, 'evenodd');
@@ -294,7 +311,7 @@ function frontCut(def: PlateDef, outline: Shape, v: Values, ctx: FrontCtx): Shap
     if (!circles.length) return [];
     cut = union(circles);
   }
-  return intersection(cut, frame);
+  return cut;
 }
 
 function frontEtch(def: PlateDef, v: Values, ctx: FrontCtx): Path[] {
@@ -525,6 +542,38 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
   return polys.length ? simplifyShape(union(polys), 0.02) : [];
 }
 
+interface Cavity {
+  cavity: Shape;
+  swept: Shape;
+  /** The swept insert outside the cavity: anything of the plate in here collides. */
+  sweptOutside: Shape;
+  bevel: number;
+}
+
+/**
+ * The insert cavity through one plate, from sections across its thickness.
+ * It only depends on the insert and the plate's plane, so it is cached on the
+ * insert mesh and survives edits to everything else (strata, image, edges...).
+ */
+function insertCavity(insert: IndexedMesh, plane: Plane, t: number, cavityMode: unknown, clearance: number): Cavity | null {
+  const key = [...plane.origin, ...plane.normal, ...plane.u, ...plane.v, t, cavityMode, clearance].join(',');
+  return cached(insert, key, () => {
+    const offs = [-t / 2, -t / 4, 0, t / 4, t / 2];
+    const secs = offs.map((d) => sectionShape(insert, offsetPlane(plane, d)));
+    if (!secs.some((s) => s.length)) return null;
+    const [frontS, , mid, , back] = secs;
+    const swept = unionShapes(...secs);
+    let chosen: Shape;
+    if (cavityMode === 'smaller') chosen = intersection(frontS, back);
+    else if (cavityMode === 'mid') chosen = mid;
+    else chosen = unionShapes(frontS, mid, back);
+    const cavity = offset(chosen, clearance);
+    const per = (shapePerimeter(frontS) + shapePerimeter(back)) / 2;
+    const bevel = per > 0 ? shapeArea(xor(frontS, back)) / per : 0;
+    return { cavity, swept, sweptOutside: difference(swept, cavity), bevel };
+  });
+}
+
 /** Chord tolerance for smoothing offsets: well inside the DXF arc tolerance, far fewer points. */
 const SMOOTH_TOL = 0.03;
 
@@ -680,22 +729,14 @@ export function slice(input: SliceInput): SliceResult {
 
     // 3. insert cavity, per plate, in 2D
     if (insertOn) {
-      const offs = [-t / 2, -t / 4, 0, t / 4, t / 2];
-      const secs = offs.map((d) => sectionShape(input.insert!, offsetPlane(def.plane, d)));
-      if (secs.some((s) => s.length)) {
-        const [frontS, , mid, , back] = secs;
-        const swept = unionShapes(...secs);
-        let chosen: Shape;
-        if (v.cavityMode === 'smaller') chosen = intersection(frontS, back);
-        else if (v.cavityMode === 'mid') chosen = mid;
-        else chosen = unionShapes(frontS, mid, back);
-        const cavity = offset(chosen, v.clearance);
+      const cav = insertCavity(input.insert!, def.plane, t, v.cavityMode, v.clearance);
+      if (cav) {
+        const { cavity, swept } = cav;
         info.cavity = cavity;
         info.sweptInsert = swept;
-        const per = (shapePerimeter(frontS) + shapePerimeter(back)) / 2;
-        info.bevel = per > 0 ? shapeArea(xor(frontS, back)) / per : 0;
+        info.bevel = cav.bevel;
         cuts.push(cavity);
-        const hit = intersection(difference(swept, cavity), difference(shape, cavity));
+        const hit = intersection(cav.sweptOutside, difference(shape, cavity));
         const hitArea = shapeArea(hit);
         if (hitArea > 0.05) {
           info.collision = hitArea;

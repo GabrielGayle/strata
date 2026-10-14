@@ -282,5 +282,3 @@ useStore.subscribe((s, prev) => {
     }
   }
 });
-
-export const paramDef = (id: string) => PARAM_MAP[id];
