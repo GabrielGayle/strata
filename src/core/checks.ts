@@ -232,29 +232,32 @@ function overlapAt(a: Part, b: Part): Vec2 | null {
 function moveChecks(v: Values, sliced: SliceResult): Issue[] {
   const issues: Issue[] = [];
   const moved = sliced.plates.filter((p) => p.def.home && p.parts.length);
-  if (!moved.length) return issues;
+  const loose = sliced.parts.filter((p) => p.home);
+  if (!moved.length && !loose.length) return issues;
   const all = sliced.parts.filter((p) => p.family !== 'S');
   const seen = new Set<string>();
-  for (const plate of moved) {
-    for (const a of plate.parts) {
-      for (const b of all) {
-        if (b.plateKey === a.plateKey) continue;
-        const pair = [a.id, b.id].sort().join('|');
-        if (seen.has(pair)) continue;
-        seen.add(pair);
-        const at = overlapAt(a, b);
-        const back = at ? null : overlapAt(b, a);
-        if (at || back)
-          issues.push({
-            partId: at ? a.id : b.id,
-            plateKey: at ? a.plateKey : b.plateKey,
-            type: 'collision',
-            severity: 'error',
-            message: `Moved plate ${a.id} runs into ${b.id}.`,
-            at: at ?? back ?? undefined,
-          });
-      }
+  const clashes = (a: Part) => {
+    for (const b of all) {
+      if (b.plateKey === a.plateKey) continue;
+      const pair = [a.id, b.id].sort().join('|');
+      if (seen.has(pair)) continue;
+      seen.add(pair);
+      const at = overlapAt(a, b);
+      const back = at ? null : overlapAt(b, a);
+      if (at || back)
+        issues.push({
+          partId: at ? a.id : b.id,
+          plateKey: at ? a.plateKey : b.plateKey,
+          type: 'collision',
+          severity: 'error',
+          message: `Moved part ${a.id} runs into ${b.id}.`,
+          at: at ?? back ?? undefined,
+        });
     }
+  };
+  loose.forEach(clashes);
+  for (const plate of moved) {
+    plate.parts.forEach(clashes);
     if (v.baseOn) {
       const top = v.baseHeight;
       const low = Math.min(...plate.parts.flatMap((p) => p.shape[0].outer.map(([x, y]) => planeToWorld(p.plane, x, y)[1])));

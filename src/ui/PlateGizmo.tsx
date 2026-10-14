@@ -1,4 +1,4 @@
-// Hand placement of plates: a translate / rotate gizmo on the selected plate.
+// Hand placement of plates and other plate-like parts: a translate / rotate gizmo on the selection.
 // While dragging, the plate is previewed as a rigid body; on release the move is
 // committed to the project and the pipeline re-cuts everything that depends on it.
 import { useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
@@ -13,12 +13,21 @@ import { useStore } from '../state/store';
 export const gizmoBusy = { until: 0 };
 export const gizmoIsBusy = () => performance.now() < gizmoBusy.until;
 
-/** The plate (by key) a selected part belongs to, if it can be moved by hand. */
-export function movablePlate(model: Model, partId: string | null) {
+export interface MoveTarget {
+  /** Key the move is stored under (P3, X1, or a spacer's key). */
+  key: string;
+  label: string;
+  pivot: [number, number, number];
+}
+
+/** What a hand move of the selected part acts on: its whole plate, or the loose part itself. */
+export function moveTarget(model: Model, partId: string | null): MoveTarget | null {
   if (!partId) return null;
   const part = model.sliced.parts.find((p) => p.id === partId);
   if (!part || part.family === 'S') return null;
-  return model.sliced.plates.find((p) => p.def.key === part.plateKey) ?? null;
+  const plate = model.sliced.plates.find((p) => p.def.key === part.plateKey);
+  if (plate) return { key: plate.def.key, label: part.id.replace(/[a-z]$/, ''), pivot: platePivot(plate.def) };
+  return part.pivot ? { key: part.plateKey, label: part.id, pivot: part.pivot } : null;
 }
 
 function moveMatrix(pivot: THREE.Vector3, m: PartMove): THREE.Matrix4 {
@@ -26,14 +35,15 @@ function moveMatrix(pivot: THREE.Vector3, m: PartMove): THREE.Matrix4 {
 }
 
 export default function PlateGizmo({ model, partId, preview }: { model: Model; partId: string | null; preview: RefObject<THREE.Group | null> }) {
-  const plate = movablePlate(model, partId);
-  const key = plate?.def.key ?? null;
+  const target = moveTarget(model, partId);
+  const key = target?.key ?? null;
   const move = useStore((s) => (key ? s.project.moves?.[key] : undefined)) ?? IDENTITY_MOVE;
   const movePart = useStore((s) => s.movePart);
   const mode = useStore((s) => s.ui.gizmoMode);
   const space = useStore((s) => s.ui.gizmoSpace);
   const obj = useMemo(() => new THREE.Object3D(), []);
-  const pivot = useMemo(() => (plate ? new THREE.Vector3(...platePivot(plate.def)) : new THREE.Vector3()), [plate]);
+  const [px, py, pz] = target?.pivot ?? [0, 0, 0];
+  const pivot = useMemo(() => new THREE.Vector3(px, py, pz), [px, py, pz]);
   const committed = useRef(new THREE.Matrix4());
   const dragging = useRef(false);
 
@@ -50,7 +60,7 @@ export default function PlateGizmo({ model, partId, preview }: { model: Model; p
     }
   }, [move, pivot, obj, preview]);
 
-  if (!plate || !key) return null;
+  if (!key) return null;
   return (
     <>
       <primitive object={obj} />

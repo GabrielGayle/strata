@@ -65,6 +65,10 @@ export interface Part {
   perimeter: number;
   bbox: BBox;
   anchored: boolean;
+  /** Parts that aren't plates (spacers, braces…): the point a hand move turns about. */
+  pivot?: V3;
+  /** Where a loose part was designed, when a hand move has carried it elsewhere (plane is the moved one). */
+  home?: Plane;
   kind: 'plate';
 }
 
@@ -131,6 +135,20 @@ export function placeDefs(defs: PlateDef[], moves: PartMoves | undefined): Plate
     const plane = movePlane(d.plane, moves[d.key], platePivot(d));
     return plane === d.plane ? d : { ...d, plane, home: d.plane };
   });
+}
+
+/**
+ * Hand moves for parts that aren't plates (spacers, bracing pieces…): each is carried
+ * rigidly about the middle of its base edge. The support ring stays put: it follows the plates.
+ */
+export function placeLooseParts(parts: Part[], moves: PartMoves | undefined, plateKeys: Set<string>): void {
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (p.family === 'S' || plateKeys.has(p.plateKey)) continue;
+    const pivot = planeToWorld(p.plane, (p.bbox.minX + p.bbox.maxX) / 2, p.bbox.minY);
+    const plane = movePlane(p.plane, moves?.[p.plateKey], pivot);
+    parts[i] = plane === p.plane ? { ...p, pivot } : { ...p, pivot, plane, home: p.plane };
+  }
 }
 
 /** Where two plates' mid-planes cross at a given world height, as u on each; null if parallel or off the line. */
@@ -990,5 +1008,6 @@ export function slice(input: SliceInput): SliceResult {
     });
   }
 
+  placeLooseParts(allParts, input.moves, new Set(defs.map((d) => d.key)));
   return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin, support };
 }

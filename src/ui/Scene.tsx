@@ -12,7 +12,7 @@ import { baseGeometry } from '../core/base';
 import { shapeBBox } from '../core/geom2d';
 import { makeConcreteMaterial, METALS, PLY, type Band } from './materials';
 import { useStore } from '../state/store';
-import PlateGizmo, { gizmoIsBusy, movablePlate } from './PlateGizmo';
+import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 
 export interface SceneOpts {
   selected: string | null;
@@ -220,7 +220,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const gridA = useMemo(() => cssVar('--grid-a', '#cfcbc2'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const gridB = useMemo(() => cssVar('--grid-b', '#a9a49a'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const preview = useRef<THREE.Group>(null);
-  const dragKey = opts.moveMode ? (movablePlate(model, opts.selected)?.def.key ?? null) : null;
+  const dragKey = opts.moveMode ? (moveTarget(model, opts.selected)?.key ?? null) : null;
   return (
     <>
       <Env />

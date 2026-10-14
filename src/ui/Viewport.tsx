@@ -6,7 +6,7 @@ import { useStore, type Snap } from '../state/store';
 import { stackFrame } from '../core/heightfield';
 import type { Model } from '../core/pipeline';
 import Scene, { modelBounds } from './Scene';
-import { gizmoIsBusy, movablePlate } from './PlateGizmo';
+import { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { useModel, fmt } from './model';
 
 export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
@@ -178,12 +178,12 @@ function MovePanel() {
   const moves = useStore((s) => s.project.moves);
   const movePart = useStore((s) => s.movePart);
   const resetMoves = useStore((s) => s.resetMoves);
-  const plate = movablePlate(model, ui.selected);
-  const key = plate?.def.key;
+  const target = moveTarget(model, ui.selected);
+  const key = target?.key;
   const m = key ? moves?.[key] : undefined;
   const count = Object.keys(moves ?? {}).length;
   const deg = m ? (2 * Math.acos(Math.min(1, Math.abs(m.q[3]))) * 180) / Math.PI : 0;
-  const label = plate?.parts[0]?.id.replace(/[a-z]$/, '');
+  const label = target?.label;
   return (
     <div className="overlay tc movepanel">
       <div className="mp-row">
@@ -204,7 +204,7 @@ function MovePanel() {
         </button>
       </div>
       <div className="mp-info">
-        {!plate
+        {!target
           ? ui.selected
             ? 'The support ring follows the plates; pick a plate to move it.'
             : 'Click a plate (or cross plate) to move it.'
