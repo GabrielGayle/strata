@@ -30,7 +30,7 @@ export function grayDataUrl(g: Gray): string {
   return cv.toDataURL('image/png');
 }
 
-export async function readImage(): Promise<{ name: string; dataUrl: string } | null> {
+export async function readImage(maxSide = 640): Promise<{ name: string; dataUrl: string } | null> {
   return new Promise((resolve) => {
     const inp = document.createElement('input');
     inp.type = 'file';
@@ -42,7 +42,7 @@ export async function readImage(): Promise<{ name: string; dataUrl: string } | n
       const url = URL.createObjectURL(f);
       const img = new Image();
       img.onload = () => {
-        const k = Math.min(1, 640 / Math.max(img.width, img.height));
+        const k = Math.min(1, maxSide / Math.max(img.width, img.height));
         const cv = document.createElement('canvas');
         cv.width = Math.round(img.width * k);
         cv.height = Math.round(img.height * k);

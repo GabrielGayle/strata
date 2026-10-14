@@ -33,6 +33,10 @@ npm run build    # static site in dist/
   shuffle); front face as layered cut-outs whose
   depth follows darkness, halftone holes, and etched hatch / contour lines; side profile (image as
   overall plate height, or traced silhouette) mixed with the strata.
+- **Depth from photo.** Each image slot can send a photo to Apple Depth Pro (the Modal endpoint
+  in promptda-depth-generator) and load back a bas-relief: near parts dark (proud on the top,
+  deepest in front layers), background white and left uncut. Set `VITE_DEPTH_URL` to the
+  endpoint (see `.env.example`); without it the button stays disabled.
 - **Edges and size.** Strata flow (low-pass of the eroded top line) and round-all-corners
   smoothing that leaves the insert cavity, anchor holes and slots crisp. Master size scales the
   whole piece, including plate count and thickness, while tolerances and stock sizes stay real.

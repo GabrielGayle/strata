@@ -9,6 +9,7 @@ import { PATTERN_PRESETS, type PatternSpec } from '../core/pattern';
 import { readImage, topAspectGuess } from './surfaces';
 import ComposerModal, { seedComposition } from './ComposerModal';
 import type { Composition, Surface } from '../core/compose';
+import { DEPTH_URL, depthFromPhoto, invertDataUrl } from '../core/depth';
 
 function GrayCanvas({ g }: { g: Gray | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -51,6 +52,26 @@ export default function ImageView() {
   const [composing, setComposing] = useState<{ comp: Composition; surface: Surface } | null>(null);
   const openComposer = async (surface: Surface) => setComposing({ comp: await seedComposition(useStore.getState().project, topAspectGuess(v)), surface });
   const sourceOf = (slot: Slot) => source[slot] ?? (project.images[slot]?.composed ? 'compose' : project.images[slot]?.pattern ? 'graphic' : 'image');
+  const [depthBusy, setDepthBusy] = useState<Slot | null>(null);
+  const [depthError, setDepthError] = useState<{ slot: Slot; msg: string } | null>(null);
+  const loadDepth = async (slot: Slot, enable: Record<string, string>) => {
+    const photo = await readImage(1536);
+    if (!photo) return;
+    setDepthBusy(slot);
+    setDepthError(null);
+    try {
+      const { png } = await depthFromPhoto(photo.dataUrl);
+      // side profile reads bright as high, the other slots read dark as deep / proud
+      const dataUrl = slot === 'side' ? await invertDataUrl(png) : png;
+      setAsset('image', slot, { name: `depth · ${photo.name}`, dataUrl });
+      // near parts of the photo stand proud on the top surface rather than sinking
+      open(slot === 'top' ? { ...enable, imgTopMode: 'raise' } : enable);
+    } catch (e) {
+      setDepthError({ slot, msg: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setDepthBusy(null);
+    }
+  };
   const slots: { slot: Slot; title: string; g: Gray | null; desc: string; enable: Record<string, string>; off: Record<string, string>; snap: Snap }[] = [
     {
       slot: 'top',
@@ -120,6 +141,7 @@ export default function ImageView() {
                     </button>
                   </span>
                 </div>
+                {depthError?.slot === s.slot && <div className="note" style={{ color: 'var(--err)' }}>Depth from photo failed: {depthError.msg}</div>}
                 <div className="btnrow">
                   {sourceOf(s.slot) === 'compose' ? (
                     <button className="btn primary" onClick={() => openComposer(s.slot)}>
@@ -141,6 +163,18 @@ export default function ImageView() {
                     }}
                   >
                     Load image…
+                  </button>
+                  <button
+                    className="btn"
+                    disabled={!DEPTH_URL || depthBusy !== null}
+                    title={
+                      DEPTH_URL
+                        ? 'Pick a photo: Depth Pro turns it into a relief (near = proud), background left uncut'
+                        : 'Depth service not configured (set VITE_DEPTH_URL)'
+                    }
+                    onClick={() => loadDepth(s.slot, s.enable)}
+                  >
+                    {depthBusy === s.slot ? 'Reading depth…' : 'Depth from photo…'}
                   </button>
                   {other && !asset && (
                     <button
