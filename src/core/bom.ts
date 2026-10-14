@@ -1,4 +1,5 @@
 // Cut list and bill of materials.
+import { baseVolumeBetween } from './base';
 import type { Values } from './params';
 import type { SliceResult } from './slicer';
 import type { NestResult } from './nest';
@@ -65,11 +66,12 @@ export function buildBom(
   const plateArea = rows.reduce((a, r) => a + r.area, 0) / 1e6;
   const plateMass = rows.reduce((a, r) => a + r.mass, 0);
   const embedVol = sliced.parts.reduce((a, p) => {
+    if (p.family === 'S') return a + p.area * p.thickness; // the support ring is all inside the concrete
     const e = embedOf(v);
     if (e <= 0) return a;
     return a + (p.bbox.maxX - p.bbox.minX) * Math.min(e, Math.max(0, -p.bbox.minY)) * p.thickness;
   }, 0);
-  const baseVol = v.baseOn ? Math.max(0, v.baseLength * v.baseWidth * v.baseHeight - embedVol) : 0;
+  const baseVol = v.baseOn ? Math.max(0, baseVolumeBetween(v, 0, v.baseHeight) - embedVol) : 0;
   const insVol = v.insShape !== 'none' && v.insMaterial === 'concrete' ? insertVolume : 0;
   const plyArea = moulds.parts.reduce((a, p) => a + p.area, 0) / 1e6;
   return {

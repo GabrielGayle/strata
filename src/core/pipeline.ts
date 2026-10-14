@@ -68,8 +68,9 @@ const NON_SLICE = new Set([
 const SLICE_KEYS = PARAMS.map((p) => p.id).filter((id) => !NON_SLICE.has(id));
 const STRATA_KEYS = ['baseLength', 'baseWidth', 'sliceMode', 'sliceAxis', 'pitch', 'stackHeight', 'erosionAmp', 'erosionScale', 'octaves', 'roughness', 'banding', 'bandHeight', 'coherence', 'crest', 'slope', 'seed', 'imgSideMode', 'imgMix', 'imgRange', 'stackSource'];
 const IMG_KEYS = ['imgContrast', 'imgSmooth', 'imgInvert', 'imgRotate'];
-const CHECK_KEYS = ['minFeature', 'kerf', 'minPartSize', 'sheetW', 'sheetH', 'partSpacing', 'pitch', 'thickness', 'radialHub', 'radialCount', 'sliceMode'];
-const MOULD_KEYS = [...PARAMS.filter((p) => p.group === 'Mould').map((p) => p.id), 'baseOn', 'baseLength', 'baseWidth', 'baseHeight', 'embedDepth', 'thickness', 'insMaterial', 'insShape', 'clearance', 'sliceMode'];
+const BASE_KEYS = ['baseOn', 'baseLength', 'baseWidth', 'baseHeight', 'baseCornerChamfer', 'baseEdgeChamfer'];
+const CHECK_KEYS = ['minFeature', 'kerf', 'minPartSize', 'sheetW', 'sheetH', 'partSpacing', 'pitch', 'thickness', 'radialHub', 'radialCount', 'sliceMode', 'embedMode', ...BASE_KEYS];
+const MOULD_KEYS = [...PARAMS.filter((p) => p.group === 'Mould').map((p) => p.id), ...BASE_KEYS, 'embedDepth', 'thickness', 'insMaterial', 'insShape', 'clearance', 'sliceMode'];
 const UNFOLD_KEYS = PARAMS.filter((p) => p.group === 'Unfold').map((p) => p.id);
 
 export function createPipeline() {
@@ -159,7 +160,7 @@ export function createPipeline() {
     );
     const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
     const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
-    const pour = stage('Pour plan', [project.pour, v.baseHeight, v.baseLength, v.baseWidth], () => pourPlan(v, project.pour, numScope));
+    const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
     const bom = stage('Cut list + BOM', [sliced, nested, moulds, mouldNest, insert, pour, v.plateMaterial, v.insMaterial], () =>
       buildBom(v, sliced, nested, moulds, mouldNest, insert?.volume ?? 0, pour.rows),
       true,
