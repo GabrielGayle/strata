@@ -1,6 +1,7 @@
 // Fabrication fit checks: everything that would make a part uncuttable or
 // make it not fit once it's cut.
 import { difference, offset, shapeArea, shapeBBox, signedArea, type Shape, type Vec2 } from './geom2d';
+import { cached } from './memo';
 import type { Values } from './params';
 import type { SliceResult } from './slicer';
 import { baseChamfers, planClearance } from './base';
@@ -20,6 +21,13 @@ export interface Issue {
 function regions(s: Shape, minArea: number): Shape[] {
   return s.filter((e) => shapeArea([e]) > minArea).map((e) => [e]);
 }
+
+// The two morphology checks are the expensive part; they are cached on the part's
+// shape, which the pipeline keeps identical for parts an edit didn't change.
+const thinRegions = (s: Shape, mf: number) =>
+  cached(s, `thin:${mf}`, () => regions(difference(s, offset(offset(s, -mf / 2, 'miter'), mf / 2, 'miter')), mf * mf * 0.6));
+const gapRegions = (s: Shape, kerf: number) =>
+  cached(s, `gap:${kerf}`, () => regions(difference(offset(offset(s, kerf / 2, 'miter'), -kerf / 2, 'miter'), s), kerf * kerf * 4));
 
 export function runChecks(v: Values, sliced: SliceResult): Issue[] {
   const issues: Issue[] = [];
@@ -78,9 +86,7 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     }
     // thin webs: morphological opening removes anything narrower than mf
     if (mf > 0) {
-      const opened = offset(offset(s, -mf / 2, 'miter'), mf / 2, 'miter');
-      const lost = difference(s, opened);
-      for (const r of regions(lost, mf * mf * 0.6)) {
+      for (const r of thinRegions(s, mf)) {
         const rb = shapeBBox(r);
         issues.push({
           partId: part.id,
@@ -94,9 +100,7 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     }
     // gaps narrower than the kerf can't be cut: closing reveals them
     if (kerf > 0) {
-      const closed = offset(offset(s, kerf / 2, 'miter'), -kerf / 2, 'miter');
-      const gained = difference(closed, s);
-      for (const r of regions(gained, kerf * kerf * 4)) {
+      for (const r of gapRegions(s, kerf)) {
         const rb = shapeBBox(r);
         issues.push({ partId: part.id, type: 'gap', severity: 'error', message: `Gap narrower than the ${kerf} mm kerf.`, at: [(rb.minX + rb.maxX) / 2, (rb.minY + rb.maxY) / 2], region: r });
       }

@@ -202,18 +202,6 @@ export function circlePath(cx: number, cy: number, r: number, segs?: number): Pa
 export const rect = (x0: number, y0: number, x1: number, y1: number): Shape => [{ outer: rectPath(x0, y0, x1, y1), holes: [] }];
 export const circle = (cx: number, cy: number, r: number): Shape => [{ outer: circlePath(cx, cy, r), holes: [] }];
 
-export function transformShape(shape: Shape, f: (p: Vec2) => Vec2): Shape {
-  return shape.map((e) => ({ outer: e.outer.map(f), holes: e.holes.map((h) => h.map(f)), depth: e.depth }));
-}
-
-/** Remove near-duplicate and collinear points. */
-export function cleanShape(shape: Shape, dist = 0.005): Shape {
-  const cleanPath = (p: Path) => fromIP(C.Clipper.CleanPolygon(toIP(p), dist * S));
-  return shape
-    .map((e) => ({ outer: cleanPath(e.outer), holes: e.holes.map(cleanPath).filter((h) => h.length >= 3), depth: e.depth }))
-    .filter((e) => e.outer.length >= 3);
-}
-
 /** Ramer–Douglas–Peucker on a closed ring: drops points within tol of the simplified outline. */
 export function simplifyPath(p: Path, tol: number): Path {
   const n = p.length;
