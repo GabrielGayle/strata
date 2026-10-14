@@ -96,6 +96,8 @@ function formParams(prefix: 'ins' | 'src', group: string, show: (v: Values) => b
 }
 
 const isParallelish = (v: Values) => v.sliceMode !== 'radial';
+const isUpright = (v: Values) => v.sliceMode !== 'radial' && v.sliceMode !== 'flat';
+const isFlat = (v: Values) => v.sliceMode === 'flat';
 const strataSource = (v: Values) => v.stackSource === 'strata';
 
 export const PARAMS: ParamDef[] = [
@@ -122,24 +124,29 @@ export const PARAMS: ParamDef[] = [
     { value: 'corten', label: 'Corten' },
   ]),
   num('thickness', 'Thickness', 'Plates', 3, 0.5, 12, { step: 0.5, help: 'Common: 1.5, 3, 6 mm' }),
-  num('plateCount', 'Plate count', 'Plates', 40, 2, 300, { int: true, unit: '', show: isParallelish, scaleCount: true }),
+  num('plateCount', 'Plate count', 'Plates', 40, 2, 300, { int: true, unit: '', show: isUpright, scaleCount: true }),
   num('endMargin', 'End margin', 'Plates', 40, 0, 1000, { show: isParallelish }),
   num('stackLength', 'Stack run', 'Plates', 'alongWidth ? baseWidth : baseLength', 1, 5000, { show: isParallelish, help: 'Base length the plates are stacked along (alongWidth = 1 when slicing across)' }),
   num('acrossLength', 'Across run', 'Plates', 'alongWidth ? baseLength : baseWidth', 1, 5000, { show: isParallelish }),
-  num('pitch', 'Pitch', 'Plates', '(stackLength - 2*endMargin) / (plateCount - 1)', 1, 500, { step: 0.1, show: isParallelish }),
+  num('pitch', 'Pitch', 'Plates', '(stackLength - 2*endMargin) / (plateCount - 1)', 1, 500, { step: 0.1, show: isUpright }),
   num('sideMargin', 'Side margin', 'Plates', 20, 0, 1000),
   num('plateWidth', 'Plate width', 'Plates', 'acrossLength - 2*sideMargin', 5, 3000, { show: isParallelish }),
-  num('embedDepth', 'Embed depth', 'Plates', 40, 0, 400, { help: 'How far each plate sinks into the concrete' }),
-  num('tabInset', 'Embed tab inset', 'Plates', 0, 0, 200, { help: 'Narrows the embedded tab on each side' }),
-  num('anchorHoles', 'Anchor holes', 'Plates', 2, 0, 12, { int: true, unit: '', help: 'Holes in the embedded tab that concrete flows through' }),
-  num('anchorDia', 'Anchor hole Ø', 'Plates', 10, 2, 60),
+  num('embedDepth', 'Embed depth', 'Plates', 40, 0, 400, { show: (v) => !isFlat(v), help: 'How far each plate sinks into the concrete' }),
+  num('tabInset', 'Embed tab inset', 'Plates', 0, 0, 200, { show: (v) => !isFlat(v), help: 'Narrows the embedded tab on each side' }),
+  num('anchorHoles', 'Anchor holes', 'Plates', 2, 0, 12, { int: true, unit: '', show: (v) => !isFlat(v), help: 'Holes in the embedded tab that concrete flows through' }),
+  num('anchorDia', 'Anchor hole Ø', 'Plates', 10, 2, 60, { show: (v) => !isFlat(v) }),
 
   // Slicer
   choice('sliceMode', 'Slicing', 'Slicer', 'parallel', [
     { value: 'parallel', label: 'Parallel stack' },
     { value: 'radial', label: 'Radial' },
     { value: 'waffle', label: 'Waffle (interlocking)' },
-  ]),
+    { value: 'flat', label: 'Flat stack (face to face)' },
+  ], { help: 'Flat stack lays the plates flat on top of each other; a top image is pressed down through the layers like a stamp' }),
+  num('layerCount', 'Layers', 'Slicer', 'max(2, ceil(stackHeight / thickness))', 1, 400, { int: true, unit: '', show: isFlat, scaleCount: true, help: 'Plates stacked flat, face to face; each is one plate thickness tall' }),
+  num('flatPins', 'Registration pins', 'Slicer', 2, 0, 8, { int: true, unit: '', show: isFlat, help: 'Holes through every layer they fit, for pins or threaded rod that line the stack up and fix it to the base' }),
+  num('pinDia', 'Pin Ø', 'Slicer', 8, 2, 40, { show: (v) => isFlat(v) && v.flatPins > 0 }),
+  { id: 'flatGuides', label: 'Etch glue-up guides', group: 'Slicer', kind: 'toggle', def: true, show: isFlat, help: 'Etches the outline of the layer above onto each layer' },
   choice('sliceAxis', 'Direction', 'Slicer', 'length', [
     { value: 'length', label: 'Along length (X)' },
     { value: 'width', label: 'Along width (Z)' },
@@ -371,6 +378,7 @@ export function flagsFor(raw: Record<string, RawValue>, extra: Record<string, nu
     alongWidth: get('sliceAxis') === 'width' ? 1 : 0,
     isRadial: get('sliceMode') === 'radial' ? 1 : 0,
     isWaffle: get('sliceMode') === 'waffle' ? 1 : 0,
+    isFlat: get('sliceMode') === 'flat' ? 1 : 0,
     imgAspect: 1,
     ...extra,
   };
@@ -415,7 +423,7 @@ export function fitOverrides(raw: Record<string, RawValue>): Record<string, stri
   return { [run]: `(${across} - 2*sideMargin - 2*topMargin) / imgAspect + 2*topMargin + 2*endMargin` };
 }
 
-export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'imgAspect'];
+export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'isFlat', 'imgAspect'];
 
 /** Evaluate the whole parameter graph in dependency order. */
 export function evaluateParams(rawIn: Record<string, RawValue>, extra: Record<string, number> = {}): EvalResult {

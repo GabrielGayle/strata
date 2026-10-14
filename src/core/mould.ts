@@ -178,7 +178,8 @@ export function buildMoulds(v: Values, sliced: SliceResult, insert: IndexedMesh 
 
     // jig: slots that hold each plate at its pitch while the concrete cures
     if (v.jigOn && sliced.plates.length) {
-      if (v.sliceMode === 'waffle') notes.push('Jig skipped for waffle slicing: the slot grid would split the board. Brace the waffle as one assembly.');
+      if (v.sliceMode === 'flat') notes.push('Jig skipped for the flat stack: it sits on the cured base. Set pins or threaded rod in the wet concrete at the registration holes (use the bottom layer as a template).');
+      else if (v.sliceMode === 'waffle') notes.push('Jig skipped for waffle slicing: the slot grid would split the board. Brace the waffle as one assembly.');
       else {
         const e = embedOf(v);
         const c = v.jigClearance;

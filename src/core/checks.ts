@@ -70,7 +70,8 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
       issues.push({ partId: part.id, type: 'sheet', severity: 'error', message: `Part (${w.toFixed(0)} × ${h.toFixed(0)}) does not fit the sheet.` });
     }
     if (!part.anchored) {
-      issues.push({ partId: part.id, type: 'unanchored', severity: 'error', message: 'Piece does not reach the concrete: nothing holds it in place.', at: [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2] });
+      const message = part.family === 'L' ? 'Piece overhangs the layer below: nothing to glue it to.' : 'Piece does not reach the concrete: nothing holds it in place.';
+      issues.push({ partId: part.id, type: 'unanchored', severity: 'error', message, at: [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2] });
     }
     if (!part.labelAt) {
       issues.push({ partId: part.id, type: 'label', severity: 'info', message: 'No room to etch the part number.' });
@@ -112,7 +113,7 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
   }
 
   if (v.partSpacing < kerf) issues.push({ partId: null, type: 'gap', severity: 'error', message: `Nest part spacing (${v.partSpacing} mm) is below the kerf.` });
-  if (v.pitch <= v.thickness && v.sliceMode !== 'radial') issues.push({ partId: null, type: 'general', severity: 'error', message: 'Pitch is not larger than plate thickness: plates overlap.' });
+  if (v.pitch <= v.thickness && v.sliceMode !== 'radial' && v.sliceMode !== 'flat') issues.push({ partId: null, type: 'general', severity: 'error', message: 'Pitch is not larger than plate thickness: plates overlap.' });
   if (v.sliceMode === 'radial') {
     const n = v.radialCount;
     const minHub = v.thickness / 2 / Math.sin(Math.PI / n);
