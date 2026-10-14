@@ -615,6 +615,11 @@ export function slice(input: SliceInput): SliceResult {
   const e = embedOf(v);
   const useForm = v.stackSource === 'form';
   if (useForm && !input.source) warnings.push('Source form is missing (import a mesh or pick a shape).');
+  if (v.sliceMode !== 'radial') {
+    const run = (v.plateCount - 1) * v.pitch + t;
+    const { stackLen } = stackFrame(v);
+    if (v.baseOn && run > stackLen + 1e-6) warnings.push(`Plates span ${run.toFixed(1)} mm but the base is only ${stackLen.toFixed(1)} mm long: the end plates overhang.`);
+  }
 
   // 1. outlines
   const outlines = defs.map((d) => {

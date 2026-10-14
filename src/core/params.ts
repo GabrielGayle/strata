@@ -122,8 +122,14 @@ export const PARAMS: ParamDef[] = [
     { value: 'corten', label: 'Corten' },
   ]),
   num('thickness', 'Thickness', 'Plates', 3, 0.5, 12, { step: 0.5, help: 'Common: 1.5, 3, 6 mm' }),
+  choice('spacingMode', 'Spacing', 'Plates', 'fit', [
+    { value: 'fit', label: 'Spread count over base' },
+    { value: 'gap', label: 'Fixed gap, fill base' },
+    { value: 'gapCount', label: 'Fixed gap, set count' },
+  ], { show: isParallelish, help: 'Fixed gap sets the clear space between plate faces; the stack stays centred on the base' }),
+  num('plateGap', 'Gap between plates', 'Plates', 10, 0.5, 500, { step: 0.5, show: (v) => isParallelish(v) && v.spacingMode !== 'fit', help: 'Clear space between neighbouring plate faces (pitch = thickness + gap)' }),
   num('plateCount', 'Plate count', 'Plates', 40, 2, 300, { int: true, unit: '', show: isParallelish, scaleCount: true }),
-  num('endMargin', 'End margin', 'Plates', 40, 0, 1000, { show: isParallelish }),
+  num('endMargin', 'End margin', 'Plates', 40, 0, 1000, { show: isParallelish, help: 'Base end to the outer plate centre (the minimum when a fixed gap fills the base)' }),
   num('stackLength', 'Stack run', 'Plates', 'alongWidth ? baseWidth : baseLength', 1, 5000, { show: isParallelish, help: 'Base length the plates are stacked along (alongWidth = 1 when slicing across)' }),
   num('acrossLength', 'Across run', 'Plates', 'alongWidth ? baseLength : baseWidth', 1, 5000, { show: isParallelish }),
   num('pitch', 'Pitch', 'Plates', '(stackLength - 2*endMargin) / (plateCount - 1)', 1, 500, { step: 0.1, show: isParallelish }),
@@ -415,12 +421,30 @@ export function fitOverrides(raw: Record<string, RawValue>): Record<string, stri
   return { [run]: `(${across} - 2*sideMargin - 2*topMargin) / imgAspect + 2*topMargin + 2*endMargin` };
 }
 
+/**
+ * Expressions that replace pitch (and plate count) while Plates › Spacing is a
+ * fixed gap. "Fill base" fits as many plates as the stack run allows inside the
+ * end margins; plates are always laid out symmetric about the base centre.
+ */
+export function spacingOverrides(raw: Record<string, RawValue>): Record<string, string> {
+  const mode = String(raw.spacingMode ?? 'fit');
+  if (mode === 'fit' || String(raw.sliceMode ?? 'parallel') === 'radial') return {};
+  const out: Record<string, string> = { pitch: 'thickness + plateGap' };
+  if (mode === 'gap') out.plateCount = 'floor((stackLength - 2*endMargin) / (thickness + plateGap)) + 1';
+  return out;
+}
+
+/** Which setting drives each overridden parameter, for the panel's label. */
+export function overrideSource(id: string): 'spacing' | 'image' {
+  return id === 'pitch' || id === 'plateCount' ? 'spacing' : 'image';
+}
+
 export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'imgAspect'];
 
 /** Evaluate the whole parameter graph in dependency order. */
 export function evaluateParams(rawIn: Record<string, RawValue>, extra: Record<string, number> = {}): EvalResult {
   // Master size multiplies literal values; image fit swaps in expressions
-  const overrides = fitOverrides(rawIn);
+  const overrides = { ...fitOverrides(rawIn), ...spacingOverrides(rawIn) };
   const raw: Record<string, RawValue> = { ...rawIn, ...overrides };
   for (const d of PARAMS) {
     if (d.kind !== 'number' || overrides[d.id]) continue;
