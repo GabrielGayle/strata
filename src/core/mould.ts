@@ -21,6 +21,7 @@ import type { IndexedMesh } from './forms';
 import type { SliceResult } from './slicer';
 import { baseTop, embedOf } from './slicer';
 import { evaluate, parse } from './expr';
+import { baseChamfers, baseVolumeBetween, basePlan } from './base';
 
 export interface MouldPart {
   id: string;
@@ -170,7 +171,16 @@ export function buildMoulds(v: Values, sliced: SliceResult, insert: IndexedMesh 
     for (let k = 0; k < n; k++) {
       const yTop = Math.min(H, (k + 1) * ply);
       const d = tanD * yTop;
-      cavities.push({ y0: k * ply, shape: rect(-L / 2 - d, -Wd / 2 - d, L / 2 + d, Wd / 2 + d) });
+      cavities.push({ y0: k * ply, shape: union([basePlan(v, -d)]) });
+    }
+    const ch = baseChamfers(v);
+    if (ch.corner > 0) notes.push(`Base corners chamfered ${ch.corner.toFixed(0)} mm: cut into every ring.`);
+    if (ch.edge > 0) notes.push(`Top edge chamfer ${ch.edge.toFixed(0)} mm: fix a ${ch.edge.toFixed(0)} mm 45° chamfer strip around the inside of the top ring, its lower edge ${(H - ch.edge).toFixed(0)} mm up, and trowel the top flush with its inner edge.`);
+    const sup = sliced.support;
+    if (sup) {
+      notes.push(
+        `Support ring: pour the first ${Math.max(0, H + sup.tenonBottom).toFixed(0)} mm, let it stiffen, then lower the plates (tenons through the ring) so the ring's top face sits ${sup.depth.toFixed(0)} mm below the surface; pour the rest.`,
+      );
     }
     const r = stackedMould('base', 'MB-', cavities, v, 'x', parts, { y0: -ply, kind: 'floor' });
     dowels += r.dowels;
@@ -240,7 +250,6 @@ export function buildMoulds(v: Values, sliced: SliceResult, insert: IndexedMesh 
 export function pourPlan(v: Values, layers: PourLayer[], scope: Record<string, number>): { rows: PourPlanRow[]; total: number; mismatch: number } {
   const rows: PourPlanRow[] = [];
   let y = 0;
-  const area = (v.baseLength * v.baseWidth) / 1e6; // m²
   for (const l of layers) {
     let h = 0;
     let error: string | undefined;
@@ -251,7 +260,7 @@ export function pourPlan(v: Values, layers: PourLayer[], scope: Record<string, n
       error = (e as Error).message;
       h = 0;
     }
-    const vol = area * (h / 1000); // m³
+    const vol = baseVolumeBetween(v, y, y + h) / 1e9; // m³
     rows.push({ id: l.id, name: l.name, color: l.color, y0: y, y1: y + h, height: h, volume: vol * 1000, mass: vol * CONCRETE_DENSITY, error });
     y += h;
   }

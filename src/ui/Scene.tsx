@@ -8,6 +8,7 @@ import type { Part } from '../core/slicer';
 import type { MouldPart } from '../core/mould';
 import { etchSegments, extrudeOnPlane, extrudePlan } from '../core/geometry3d';
 import { planeToWorld } from '../core/section';
+import { baseGeometry } from '../core/base';
 import { shapeBBox } from '../core/geom2d';
 import { makeConcreteMaterial, METALS, PLY, type Band } from './materials';
 import { useStore } from '../state/store';
@@ -92,16 +93,13 @@ function Etches({ parts }: { parts: Part[] }) {
 function Base({ model, xray }: { model: Model; xray: boolean }) {
   const v = model.v;
   const mat = useMemo(() => makeConcreteMaterial(), []);
-  const geo = useMemo(() => {
-    const g = new THREE.BoxGeometry(v.baseLength, v.baseHeight, v.baseWidth);
-    g.translate(0, v.baseHeight / 2, 0);
-    return g;
-  }, [v.baseLength, v.baseHeight, v.baseWidth]);
+  const geo = useMemo(() => baseGeometry(v), [v.baseLength, v.baseHeight, v.baseWidth, v.baseCornerChamfer, v.baseEdgeChamfer]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => geo.dispose(), [geo]);
   useEffect(() => () => mat.dispose(), [mat]);
   const bands: Band[] =
     v.pourView === 'plain' || !model.pour.rows.length ? [{ top: 1e9, color: v.concreteTint }] : model.pour.rows.map((r) => ({ top: r.y1, color: r.color }));
   mat.setBands(bands, v.pourView === 'eroded' ? v.erodeAmount : 0);
+  if (mat.transparent !== xray) mat.needsUpdate = true; // switching blending needs a recompile
   mat.transparent = xray;
   mat.opacity = xray ? 0.28 : 1;
   mat.depthWrite = !xray;

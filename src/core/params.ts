@@ -30,6 +30,7 @@ export interface ParamDef {
 export const GROUPS = [
   'Master',
   'Base',
+  'Support',
   'Plates',
   'Slicer',
   'Strata',
@@ -95,6 +96,7 @@ function formParams(prefix: 'ins' | 'src', group: string, show: (v: Values) => b
   ];
 }
 
+const hasSupport = (v: Values) => v.baseOn && v.supportMode !== 'off';
 const isParallelish = (v: Values) => v.sliceMode !== 'radial';
 const strataSource = (v: Values) => v.stackSource === 'strata';
 
@@ -114,6 +116,21 @@ export const PARAMS: ParamDef[] = [
   num('baseLength', 'Length', 'Base', 800, 100, 3000),
   num('baseWidth', 'Width', 'Base', 300, 50, 1500),
   num('baseHeight', 'Height', 'Base', 120, 10, 600),
+  num('baseCornerChamfer', 'Corner chamfer', 'Base', 0, 0, 300, { show: (v) => v.baseOn, help: 'Cuts the four vertical corners of the base at 45° (leg length)' }),
+  num('baseEdgeChamfer', 'Top edge chamfer', 'Base', 0, 0, 100, { show: (v) => v.baseOn, help: 'Bevels the top edge of the base at 45°. Formed by a chamfer strip fixed inside the top of the mould.' }),
+
+  // Embedded support
+  choice('supportMode', 'Embedded support', 'Support', 'off', [
+    { value: 'off', label: 'Off' },
+    { value: 'radial', label: 'Radial ring' },
+  ], { show: (v) => v.baseOn, help: 'A flat ring cut from the same sheet and cast into the concrete. Every plate drops a tenon through a slot in it, so the stack keeps its spacing and angles.' }),
+  num('supportOuter', 'Ring outer radius', 'Support', 'min(baseLength, baseWidth)/2 - sideMargin - 20', 5, 2000, { show: hasSupport }),
+  num('supportInner', 'Ring inner radius', 'Support', 'isRadial ? radialHub + 10 : supportOuter * 0.5', 0, 2000, { show: hasSupport, help: '0 makes a solid disc' }),
+  num('supportDepth', 'Depth below surface', 'Support', 'embedDepth + 15', 0, 600, { show: hasSupport, help: 'How far below the top of the concrete the ring\'s top face sits. Deeper than the plate embed gives the plates tenons that reach down to it; shallower trims the tabs to tenons at the ring.' }),
+  num('supportThickness', 'Ring thickness', 'Support', 'thickness', 0.5, 25, { step: 0.5, show: hasSupport }),
+  num('supportTail', 'Tenon tail', 'Support', 0, 0, 100, { show: hasSupport, help: 'How far each tenon pokes out under the ring (bend or pin the tails to lock the ring on)' }),
+  num('supportLand', 'Slot end land', 'Support', 8, 0, 200, { show: hasSupport, help: 'Solid ring left beyond each end of every slot' }),
+  num('supportClearance', 'Slot clearance', 'Support', 0.3, 0, 3, { step: 0.05, show: hasSupport, noScale: true, help: 'Added around each tenon in the ring slots' }),
 
   // Plates
   choice('plateMaterial', 'Material', 'Plates', 'corten', [

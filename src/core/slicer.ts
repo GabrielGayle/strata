@@ -30,8 +30,9 @@ import { stackFrame, type HeightField } from './heightfield';
 import type { IndexedMesh } from './forms';
 import { distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
+import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
 
-export type Family = 'P' | 'X' | 'R';
+export type Family = 'P' | 'X' | 'R' | 'S';
 
 export interface PlateDef {
   key: string;
@@ -73,6 +74,8 @@ export interface PlateInfo {
   islands: number;
   cavity: Shape;
   sweptInsert: Shape;
+  /** Tenons dropped into the embedded support ring. */
+  tenons: number;
 }
 
 export interface FrontWindow {
@@ -88,6 +91,7 @@ export interface SliceResult {
   warnings: string[];
   front: FrontWindow | null;
   top: TopWindow | null;
+  support: SupportSpec | null;
 }
 
 export interface SliceInput {
@@ -114,13 +118,17 @@ export function plateDefs(v: Values): PlateDef[] {
   const defs: PlateDef[] = [];
   if (v.sliceMode === 'radial') {
     const n = v.radialCount;
-    const hx = Math.max(1, v.baseLength / 2 - v.sideMargin);
-    const hz = Math.max(1, v.baseWidth / 2 - v.sideMargin);
+    const ch = v.baseOn ? baseChamfers(v) : { corner: 0, edge: 0 };
+    const m = Math.max(v.sideMargin, ch.edge);
+    const hx = Math.max(1, v.baseLength / 2 - m);
+    const hz = Math.max(1, v.baseWidth / 2 - m);
+    // stay the same margin inside a chamfered corner
+    const diag = ch.corner > 0 ? v.baseLength / 2 + v.baseWidth / 2 - ch.corner - m * Math.SQRT2 : Infinity;
     for (let k = 0; k < n; k++) {
       const th = (k / n) * Math.PI * 2;
       const c = Math.cos(th);
       const s = Math.sin(th);
-      const R = Math.min(Math.abs(c) > 1e-9 ? hx / Math.abs(c) : Infinity, Math.abs(s) > 1e-9 ? hz / Math.abs(s) : Infinity);
+      const R = Math.min(Math.abs(c) > 1e-9 ? hx / Math.abs(c) : Infinity, Math.abs(s) > 1e-9 ? hz / Math.abs(s) : Infinity, diag / (Math.abs(c) + Math.abs(s)));
       const normal: V3 = [-s, 0, c];
       const plane: Plane = { origin: [0, top, 0], normal, u: [c, 0, s], v: UP };
       defs.push({ key: `R${k}`, family: 'R', index: k, count: n, plane, u0: Math.min(v.radialHub, R - 5), u1: R });
@@ -622,6 +630,15 @@ export function slice(input: SliceInput): SliceResult {
     return hf ? strataOutline(d, hf, v) : [];
   });
 
+  // 1b. tenons down into the embedded support ring
+  const support = supportSpec(v, baseTop(v));
+  const tenons = defs.map((d, di) => {
+    if (!support) return { plane: d.plane, spans: [] as [number, number][] };
+    const r = addTenons(outlines[di], d.plane, support, v, e);
+    outlines[di] = r.outline;
+    return { plane: d.plane, spans: r.spans };
+  });
+
   // 2. waffle slots (computed from the shared intersection line, so both halves agree)
   const slots: Shape[] = defs.map(() => []);
   if (v.sliceMode === 'waffle') {
@@ -667,7 +684,7 @@ export function slice(input: SliceInput): SliceResult {
 
   defs.forEach((def, di) => {
     let shape = outlines[di];
-    const info: PlateInfo = { def, parts: [], bevel: 0, collision: 0, collisionAt: null, islands: 0, cavity: [], sweptInsert: [] };
+    const info: PlateInfo = { def, parts: [], bevel: 0, collision: 0, collisionAt: null, islands: 0, cavity: [], sweptInsert: [], tenons: tenons[di].spans.length };
     if (!shape.length) {
       plates.push(info);
       return;
@@ -789,5 +806,39 @@ export function slice(input: SliceInput): SliceResult {
     plates.push(info);
   });
 
-  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin };
+  // 8. the support ring, cut from the same sheet, with a mortise for every tenon
+  if (support) {
+    const ring = ringShape(support, v, tenons);
+    const pieces = ring.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
+    if (pieces.length > 1) warnings.push(`Support ring falls apart into ${pieces.length} pieces: widen it or raise the slot end land.`);
+    const plane = supportPlane(support);
+    const base = partLabel(v, 'S', 0, 1);
+    const hLab = Math.min(v.labelHeight, (support.outer - support.inner) * 0.4);
+    pieces.forEach((ex, pi) => {
+      const id = pieces.length > 1 ? `${base}${String.fromCharCode(97 + (pi % 26))}` : base;
+      const bb = bboxOf([ex.outer]);
+      const lab = placeLabel(id, ex, [0, (support.inner + support.outer) / 2], hLab);
+      const part: Part = {
+        id,
+        plateKey: 'S0',
+        family: 'S',
+        index: 0,
+        piece: pi,
+        plane,
+        thickness: support.thickness,
+        shape: [ex],
+        etch: [],
+        labelPaths: lab?.paths ?? [],
+        labelAt: lab?.at ?? null,
+        area: shapeArea([ex]),
+        perimeter: shapePerimeter([ex]),
+        bbox: bb,
+        anchored: true,
+        kind: 'plate',
+      };
+      allParts.push(part);
+    });
+  }
+
+  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin, support };
 }

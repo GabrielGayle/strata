@@ -3,6 +3,7 @@
 import { difference, offset, shapeArea, shapeBBox, signedArea, type Shape, type Vec2 } from './geom2d';
 import type { Values } from './params';
 import type { SliceResult } from './slicer';
+import { baseChamfers, planClearance } from './base';
 
 export type Severity = 'error' | 'warn' | 'info';
 
@@ -117,6 +118,43 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     const n = v.radialCount;
     const minHub = v.thickness / 2 / Math.sin(Math.PI / n);
     if (v.radialHub < minHub) issues.push({ partId: null, type: 'collision', severity: 'error', message: `Radial plates touch at the hub: hub radius must be ≥ ${minHub.toFixed(1)} mm.` });
+  }
+  // chamfered base: plates must stay inside the footprint where they enter the concrete
+  if (v.baseOn) {
+    const ch = baseChamfers(v);
+    if (ch.corner > 0 || ch.edge > 0) {
+      for (const plate of sliced.plates) {
+        if (!plate.parts.length) continue;
+        const u0 = Math.min(...plate.parts.map((p) => p.bbox.minX));
+        const u1 = Math.max(...plate.parts.map((p) => p.bbox.maxX));
+        const P = plate.def.plane;
+        const ends = [u0, u1].map((u) => ({ u, c: planClearance(v, P.origin[0] + P.u[0] * u, -(P.origin[2] + P.u[2] * u), ch.edge) }));
+        const worst = ends[0].c < ends[1].c ? ends[0] : ends[1];
+        if (worst.c < 0)
+          issues.push({
+            partId: plate.parts[0].id,
+            plateKey: plate.def.key,
+            type: 'general',
+            severity: 'warn',
+            message: `Plate runs ${(-worst.c).toFixed(1)} mm past the chamfered base edge.`,
+            at: [worst.u, 0],
+          });
+      }
+    }
+  }
+
+  // embedded support ring
+  const sup = sliced.support;
+  if (sup) {
+    const cover = v.baseHeight + sup.tenonBottom;
+    if (cover <= 0) issues.push({ partId: null, type: 'general', severity: 'error', message: `Support ring and tenons reach ${(-cover).toFixed(1)} mm out of the bottom of the base.` });
+    else if (cover < 15) issues.push({ partId: null, type: 'general', severity: 'warn', message: `Only ${cover.toFixed(1)} mm of concrete under the support ring tenons.` });
+    const side = planClearance(v, 0, 0, 0) - sup.outer;
+    if (side < 10) issues.push({ partId: null, type: 'general', severity: side < 0 ? 'error' : 'warn', message: side < 0 ? 'Support ring is wider than the base.' : `Only ${side.toFixed(1)} mm of concrete beside the support ring.` });
+    const missed = sliced.plates.filter((p) => p.parts.length && p.tenons === 0);
+    if (missed.length)
+      issues.push({ partId: missed[0].parts[0].id, plateKey: missed[0].def.key, type: 'general', severity: 'warn', message: `${missed.length} plate(s) don't cross the support ring, so it doesn't hold them. Widen the ring.` });
+    if (v.embedMode === 'slot') issues.push({ partId: null, type: 'general', severity: 'warn', message: 'The support ring is cast in with the plates: set Concrete › Plate fixing to "Cast in".' });
   }
   for (const w of sliced.warnings) issues.push({ partId: null, type: 'general', severity: 'warn', message: w });
   return issues;
