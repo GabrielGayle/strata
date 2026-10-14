@@ -1,10 +1,13 @@
 // The project file: parameters + pour plan + source assets, as one readable JSON.
 import { defaultRaw, PARAM_MAP, type RawValue } from './params';
 import type { PourLayer } from './mould';
+import type { PatternSpec } from './pattern';
 
 export interface ImageAsset {
   name: string;
   dataUrl: string;
+  /** Set when the image is a generated graphic, so it can be reopened and edited. */
+  pattern?: PatternSpec;
 }
 
 export interface MeshAsset {
