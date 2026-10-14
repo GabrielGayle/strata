@@ -1,9 +1,11 @@
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import type { Gray } from '../core/image';
 import type { Snap } from '../state/store';
 import { sampleCliff } from './sample';
+import PatternModal, { patternDataUrl } from './PatternModal';
+import { PATTERN_PRESETS, type PatternSpec } from '../core/pattern';
 
 function GrayCanvas({ g }: { g: Gray | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -69,6 +71,10 @@ export default function ImageView() {
   const setUi = useStore((s) => s.setUi);
   const ui = useStore((s) => s.ui);
   const v = model.v;
+  // Image = an uploaded picture; Graphic = a pattern made here. Both end up as the same greyscale input.
+  const [source, setSource] = useState<Partial<Record<Slot, 'image' | 'graphic'>>>({});
+  const [editing, setEditing] = useState<Slot | null>(null);
+  const sourceOf = (slot: Slot) => source[slot] ?? (project.images[slot]?.pattern ? 'graphic' : 'image');
   const slots: { slot: Slot; title: string; g: Gray | null; desc: string; enable: Record<string, string>; off: Record<string, string>; snap: Snap }[] = [
     {
       slot: 'top',
@@ -125,7 +131,23 @@ export default function ImageView() {
                 </div>
                 <GrayCanvas g={s.g} />
                 <div className="note">{s.desc}</div>
+                <div className="btnrow" style={{ paddingBottom: 0 }}>
+                  <span className="seg" role="group" aria-label={`${s.title} source`}>
+                    <button className={`btn sm ${sourceOf(s.slot) === 'image' ? 'on' : ''}`} onClick={() => setSource({ ...source, [s.slot]: 'image' })}>
+                      Image
+                    </button>
+                    <button className={`btn sm ${sourceOf(s.slot) === 'graphic' ? 'on' : ''}`} onClick={() => setSource({ ...source, [s.slot]: 'graphic' })}>
+                      Graphic
+                    </button>
+                  </span>
+                </div>
                 <div className="btnrow">
+                  {sourceOf(s.slot) === 'graphic' ? (
+                    <button className="btn primary" onClick={() => setEditing(s.slot)}>
+                      {asset?.pattern ? 'Edit pattern…' : 'Make pattern…'}
+                    </button>
+                  ) : (
+                  <>
                   <button
                     className="btn"
                     onClick={async () => {
@@ -157,6 +179,8 @@ export default function ImageView() {
                   >
                     Sample
                   </button>
+                  </>
+                  )}
                   {asset && (
                     <button
                       className="btn"
@@ -246,6 +270,25 @@ export default function ImageView() {
           </div>
         </div>
       </div>
+      {editing && (
+        <PatternModal
+          title={`${slots.find((x) => x.slot === editing)!.title}: pattern`}
+          initial={project.images[editing]?.pattern ?? (editing === 'top' ? { ...PATTERN_PRESETS[2].spec(), aspect: imgAspectGuess(v) } : PATTERN_PRESETS[2].spec())}
+          onClose={() => setEditing(null)}
+          onApply={(spec: PatternSpec) => {
+            const slot = slots.find((x) => x.slot === editing)!;
+            setAsset('image', editing, { name: 'pattern.png', dataUrl: patternDataUrl(spec), pattern: spec });
+            open(slot.enable);
+            setEditing(null);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+/** Start a top pattern at roughly the stack's footprint proportions (width across / length along). */
+function imgAspectGuess(v: Record<string, any>): number {
+  const a = Number(v.plateWidth) / Number(v.stackLength);
+  return Number.isFinite(a) && a > 0 ? Math.min(3, Math.max(1 / 3, a)) : 1;
 }

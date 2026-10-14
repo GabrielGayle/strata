@@ -22,7 +22,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'nest', label: 'Nest' },
   { id: 'mould', label: 'Mould + pour' },
   { id: 'unfold', label: 'Unfold' },
-  { id: 'image', label: 'Image' },
+  { id: 'image', label: 'Image / Graphic' },
   { id: 'graph', label: 'Graph' },
   { id: 'compare', label: 'Compare' },
 ];
