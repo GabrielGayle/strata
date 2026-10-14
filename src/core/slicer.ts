@@ -32,6 +32,7 @@ import { flatFootprint, flatGrid, flatOutline, flatPinPoints, flatStampCut, outl
 import type { IndexedMesh } from './forms';
 import { boxBlur, distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
+import { MAX_TUNED, MIN_TUNED, tunePlates, tuningActive, type PlateTune } from './tuning';
 import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
 
 export type Family = 'P' | 'X' | 'R' | 'S';
@@ -94,6 +95,8 @@ export interface SliceResult {
   front: FrontWindow | null;
   top: TopWindow | null;
   support: SupportSpec | null;
+  /** Target note per plate (aligned with `plates`), when Tuning is on. */
+  tuning: (PlateTune | null)[] | null;
 }
 
 export interface SliceInput {
@@ -211,6 +214,17 @@ function strataOutline(def: PlateDef, hf: HeightField, v: Values): Shape {
       }
     }
   }
+  return outlineUnder(def, top, v);
+}
+
+/** A plate whose top is flat at `height` above the concrete: a tuned tine. */
+function tunedOutline(def: PlateDef, height: number, v: Values): Shape {
+  return outlineUnder(def, [[def.u0, height], [def.u1, height]], v);
+}
+
+/** The plate outline: the given top line (left to right), the sides, and the embedded tab. */
+function outlineUnder(def: PlateDef, top: Path, v: Values): Shape {
+  const { u0, u1 } = def;
   const e = embedOf(v);
   const inset = Math.max(0, Math.min(v.tabInset, (u1 - u0) / 2 - 5));
   const poly: Path = [];
@@ -249,14 +263,14 @@ interface FrontCtx {
   win: FrontWindow; // fitted image rectangle in plate coords
 }
 
-function frontContext(v: Values, img: Gray | null, defs: PlateDef[], hf: HeightField | null): FrontCtx | null {
+function frontContext(v: Values, img: Gray | null, defs: PlateDef[], hf: HeightField | null, lowestTop: number | null = null): FrontCtx | null {
   if (!img || v.sliceMode !== 'parallel') return null;
   if (v.imgFrontMode === 'off' && v.etchMode === 'off') return null;
   const p = defs.find((d) => d.family === 'P');
   if (!p) return null;
   const m = v.frontMargin;
   const u0 = p.u0 + m, u1 = p.u1 - m;
-  const topV = hf ? hf.min : v.stackHeight;
+  const topV = lowestTop ?? (hf ? hf.min : v.stackHeight);
   const v0 = m, v1 = topV - m;
   if (u1 - u0 < 5 || v1 - v0 < 5) return null;
   const ar = img.w / img.h;
@@ -784,6 +798,17 @@ export function slice(input: SliceInput): SliceResult {
     if (v.baseOn && run > stackLen + 1e-6) warnings.push(`Plates span ${run.toFixed(1)} mm but the base is only ${stackLen.toFixed(1)} mm long: the end plates overhang.`);
   }
 
+  // tuned plates: every main plate gets a flat top at the height that rings its note
+  const main = defs.filter((d) => d.family === 'P' || d.family === 'R');
+  const tunes = !useForm && tuningActive(v) ? tunePlates(v, main.length) : null;
+  if (!useForm && tuningActive(v) && !tunes) warnings.push('Tuning: no readable notes. Use names like C3, F#2 or Bb4.');
+  const tuning = tunes ? defs.map((d) => (d.family === 'P' || d.family === 'R' ? tunes[main.indexOf(d)] : null)) : null;
+  if (tunes) {
+    if (!v.baseOn || embedOf(v) <= 0) warnings.push('Tuning assumes each plate is clamped in the concrete: turn the base on and give the plates an embed depth.');
+    const off = tunes.filter((t) => t.clamped);
+    if (off.length) warnings.push(`Tuning: ${off.length} plate${off.length > 1 ? 's are' : ' is'} outside the ${MIN_TUNED}–${MAX_TUNED} mm height range at this thickness. Change the notes or the plate thickness.`);
+  }
+
   // 1. outlines
   const isFlat = v.sliceMode === 'flat';
   const topWin = input.top && v.imgTopMode !== 'off' ? topWindow(v, input.top, defs) : null;
@@ -803,8 +828,10 @@ export function slice(input: SliceInput): SliceResult {
     const top = flat.H.reduce((m, h) => Math.max(m, h), 0);
     if (defs.length * t < top - t) warnings.push(`Flat stack: ${defs.length} layers × ${t} mm only reach ${(defs.length * t).toFixed(0)} mm of the ${top.toFixed(0)} mm block; raise Plate count to keep the top.`);
   }
-  const outlines = defs.map((d) => {
+  const outlines = defs.map((d, di) => {
     if (useForm) return input.source ? formOutline(d, input.source, v) : [];
+    const tune = tuning?.[di];
+    if (tune) return tunedOutline(d, tune.cut, v);
     if (isFlat) return flat ? flatOutline(flat, flatFootprint(v), (d.index + 0.5) * t) : [];
     return hf ? strataOutline(d, hf, v) : [];
   });
@@ -867,7 +894,7 @@ export function slice(input: SliceInput): SliceResult {
     });
   }
 
-  const front = frontContext(v, input.front, defs, hf);
+  const front = frontContext(v, input.front, defs, hf, tunes ? Math.min(...tunes.map((t) => t.cut)) : null);
   // datum for flat impression floors: the lowest plate top inside the image window
   let topDatum = Infinity;
   if (topWin && !isFlat)
@@ -1067,5 +1094,5 @@ export function slice(input: SliceInput): SliceResult {
     });
   }
 
-  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin, support };
+  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin, support, tuning };
 }

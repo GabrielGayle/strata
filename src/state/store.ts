@@ -61,7 +61,8 @@ interface Store {
   redo: () => void;
   randomise: () => void;
   shuffleGentle: () => void;
-  loadPreset: (p: Preset) => void;
+  /** `images` (e.g. a preset's sound picture) are set in the same undo step. */
+  loadPreset: (p: Preset, images?: Project['images']) => void;
   saveVariant: (name: string) => void;
   loadVariant: (id: string) => void;
   deleteVariant: (id: string) => void;
@@ -294,9 +295,9 @@ export const useStore = create<Store>((set, get) => {
       commit({ ...p, params: { ...p.params, ...patch } }, `gentle:${performance.now()}`);
       get().toast(p.images.top ? 'Shuffled a gentle impression (undo to step back)' : 'Shuffled gentle strata. Load a top image to press it in.');
     },
-    loadPreset: (preset) => {
+    loadPreset: (preset, images) => {
       const p = get().project;
-      commit(applyPreset(p, preset), `preset:${performance.now()}`);
+      commit(applyPreset(p, preset, images), `preset:${performance.now()}`);
       // re-frame the camera: presets range from 6 cm to 80 cm across
       const ui = get().ui;
       set({ ui: { ...ui, snap: { dir: ui.snap.dir, n: ui.snap.n + 1, follow: true } } });

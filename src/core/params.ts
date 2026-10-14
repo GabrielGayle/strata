@@ -1,4 +1,5 @@
 import { evaluate, identifiers, isLiteral, parse, type Node } from './expr';
+import { CHORD_OPTIONS, SCALE_OPTIONS } from './tuning';
 
 export type ParamKind = 'number' | 'choice' | 'toggle' | 'color' | 'text';
 export type RawValue = string | number | boolean;
@@ -38,6 +39,7 @@ export const GROUPS = [
   'Insert',
   'Source form',
   'Image',
+  'Tuning',
   'Concrete',
   'Mould',
   'Unfold',
@@ -101,6 +103,7 @@ const isParallelish = (v: Values) => v.sliceMode !== 'radial';
 const isUpright = (v: Values) => v.sliceMode !== 'radial' && v.sliceMode !== 'flat';
 const isFlat = (v: Values) => v.sliceMode === 'flat';
 const strataSource = (v: Values) => v.stackSource === 'strata';
+const isTuned = (v: Values) => strataSource(v) && (v.sliceMode === 'parallel' || v.sliceMode === 'radial') && v.tuneMode !== 'off';
 
 export const PARAMS: ParamDef[] = [
   // Master
@@ -312,6 +315,35 @@ export const PARAMS: ParamDef[] = [
     { value: 'contour', label: 'Contour per plate' },
   ], { show: (v) => v.sliceMode === 'parallel' }),
   num('etchSpacing', 'Etch spacing', 'Image', 4, 0.5, 50, { step: 0.5, show: (v) => v.sliceMode === 'parallel' && v.etchMode !== 'off' }),
+
+  // Tuning: plates cut to ring at chosen notes
+  choice('tuneMode', 'Tuned plates', 'Tuning', 'off', [
+    { value: 'off', label: 'Off' },
+    { value: 'scale', label: 'Climb a scale' },
+    { value: 'chord', label: 'Spread a chord' },
+    { value: 'notes', label: 'My notes' },
+  ], {
+    show: (v) => strataSource(v) && (v.sliceMode === 'parallel' || v.sliceMode === 'radial'),
+    help: 'Each plate gets a flat top at the height that makes it ring at its note when struck: the plate is a steel tine clamped in the concrete. Uses Plates › Material and Thickness.',
+  }),
+  { id: 'tuneRoot', label: 'Lowest note', group: 'Tuning', kind: 'text', def: 'C3', show: (v) => isTuned(v) && v.tuneMode !== 'notes', help: 'Like C3, F#2 or Bb4 (A4 = 440 Hz)' },
+  choice('tuneScale', 'Scale', 'Tuning', 'major', SCALE_OPTIONS, { show: (v) => isTuned(v) && v.tuneMode === 'scale' }),
+  choice('tuneChord', 'Chord', 'Tuning', 'major', CHORD_OPTIONS, { show: (v) => isTuned(v) && v.tuneMode === 'chord', help: 'Chord tones repeat up through the octaves, one per plate' }),
+  { id: 'tuneNotes', label: 'Notes', group: 'Tuning', kind: 'text', def: 'A2 C3 E3 G3 A3', show: (v) => isTuned(v) && v.tuneMode === 'notes', help: 'Space-separated, repeated if there are more plates than notes' },
+  choice('tuneOrder', 'Layout', 'Tuning', 'up', [
+    { value: 'up', label: 'Low to high (front to back / round the ring)' },
+    { value: 'down', label: 'High to low' },
+    { value: 'middle', label: 'Tallest in the middle' },
+    { value: 'ends', label: 'Tallest at the ends' },
+    { value: 'listed', label: 'As listed' },
+  ], { show: isTuned }),
+  num('tuneAllowance', 'Tuning allowance', 'Tuning', 2, 0, 15, {
+    step: 0.5,
+    unit: '%',
+    noScale: true,
+    show: isTuned,
+    help: 'Cuts each plate this much taller than predicted, so it starts a little flat. Grinding the top down raises the pitch: trim to a tuner.',
+  }),
 
   // Concrete
   { id: 'concreteTint', label: 'Base tint', group: 'Concrete', kind: 'color', def: '#a39e96' },
