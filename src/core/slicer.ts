@@ -34,8 +34,9 @@ import { distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
 import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
 import { movePlane, type PartMoves } from './moves';
+import { buildSpacers, planRods, rodHardware, rodHoles, type BraceIssue, type HardwareRow, type RodPlan, type SpacerResult } from './brace';
 
-export type Family = 'P' | 'X' | 'R' | 'S';
+export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T';
 
 export interface PlateDef {
   key: string;
@@ -101,6 +102,14 @@ export interface SliceResult {
   front: FrontWindow | null;
   top: TopWindow | null;
   support: SupportSpec | null;
+  brace: BraceResult | null;
+}
+
+export interface BraceResult {
+  rods: RodPlan | null;
+  spacers: SpacerResult | null;
+  hardware: HardwareRow[];
+  issues: BraceIssue[];
 }
 
 export interface SliceInput {
@@ -135,6 +144,20 @@ export function placeDefs(defs: PlateDef[], moves: PartMoves | undefined): Plate
     const plane = movePlane(d.plane, moves[d.key], platePivot(d));
     return plane === d.plane ? d : { ...d, plane, home: d.plane };
   });
+}
+
+/** A rod plan re-expressed in a moved plate's own coordinates: where each rod passes through it. */
+function rodsThrough(plan: RodPlan, p: Plane): RodPlan {
+  const rods = plan.rods.flatMap((r) => {
+    const d: V3 = [r.b[0] - r.a[0], r.b[1] - r.a[1], r.b[2] - r.a[2]];
+    const dn = d[0] * p.normal[0] + d[1] * p.normal[1] + d[2] * p.normal[2];
+    if (Math.abs(dn) < 1e-6) return [];
+    const k = ((p.origin[0] - r.a[0]) * p.normal[0] + (p.origin[1] - r.a[1]) * p.normal[1] + (p.origin[2] - r.a[2]) * p.normal[2]) / dn;
+    if (k < 0 || k > 1) return [];
+    const w: V3 = [r.a[0] + d[0] * k - p.origin[0], r.a[1] + d[1] * k - p.origin[1], r.a[2] + d[2] * k - p.origin[2]];
+    return [{ ...r, u: w[0] * p.u[0] + w[1] * p.u[1] + w[2] * p.u[2], y: w[0] * p.v[0] + w[1] * p.v[1] + w[2] * p.v[2] }];
+  });
+  return { ...plan, rods };
 }
 
 /**
@@ -811,6 +834,13 @@ export function slice(input: SliceInput): SliceResult {
     });
   }
 
+  // threaded rods through the embedded tabs
+  const rods = planRods(v, defs, baseTop(v), e);
+  const braceIssues: BraceIssue[] = rods ? [...rods.issues] : [];
+  if (v.rodsOn && !rods && v.sliceMode !== 'parallel' && v.sliceMode !== 'waffle') braceIssues.push({ severity: 'info', message: 'Threaded rods need an upright parallel or waffle stack.' });
+  if (rods && v.embedMode === 'slot') braceIssues.push({ severity: 'warn', message: 'Threaded rods are cast in with the plates: set Concrete › Plate fixing to "Cast in".' });
+  const rodMiss: string[] = [];
+
   const front = frontContext(v, input.front, homeDefs, hf);
   // datum for flat impression floors: the lowest plate top inside the image window
   let topDatum = Infinity;
@@ -886,7 +916,8 @@ export function slice(input: SliceInput): SliceResult {
     // all-edges rounding happens before the functional cuts below, so they stay crisp
     shape = roundAll(shape, v.edgeRound);
 
-    // 5. anchor holes in the embedded tab
+    // 5. anchor holes in the embedded tab (any that would run into a rod hole are left out)
+    const rodCut = rods ? rodHoles(def.home ? rodsThrough(rods, def.plane) : rods, { key: def.key, family: def.family, shape: outlines[di] }, v.minFeature) : null;
     if (e > 0 && v.embedMode === 'cast' && v.anchorHoles > 0 && e > v.anchorDia + 2 * v.minFeature) {
       const tr = tabRange(outlines[di], e);
       if (tr) {
@@ -894,10 +925,17 @@ export function slice(input: SliceInput): SliceResult {
         const k = v.anchorHoles;
         for (let j = 0; j < k; j++) {
           const u = tr[0] + ((j + 1) * (tr[1] - tr[0])) / (k + 1);
+          if (rods && rods.rods.some((r) => Math.hypot(r.u - u, r.y + e / 2) < (v.anchorDia + rods.hole) / 2 + v.minFeature)) continue;
           holes.push(circlePath(u, -e / 2, v.anchorDia / 2));
         }
-        cuts.push(holes.map((h) => ({ outer: h, holes: [] })));
+        if (holes.length) cuts.push(holes.map((h) => ({ outer: h, holes: [] })));
       }
+    }
+    // 5b. threaded rod holes
+    if (rodCut && def.family === 'P') {
+      if (rodCut.holes.length) cuts.push(rodCut.holes);
+      braceIssues.push(...rodCut.issues);
+      if (rodCut.held < rods!.rods.length) rodMiss.push(def.key);
     }
 
     // 5b. flat stack registration pins (through every layer they fit, and on into the base)
@@ -1008,6 +1046,46 @@ export function slice(input: SliceInput): SliceResult {
     });
   }
 
+  // 9. laser-cut spacers: cross pieces cast in under the plates and the lift-off spacing template
+  if (rodMiss.length) braceIssues.push({ severity: 'warn', plateKey: rodMiss[0], message: `${rodMiss.length} plate(s) don't take every threaded rod cleanly: their tabs are too narrow where the rods run.` });
+  const spacers = buildSpacers(
+    v,
+    defs,
+    plates.map((p) => ({ key: p.def.key, family: p.def.family, plane: p.def.plane, shape: p.parts.map((q) => q.shape[0]) })),
+    rods,
+    insertOn ? input.insert : null,
+    baseTop(v),
+    e,
+    support ? [support.yBottom - baseTop(v), support.yTop - baseTop(v)] : null,
+  );
+  if (spacers) {
+    braceIssues.push(...spacers.issues);
+    for (const sp of spacers.parts) {
+      const ex = sp.shape[0];
+      const id = partLabel(v, sp.family, sp.index, sp.count);
+      const lab = placeLabel(id, ex, sp.labelAt, Math.min(v.labelHeight, sp.labelMax));
+      allParts.push({
+        id,
+        plateKey: sp.key,
+        family: sp.family,
+        index: sp.index,
+        piece: 0,
+        plane: sp.plane,
+        thickness: t,
+        shape: [ex],
+        etch: [],
+        labelPaths: lab?.paths ?? [],
+        labelAt: lab?.at ?? null,
+        area: shapeArea([ex]),
+        perimeter: shapePerimeter([ex]),
+        bbox: bboxOf([ex.outer]),
+        anchored: true,
+        kind: 'plate',
+      });
+    }
+  }
   placeLooseParts(allParts, input.moves, new Set(defs.map((d) => d.key)));
-  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin, support };
+  const brace: BraceResult | null = rods || spacers ? { rods, spacers, hardware: rods ? rodHardware(rods) : [], issues: braceIssues } : braceIssues.length ? { rods: null, spacers: null, hardware: [], issues: braceIssues } : null;
+
+  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin, support, brace };
 }

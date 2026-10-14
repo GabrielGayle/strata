@@ -182,6 +182,17 @@ export function buildMoulds(v: Values, sliced: SliceResult, insert: IndexedMesh 
         `Support ring: pour the first ${Math.max(0, H + sup.tenonBottom).toFixed(0)} mm, let it stiffen, then lower the plates (tenons through the ring) so the ring's top face sits ${sup.depth.toFixed(0)} mm below the surface; pour the rest.`,
       );
     }
+    const br = sliced.brace;
+    if (br?.rods) {
+      const rp = br.rods;
+      notes.push(
+        `Threaded rods: ${rp.rods.length} × ${rp.size} at ${(-rp.rods[0].y).toFixed(0)} mm below the surface, ${rp.length.length} mm long. Thread the plates on in order with their nuts and washers, square the stack, then tighten.`,
+      );
+    }
+    const cross = br?.spacers?.parts.filter((p) => p.family === 'C') ?? [];
+    const tmpl = br?.spacers?.parts.filter((p) => p.family === 'T') ?? [];
+    if (cross.length) notes.push(`Cross pieces: stand the ${cross.length} combs on the first pour, drop every plate's tab into its slots, and pour over them; they stay in the concrete.`);
+    if (tmpl.length) notes.push(`Spacing template: lower the ${tmpl.length} template${tmpl.length > 1 ? 's' : ''} over the plate tops so each plate sits in its slot; lift ${tmpl.length > 1 ? 'them' : 'it'} straight off once the concrete has cured.`);
     const r = stackedMould('base', 'MB-', cavities, v, 'x', parts, { y0: -ply, kind: 'floor' });
     dowels += r.dowels;
     bolts += r.bolts;
