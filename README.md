@@ -33,6 +33,11 @@ npm run build    # static site in dist/
   shuffle); front face as layered cut-outs whose
   depth follows darkness, halftone holes, and etched hatch / contour lines; side profile (image as
   overall plate height, or traced silhouette) mixed with the strata.
+- **Flat stack (face to face).** Plates laid flat on top of each other like a laminated block,
+  each one the horizontal section of the strata block (or source form) at its height. The top image
+  is pressed down through the layers like a stamp: dark areas cut through more layers. Registration
+  pin holes run through every layer they fit (and set the rods in the base), and each layer carries
+  an etched outline of the layer above for glue-up.
 - **Depth from photo.** Each image slot can send a photo to Apple Depth Pro (the Modal endpoint
   in promptda-depth-generator) and load back a bas-relief: near parts dark (proud on the top,
   deepest in front layers), background white and left uncut. Set `VITE_DEPTH_URL` to the
@@ -66,7 +71,7 @@ STEP import isn't supported yet (it needs a CAD kernel); export STL in mm from F
 ## Code map
 
 - `src/core/` — the engine (no UI): `params.ts` + `expr.ts` (graph), `forms.ts`, `section.ts`
-  (mesh-plane sections), `heightfield.ts`, `image.ts`, `slicer.ts`, `checks.ts`, `arcs.ts` +
+  (mesh-plane sections), `heightfield.ts`, `flatstack.ts`, `image.ts`, `slicer.ts`, `checks.ts`, `arcs.ts` +
   `dxf.ts`, `nest.ts`, `mould.ts`, `unfold.ts`, `bom.ts`, `pipeline.ts`, `exporters.ts`.
 - `src/ui/` — React + React Three Fiber views.
 - `test/` — vitest tests for the engine, including a DXF round trip that reads the exported files

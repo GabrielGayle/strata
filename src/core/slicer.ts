@@ -28,6 +28,7 @@ import {
 } from './geom2d';
 import { offsetPlane, planeToWorld, sectionShape, type Plane, type V3 } from './section';
 import { stackFrame, type HeightField } from './heightfield';
+import { flatFootprint, flatGrid, flatOutline, flatPinPoints, flatStampCut, outlinePaths, pinFits, type FlatGrid } from './flatstack';
 import type { IndexedMesh } from './forms';
 import { distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
@@ -112,7 +113,8 @@ function makePlane(origin: V3, normal: V3): Plane {
 }
 
 export const baseTop = (v: Values) => (v.baseOn ? v.baseHeight : 0);
-export const embedOf = (v: Values) => (v.baseOn ? v.embedDepth : 0);
+// flat layers sit on the base (held by registration pins) rather than sinking into it
+export const embedOf = (v: Values) => (v.baseOn && v.sliceMode !== 'flat' ? v.embedDepth : 0);
 
 export function plateDefs(v: Values): PlateDef[] {
   const top = baseTop(v);
@@ -133,6 +135,17 @@ export function plateDefs(v: Values): PlateDef[] {
       const normal: V3 = [-s, 0, c];
       const plane: Plane = { origin: [0, top, 0], normal, u: [c, 0, s], v: UP };
       defs.push({ key: `R${k}`, family: 'R', index: k, count: n, plane, u0: Math.min(v.radialHub, R - 5), u1: R });
+    }
+    return defs;
+  }
+  if (v.sliceMode === 'flat') {
+    const fp = flatFootprint(v);
+    const n = Math.max(1, Math.round(v.plateCount));
+    for (let i = 0; i < n; i++) {
+      // horizontal plane: plan coords (x, -z), extruded upwards, centred on the layer.
+      // Layers are plates of the main stack (family P), just laid flat.
+      const plane: Plane = { origin: [0, top + (i + 0.5) * v.thickness, 0], normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1] };
+      defs.push({ key: `L${i}`, family: 'P', index: i, count: n, plane, u0: fp.minX, u1: fp.maxX });
     }
     return defs;
   }
@@ -374,20 +387,26 @@ export interface TopWindow {
  */
 export function topWindow(v: Values, img: Gray, defs: PlateDef[]): TopWindow | null {
   if (!defs.length) return null;
+  // flat layers: the window spans the footprint; upright plates: the ends of every plate
+  const pts: V3[] =
+    v.sliceMode === 'flat'
+      ? (() => {
+          const fp = flatFootprint(v);
+          return [[fp.minX, 0, -fp.minY], [fp.maxX, 0, -fp.maxY]] as V3[];
+        })()
+      : defs.flatMap((d) => [d.u0, d.u1].map((u) => planeToWorld(d.plane, u, 0)));
   const f = stackFrame(v);
   const stack: [number, number] = [f.stack[0], f.stack[1]];
   const right: [number, number] = [-f.stack[1], f.stack[0]];
   let r0 = Infinity, r1 = -Infinity, s0 = Infinity, s1 = -Infinity;
-  for (const d of defs)
-    for (const u of [d.u0, d.u1]) {
-      const p = planeToWorld(d.plane, u, 0);
-      const r = p[0] * right[0] + p[2] * right[1];
-      const sv = p[0] * stack[0] + p[2] * stack[1];
-      r0 = Math.min(r0, r);
-      r1 = Math.max(r1, r);
-      s0 = Math.min(s0, sv);
-      s1 = Math.max(s1, sv);
-    }
+  for (const p of pts) {
+    const r = p[0] * right[0] + p[2] * right[1];
+    const sv = p[0] * stack[0] + p[2] * stack[1];
+    r0 = Math.min(r0, r);
+    r1 = Math.max(r1, r);
+    s0 = Math.min(s0, sv);
+    s1 = Math.max(s1, sv);
+  }
   const m = v.topMargin;
   r0 += m;
   r1 -= m;
@@ -679,8 +698,27 @@ export function slice(input: SliceInput): SliceResult {
   }
 
   // 1. outlines
+  const isFlat = v.sliceMode === 'flat';
+  const topWin = input.top && v.imgTopMode !== 'off' ? topWindow(v, input.top, defs) : null;
+  const topField = topWin && input.top ? topProfileField(v, input.top, topWin) : null;
+
+  // flat stack: one sampled surface (strata top, stamped by the image) serves every layer
+  let flat: FlatGrid | null = null;
+  if (isFlat && (useForm ? input.source : hf)) {
+    let formTop = 0;
+    if (useForm && input.source) {
+      const pos = input.source.pos;
+      for (let i = 1; i < pos.length; i += 3) formTop = Math.max(formTop, pos[i]);
+      formTop -= baseTop(v);
+    }
+    const stamp = topWin && topField ? { uv: (p: V3) => topUV(topWin, p), field: topField } : null;
+    flat = flatGrid(v, flatFootprint(v), useForm ? null : hf, formTop, stamp);
+    const top = flat.H.reduce((m, h) => Math.max(m, h), 0);
+    if (defs.length * t < top - t) warnings.push(`Flat stack: ${defs.length} layers × ${t} mm only reach ${(defs.length * t).toFixed(0)} mm of the ${top.toFixed(0)} mm block; raise Plate count to keep the top.`);
+  }
   const outlines = defs.map((d) => {
     if (useForm) return input.source ? formOutline(d, input.source, v) : [];
+    if (isFlat) return flat ? flatOutline(flat, flatFootprint(v), (d.index + 0.5) * t) : [];
     return hf ? strataOutline(d, hf, v) : [];
   });
 
@@ -719,11 +757,9 @@ export function slice(input: SliceInput): SliceResult {
   }
 
   const front = frontContext(v, input.front, defs, hf);
-  const topWin = input.top && v.imgTopMode !== 'off' ? topWindow(v, input.top, defs) : null;
-  const topField = topWin && input.top ? topProfileField(v, input.top, topWin) : null;
   // datum for flat impression floors: the lowest plate top inside the image window
   let topDatum = Infinity;
-  if (topWin)
+  if (topWin && !isFlat)
     defs.forEach((d, di) => {
       for (let u = d.u0; u <= d.u1; u += 2) {
         const p = planeToWorld(d.plane, u, 0);
@@ -735,6 +771,11 @@ export function slice(input: SliceInput): SliceResult {
   const plates: PlateInfo[] = [];
   const allParts: Part[] = [];
   const insertOn = input.insert && v.insShape !== 'none';
+  // flat stack: registration pins, chosen on the bottom layer, run up until a layer can't hold them
+  const pinR = v.pinDia / 2;
+  let pins: Vec2[] = [];
+  let pinsLive: boolean[] = [];
+  let below: Shape = []; // material of the layer underneath, for support and guides
 
   defs.forEach((def, di) => {
     let shape = outlines[di];
@@ -778,8 +819,11 @@ export function slice(input: SliceInput): SliceResult {
       etch = frontEtch(def, v, front);
     }
 
-    // 4b. image impression into the top surface
-    if (topWin && input.top) {
+    // 4b. image impression into the top surface (flat stack: pressed down through the layers)
+    if (flat) {
+      const cut = flatStampCut(flat, (def.index + 0.5) * t, v.minFeature, t);
+      if (cut.length) imageCuts.push(cut);
+    } else if (topWin && input.top) {
       const carve = topCarve(def, outlines[di], v, topField!, topWin, Number.isFinite(topDatum) ? topDatum : 0);
       if (carve.length) imageCuts.push(carve);
     }
@@ -801,6 +845,21 @@ export function slice(input: SliceInput): SliceResult {
       }
     }
 
+    // 5b. flat stack registration pins (through every layer they fit, and on into the base)
+    if (flat && v.flatPins > 0) {
+      if (def.index === 0) {
+        pins = flatPinPoints(v, flat, shape, Math.round(v.flatPins), pinR);
+        pinsLive = pins.map(() => true);
+        if (pins.length < v.flatPins) warnings.push(`Flat stack: room for only ${pins.length} of ${v.flatPins} registration pins.`);
+      }
+      const holes: Path[] = [];
+      pins.forEach((p, k) => {
+        if (pinsLive[k] && pinFits(shape, p, pinR, v.minFeature)) holes.push(circlePath(p[0], p[1], pinR));
+        else pinsLive[k] = false;
+      });
+      if (holes.length) cuts.push(holes.map((h) => ({ outer: h, holes: [] })));
+    }
+
     // 6. waffle slots
     if (slots[di].length) cuts.push(slots[di]);
     if (cuts.length) shape = difference(shape, cuts.flat());
@@ -808,7 +867,8 @@ export function slice(input: SliceInput): SliceResult {
     // 7. split into physical pieces; islands inside holes would fall out
     const pieces: ExPoly[] = [];
     for (const ex of shape) {
-      if ((ex.depth ?? 0) > 0) {
+      // islands inside a flat layer's cut-outs rest on the layer below, so they stay as parts
+      if ((ex.depth ?? 0) > 0 && !isFlat) {
         info.islands++;
         continue;
       }
@@ -843,12 +903,19 @@ export function slice(input: SliceInput): SliceResult {
         area: shapeArea([ex]),
         perimeter: shapePerimeter([ex]),
         bbox: bb,
-        anchored: e <= 0 || bb.minY < -0.5,
+        anchored: isFlat ? def.index === 0 || shapeArea(intersection([ex], below)) > 1 : e <= 0 || bb.minY < -0.5,
         kind: 'plate',
       };
       info.parts.push(part);
       allParts.push(part);
     });
+    // etch this layer's outline onto the one below, so each layer has a line to glue up to
+    if (isFlat && v.flatGuides && def.index > 0 && shape.length) {
+      const prev = plates[plates.length - 1];
+      const guide = outlinePaths(shape);
+      for (const q of prev?.parts ?? []) q.etch = [...q.etch, ...clipLines(guide, offset(q.shape, -0.8))];
+    }
+    if (isFlat) below = shape;
     plates.push(info);
   });
 

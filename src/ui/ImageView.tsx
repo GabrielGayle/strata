@@ -77,7 +77,10 @@ export default function ImageView() {
       slot: 'top',
       title: 'Top surface image',
       g: model.topImg,
-      desc: "Looking down on the stack: each plate's top edge is cut down where its strip of the image is dark, so the image reads as an impression across the whole top surface.",
+      desc:
+        v.sliceMode === 'flat'
+          ? 'Pressed down into the flat stack like a stamp: each layer is cut away where the image is darker than its depth, so dark areas run through more layers.'
+          : "Looking down on the stack: each plate's top edge is cut down where its strip of the image is dark, so the image reads as an impression across the whole top surface.",
       enable: { imgTopMode: 'carve' },
       off: { imgTopMode: 'off' },
       snap: 'top',
@@ -272,7 +275,11 @@ export default function ImageView() {
             {v.imgTopMode !== 'off' && model.topImg ? (
               <>
                 Top impression: {v.imgTopMode === 'carve' ? 'dark areas sink' : 'dark areas stand proud'} up to {fmt(v.topDepth, 0)} mm in {v.topSteps > 0 ? `${v.topSteps} steps` : 'a smooth slope'}.
-                Resolution is one plate per image row{topRes ? ` (${fmt(topRes, 1)} mm pitch)` : ''} by {fmt(Math.min(1, v.sampleStep), 1)} mm along each plate: more, thinner plates give a sharper picture.
+                {v.sliceMode === 'flat' ? (
+                  <>Flat stack: the picture is pressed down through the layers, one {fmt(v.thickness, 1)} mm layer per depth step, so {Math.floor(v.topDepth / v.thickness)} layers carry the deepest areas. Thinner plates give finer depth steps.</>
+                ) : (
+                  <>Resolution is one plate per image row{topRes ? ` (${fmt(topRes, 1)} mm pitch)` : ''} by {fmt(Math.min(1, v.sampleStep), 1)} mm along each plate: more, thinner plates give a sharper picture.</>
+                )}
                 Size, position, depth and threshold are under Parameters › Image.
                 {v.stackSource === 'strata' && v.erosionAmp > v.topDepth && (
                   <span style={{ color: 'var(--warn)' }}>

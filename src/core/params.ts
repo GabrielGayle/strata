@@ -98,6 +98,8 @@ function formParams(prefix: 'ins' | 'src', group: string, show: (v: Values) => b
 
 const hasSupport = (v: Values) => v.baseOn && v.supportMode !== 'off';
 const isParallelish = (v: Values) => v.sliceMode !== 'radial';
+const isUpright = (v: Values) => v.sliceMode !== 'radial' && v.sliceMode !== 'flat';
+const isFlat = (v: Values) => v.sliceMode === 'flat';
 const strataSource = (v: Values) => v.stackSource === 'strata';
 
 export const PARAMS: ParamDef[] = [
@@ -149,20 +151,24 @@ export const PARAMS: ParamDef[] = [
   num('endMargin', 'End margin', 'Plates', 40, 0, 1000, { show: isParallelish, help: 'Base end to the outer plate centre (the minimum when a fixed gap fills the base)' }),
   num('stackLength', 'Stack run', 'Plates', 'alongWidth ? baseWidth : baseLength', 1, 5000, { show: isParallelish, help: 'Base length the plates are stacked along (alongWidth = 1 when slicing across)' }),
   num('acrossLength', 'Across run', 'Plates', 'alongWidth ? baseLength : baseWidth', 1, 5000, { show: isParallelish }),
-  num('pitch', 'Pitch', 'Plates', '(stackLength - 2*endMargin) / (plateCount - 1)', 1, 500, { step: 0.1, show: isParallelish }),
+  num('pitch', 'Pitch', 'Plates', '(stackLength - 2*endMargin) / (plateCount - 1)', 1, 500, { step: 0.1, show: isUpright }),
   num('sideMargin', 'Side margin', 'Plates', 20, 0, 1000),
   num('plateWidth', 'Plate width', 'Plates', 'acrossLength - 2*sideMargin', 5, 3000, { show: isParallelish }),
-  num('embedDepth', 'Embed depth', 'Plates', 40, 0, 400, { help: 'How far each plate sinks into the concrete' }),
-  num('tabInset', 'Embed tab inset', 'Plates', 0, 0, 200, { help: 'Narrows the embedded tab on each side' }),
-  num('anchorHoles', 'Anchor holes', 'Plates', 2, 0, 12, { int: true, unit: '', help: 'Holes in the embedded tab that concrete flows through' }),
-  num('anchorDia', 'Anchor hole Ø', 'Plates', 10, 2, 60),
+  num('embedDepth', 'Embed depth', 'Plates', 40, 0, 400, { show: (v) => !isFlat(v), help: 'How far each plate sinks into the concrete' }),
+  num('tabInset', 'Embed tab inset', 'Plates', 0, 0, 200, { show: (v) => !isFlat(v), help: 'Narrows the embedded tab on each side' }),
+  num('anchorHoles', 'Anchor holes', 'Plates', 2, 0, 12, { int: true, unit: '', show: (v) => !isFlat(v), help: 'Holes in the embedded tab that concrete flows through' }),
+  num('anchorDia', 'Anchor hole Ø', 'Plates', 10, 2, 60, { show: (v) => !isFlat(v) }),
 
   // Slicer
   choice('sliceMode', 'Slicing', 'Slicer', 'parallel', [
     { value: 'parallel', label: 'Parallel stack' },
     { value: 'radial', label: 'Radial' },
     { value: 'waffle', label: 'Waffle (interlocking)' },
-  ]),
+    { value: 'flat', label: 'Flat stack (face to face)' },
+  ], { help: 'Flat stack lays the plates flat on top of each other (Plate count = layers); a top image is pressed down through the layers like a stamp' }),
+  num('flatPins', 'Registration pins', 'Slicer', 2, 0, 8, { int: true, unit: '', show: isFlat, help: 'Holes through every layer they fit, for pins or threaded rod that line the stack up and fix it to the base' }),
+  num('pinDia', 'Pin Ø', 'Slicer', 8, 2, 40, { show: (v) => isFlat(v) && v.flatPins > 0 }),
+  { id: 'flatGuides', label: 'Etch glue-up guides', group: 'Slicer', kind: 'toggle', def: true, show: isFlat, help: 'Etches the outline of the layer above onto each layer' },
   choice('sliceAxis', 'Direction', 'Slicer', 'length', [
     { value: 'length', label: 'Along length (X)' },
     { value: 'width', label: 'Along width (Z)' },
