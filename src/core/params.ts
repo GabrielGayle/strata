@@ -277,6 +277,16 @@ export const PARAMS: ParamDef[] = [
   num('topX', 'Image offset X', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
   num('topZ', 'Image offset Z', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
   num('topMargin', 'Top margin', 'Image', 10, 0, 300, { show: (v) => v.imgTopMode !== 'off' }),
+  choice('topOutline', 'Shape outline', 'Image', 'alpha', [
+    { value: 'off', label: 'Off (plates keep their full width)' },
+    { value: 'alpha', label: 'Transparent PNG edge' },
+    { value: 'matte', label: 'PNG edge or light background' },
+  ], { show: (v) => v.imgTopMode !== 'off', help: 'Trims every plate to the silhouette of the top image seen from above, so the stack takes on the shape. Images without a background to cut away keep the plain outline.' }),
+  num('topChoke', 'Outline choke', 'Image', 0, -200, 200, {
+    step: 0.5,
+    show: (v) => v.imgTopMode !== 'off' && v.topOutline !== 'off',
+    help: 'Pulls the plate ends in from the silhouette edge (positive) or spreads them out past it (negative)',
+  }),
   choice('imgFit', 'Fit stack to image', 'Image', 'off', [
     { value: 'off', label: 'Off' },
     { value: 'width', label: 'Keep length, set width from image' },

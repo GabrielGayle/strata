@@ -30,7 +30,7 @@ import { offsetPlane, planeToWorld, sectionShape, type Plane, type V3 } from './
 import { stackFrame, type HeightField } from './heightfield';
 import { flatFootprint, flatGrid, flatOutline, flatPinPoints, flatStampCut, outlinePaths, pinFits, type FlatGrid } from './flatstack';
 import type { IndexedMesh } from './forms';
-import { distanceInside, marchingSquares, sample, type Gray } from './image';
+import { boxBlur, distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
 import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
 
@@ -103,6 +103,8 @@ export interface SliceInput {
   insert: IndexedMesh | null;
   front: Gray | null;
   top?: Gray | null;
+  /** Silhouette of the top image (1 = shape), when the plates should follow its outline. */
+  topMask?: Gray | null;
 }
 
 const UP: V3 = [0, 1, 0];
@@ -233,11 +235,13 @@ function formOutline(def: PlateDef, mesh: IndexedMesh, v: Values): Shape {
   return unionShapes(sec, rect(bb.minX + inset, -e, bb.maxX - inset, 0.15));
 }
 
-function tabRange(outline: Shape, e: number): [number, number] | null {
+/** The u-extent of each separate embedded tab (one per piece when a plate is trimmed into several). */
+function tabRanges(outline: Shape, e: number): [number, number][] {
   const band = intersection(outline, rect(-BIG, -e + 0.5, BIG, -0.5));
-  if (!band.length) return null;
-  const bb = shapeBBox(band);
-  return [bb.minX, bb.maxX];
+  return band.map((ex) => {
+    const bb = bboxOf([ex.outer]);
+    return [bb.minX, bb.maxX];
+  });
 }
 
 interface FrontCtx {
@@ -499,12 +503,14 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
   const us: number[] = [];
   const tops: number[] = [];
   const lv: number[] = [];
+  const on: boolean[] = []; // the sample lands on the plate
   const steps = Math.round(v.topSteps);
   for (let k = 0; k <= n; k++) {
     const u = def.u0 + ((def.u1 - def.u0) * k) / n;
     const t = topAt(outline, u);
     us.push(u);
     tops.push(t ?? 0);
+    on.push(t !== null && t > 0);
     const p = planeToWorld(def.plane, u, 0);
     let f = 0;
     const uv = t !== null && t > 0 ? topUV(win, p) : null;
@@ -518,15 +524,29 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
   // drop runs narrower than the minimum feature (slivers of material or of cut). Stepped
   // profiles clean up every terrace; smooth ones only where the cut starts and stops.
   const minRun = Math.max(1, Math.ceil(Math.max(v.minFeature, 0.5) / step));
-  const key = (x: number) => (steps > 0 ? x : x > 0 ? 1 : 0);
+  // at a plate's own end the image fades into its background (anti-aliasing, blur), which would leave a
+  // thin shoulder standing there: carry the level a little way in out to the end
+  for (let k = 0; k < lv.length; k++) {
+    if (!on[k] || (k > 0 && on[k - 1])) continue;
+    let e = k;
+    while (e + 1 < lv.length && on[e + 1]) e++;
+    if (e - k + 1 <= 2 * minRun) continue;
+    for (let q = 0; q < minRun; q++) {
+      lv[k + q] = lv[k + minRun];
+      lv[e - q] = lv[e - minRun];
+    }
+  }
+  // samples off the plate are their own run, so a sliver at the plate's end is cleaned like any other
+  const key = (k: number) => (!on[k] ? -1 : steps > 0 ? lv[k] : lv[k] > 0 ? 1 : 0);
   for (let pass = 0; pass < 2; pass++) {
     let a = 0;
     while (a < lv.length) {
       let b = a;
-      while (b + 1 < lv.length && key(lv[b + 1]) === key(lv[a])) b++;
-      if (b - a + 1 < minRun && (a > 0 || b < lv.length - 1)) {
-        const fill = a > 0 ? lv[a - 1] : lv[b + 1];
-        for (let k = a; k <= b; k++) lv[k] = steps > 0 || key(fill) === 0 ? fill : Math.max(lv[k], fill);
+      while (b + 1 < lv.length && key(b + 1) === key(a)) b++;
+      const before = a > 0 && on[a - 1], after = b < lv.length - 1 && on[b + 1];
+      if (on[a] && b - a + 1 < minRun + (before && after ? 0 : 1) && (before || after)) {
+        const fill = before ? lv[a - 1] : lv[b + 1];
+        for (let k = a; k <= b; k++) lv[k] = steps > 0 || fill <= 0 ? fill : Math.max(lv[k], fill);
       }
       a = b + 1;
     }
@@ -548,8 +568,9 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
     const k0 = k;
     while (k + 1 < lv.length && depthAt(k + 1) > 0) k++;
     const k1 = k;
-    const ua = k0 > 0 ? (us[k0 - 1] + us[k0]) / 2 : us[k0] - 1;
-    const ub = k1 < lv.length - 1 ? (us[k1] + us[k1 + 1]) / 2 : us[k1] + 1;
+    // a run that reaches the plate's end (e.g. trimmed to a silhouette) carries on past it
+    const ua = k0 > 0 && on[k0 - 1] ? (us[k0 - 1] + us[k0]) / 2 : us[k0] - step - 1;
+    const ub = k1 < lv.length - 1 && on[k1 + 1] ? (us[k1] + us[k1 + 1]) / 2 : us[k1] + step + 1;
     const ta = topAt(outline, ua) ?? tops[k0];
     const tb = topAt(outline, ub) ?? tops[k1];
     const lower: Path = [[ua, ta - depthAt(k0)]];
@@ -567,6 +588,72 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
     k++;
   }
   return polys.length ? simplifyShape(union(polys), 0.02) : [];
+}
+
+// ---------------------------------------------------------------------------
+// Shape outline: with a cut-out PNG on top, every plate is trimmed to the
+// silhouette seen from above, so the whole stack takes on the shape.
+
+/**
+ * The silhouette laid on the footprint, in world XZ, grown (choke < 0) or
+ * shrunk (choke > 0) by `choke` mm. Cached on the mask, so only a change of
+ * image, window or choke rebuilds it.
+ */
+export function silhouetteFootprint(mask: Gray, win: TopWindow, choke: number): Shape {
+  const key = [win.r0, win.r1, win.s0, win.s1, win.turns, ...win.right, ...win.stack, choke].join(',');
+  return cached(mask, key, () => {
+    const soft = boxBlur(mask, 1); // a light blur turns the pixel stair-steps into smooth contours
+    const field = new Float32Array(soft.data.length);
+    for (let i = 0; i < field.length; i++) field[i] = soft.data[i] - 0.5;
+    const toWorld = ([x, y]: Vec2): Vec2 => {
+      const ix = x / (mask.w - 1), iy = y / (mask.h - 1);
+      // inverse of topUV: image coords back to window fractions (a across, b far → front)
+      const [a, b] = win.turns === 1 ? [1 - iy, ix] : win.turns === 2 ? [1 - ix, 1 - iy] : win.turns === 3 ? [iy, 1 - ix] : [ix, iy];
+      const r = win.r0 + a * (win.r1 - win.r0);
+      const sv = win.s1 - b * (win.s1 - win.s0);
+      return [r * win.right[0] + sv * win.stack[0], r * win.right[1] + sv * win.stack[1]];
+    };
+    const loops = marchingSquares(field, mask.w, mask.h).map((l) => l.map(toWorld));
+    if (!loops.length) return [];
+    let shape = simplifyShape(union(loops, 'evenodd'), 0.05);
+    if (Math.abs(choke) > 1e-6) shape = offset(shape, -choke, 'round', SMOOTH_TOL);
+    return shape;
+  });
+}
+
+/** Spans of u where a plate's mid-plane runs inside the footprint (world XZ). */
+export function footprintSpans(plane: Plane, foot: Shape): [number, number][] {
+  const o = plane.origin;
+  const local = ([x, z]: Vec2): Vec2 => {
+    const dx = x - o[0], dz = z - o[2];
+    return [dx * plane.u[0] + dz * plane.u[2], dx * plane.normal[0] + dz * plane.normal[2]];
+  };
+  const us: number[] = [];
+  for (const ex of foot)
+    for (const path of [ex.outer, ...ex.holes]) {
+      const q = path.map(local);
+      for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
+        const a = q[j], b = q[i];
+        if (a[1] <= 0 !== b[1] <= 0) us.push(a[0] + ((0 - a[1]) / (b[1] - a[1])) * (b[0] - a[0]));
+      }
+    }
+  us.sort((x, y) => x - y);
+  const spans: [number, number][] = [];
+  for (let k = 0; k + 1 < us.length; k += 2) if (us[k + 1] - us[k] > 1e-6) spans.push([us[k], us[k + 1]]);
+  return spans;
+}
+
+/** Close gaps too narrow to cut and drop slivers of plate too narrow to stand. */
+export function cleanSpans(spans: [number, number][], minFeature: number, minPart = 0): [number, number][] {
+  const gap = Math.max(0.5, minFeature);
+  const merged: [number, number][] = [];
+  for (const sp of spans) {
+    const last = merged[merged.length - 1];
+    if (last && sp[0] - last[1] < gap) last[1] = Math.max(last[1], sp[1]);
+    else merged.push([sp[0], sp[1]]);
+  }
+  const minW = Math.max(3, 2 * minFeature, minPart);
+  return merged.filter(([a, b]) => b - a >= minW);
 }
 
 interface Cavity {
@@ -722,6 +809,21 @@ export function slice(input: SliceInput): SliceResult {
     return hf ? strataOutline(d, hf, v) : [];
   });
 
+  // 1a. trim every plate to the top image's silhouette
+  if (topWin && input.topMask && v.topOutline !== 'off') {
+    const foot = silhouetteFootprint(input.topMask, topWin, Number(v.topChoke) || 0);
+    // flat layers lie in plan (u = x, v = -z), so they take the footprint itself
+    const footLayer = isFlat ? union(foot.flatMap((ex) => [ex.outer, ...ex.holes]).map((p) => p.map(([x, z]) => [x, -z] as Vec2)), 'evenodd') : [];
+    if (isFlat) outlines.forEach((o, di) => {
+      if (o.length) outlines[di] = intersection(o, footLayer);
+    });
+    else defs.forEach((d, di) => {
+      if (!outlines[di].length) return;
+      const spans = cleanSpans(footprintSpans(d.plane, foot), v.minFeature, v.minPartSize);
+      outlines[di] = spans.length ? intersection(outlines[di], spans.flatMap(([a, b]) => rect(a, -BIG, b, BIG))) : [];
+    });
+  }
+
   // 1b. tenons down into the embedded support ring
   const support = supportSpec(v, baseTop(v));
   const tenons = defs.map((d, di) => {
@@ -750,8 +852,17 @@ export function slice(input: SliceInput): SliceResult {
         if (!colP.length || !colX.length) return;
         const top = Math.min(shapeBBox(colP).maxY, shapeBBox(colX).maxY);
         const half = top / 2;
-        slots[pi].push(...rect(uP - sw / 2, half, uP + sw / 2, BIG));
-        slots[xi].push(...rect(uX - sw / 2, -BIG, uX + sw / 2, half));
+        // a slot that lands within a minimum feature of a plate's end (silhouette-trimmed plates) runs out
+        // through it rather than leaving a sliver standing beside it
+        const reach = sw / 2 + Math.max(0.5, v.minFeature);
+        const widen = (o: Shape, u: number, y: number): [number, number] => [
+          pointInShape([u - reach, y], o) ? u - sw / 2 : u - reach - 1,
+          pointInShape([u + reach, y], o) ? u + sw / 2 : u + reach + 1,
+        ];
+        const [pa, pb] = widen(outlines[pi], uP, (half + top) / 2);
+        const [xa, xb] = widen(outlines[xi], uX, half / 2);
+        slots[pi].push(...rect(pa, half, pb, BIG));
+        slots[xi].push(...rect(xa, -BIG, xb, half));
       });
     });
   }
@@ -833,14 +944,17 @@ export function slice(input: SliceInput): SliceResult {
 
     // 5. anchor holes in the embedded tab
     if (e > 0 && v.embedMode === 'cast' && v.anchorHoles > 0 && e > v.anchorDia + 2 * v.minFeature) {
-      const tr = tabRange(outlines[di], e);
-      if (tr) {
-        const holes: Path[] = [];
-        const k = v.anchorHoles;
+      const holes: Path[] = [];
+      for (const tr of tabRanges(outlines[di], e)) {
+        // fewer holes on a narrow tab, so the web between them never drops below the minimum feature
+        let k = v.anchorHoles;
+        while (k > 0 && (tr[1] - tr[0]) / (k + 1) - v.anchorDia < 2 * v.minFeature) k--;
         for (let j = 0; j < k; j++) {
           const u = tr[0] + ((j + 1) * (tr[1] - tr[0])) / (k + 1);
           holes.push(circlePath(u, -e / 2, v.anchorDia / 2));
         }
+      }
+      if (holes.length) {
         cuts.push(holes.map((h) => ({ outer: h, holes: [] })));
       }
     }

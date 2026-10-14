@@ -47,10 +47,16 @@ export async function readImage(maxSide = 640): Promise<{ name: string; dataUrl:
         cv.width = Math.round(img.width * k);
         cv.height = Math.round(img.height * k);
         const ctx = cv.getContext('2d')!;
-        ctx.fillStyle = '#fff'; // transparent PNGs read as white background
-        ctx.fillRect(0, 0, cv.width, cv.height);
         ctx.drawImage(img, 0, 0, cv.width, cv.height);
         URL.revokeObjectURL(url);
+        // cut-out PNGs keep their transparency (the plates can follow the shape); everything else is stored as a compact JPEG
+        const px = ctx.getImageData(0, 0, cv.width, cv.height).data;
+        let clear = false;
+        for (let i = 3; i < px.length && !clear; i += 4) clear = px[i] < 250;
+        if (clear) return resolve({ name: f.name, dataUrl: cv.toDataURL('image/png') });
+        ctx.globalCompositeOperation = 'destination-over';
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, cv.width, cv.height);
         resolve({ name: f.name, dataUrl: cv.toDataURL('image/jpeg', 0.9) });
       };
       img.onerror = () => resolve(null);

@@ -4,7 +4,7 @@
 import type * as THREE from 'three';
 import { evaluateParams, PARAMS, type EvalResult, type Values } from './params';
 import { buildForm, formSpec, meshVolume, toIndexedMesh, type Form, type IndexedMesh } from './forms';
-import { processImage, type Gray } from './image';
+import { processImage, rotate, silhouetteMask, type Gray } from './image';
 import { buildHeightField, type HeightField } from './heightfield';
 import { slice, type SliceResult } from './slicer';
 import { runChecks, type Issue } from './checks';
@@ -129,10 +129,13 @@ export function createPipeline() {
     const sideImg = stage('Side image', [assets.sideImg, ...pick(v, IMG_KEYS)], () => (assets.sideImg ? processImage(assets.sideImg, opts()) : null));
     const frontImg = stage('Front image', [assets.frontImg, ...pick(v, IMG_KEYS)], () => (assets.frontImg ? processImage(assets.frontImg, opts()) : null));
     const topImg = stage('Top image', [assets.topImg ?? null, ...pick(v, IMG_KEYS)], () => (assets.topImg ? processImage(assets.topImg, opts()) : null));
+    const topMask = stage('Top silhouette', [assets.topImg ?? null, v.topOutline, v.topThreshold, v.imgRotate], () =>
+      assets.topImg && v.topOutline !== 'off' ? silhouetteMask(rotate(assets.topImg, Number(v.imgRotate)), String(v.topOutline), v.topThreshold) : null,
+    );
     const hf = stage('Strata field', [...pick(v, STRATA_KEYS), sideImg], () => (v.stackSource === 'strata' ? buildHeightField(v, sideImg) : null));
     // parts that come out unchanged keep their identity, so checks, nesting and the 3D view skip them
-    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg], () =>
-      share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg })),
+    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask], () =>
+      share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg, topMask })),
     );
     const issues = stage('Fit checks', [sliced, ...pick(v, CHECK_KEYS)], () => runChecks(v, sliced), true);
     const nested = stage('Nest sheets', [sliced, v.sheetW, v.sheetH, v.partSpacing], () =>
