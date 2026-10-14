@@ -1,0 +1,213 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useStore } from '../state/store';
+import { PRESETS, deserialize, serialize } from '../core/project';
+import { buildZip, download } from '../core/exporters';
+import { bytesToBase64, parseMesh } from '../state/assets';
+import { useFullModel } from './model';
+
+export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const btn = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!pop.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  return (
+    <div className="menu">
+      <button
+        ref={btn}
+        className={className}
+        aria-expanded={open}
+        onClick={() => {
+          const r = btn.current!.getBoundingClientRect();
+          setPos({ x: Math.min(r.left, window.innerWidth - 280), y: r.bottom });
+          setOpen(!open);
+        }}
+      >
+        {label} ▾
+      </button>
+      {open && (
+        <div ref={pop} className="menu-pop" style={{ left: Math.max(4, pos.x), top: pos.y }}>
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function pickFile(accept: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = accept;
+    inp.onchange = () => resolve(inp.files?.[0] ?? null);
+    inp.click();
+  });
+}
+
+export async function importMeshInto(slot: 'ins' | 'src') {
+  const st = useStore.getState();
+  const file = await pickFile('.stl,.obj,.step,.stp');
+  if (!file) return;
+  const ext = file.name.split('.').pop()!.toLowerCase();
+  if (ext === 'step' || ext === 'stp') {
+    st.toast('STEP needs a CAD kernel: export STL (mm) from Fusion instead — File › Export › STL.');
+    return;
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const asset = { name: file.name, format: ext === 'obj' ? 'obj' : 'stl', data: bytesToBase64(bytes) } as const;
+  try {
+    const g = parseMesh(asset);
+    g.computeBoundingBox();
+    const bb = g.boundingBox!;
+    st.setAsset('mesh', slot, asset);
+    st.setParams(slot === 'ins' ? { insShape: 'mesh' } : { srcShape: 'mesh', stackSource: 'form' }, 'import');
+    st.toast(`Imported ${file.name}: ${(bb.max.x - bb.min.x).toFixed(0)} × ${(bb.max.y - bb.min.y).toFixed(0)} × ${(bb.max.z - bb.min.z).toFixed(0)} mm`);
+  } catch (e) {
+    st.toast(`Could not read ${file.name}: ${(e as Error).message}`);
+  }
+}
+
+export default function Toolbar() {
+  const project = useStore((s) => s.project);
+  const past = useStore((s) => s.past.length);
+  const future = useStore((s) => s.future.length);
+  const { undo, redo, setName, randomise, loadPreset, saveVariant, loadVariant, deleteVariant, replaceProject, toast, setUi } = useStore.getState();
+  const fullModel = useFullModel();
+
+  const save = () => download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}.strata.json`, serialize(project), 'application/json');
+  const open = async () => {
+    const f = await pickFile('.json');
+    if (!f) return;
+    try {
+      replaceProject(deserialize(await f.text()));
+      toast(`Opened ${f.name}`);
+    } catch (e) {
+      toast(`Could not open: ${(e as Error).message}`);
+    }
+  };
+  const exportZip = () => {
+    try {
+      const model = fullModel();
+      const zip = buildZip(model, project);
+      download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}-fabrication.zip`, zip, 'application/zip');
+      toast(`Exported ${model.sliced.parts.length} plate DXFs, ${model.nested.sheets.length} sheets, ${model.moulds.parts.length} mould parts`);
+    } catch (e) {
+      toast(`Export failed: ${(e as Error).message}`);
+    }
+  };
+
+  return (
+    <header className="topbar">
+      <div className="brand">
+        <span className="mark" />
+        STRATA
+      </div>
+      <input className="name-input" value={project.name} onChange={(e) => setName(e.target.value)} aria-label="Project name" />
+      <div className="group">
+        <button className="tb" onClick={undo} disabled={!past} title="Undo (Ctrl+Z)">
+          Undo
+        </button>
+        <button className="tb" onClick={redo} disabled={!future} title="Redo (Ctrl+Shift+Z)">
+          Redo
+        </button>
+      </div>
+      <div className="group">
+        <Menu label="Presets">
+          {(close) => (
+            <>
+              <div className="head">Start from</div>
+              {PRESETS.map((p) => (
+                <button
+                  key={p.name}
+                  className="item"
+                  onClick={() => {
+                    loadPreset(p);
+                    close();
+                  }}
+                >
+                  <span>{p.name}</span>
+                  <small>{p.note}</small>
+                </button>
+              ))}
+            </>
+          )}
+        </Menu>
+        <Menu label={`Variants${project.variants.length ? ` (${project.variants.length})` : ''}`}>
+          {(close) => (
+            <>
+              <button
+                className="item"
+                onClick={() => {
+                  const name = window.prompt('Variant name', `${project.name} ${project.variants.length + 1}`);
+                  if (name) saveVariant(name);
+                  close();
+                }}
+              >
+                <span>+ Save current as variant</span>
+              </button>
+              {project.variants.length > 0 && <div className="head">Saved</div>}
+              {project.variants.map((v) => (
+                <div key={v.id} className="item" style={{ cursor: 'default' }}>
+                  <span>{v.name}</span>
+                  <span className="seg">
+                    <button className="btn sm" onClick={() => (loadVariant(v.id), close())}>
+                      Load
+                    </button>
+                    <button className="btn sm" onClick={() => (setUi({ compareA: 'current', compareB: v.id, tab: 'compare' }), close())}>
+                      Compare
+                    </button>
+                    <button className="btn sm" onClick={() => deleteVariant(v.id)} aria-label={`Delete ${v.name}`}>
+                      ✕
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+        </Menu>
+        <button className="tb" onClick={randomise} title="Randomise unlocked literal values (locked and linked values stay)">
+          Randomise
+        </button>
+      </div>
+      <div className="group">
+        <button className="tb" onClick={open}>
+          Open
+        </button>
+        <button className="tb" onClick={save} title="Save project JSON (parameters + images)">
+          Save
+        </button>
+        <Menu label="Import">
+          {(close) => (
+            <>
+              <div className="head">STL / OBJ from Fusion (mm)</div>
+              <button className="item" onClick={() => (close(), importMeshInto('ins'))}>
+                <span>As insert (cavity cutter)</span>
+                <small>e.g. the fin</small>
+              </button>
+              <button className="item" onClick={() => (close(), importMeshInto('src'))}>
+                <span>As source form (to slice)</span>
+                <small>re-slice a design</small>
+              </button>
+            </>
+          )}
+        </Menu>
+      </div>
+      <div className="spacer" />
+      <button className="tb primary" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">
+        Export ZIP
+      </button>
+    </header>
+  );
+}
