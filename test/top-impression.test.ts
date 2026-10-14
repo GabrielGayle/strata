@@ -38,4 +38,25 @@ describe('top-surface impression', () => {
     expect(m.issues.filter((i) => i.severity === 'error')).toEqual([]);
     expect(partDxf(mid, m.v)).toContain('POLYLINE');
   });
+
+  it('smooths the cut edges independently of the image', () => {
+    const p2 = newProject();
+    p2.params = { ...p.params, cutSmooth: '3' };
+    const ms = createPipeline()(p2, { sideImg: null, frontImg: null, topImg: disc(), insMesh: null, srcMesh: null });
+    const midS = ms.sliced.plates[Math.floor(ms.sliced.plates.length / 2)].parts[0];
+    const h = ms.v.stackHeight;
+    expect(topAt(midS.shape, 0)).toBeCloseTo(h - 20, 1); // full depth in the middle of the recess
+    // risers are now filleted top and bottom: no straight vertical edge spans the whole 20 mm step
+    const outer = midS.shape[0].outer;
+    let longest = 0;
+    for (let i = 0; i < outer.length; i++) {
+      const a = outer[i], b = outer[(i + 1) % outer.length];
+      if (Math.abs(a[0] - b[0]) < 1e-3 && a[0] > midS.bbox.minX + 1 && a[0] < midS.bbox.maxX - 1 && Math.min(a[1], b[1]) > h - 30) longest = Math.max(longest, Math.abs(a[1] - b[1]));
+    }
+    expect(longest).toBeLessThan(20 - 2 * 3 + 0.6);
+    // away from the image the plate keeps its sharp corners (the embedded tab's bottom corner)
+    const e = ms.v.embedDepth;
+    expect(outer.some((q) => Math.abs(q[1] + e) < 1e-3 && Math.abs(q[0] - midS.bbox.minX) < 1e-3)).toBe(true);
+    expect(ms.issues.filter((i) => i.severity === 'error')).toEqual([]);
+  });
 });

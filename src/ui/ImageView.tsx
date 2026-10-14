@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import type { Gray } from '../core/image';
@@ -103,8 +103,11 @@ export default function ImageView() {
     setUi({ collapsed: { ...ui.collapsed, Image: false } });
   };
   const topRes = v.sliceMode === 'radial' ? null : v.pitch;
-  const [tilt, setTilt] = useState(0);
-  const [tint, setTint] = useState(true);
+  // kept in the store so the view survives switching tabs
+  const tilt = ui.reliefTilt;
+  const tint = ui.reliefTint;
+  const setTilt = (t: number) => setUi({ reliefTilt: t });
+  const setTint = (t: boolean) => setUi({ reliefTint: t });
   return (
     <div className="scroll">
       <div className="pad" style={{ display: 'grid', gap: 12 }}>

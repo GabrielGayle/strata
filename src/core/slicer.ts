@@ -476,6 +476,19 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
   return polys.length ? union(polys) : [];
 }
 
+/**
+ * Cut the image-driven shapes out of a plate, then round every corner they
+ * create with radius r (closing + opening). Only the material near those cuts
+ * is touched, so cavities, anchor holes and slots cut later stay crisp.
+ */
+function smoothImageCuts(plate: Shape, cut: Shape, r: number): Shape {
+  const carved = difference(plate, cut);
+  if (!(r > 0.05) || !carved.length) return carved;
+  const rounded = offset(offset(offset(carved, r), -2 * r), r);
+  const zone = offset(unionShapes(cut), 2 * r + 0.5);
+  return unionShapes(intersection(rounded, zone), difference(carved, zone));
+}
+
 function distToBoundary(p: Vec2, ex: ExPoly): number {
   let best = Infinity;
   for (const path of [ex.outer, ...ex.holes]) {
@@ -597,8 +610,10 @@ export function slice(input: SliceInput): SliceResult {
       return;
     }
 
-    // everything removed from the plate is collected and subtracted in one boolean
+    // everything removed from the plate is collected and subtracted in one boolean;
+    // image-driven cuts go first so their edges can be smoothed on their own
     const cuts: Shape[] = [];
+    const imageCuts: Shape[] = [];
 
     // 3. insert cavity, per plate, in 2D
     if (insertOn) {
@@ -632,7 +647,7 @@ export function slice(input: SliceInput): SliceResult {
     if (front) {
       if (v.imgFrontMode !== 'off') {
         const cut = frontCut(def, outlines[di], v, front);
-        if (cut.length) cuts.push(cut);
+        if (cut.length) imageCuts.push(cut);
       }
       etch = frontEtch(def, v, front);
     }
@@ -640,8 +655,9 @@ export function slice(input: SliceInput): SliceResult {
     // 4b. image impression into the top surface
     if (topWin && input.top) {
       const carve = topCarve(def, outlines[di], v, input.top, topWin, Number.isFinite(topDatum) ? topDatum : 0);
-      if (carve.length) cuts.push(carve);
+      if (carve.length) imageCuts.push(carve);
     }
+    if (imageCuts.length) shape = smoothImageCuts(shape, imageCuts.flat(), v.cutSmooth);
 
     // 5. anchor holes in the embedded tab
     if (e > 0 && v.embedMode === 'cast' && v.anchorHoles > 0 && e > v.anchorDia + 2 * v.minFeature) {

@@ -21,6 +21,8 @@ export interface UiState {
   collapsed: Record<string, boolean>;
   filter: string;
   focusParam: string | null;
+  reliefTilt: number;
+  reliefTint: boolean;
   compareA: string; // variant id or 'current'
   compareB: string;
   toast: string | null;
@@ -106,6 +108,8 @@ export const useStore = create<Store>((set, get) => {
       collapsed: { 'Source form': true, Concrete: true, Mould: true, Unfold: true, Fabrication: true, Image: true },
       filter: '',
       focusParam: null,
+      reliefTilt: 0,
+      reliefTint: true,
       compareA: 'current',
       compareB: 'current',
       toast: null,

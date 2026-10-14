@@ -178,7 +178,7 @@ export const PARAMS: ParamDef[] = [
   num('imgMix', 'Strata ↔ image mix', 'Image', 0.6, 0, 1, { step: 0.01, unit: '', show: (v) => strataSource(v) && v.imgSideMode !== 'off', rand: true }),
   num('imgRange', 'Image height range', 'Image', 140, 0, 2000, { show: (v) => strataSource(v) && v.imgSideMode !== 'off' }),
   num('imgContrast', 'Contrast', 'Image', 1.2, 0.1, 5, { step: 0.05, unit: '×' }),
-  num('imgSmooth', 'Smoothing', 'Image', 1, 0, 10, { int: true, unit: 'px' }),
+  num('imgSmooth', 'Image blur', 'Image', 1, 0, 10, { int: true, unit: 'px', help: 'Blurs the picture before it is read (softens detail, not the cut edges)' }),
   { id: 'imgInvert', label: 'Invert', group: 'Image', kind: 'toggle', def: false },
   choice('imgRotate', 'Image direction', 'Image', '0', [
     { value: '0', label: 'As loaded' },
@@ -208,6 +208,11 @@ export const PARAMS: ParamDef[] = [
   num('topX', 'Image offset X', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
   num('topZ', 'Image offset Z', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
   num('topMargin', 'Top margin', 'Image', 10, 0, 300, { show: (v) => v.imgTopMode !== 'off' }),
+  num('cutSmooth', 'Cut edge smoothing', 'Image', 0, 0, 25, {
+    step: 0.25,
+    show: (v) => v.imgTopMode !== 'off' || (v.sliceMode === 'parallel' && v.imgFrontMode !== 'off'),
+    help: 'Rounds the corners of the image cuts (step edges, recess floors, pixel stair-steps) with this radius. Independent of image blur.',
+  }),
   choice('imgFrontMode', 'Front view', 'Image', 'off', [
     { value: 'off', label: 'Off' },
     { value: 'layers', label: 'Layered cut-outs (depth = dark)' },
