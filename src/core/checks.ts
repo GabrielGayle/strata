@@ -189,6 +189,12 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
       issues.push({ partId: missed[0].parts[0].id, plateKey: missed[0].def.key, type: 'general', severity: 'warn', message: `${missed.length} plate(s) don't cross the support ring, so it doesn't hold them. Widen the ring.` });
     if (v.embedMode === 'slot') issues.push({ partId: null, type: 'general', severity: 'warn', message: 'The support ring is cast in with the plates: set Concrete › Plate fixing to "Cast in".' });
   }
+  // threaded rods and laser-cut spacers
+  if (sliced.brace) {
+    const byKey = new Map(sliced.parts.map((p) => [p.plateKey, p.id]));
+    for (const b of sliced.brace.issues)
+      issues.push({ partId: b.plateKey ? byKey.get(b.plateKey) ?? null : null, plateKey: b.plateKey, type: 'general', severity: b.severity, message: b.message, at: b.at });
+  }
   for (const w of sliced.warnings) issues.push({ partId: null, type: 'general', severity: 'warn', message: w });
   return issues;
 }

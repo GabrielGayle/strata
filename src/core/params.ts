@@ -31,6 +31,7 @@ export const GROUPS = [
   'Master',
   'Base',
   'Support',
+  'Bracing',
   'Plates',
   'Slicer',
   'Strata',
@@ -100,6 +101,10 @@ const hasSupport = (v: Values) => v.baseOn && v.supportMode !== 'off';
 const isParallelish = (v: Values) => v.sliceMode !== 'radial';
 const isUpright = (v: Values) => v.sliceMode !== 'radial' && v.sliceMode !== 'flat';
 const isFlat = (v: Values) => v.sliceMode === 'flat';
+const hasRods = (v: Values) => isUpright(v) && v.rodsOn;
+const hasCross = (v: Values) => isUpright(v) && (v.spacerMode === 'cross' || v.spacerMode === 'both');
+const hasTemplate = (v: Values) => isUpright(v) && (v.spacerMode === 'template' || v.spacerMode === 'both');
+const hasSpacers = (v: Values) => hasCross(v) || hasTemplate(v);
 const strataSource = (v: Values) => v.stackSource === 'strata';
 
 export const PARAMS: ParamDef[] = [
@@ -133,6 +138,37 @@ export const PARAMS: ParamDef[] = [
   num('supportTail', 'Tenon tail', 'Support', 0, 0, 100, { show: hasSupport, help: 'How far each tenon pokes out under the ring (bend or pin the tails to lock the ring on)' }),
   num('supportLand', 'Slot end land', 'Support', 8, 0, 200, { show: hasSupport, help: 'Solid ring left beyond each end of every slot' }),
   num('supportClearance', 'Slot clearance', 'Support', 0.3, 0, 3, { step: 0.05, show: hasSupport, noScale: true, help: 'Added around each tenon in the ring slots' }),
+
+  // Bracing: threaded rods through the embedded tabs + laser-cut spacers
+  { id: 'rodsOn', label: 'Threaded rods', group: 'Bracing', kind: 'toggle', def: false, show: isUpright, help: 'Threaded rods run through every plate\'s embedded tab like rebar, with nuts locking the plates on them' },
+  choice('rodSize', 'Rod size', 'Bracing', 'M5', ['M3', 'M4', 'M5', 'M6', 'M8', 'M10', 'M12'].map((m) => ({ value: m, label: m })), { show: hasRods }),
+  num('rodCount', 'Rods', 'Bracing', 2, 1, 8, { int: true, unit: '', show: hasRods, help: 'Spread evenly across the embedded tab' }),
+  num('rodDepth', 'Rod depth', 'Bracing', 'embedDepth / 2', 1, 400, { show: hasRods, help: 'Rod centre below the top of the concrete' }),
+  num('rodClearance', 'Hole clearance', 'Bracing', 0.5, 0, 3, { step: 0.05, show: hasRods, noScale: true, help: 'Rod hole Ø = rod size + this' }),
+  choice('nutPattern', 'Nuts', 'Bracing', 'ends', [
+    { value: 'ends', label: 'Clamp the outer plates' },
+    { value: 'every', label: 'Lock every plate' },
+    { value: 'nth', label: 'Lock every Nth plate' },
+  ], { show: hasRods, help: 'Locked plates get a nut and washer on both faces' }),
+  num('nutEvery', 'Lock every', 'Bracing', 4, 2, 50, { int: true, unit: 'plates', show: (v) => hasRods(v) && v.nutPattern === 'nth' }),
+  { id: 'rodTipNuts', label: 'Anchor nut at rod tips', group: 'Bracing', kind: 'toggle', def: true, show: hasRods, help: 'An extra nut near each end of every rod grips the concrete' },
+  { id: 'rodStock', label: 'Stock lengths', group: 'Bracing', kind: 'text', def: '100, 150, 200, 250, 300, 400, 500, 1000', show: hasRods, help: 'Rod lengths you can buy (mm). Rods snap to the shortest that spans the stack and still stays inside the concrete; otherwise one is cut down.' },
+  choice('spacerMode', 'Laser-cut spacers', 'Bracing', 'off', [
+    { value: 'off', label: 'Off' },
+    { value: 'cross', label: 'Cross pieces (cast in)' },
+    { value: 'template', label: 'Spacing template (lift off)' },
+    { value: 'both', label: 'Both' },
+  ], { show: isUpright, help: 'Cross pieces are combs cast in under the plates. The spacing template is a comb cut against the top profile that sits over the plates while the concrete cures.' }),
+  num('crossPieces', 'Cross pieces', 'Bracing', 2, 1, 8, { int: true, unit: '', show: hasCross }),
+  num('crossHeight', 'Cross piece height', 'Bracing', 30, 5, 300, { show: hasCross }),
+  num('crossEngage', 'Cross slot depth', 'Bracing', 10, 1, 200, { show: hasCross, help: 'How far the teeth rise between the plates' }),
+  num('crossAngle', 'Cross angle', 'Bracing', 0, -60, 60, { unit: '°', show: hasCross, help: '0 runs square to the plates; an angle braces them diagonally' }),
+  num('templateCount', 'Templates', 'Bracing', 2, 1, 8, { int: true, unit: '', show: hasTemplate }),
+  num('templateEngage', 'Template grip', 'Bracing', 15, 1, 200, { show: hasTemplate, help: 'How far the teeth hang down between the plates' }),
+  num('templateSpine', 'Template spine', 'Bracing', 25, 5, 200, { show: hasTemplate, help: 'Solid strip above the tallest plate' }),
+  num('templateLift', 'Template lift', 'Bracing', 5, 0, 200, { show: hasTemplate, help: 'Teeth stop this far above the concrete so the template lifts off clean' }),
+  num('spacerClearance', 'Spacer slot clearance', 'Bracing', 0.2, 0, 3, { step: 0.05, show: hasSpacers, noScale: true }),
+  num('braceCover', 'Concrete cover', 'Bracing', 10, 0, 100, { show: (v) => hasRods(v) || hasCross(v), help: 'Least concrete wanted around rods, nuts and cast-in cross pieces' }),
 
   // Plates
   choice('plateMaterial', 'Material', 'Plates', 'corten', [
