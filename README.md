@@ -27,7 +27,8 @@ npm run build    # static site in dist/
   terraces), neighbour follow, crest and slope.
 - **Image-driven plates.** Top surface impression (each plate's top edge is cut down where its
   strip of the image is dark, so the picture reads looking down on the stack; carve or raise,
-  stepped or smooth, flat terraces or following the strata); front face as layered cut-outs whose
+  stepped or smooth, flat terraces or following the strata, turnable; a 3D relief preview with a
+  tilt slider to judge it in raking light); front face as layered cut-outs whose
   depth follows darkness, halftone holes, and etched hatch / contour lines; side profile (image as
   overall plate height, or traced silhouette) mixed with the strata.
 - **Unfold.** Unrolls cylinders, cones, straight lofts and fins into flat patterns; faceted

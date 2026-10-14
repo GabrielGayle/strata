@@ -199,6 +199,12 @@ export const PARAMS: ParamDef[] = [
   num('topSteps', 'Depth steps', 'Image', 4, 0, 20, { int: true, unit: '', show: (v) => v.imgTopMode !== 'off', help: '0 = smooth; N = crisp terraces like layered cut-outs' }),
   num('topThreshold', 'Ignore lighter than', 'Image', 0.15, 0, 0.95, { step: 0.01, unit: '', show: (v) => v.imgTopMode !== 'off', help: 'Darkness below this is left flat (keeps a white background uncut)' }),
   num('topScale', 'Image size', 'Image', 0.9, 0.1, 1, { step: 0.01, unit: '×', show: (v) => v.imgTopMode !== 'off' }),
+  choice('topRotate', 'Turn image', 'Image', '0', [
+    { value: '0', label: 'Upright from the front' },
+    { value: '90', label: 'Turn 90° (runs along the stack)' },
+    { value: '180', label: 'Turn 180°' },
+    { value: '270', label: 'Turn 270°' },
+  ], { show: (v) => v.imgTopMode !== 'off' }),
   num('topX', 'Image offset X', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
   num('topZ', 'Image offset Z', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
   num('topMargin', 'Top margin', 'Image', 10, 0, 300, { show: (v) => v.imgTopMode !== 'off' }),

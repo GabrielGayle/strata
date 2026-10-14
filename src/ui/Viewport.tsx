@@ -18,7 +18,8 @@ export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up
     case 'side':
       return { dir: new THREE.Vector3(f.across[0], 0.04, f.across[1]).normalize(), up };
     case 'top':
-      return { dir: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(0, 0, -1) };
+      // plan view from the front end: front plate at the bottom, stack running up the screen
+      return { dir: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(f.stack[0], 0, f.stack[1]) };
     default:
       return { dir: new THREE.Vector3(0.95, 0.75, 1.25).normalize(), up };
   }

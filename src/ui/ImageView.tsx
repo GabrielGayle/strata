@@ -1,9 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import type { Gray } from '../core/image';
-import { planeToWorld } from '../core/section';
-import { topAt } from '../core/slicer';
 import type { Snap } from '../state/store';
 import { sampleCliff } from './sample';
 
@@ -59,61 +57,7 @@ async function readImage(): Promise<{ name: string; dataUrl: string } | null> {
   });
 }
 
-/** What you see looking straight down: every plate's top edge, shaded by height. */
-function TopPreview() {
-  const model = useModel();
-  const ref = useRef<HTMLCanvasElement>(null);
-  const parts = model.sliced.parts;
-  useEffect(() => {
-    const cv = ref.current;
-    if (!cv || !parts.length) return;
-    const samples: { x: number; z: number; h: number; dx: number; dz: number }[] = [];
-    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, h0 = Infinity, h1 = -Infinity;
-    for (const p of parts) {
-      const step = 1.5;
-      for (let u = p.bbox.minX; u <= p.bbox.maxX; u += step) {
-        const t = topAt(p.shape, u);
-        if (t === null || t <= 0) continue;
-        const w = planeToWorld(p.plane, u, 0);
-        samples.push({ x: w[0], z: w[2], h: t, dx: p.plane.u[0], dz: p.plane.u[2] });
-        x0 = Math.min(x0, w[0]);
-        x1 = Math.max(x1, w[0]);
-        z0 = Math.min(z0, w[2]);
-        z1 = Math.max(z1, w[2]);
-        h0 = Math.min(h0, t);
-        h1 = Math.max(h1, t);
-      }
-    }
-    if (!samples.length) return;
-    const pad = 10;
-    const W = cv.clientWidth || 600;
-    const k = (W - 2 * pad) / Math.max(1, x1 - x0);
-    const H = Math.round((z1 - z0) * k + 2 * pad);
-    const dpr = window.devicePixelRatio || 1;
-    cv.width = W * dpr;
-    cv.height = H * dpr;
-    cv.style.height = `${H}px`;
-    const ctx = cv.getContext('2d')!;
-    ctx.scale(dpr, dpr);
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--panel-2') || '#eee';
-    ctx.fillRect(0, 0, W, H);
-    // draw each plate as wide as its pitch so the picture reads as one surface
-    const t = (model.v.sliceMode === 'radial' ? model.v.thickness : Math.max(model.v.thickness, model.v.pitch * 0.92)) * k;
-    for (const s of samples) {
-      const g = Math.round(40 + 200 * ((s.h - h0) / Math.max(1e-6, h1 - h0)));
-      ctx.fillStyle = `rgb(${g},${Math.round(g * 0.82)},${Math.round(g * 0.7)})`;
-      const px = pad + (s.x - x0) * k, pz = pad + (s.z - z0) * k;
-      // a short dash along the plate, one sheet thick
-      const len = 1.6 * k;
-      ctx.save();
-      ctx.translate(px, pz);
-      ctx.rotate(Math.atan2(s.dz, s.dx));
-      ctx.fillRect(-len / 2, -Math.max(0.8, t) / 2, len, Math.max(0.8, t));
-      ctx.restore();
-    }
-  }, [parts, model.v.thickness, model.v.pitch, model.v.sliceMode]);
-  return <canvas ref={ref} style={{ width: '100%', display: 'block', borderBottom: '1px solid var(--line)' }} />;
-}
+const ReliefPreview = lazy(() => import('./ReliefPreview'));
 
 type Slot = 'top' | 'side' | 'front';
 
@@ -159,6 +103,8 @@ export default function ImageView() {
     setUi({ collapsed: { ...ui.collapsed, Image: false } });
   };
   const topRes = v.sliceMode === 'radial' ? null : v.pitch;
+  const [tilt, setTilt] = useState(0);
+  const [tint, setTint] = useState(true);
   return (
     <div className="scroll">
       <div className="pad" style={{ display: 'grid', gap: 12 }}>
@@ -228,13 +174,44 @@ export default function ImageView() {
           })}
         </div>
         <div className="box">
-          <div className="box-head">
-            <span>Top view of the plate tops</span>
-            <span className="mono" style={{ fontWeight: 400, textTransform: 'none' }}>
-              darker = lower · top: {v.imgTopMode} · front: {v.imgFrontMode} · side: {v.imgSideMode}
+          <div className="box-head" style={{ flexWrap: 'wrap' }}>
+            <span>Relief preview</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+              <label htmlFor="relief-tilt" className="mono">
+                Tilt
+              </label>
+              <input
+                id="relief-tilt"
+                type="range"
+                min={0}
+                max={75}
+                step={1}
+                value={tilt}
+                onChange={(e) => setTilt(Number(e.target.value))}
+                style={{ width: 160, accentColor: 'var(--accent)' }}
+                aria-label="Tilt the relief preview"
+              />
+              <span className="mono" style={{ width: 30, textAlign: 'right' }}>
+                {tilt}°
+              </span>
+              <span className="seg">
+                <button className="btn sm" onClick={() => setTilt(0)} title="Straight down">
+                  Top
+                </button>
+                <button className="btn sm" onClick={() => setTilt(55)} title="Low raking view">
+                  Low
+                </button>
+                <button className={`btn sm ${tint ? 'on' : ''}`} onClick={() => setTint(!tint)} title="Darken by depth so the impression reads from any angle">
+                  Depth colour
+                </button>
+              </span>
             </span>
           </div>
-          <TopPreview />
+          <div style={{ position: 'relative', height: 'min(56vh, 460px)', background: 'var(--viewport)', borderBottom: '1px solid var(--line)' }}>
+            <Suspense fallback={<div className="empty">Loading preview…</div>}>
+              <ReliefPreview model={model} tilt={tilt} tint={tint} />
+            </Suspense>
+          </div>
           <div className="note">
             {v.imgTopMode !== 'off' && model.topImg ? (
               <>

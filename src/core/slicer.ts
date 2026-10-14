@@ -315,37 +315,73 @@ function frontEtch(def: PlateDef, v: Values, ctx: FrontCtx): Path[] {
 // whole top surface. Steps give crisp vertical risers, like layered cut-outs.
 
 export interface TopWindow {
-  x0: number;
-  x1: number;
-  z0: number;
-  z1: number;
+  /** Screen axes of the plan view seen from the front end: right and away-from-viewer (stack), in world XZ. */
+  right: [number, number];
+  stack: [number, number];
+  r0: number;
+  r1: number;
+  s0: number;
+  s1: number;
+  /** quarter turns of the image on the surface (clockwise, seen from above with the front at the bottom) */
+  turns: number;
 }
 
-/** Image rectangle on the footprint (world X/Z), as seen from the Top view (image up = -Z). */
+/**
+ * Image rectangle on the footprint. Viewed from above with the front plate at
+ * the bottom (the stack running away from you), the image sits upright:
+ * image right = right when standing at the front, image top = the far end.
+ */
 export function topWindow(v: Values, img: Gray, defs: PlateDef[]): TopWindow | null {
   if (!defs.length) return null;
-  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  const f = stackFrame(v);
+  const stack: [number, number] = [f.stack[0], f.stack[1]];
+  const right: [number, number] = [-f.stack[1], f.stack[0]];
+  let r0 = Infinity, r1 = -Infinity, s0 = Infinity, s1 = -Infinity;
   for (const d of defs)
     for (const u of [d.u0, d.u1]) {
       const p = planeToWorld(d.plane, u, 0);
-      x0 = Math.min(x0, p[0]);
-      x1 = Math.max(x1, p[0]);
-      z0 = Math.min(z0, p[2]);
-      z1 = Math.max(z1, p[2]);
+      const r = p[0] * right[0] + p[2] * right[1];
+      const sv = p[0] * stack[0] + p[2] * stack[1];
+      r0 = Math.min(r0, r);
+      r1 = Math.max(r1, r);
+      s0 = Math.min(s0, sv);
+      s1 = Math.max(s1, sv);
     }
-  x0 += v.topMargin;
-  x1 -= v.topMargin;
-  z0 += v.topMargin;
-  z1 -= v.topMargin;
-  if (x1 - x0 < 2 || z1 - z0 < 2) return null;
-  const ar = img.w / img.h;
-  let w = x1 - x0, h = z1 - z0;
+  const m = v.topMargin;
+  r0 += m;
+  r1 -= m;
+  s0 += m;
+  s1 -= m;
+  if (r1 - r0 < 2 || s1 - s0 < 2) return null;
+  const turns = ((Math.round(Number(v.topRotate) / 90) % 4) + 4) % 4;
+  const ar = turns % 2 ? img.h / img.w : img.w / img.h; // on-surface width runs along `right`, height along `stack`
+  let w = r1 - r0, h = s1 - s0;
   if (w / h > ar) w = h * ar;
   else h = w / ar;
   w *= v.topScale;
   h *= v.topScale;
-  const cx = (x0 + x1) / 2 + v.topX, cz = (z0 + z1) / 2 + v.topZ;
-  return { x0: cx - w / 2, x1: cx + w / 2, z0: cz - h / 2, z1: cz + h / 2 };
+  const cr = (r0 + r1) / 2 + v.topX * right[0] + v.topZ * right[1];
+  const cs = (s0 + s1) / 2 + v.topX * stack[0] + v.topZ * stack[1];
+  return { right, stack, r0: cr - w / 2, r1: cr + w / 2, s0: cs - h / 2, s1: cs + h / 2, turns };
+}
+
+/** Image coordinates (0..1, y down) of a world point, or null outside the image. */
+export function topUV(win: TopWindow, p: V3): [number, number] | null {
+  const r = p[0] * win.right[0] + p[2] * win.right[1];
+  const sv = p[0] * win.stack[0] + p[2] * win.stack[1];
+  if (r < win.r0 || r > win.r1 || sv < win.s0 || sv > win.s1) return null;
+  const a = (r - win.r0) / (win.r1 - win.r0); // across the window, left → right
+  const b = (win.s1 - sv) / (win.s1 - win.s0); // far end → front
+  switch (win.turns) {
+    case 1:
+      return [b, 1 - a];
+    case 2:
+      return [1 - a, 1 - b];
+    case 3:
+      return [1 - b, a];
+    default:
+      return [a, b];
+  }
 }
 
 /** Highest point of the outline above u (the top edge), or null if the vertical misses it. */
@@ -379,8 +415,9 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
     tops.push(t ?? 0);
     const p = planeToWorld(def.plane, u, 0);
     let f = 0;
-    if (t !== null && t > 0 && p[0] >= win.x0 && p[0] <= win.x1 && p[2] >= win.z0 && p[2] <= win.z1) {
-      const dark = 1 - sample(img, (p[0] - win.x0) / (win.x1 - win.x0), (p[2] - win.z0) / (win.z1 - win.z0));
+    const uv = t !== null && t > 0 ? topUV(win, p) : null;
+    if (uv) {
+      const dark = 1 - sample(img, uv[0], uv[1]);
       const level = Math.max(0, Math.min(1, (dark - thr) / (1 - thr)));
       f = v.imgTopMode === 'raise' ? 1 - level : level;
       if (steps > 0) f = Math.round(f * steps) / steps;
@@ -543,7 +580,7 @@ export function slice(input: SliceInput): SliceResult {
     defs.forEach((d, di) => {
       for (let u = d.u0; u <= d.u1; u += 2) {
         const p = planeToWorld(d.plane, u, 0);
-        if (p[0] < topWin.x0 || p[0] > topWin.x1 || p[2] < topWin.z0 || p[2] > topWin.z1) continue;
+        if (!topUV(topWin, p)) continue;
         const t = topAt(outlines[di], u);
         if (t !== null && t > 0) topDatum = Math.min(topDatum, t);
       }
