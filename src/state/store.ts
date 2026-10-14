@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { isLiteral } from '../core/expr';
 import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
-import { applyPreset, deserialize, newProject, type Preset, type Project, type Variant } from '../core/project';
+import { applyPreset, deserialize, newProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
+import type { Composition, Surface } from '../core/compose';
 import type { PourLayer } from '../core/mould';
 import { mulberry32 } from '../core/rng';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
@@ -42,6 +43,8 @@ interface Store {
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
   replaceProject: (p: Project) => void;
+  /** Store the composer's blocks and the rendered surface images in one undo step. */
+  applyComposition: (comp: Composition, images: Partial<Record<Surface, ImageAsset | null>>, patch: Record<string, RawValue>) => void;
   undo: () => void;
   redo: () => void;
   randomise: () => void;
@@ -141,6 +144,12 @@ export const useStore = create<Store>((set, get) => {
       else commit({ ...p, meshes: { ...p.meshes, [slot]: asset ?? undefined } }, `mesh:${slot}:${performance.now()}`);
     },
     replaceProject: (np) => commit(np, `replace:${performance.now()}`),
+    applyComposition: (comp, imgs, patch) => {
+      const p = get().project;
+      const images = { ...p.images };
+      for (const [k, a] of Object.entries(imgs) as [Surface, ImageAsset | null][]) images[k] = a ?? undefined;
+      commit({ ...p, composition: comp, images, params: { ...p.params, ...patch } }, `compose:${performance.now()}`);
+    },
     undo: () => {
       const { past, project, future } = get();
       if (!past.length) return;

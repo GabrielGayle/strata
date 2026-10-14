@@ -2,12 +2,15 @@
 import { defaultRaw, PARAM_MAP, type RawValue } from './params';
 import type { PourLayer } from './mould';
 import type { PatternSpec } from './pattern';
+import type { Composition } from './compose';
 
 export interface ImageAsset {
   name: string;
   dataUrl: string;
   /** Set when the image is a generated graphic, so it can be reopened and edited. */
   pattern?: PatternSpec;
+  /** Set when the image is rendered from the composer (project.composition). */
+  composed?: boolean;
 }
 
 export interface MeshAsset {
@@ -36,6 +39,8 @@ export interface Project {
   images: { side?: ImageAsset; front?: ImageAsset; top?: ImageAsset };
   meshes: { ins?: MeshAsset; src?: MeshAsset };
   variants: Variant[];
+  /** Image blocks placed on the surfaces; each used surface is also rendered into images[surface]. */
+  composition?: Composition;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -114,5 +119,6 @@ export function deserialize(text: string): Project {
     images: raw.images ?? {},
     meshes: raw.meshes ?? {},
     variants: Array.isArray(raw.variants) ? raw.variants : [],
+    composition: raw.composition?.kind === 'composition' ? raw.composition : undefined,
   };
 }

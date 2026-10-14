@@ -11,7 +11,7 @@ import {
 } from '../core/pattern';
 import type { Gray } from '../core/image';
 
-const ASPECTS: { value: number; label: string }[] = [
+export const ASPECTS: { value: number; label: string }[] = [
   { value: 1, label: '1 : 1' },
   { value: 4 / 3, label: '4 : 3' },
   { value: 3 / 2, label: '3 : 2' },
