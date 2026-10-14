@@ -7,6 +7,8 @@ export interface Gray {
   h: number;
   /** Brightness 0 (black) … 1 (white), row-major, row 0 = top of image. */
   data: Float32Array;
+  /** Opacity 0..1 per pixel, only present when the source image had transparency. */
+  alpha?: Float32Array;
 }
 
 export interface ImageOpts {
@@ -27,40 +29,49 @@ export async function decodeImage(dataUrl: string, maxSide = 256): Promise<Gray>
   cv.width = w;
   cv.height = h;
   const ctx = cv.getContext('2d')!;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, w, h);
   ctx.drawImage(img, 0, 0, w, h);
   const px = ctx.getImageData(0, 0, w, h).data;
   const data = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) data[i] = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
-  return { w, h, data };
+  const alpha = new Float32Array(w * h);
+  let clear = false;
+  for (let i = 0; i < w * h; i++) {
+    const a = px[i * 4 + 3] / 255;
+    const lum = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
+    data[i] = lum * a + (1 - a); // transparent areas read as white background
+    alpha[i] = a;
+    if (a < 0.98) clear = true;
+  }
+  return clear ? { w, h, data, alpha } : { w, h, data };
 }
 
-function rotate(g: Gray, deg: number): Gray {
+export function rotate(g: Gray, deg: number): Gray {
   const r = ((Math.round(deg / 90) % 4) + 4) % 4;
   if (r === 0) return g;
   const w = r % 2 ? g.h : g.w;
   const h = r % 2 ? g.w : g.h;
-  const out = new Float32Array(w * h);
-  for (let y = 0; y < g.h; y++)
-    for (let x = 0; x < g.w; x++) {
-      let nx: number, ny: number;
-      if (r === 1) {
-        nx = g.h - 1 - y;
-        ny = x;
-      } else if (r === 2) {
-        nx = g.w - 1 - x;
-        ny = g.h - 1 - y;
-      } else {
-        nx = y;
-        ny = g.w - 1 - x;
+  const turn = (src: Float32Array) => {
+    const out = new Float32Array(w * h);
+    for (let y = 0; y < g.h; y++)
+      for (let x = 0; x < g.w; x++) {
+        let nx: number, ny: number;
+        if (r === 1) {
+          nx = g.h - 1 - y;
+          ny = x;
+        } else if (r === 2) {
+          nx = g.w - 1 - x;
+          ny = g.h - 1 - y;
+        } else {
+          nx = y;
+          ny = g.w - 1 - x;
+        }
+        out[ny * w + nx] = src[y * g.w + x];
       }
-      out[ny * w + nx] = g.data[y * g.w + x];
-    }
-  return { w, h, data: out };
+    return out;
+  };
+  return g.alpha ? { w, h, data: turn(g.data), alpha: turn(g.alpha) } : { w, h, data: turn(g.data) };
 }
 
-function boxBlur(g: Gray, r: number): Gray {
+export function boxBlur(g: Gray, r: number): Gray {
   if (r <= 0) return g;
   let src = g.data;
   const { w, h } = g;
@@ -269,4 +280,40 @@ export function distanceInside(inside: Uint8Array, w: number, h: number): Float3
   // distance to the boundary sits half a pixel inside the nearest outside pixel centre
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) out[y * w + x] = Math.max(0, Math.sqrt(g[(y + 1) * W + x + 1]) - 0.5);
   return out;
+}
+
+/**
+ * The shape's silhouette as a 0/1 mask, or null when the image has no
+ * background to cut away. 'alpha' only uses PNG transparency; 'matte' falls
+ * back to a light background, flood-filled in from the image border so light
+ * areas inside the shape stay part of it.
+ */
+export function silhouetteMask(g: Gray, mode: string, lightBelow = 0.15): Gray | null {
+  const n = g.w * g.h;
+  const data = new Float32Array(n);
+  if (g.alpha) {
+    for (let i = 0; i < n; i++) data[i] = g.alpha[i] > 0.5 ? 1 : 0;
+  } else if (mode === 'matte') {
+    // background = light pixels connected to the border
+    const bg = new Uint8Array(n);
+    const light = (i: number) => 1 - g.data[i] < lightBelow;
+    const stack: number[] = [];
+    for (let x = 0; x < g.w; x++) stack.push(x, (g.h - 1) * g.w + x);
+    for (let y = 0; y < g.h; y++) stack.push(y * g.w, y * g.w + g.w - 1);
+    while (stack.length) {
+      const i = stack.pop()!;
+      if (bg[i] || !light(i)) continue;
+      bg[i] = 1;
+      const x = i % g.w;
+      if (x > 0) stack.push(i - 1);
+      if (x < g.w - 1) stack.push(i + 1);
+      if (i >= g.w) stack.push(i - g.w);
+      if (i < n - g.w) stack.push(i + g.w);
+    }
+    for (let i = 0; i < n; i++) data[i] = bg[i] ? 0 : 1;
+  } else return null;
+  let on = 0;
+  for (let i = 0; i < n; i++) on += data[i];
+  if (on === 0 || on === n) return null; // nothing, or no background: keep the plain outline
+  return { w: g.w, h: g.h, data };
 }

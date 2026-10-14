@@ -4,6 +4,7 @@ import type { PourLayer } from './mould';
 import type { PatternSpec } from './pattern';
 import type { Composition } from './compose';
 import { cleanMoves, type PartMoves } from './moves';
+import type { SoundSpec } from './sound';
 
 export interface ImageAsset {
   name: string;
@@ -12,6 +13,8 @@ export interface ImageAsset {
   pattern?: PatternSpec;
   /** Set when the image is rendered from the composer (project.composition). */
   composed?: boolean;
+  /** Set when the image is drawn from a sound, so it can be reopened and edited. */
+  sound?: SoundSpec;
 }
 
 export interface MeshAsset {
@@ -178,8 +181,9 @@ export const PRESETS: Preset[] = [
   },
 ];
 
-export function applyPreset(p: Project, preset: Preset): Project {
-  return { ...p, name: preset.name, params: { ...defaultRaw(), ...preset.params }, locks: {}, moves: undefined };
+/** Images that come with a preset (e.g. a sound picture) replace those slots. */
+export function applyPreset(p: Project, preset: Preset, images: Project['images'] = {}): Project {
+  return { ...p, name: preset.name, params: { ...defaultRaw(), ...preset.params }, locks: {}, images: { ...p.images, ...images }, moves: undefined };
 }
 
 export function serialize(p: Project): string {

@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { GROUPS, PARAMS, overrideSource, scaleFactorFor, type ParamDef, type Values } from '../core/params';
+import TuningTable from './TuningTable';
 import { isLiteral } from '../core/expr';
 import { useStore } from '../state/store';
 import { useModel } from './model';
@@ -180,7 +181,7 @@ function OtherParam({ def, value }: { def: ParamDef; value: any }) {
         )}
         {def.kind === 'toggle' && <input className="chk" type="checkbox" checked={!!value} onChange={(e) => setParam(def.id, e.target.checked)} aria-label={def.label} />}
         {def.kind === 'color' && <input type="color" value={value} onChange={(e) => setParam(def.id, e.target.value)} aria-label={def.label} />}
-        {def.kind === 'text' && <input className="inp" style={{ width: 90 }} value={value} onChange={(e) => setParam(def.id, e.target.value)} aria-label={def.label} />}
+        {def.kind === 'text' && <input className="inp" style={{ width: def.id === 'tuneNotes' ? 150 : 90 }} value={value} onChange={(e) => setParam(def.id, e.target.value)} aria-label={def.label} />}
       </div>
     </div>
   );
@@ -258,6 +259,7 @@ export default function ParamPanel() {
                 )}
                 {g === 'Master' && <MasterButtons value={v.masterScale} />}
                 {g === 'Concrete' && <PourEditor compact />}
+                {g === 'Tuning' && <TuningTable />}
               </div>
             )}
           </section>

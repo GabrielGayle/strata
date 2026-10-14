@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../state/store';
 import { PRESETS, deserialize, serialize } from '../core/project';
+import { SOUND_PRESETS } from '../core/soundPresets';
+import { soundDataUrl } from './audio';
 import { buildZip, download } from '../core/exporters';
 import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
@@ -254,6 +256,21 @@ export default function Toolbar() {
                   </button>
                 )),
               ])}
+              <div className="head">Sound</div>
+              {SOUND_PRESETS.map((p) => (
+                <button
+                  key={p.name}
+                  className="item"
+                  onClick={() => {
+                    const url = p.sound ? soundDataUrl(p.sound.spec) : null;
+                    loadPreset(p, p.sound && url ? { [p.sound.slot]: { name: 'sound.png', dataUrl: url, sound: p.sound.spec } } : {});
+                    close();
+                  }}
+                >
+                  <span>{p.name}</span>
+                  <small>{p.note}</small>
+                </button>
+              ))}
             </>
           )}
         </Menu>
