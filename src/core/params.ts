@@ -30,6 +30,7 @@ export interface ParamDef {
 export const GROUPS = [
   'Master',
   'Base',
+  'Support',
   'Plates',
   'Slicer',
   'Strata',
@@ -95,6 +96,7 @@ function formParams(prefix: 'ins' | 'src', group: string, show: (v: Values) => b
   ];
 }
 
+const hasSupport = (v: Values) => v.baseOn && v.supportMode !== 'off';
 const isParallelish = (v: Values) => v.sliceMode !== 'radial';
 const isUpright = (v: Values) => v.sliceMode !== 'radial' && v.sliceMode !== 'flat';
 const isFlat = (v: Values) => v.sliceMode === 'flat';
@@ -113,9 +115,24 @@ export const PARAMS: ParamDef[] = [
 
   // Base
   { id: 'baseOn', label: 'Concrete base', group: 'Base', kind: 'toggle', def: true },
-  num('baseLength', 'Length', 'Base', 800, 100, 3000),
-  num('baseWidth', 'Width', 'Base', 300, 50, 1500),
-  num('baseHeight', 'Height', 'Base', 120, 10, 600),
+  num('baseLength', 'Length', 'Base', 800, 20, 3000),
+  num('baseWidth', 'Width', 'Base', 300, 20, 1500),
+  num('baseHeight', 'Height', 'Base', 120, 5, 600),
+  num('baseCornerChamfer', 'Corner chamfer', 'Base', 0, 0, 300, { show: (v) => v.baseOn, help: 'Cuts the four vertical corners of the base at 45° (leg length)' }),
+  num('baseEdgeChamfer', 'Top edge chamfer', 'Base', 0, 0, 100, { show: (v) => v.baseOn, help: 'Bevels the top edge of the base at 45°. Formed by a chamfer strip fixed inside the top of the mould.' }),
+
+  // Embedded support
+  choice('supportMode', 'Embedded support', 'Support', 'off', [
+    { value: 'off', label: 'Off' },
+    { value: 'radial', label: 'Radial ring' },
+  ], { show: (v) => v.baseOn, help: 'A flat ring cut from the same sheet and cast into the concrete. Every plate drops a tenon through a slot in it, so the stack keeps its spacing and angles.' }),
+  num('supportOuter', 'Ring outer radius', 'Support', 'max(5, min(baseLength, baseWidth)/2 - sideMargin - 20)', 5, 2000, { show: hasSupport }),
+  num('supportInner', 'Ring inner radius', 'Support', 'isRadial ? radialHub + 10 : supportOuter * 0.5', 0, 2000, { show: hasSupport, help: '0 makes a solid disc' }),
+  num('supportDepth', 'Depth below surface', 'Support', 'embedDepth + 15', 0, 600, { show: hasSupport, help: 'How far below the top of the concrete the ring\'s top face sits. Deeper than the plate embed gives the plates tenons that reach down to it; shallower trims the tabs to tenons at the ring.' }),
+  num('supportThickness', 'Ring thickness', 'Support', 'thickness', 0.5, 25, { step: 0.5, show: hasSupport }),
+  num('supportTail', 'Tenon tail', 'Support', 0, 0, 100, { show: hasSupport, help: 'How far each tenon pokes out under the ring (bend or pin the tails to lock the ring on)' }),
+  num('supportLand', 'Slot end land', 'Support', 8, 0, 200, { show: hasSupport, help: 'Solid ring left beyond each end of every slot' }),
+  num('supportClearance', 'Slot clearance', 'Support', 0.3, 0, 3, { step: 0.05, show: hasSupport, noScale: true, help: 'Added around each tenon in the ring slots' }),
 
   // Plates
   choice('plateMaterial', 'Material', 'Plates', 'corten', [
@@ -124,8 +141,14 @@ export const PARAMS: ParamDef[] = [
     { value: 'corten', label: 'Corten' },
   ]),
   num('thickness', 'Thickness', 'Plates', 3, 0.5, 12, { step: 0.5, help: 'Common: 1.5, 3, 6 mm' }),
+  choice('spacingMode', 'Spacing', 'Plates', 'fit', [
+    { value: 'fit', label: 'Spread count over base' },
+    { value: 'gap', label: 'Fixed gap, fill base' },
+    { value: 'gapCount', label: 'Fixed gap, set count' },
+  ], { show: isParallelish, help: 'Fixed gap sets the clear space between plate faces; the stack stays centred on the base' }),
+  num('plateGap', 'Gap between plates', 'Plates', 10, 0.5, 500, { step: 0.5, show: (v) => isParallelish(v) && v.spacingMode !== 'fit', help: 'Clear space between neighbouring plate faces (pitch = thickness + gap)' }),
   num('plateCount', 'Plate count', 'Plates', 40, 2, 300, { int: true, unit: '', show: isParallelish, scaleCount: true }),
-  num('endMargin', 'End margin', 'Plates', 40, 0, 1000, { show: isParallelish }),
+  num('endMargin', 'End margin', 'Plates', 40, 0, 1000, { show: isParallelish, help: 'Base end to the outer plate centre (the minimum when a fixed gap fills the base)' }),
   num('stackLength', 'Stack run', 'Plates', 'alongWidth ? baseWidth : baseLength', 1, 5000, { show: isParallelish, help: 'Base length the plates are stacked along (alongWidth = 1 when slicing across)' }),
   num('acrossLength', 'Across run', 'Plates', 'alongWidth ? baseLength : baseWidth', 1, 5000, { show: isParallelish }),
   num('pitch', 'Pitch', 'Plates', '(stackLength - 2*endMargin) / (plateCount - 1)', 1, 500, { step: 0.1, show: isUpright }),
@@ -297,11 +320,11 @@ export const PARAMS: ParamDef[] = [
   // Mould
   { id: 'mouldOn', label: 'Generate moulds', group: 'Mould', kind: 'toggle', def: true },
   num('plyThickness', 'Plywood thickness', 'Mould', 18, 3, 50, { step: 0.5, noScale: true }),
-  num('mouldWall', 'Wall thickness', 'Mould', 40, 10, 300),
+  num('mouldWall', 'Wall thickness', 'Mould', 40, 3, 300),
   num('draft', 'Draft', 'Mould', 0.5, 0, 10, { unit: '°', step: 0.1 }),
   num('dowelDia', 'Dowel Ø', 'Mould', 8, 2, 30, { noScale: true }),
   num('tabsPerSide', 'Clamp tabs / side', 'Mould', 2, 0, 8, { int: true, unit: '' }),
-  num('tabSize', 'Tab size', 'Mould', 40, 10, 200),
+  num('tabSize', 'Tab size', 'Mould', 40, 5, 200),
   choice('mouldSplit', 'Split rings', 'Mould', 'halves', [
     { value: 'none', label: 'Whole rings' },
     { value: 'halves', label: 'Halves (opens to release)' },
@@ -421,12 +444,30 @@ export function fitOverrides(raw: Record<string, RawValue>): Record<string, stri
   return { [run]: `(${across} - 2*sideMargin - 2*topMargin) / imgAspect + 2*topMargin + 2*endMargin` };
 }
 
+/**
+ * Expressions that replace pitch (and plate count) while Plates › Spacing is a
+ * fixed gap. "Fill base" fits as many plates as the stack run allows inside the
+ * end margins; plates are always laid out symmetric about the base centre.
+ */
+export function spacingOverrides(raw: Record<string, RawValue>): Record<string, string> {
+  const mode = String(raw.spacingMode ?? 'fit');
+  if (mode === 'fit' || String(raw.sliceMode ?? 'parallel') === 'radial') return {};
+  const out: Record<string, string> = { pitch: 'thickness + plateGap' };
+  if (mode === 'gap') out.plateCount = 'floor((stackLength - 2*endMargin) / (thickness + plateGap)) + 1';
+  return out;
+}
+
+/** Which setting drives each overridden parameter, for the panel's label. */
+export function overrideSource(id: string): 'spacing' | 'image' {
+  return id === 'pitch' || id === 'plateCount' ? 'spacing' : 'image';
+}
+
 export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'imgAspect'];
 
 /** Evaluate the whole parameter graph in dependency order. */
 export function evaluateParams(rawIn: Record<string, RawValue>, extra: Record<string, number> = {}): EvalResult {
   // Master size multiplies literal values; image fit swaps in expressions
-  const overrides = fitOverrides(rawIn);
+  const overrides = { ...fitOverrides(rawIn), ...spacingOverrides(rawIn) };
   const raw: Record<string, RawValue> = { ...rawIn, ...overrides };
   for (const d of PARAMS) {
     if (d.kind !== 'number' || overrides[d.id]) continue;

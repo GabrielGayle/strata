@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { isLiteral } from '../core/expr';
 import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
-import { applyPreset, deserialize, newProject, type Preset, type Project, type Variant } from '../core/project';
+import { applyPreset, deserialize, newProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
+import type { Composition, Surface } from '../core/compose';
 import type { PourLayer } from '../core/mould';
 import { mulberry32 } from '../core/rng';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
@@ -13,7 +14,7 @@ export interface UiState {
   tab: Tab;
   selected: string | null; // part id
   ortho: boolean;
-  snap: { dir: Snap; n: number };
+  snap: { dir: Snap; n: number; follow?: boolean };
   showMoulds: boolean;
   explode: boolean;
   xray: boolean;
@@ -30,8 +31,20 @@ export interface UiState {
   toast: string | null;
 }
 
+/** A whole master setup (project) open in its own tab. The active one lives in `project`. */
+export interface SetupTab {
+  id: string;
+  /** Last state of an inactive tab; for the active tab, read `project` instead. */
+  project: Project;
+}
+
 interface Store {
   project: Project;
+  setups: SetupTab[];
+  activeSetup: string;
+  newSetup: (mode: 'duplicate' | 'blank') => void;
+  switchSetup: (id: string) => void;
+  closeSetup: (id: string) => void;
   past: Project[];
   future: Project[];
   ui: UiState;
@@ -42,6 +55,8 @@ interface Store {
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
   replaceProject: (p: Project) => void;
+  /** Store the composer's blocks and the rendered surface images in one undo step. */
+  applyComposition: (comp: Composition, images: Partial<Record<Surface, ImageAsset | null>>, patch: Record<string, RawValue>) => void;
   undo: () => void;
   redo: () => void;
   randomise: () => void;
@@ -57,6 +72,7 @@ interface Store {
 
 const STORAGE_KEY = 'strata.project.v1';
 const UI_KEY = 'strata.ui.v1';
+const SETUPS_KEY = 'strata.setups.v1';
 
 function loadInitial(): Project {
   try {
@@ -67,6 +83,28 @@ function loadInitial(): Project {
   }
   return newProject();
 }
+
+/** Tabs from last time. The active tab's project is the autosaved one, so it isn't stored twice. */
+function loadSetups(active: Project): { setups: SetupTab[]; activeSetup: string } {
+  try {
+    const s = localStorage.getItem(SETUPS_KEY);
+    if (s) {
+      const raw = JSON.parse(s);
+      const list: SetupTab[] = [];
+      for (const t of raw.list ?? []) {
+        if (t.id === raw.active) list.push({ id: t.id, project: active });
+        else if (t.project) list.push({ id: t.id, project: deserialize(JSON.stringify(t.project)) });
+      }
+      if (list.some((t) => t.id === raw.active)) return { setups: list, activeSetup: raw.active };
+    }
+  } catch {
+    /* corrupt: fall back to one tab */
+  }
+  return { setups: [{ id: 's1', project: active }], activeSetup: 's1' };
+}
+
+// undo history per setup tab, kept for the session only
+const histories = new Map<string, { past: Project[]; future: Project[] }>();
 
 function loadUi(): Partial<UiState> {
   try {
@@ -95,10 +133,42 @@ export const useStore = create<Store>((set, get) => {
     lastTime = now;
     set({ project: next, past: merge ? past : [...past.slice(-199), project], future: [] });
   };
+  const initial = loadInitial();
+  /** Park the active tab (project and history) and bring another one in. */
+  const activate = (id: string, setups: SetupTab[]) => {
+    const { project, past, future, activeSetup } = get();
+    histories.set(activeSetup, { past, future });
+    const parked = setups.map((t) => (t.id === activeSetup ? { ...t, project } : t));
+    const next = parked.find((t) => t.id === id)!;
+    const h = histories.get(id) ?? { past: [], future: [] };
+    lastKey = '';
+    set({ setups: parked, activeSetup: id, project: next.project, past: h.past, future: h.future });
+  };
   return {
-    project: loadInitial(),
+    project: initial,
+    ...loadSetups(initial),
     past: [],
     future: [],
+    newSetup: (mode) => {
+      const { project, setups } = get();
+      const id = `s${Date.now().toString(36)}`;
+      const fresh = mode === 'duplicate' ? { ...project, name: `${project.name} copy` } : newProject();
+      if (mode === 'blank') fresh.name = `Setup ${setups.length + 1}`;
+      activate(id, [...setups, { id, project: fresh }]);
+      get().toast(mode === 'duplicate' ? 'Duplicated this setup into a new tab' : 'Opened a blank setup');
+    },
+    switchSetup: (id) => {
+      if (id === get().activeSetup || !get().setups.some((t) => t.id === id)) return;
+      activate(id, get().setups);
+    },
+    closeSetup: (id) => {
+      const { setups, activeSetup } = get();
+      if (setups.length < 2) return;
+      const i = setups.findIndex((t) => t.id === id);
+      if (id === activeSetup) activate(setups[i + 1]?.id ?? setups[i - 1].id, setups);
+      set({ setups: get().setups.filter((t) => t.id !== id) });
+      histories.delete(id);
+    },
     ui: {
       tab: '3d',
       selected: null,
@@ -141,6 +211,12 @@ export const useStore = create<Store>((set, get) => {
       else commit({ ...p, meshes: { ...p.meshes, [slot]: asset ?? undefined } }, `mesh:${slot}:${performance.now()}`);
     },
     replaceProject: (np) => commit(np, `replace:${performance.now()}`),
+    applyComposition: (comp, imgs, patch) => {
+      const p = get().project;
+      const images = { ...p.images };
+      for (const [k, a] of Object.entries(imgs) as [Surface, ImageAsset | null][]) images[k] = a ?? undefined;
+      commit({ ...p, composition: comp, images, params: { ...p.params, ...patch } }, `compose:${performance.now()}`);
+    },
     undo: () => {
       const { past, project, future } = get();
       if (!past.length) return;
@@ -221,6 +297,9 @@ export const useStore = create<Store>((set, get) => {
     loadPreset: (preset) => {
       const p = get().project;
       commit(applyPreset(p, preset), `preset:${performance.now()}`);
+      // re-frame the camera: presets range from 6 cm to 80 cm across
+      const ui = get().ui;
+      set({ ui: { ...ui, snap: { dir: ui.snap.dir, n: ui.snap.n + 1, follow: true } } });
       get().toast(`Preset: ${preset.name}`);
     },
     saveVariant: (name) => {
@@ -274,6 +353,15 @@ useStore.subscribe((s, prev) => {
       }
     }, 500);
   }
+  if (s.setups !== prev.setups || s.activeSetup !== prev.activeSetup) {
+    try {
+      localStorage.setItem(SETUPS_KEY, JSON.stringify({ active: s.activeSetup, list: s.setups.map((t) => (t.id === s.activeSetup ? { id: t.id } : t)) }));
+      // the active tab's project must match straight away, not after the autosave delay
+      if (s.activeSetup !== prev.activeSetup) localStorage.setItem(STORAGE_KEY, JSON.stringify(s.project));
+    } catch {
+      s.toast('This browser is out of room to keep every setup tab; save the ones you need as project files.');
+    }
+  }
   if (s.ui.tab !== prev.ui.tab || s.ui.collapsed !== prev.ui.collapsed || s.ui.ortho !== prev.ui.ortho) {
     try {
       localStorage.setItem(UI_KEY, JSON.stringify({ tab: s.ui.tab, collapsed: s.ui.collapsed, ortho: s.ui.ortho }));
@@ -282,5 +370,3 @@ useStore.subscribe((s, prev) => {
     }
   }
 });
-
-export const paramDef = (id: string) => PARAM_MAP[id];

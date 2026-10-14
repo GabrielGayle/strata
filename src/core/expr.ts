@@ -31,8 +31,6 @@ const FUNCS: Record<string, (...a: number[]) => number> = {
 
 const CONSTS: Record<string, number> = { pi: Math.PI, PI: Math.PI, e: Math.E };
 
-export const FUNCTION_NAMES = Object.keys(FUNCS);
-
 type Tok = { k: 'num' | 'id' | 'op'; v: string; pos: number };
 
 function tokenize(src: string): Tok[] {

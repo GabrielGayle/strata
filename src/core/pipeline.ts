@@ -12,6 +12,7 @@ import { nest, type NestResult } from './nest';
 import { buildMoulds, pourPlan, type MouldResult, type PourPlanRow } from './mould';
 import { unfold, type UnfoldResult } from './unfold';
 import { buildBom, type Bom } from './bom';
+import { share } from './memo';
 import type { Project } from './project';
 
 export interface Assets {
@@ -68,8 +69,9 @@ const NON_SLICE = new Set([
 const SLICE_KEYS = PARAMS.map((p) => p.id).filter((id) => !NON_SLICE.has(id));
 const STRATA_KEYS = ['baseLength', 'baseWidth', 'sliceMode', 'sliceAxis', 'pitch', 'stackHeight', 'erosionAmp', 'erosionScale', 'octaves', 'roughness', 'banding', 'bandHeight', 'coherence', 'crest', 'slope', 'seed', 'imgSideMode', 'imgMix', 'imgRange', 'stackSource'];
 const IMG_KEYS = ['imgContrast', 'imgSmooth', 'imgInvert', 'imgRotate'];
-const CHECK_KEYS = ['minFeature', 'kerf', 'minPartSize', 'sheetW', 'sheetH', 'partSpacing', 'pitch', 'thickness', 'radialHub', 'radialCount', 'sliceMode'];
-const MOULD_KEYS = [...PARAMS.filter((p) => p.group === 'Mould').map((p) => p.id), 'baseOn', 'baseLength', 'baseWidth', 'baseHeight', 'embedDepth', 'thickness', 'insMaterial', 'insShape', 'clearance', 'sliceMode'];
+const BASE_KEYS = ['baseOn', 'baseLength', 'baseWidth', 'baseHeight', 'baseCornerChamfer', 'baseEdgeChamfer'];
+const CHECK_KEYS = ['minFeature', 'kerf', 'minPartSize', 'sheetW', 'sheetH', 'partSpacing', 'pitch', 'thickness', 'radialHub', 'radialCount', 'sliceMode', 'embedMode', ...BASE_KEYS];
+const MOULD_KEYS = [...PARAMS.filter((p) => p.group === 'Mould').map((p) => p.id), ...BASE_KEYS, 'embedDepth', 'thickness', 'insMaterial', 'insShape', 'clearance', 'sliceMode'];
 const UNFOLD_KEYS = PARAMS.filter((p) => p.group === 'Unfold').map((p) => p.id);
 
 export function createPipeline() {
@@ -128,8 +130,9 @@ export function createPipeline() {
     const frontImg = stage('Front image', [assets.frontImg, ...pick(v, IMG_KEYS)], () => (assets.frontImg ? processImage(assets.frontImg, opts()) : null));
     const topImg = stage('Top image', [assets.topImg ?? null, ...pick(v, IMG_KEYS)], () => (assets.topImg ? processImage(assets.topImg, opts()) : null));
     const hf = stage('Strata field', [...pick(v, STRATA_KEYS), sideImg], () => (v.stackSource === 'strata' ? buildHeightField(v, sideImg) : null));
+    // parts that come out unchanged keep their identity, so checks, nesting and the 3D view skip them
     const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg], () =>
-      slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg }),
+      share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg })),
     );
     const issues = stage('Fit checks', [sliced, ...pick(v, CHECK_KEYS)], () => runChecks(v, sliced), true);
     const nested = stage('Nest sheets', [sliced, v.sheetW, v.sheetH, v.partSpacing], () =>
@@ -159,7 +162,7 @@ export function createPipeline() {
     );
     const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
     const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
-    const pour = stage('Pour plan', [project.pour, v.baseHeight, v.baseLength, v.baseWidth], () => pourPlan(v, project.pour, numScope));
+    const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
     const bom = stage('Cut list + BOM', [sliced, nested, moulds, mouldNest, insert, pour, v.plateMaterial, v.insMaterial], () =>
       buildBom(v, sliced, nested, moulds, mouldNest, insert?.volume ?? 0, pour.rows),
       true,

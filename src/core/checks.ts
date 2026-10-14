@@ -1,8 +1,10 @@
 // Fabrication fit checks: everything that would make a part uncuttable or
 // make it not fit once it's cut.
 import { difference, offset, shapeArea, shapeBBox, signedArea, type Shape, type Vec2 } from './geom2d';
+import { cached } from './memo';
 import type { Values } from './params';
 import type { SliceResult } from './slicer';
+import { baseChamfers, planClearance } from './base';
 
 export type Severity = 'error' | 'warn' | 'info';
 
@@ -20,12 +22,44 @@ function regions(s: Shape, minArea: number): Shape[] {
   return s.filter((e) => shapeArea([e]) > minArea).map((e) => [e]);
 }
 
+// The two morphology checks are the expensive part; they are cached on the part's
+// shape, which the pipeline keeps identical for parts an edit didn't change.
+const thinRegions = (s: Shape, mf: number) =>
+  cached(s, `thin:${mf}`, () => regions(difference(s, offset(offset(s, -mf / 2, 'miter'), mf / 2, 'miter')), mf * mf * 0.6));
+const gapRegions = (s: Shape, kerf: number) =>
+  cached(s, `gap:${kerf}`, () => regions(difference(offset(offset(s, kerf / 2, 'miter'), -kerf / 2, 'miter'), s), kerf * kerf * 4));
+/** Thinnest concrete floor left under the embedded plates before it is likely to crack. */
+export const MIN_FLOOR = 5;
+
+// Limits that only bite on small pieces, where the base gets thin and the
+// embedded tab gets too shallow for anchor holes.
+function baseChecks(v: Values): Issue[] {
+  const issues: Issue[] = [];
+  if (!v.baseOn || v.embedDepth <= 0) return issues;
+  const floor = v.baseHeight - v.embedDepth;
+  if (floor <= 0) {
+    issues.push({ partId: null, type: 'general', severity: 'error', message: `Plates are embedded ${v.embedDepth} mm into a ${v.baseHeight} mm base: they go straight through.` });
+  } else if (floor < MIN_FLOOR) {
+    issues.push({ partId: null, type: 'general', severity: 'warn', message: `Only ${floor.toFixed(1)} mm of concrete under the plates (min ${MIN_FLOOR}). Raise the base or embed less.` });
+  }
+  if (v.embedMode === 'cast' && v.anchorHoles > 0 && v.embedDepth <= v.anchorDia + 2 * v.minFeature) {
+    issues.push({
+      partId: null,
+      type: 'hole',
+      severity: 'warn',
+      message: `Embedded tab (${v.embedDepth} mm) is too shallow for Ø${v.anchorDia} mm anchor holes, so they are left out. Embed deeper, use a smaller hole, or cast slots and glue.`,
+    });
+  }
+  return issues;
+}
+
 export function runChecks(v: Values, sliced: SliceResult): Issue[] {
   const issues: Issue[] = [];
   const mf = v.minFeature;
   const kerf = v.kerf;
   const sheetMax = Math.max(v.sheetW, v.sheetH);
   const sheetMin = Math.min(v.sheetW, v.sheetH);
+  issues.push(...baseChecks(v));
 
   for (const plate of sliced.plates) {
     if (plate.collision > 0) {
@@ -78,9 +112,7 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     }
     // thin webs: morphological opening removes anything narrower than mf
     if (mf > 0) {
-      const opened = offset(offset(s, -mf / 2, 'miter'), mf / 2, 'miter');
-      const lost = difference(s, opened);
-      for (const r of regions(lost, mf * mf * 0.6)) {
+      for (const r of thinRegions(s, mf)) {
         const rb = shapeBBox(r);
         issues.push({
           partId: part.id,
@@ -94,9 +126,7 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     }
     // gaps narrower than the kerf can't be cut: closing reveals them
     if (kerf > 0) {
-      const closed = offset(offset(s, kerf / 2, 'miter'), -kerf / 2, 'miter');
-      const gained = difference(closed, s);
-      for (const r of regions(gained, kerf * kerf * 4)) {
+      for (const r of gapRegions(s, kerf)) {
         const rb = shapeBBox(r);
         issues.push({ partId: part.id, type: 'gap', severity: 'error', message: `Gap narrower than the ${kerf} mm kerf.`, at: [(rb.minX + rb.maxX) / 2, (rb.minY + rb.maxY) / 2], region: r });
       }
@@ -118,6 +148,46 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     const n = v.radialCount;
     const minHub = v.thickness / 2 / Math.sin(Math.PI / n);
     if (v.radialHub < minHub) issues.push({ partId: null, type: 'collision', severity: 'error', message: `Radial plates touch at the hub: hub radius must be ≥ ${minHub.toFixed(1)} mm.` });
+  }
+  // chamfered base: plates must stay inside the footprint where they enter the concrete
+  if (v.baseOn) {
+    const ch = baseChamfers(v);
+    if (ch.corner > 0 || ch.edge > 0) {
+      for (const plate of sliced.plates) {
+        if (!plate.parts.length) continue;
+        const u0 = Math.min(...plate.parts.map((p) => p.bbox.minX));
+        const u1 = Math.max(...plate.parts.map((p) => p.bbox.maxX));
+        const P = plate.def.plane;
+        const ends = [u0, u1].map((u) => ({ u, c: planClearance(v, P.origin[0] + P.u[0] * u, -(P.origin[2] + P.u[2] * u), ch.edge) }));
+        const worst = ends[0].c < ends[1].c ? ends[0] : ends[1];
+        if (worst.c < 0)
+          issues.push({
+            partId: plate.parts[0].id,
+            plateKey: plate.def.key,
+            type: 'general',
+            severity: 'warn',
+            message: `Plate runs ${(-worst.c).toFixed(1)} mm past the chamfered base edge.`,
+            at: [worst.u, 0],
+          });
+      }
+    }
+  }
+
+  // embedded support ring
+  const sup = sliced.support;
+  if (sup) {
+    const cover = v.baseHeight + sup.tenonBottom;
+    // 15 / 10 mm of cover on a full-size base, relaxing to MIN_FLOOR on small pieces
+    const underMin = Math.max(MIN_FLOOR, Math.min(15, v.baseHeight / 4));
+    const sideMin = Math.max(MIN_FLOOR, Math.min(10, Math.min(v.baseLength, v.baseWidth) / 10));
+    if (cover <= 0) issues.push({ partId: null, type: 'general', severity: 'error', message: `Support ring and tenons reach ${(-cover).toFixed(1)} mm out of the bottom of the base.` });
+    else if (cover < underMin) issues.push({ partId: null, type: 'general', severity: 'warn', message: `Only ${cover.toFixed(1)} mm of concrete under the support ring tenons (min ${underMin.toFixed(1)}).` });
+    const side = planClearance(v, 0, 0, 0) - sup.outer;
+    if (side < sideMin) issues.push({ partId: null, type: 'general', severity: side < 0 ? 'error' : 'warn', message: side < 0 ? 'Support ring is wider than the base.' : `Only ${side.toFixed(1)} mm of concrete beside the support ring.` });
+    const missed = sliced.plates.filter((p) => p.parts.length && p.tenons === 0);
+    if (missed.length)
+      issues.push({ partId: missed[0].parts[0].id, plateKey: missed[0].def.key, type: 'general', severity: 'warn', message: `${missed.length} plate(s) don't cross the support ring, so it doesn't hold them. Widen the ring.` });
+    if (v.embedMode === 'slot') issues.push({ partId: null, type: 'general', severity: 'warn', message: 'The support ring is cast in with the plates: set Concrete › Plate fixing to "Cast in".' });
   }
   for (const w of sliced.warnings) issues.push({ partId: null, type: 'general', severity: 'warn', message: w });
   return issues;

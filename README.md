@@ -38,9 +38,17 @@ npm run build    # static site in dist/
   is pressed down through the layers like a stamp: dark areas cut through more layers. Registration
   pin holes run through every layer they fit (and set the rods in the base), and each layer carries
   an etched outline of the layer above for glue-up.
+- **Depth from photo.** Each image slot can send a photo to Apple Depth Pro (the Modal endpoint
+  in promptda-depth-generator) and load back a bas-relief: near parts dark (proud on the top,
+  deepest in front layers), background white and left uncut. Set `VITE_DEPTH_URL` to the
+  endpoint (see `.env.example`); without it the button stays disabled.
 - **Edges and size.** Strata flow (low-pass of the eroded top line) and round-all-corners
   smoothing that leaves the insert cavity, anchor holes and slots crisp. Master size scales the
   whole piece, including plate count and thickness, while tolerances and stock sizes stay real.
+- **Base and support.** Chamfered base corners and top edge (cut into every mould ring, with a
+  chamfer strip note for the top edge). An optional radial support ring cut from the same sheet is
+  cast into the concrete at a set depth; each plate drops a tenon through a slot in it, so the
+  stack keeps its spacing and angles.
 - **Unfold.** Unrolls cylinders, cones, straight lofts and fins into flat patterns; faceted
   versions get bend lines with K-factor bend allowance. Double-curved forms are detected by the
   stretch they would need.

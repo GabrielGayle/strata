@@ -25,13 +25,13 @@ export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up
   }
 }
 
-export function CameraRig({ model, snap, ortho }: { model: Model; snap: { dir: Snap; n: number }; ortho: boolean }) {
+export function CameraRig({ model, snap, ortho }: { model: Model; snap: { dir: Snap; n: number; follow?: boolean }; ortho: boolean }) {
   const { camera, controls, size } = useThree() as any;
-  const first = useRef(true);
-  useEffect(() => {
-    if (!controls) return;
-    const { center, size: s } = modelBounds(model);
-    const { dir, up } = snapDirection(model, snap.dir);
+  // a "follow" snap (preset load) frames again once the new model arrives a frame later
+  const pending = useRef<{ n: number; model: Model } | null>(null);
+  const frame = (m: Model) => {
+    const { center, size: s } = modelBounds(m);
+    const { dir, up } = snapDirection(m, snap.dir);
     const fov = 32;
     const dist = (s * 0.8) / Math.tan(((fov / 2) * Math.PI) / 180);
     camera.up.copy(up);
@@ -42,10 +42,21 @@ export function CameraRig({ model, snap, ortho }: { model: Model; snap: { dir: S
       camera.updateProjectionMatrix();
     }
     controls.update();
-    first.current = false;
+  };
+  useEffect(() => {
+    if (!controls) return;
+    frame(model);
+    pending.current = snap.follow ? { n: snap.n, model } : null;
     // re-frame only on explicit snaps or camera type changes, not on every regenerate
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snap.n, snap.dir, ortho, controls, camera]);
+  useEffect(() => {
+    const p = pending.current;
+    if (!controls || !p || p.n !== snap.n || p.model === model) return;
+    pending.current = null;
+    frame(model);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model]);
   return null;
 }
 
