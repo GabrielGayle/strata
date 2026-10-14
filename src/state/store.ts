@@ -4,6 +4,7 @@ import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
 import { applyPreset, deserialize, newProject, type Preset, type Project, type Variant } from '../core/project';
 import type { PourLayer } from '../core/mould';
 import { mulberry32 } from '../core/rng';
+import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 
 export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'graph' | 'compare';
 export type Snap = 'iso' | 'front' | 'side' | 'top';
@@ -19,6 +20,7 @@ export interface UiState {
   showIssues: boolean;
   showSource: boolean;
   collapsed: Record<string, boolean>;
+  theme: ThemeChoice;
   filter: string;
   focusParam: string | null;
   reliefTilt: number;
@@ -49,6 +51,7 @@ interface Store {
   loadVariant: (id: string) => void;
   deleteVariant: (id: string) => void;
   setUi: (patch: Partial<UiState>) => void;
+  setTheme: (t: ThemeChoice) => void;
   toast: (msg: string) => void;
 }
 
@@ -109,6 +112,7 @@ export const useStore = create<Store>((set, get) => {
       collapsed: { 'Source form': true, Concrete: true, Mould: true, Unfold: true, Fabrication: true, Image: true },
       filter: '',
       focusParam: null,
+      theme: loadTheme(),
       reliefTilt: 0,
       reliefTint: true,
       compareA: 'current',
@@ -244,6 +248,11 @@ export const useStore = create<Store>((set, get) => {
       commit({ ...p, variants: p.variants.filter((x) => x.id !== id) }, `delvar:${performance.now()}`);
     },
     setUi: (patch) => set({ ui: { ...get().ui, ...patch } }),
+    setTheme: (t) => {
+      applyTheme(t);
+      saveTheme(t);
+      set({ ui: { ...get().ui, theme: t } });
+    },
     toast: (msg) => {
       clearTimeout(toastTimer);
       set({ ui: { ...get().ui, toast: msg } });

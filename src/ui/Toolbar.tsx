@@ -4,6 +4,7 @@ import { PRESETS, deserialize, serialize } from '../core/project';
 import { buildZip, download } from '../core/exporters';
 import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
+import { randomTheme, themeTokens, THEME_PRESETS, type ThemeSeed } from './theme';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -77,6 +78,111 @@ export async function importMeshInto(slot: 'ins' | 'src') {
   } catch (e) {
     st.toast(`Could not read ${file.name}: ${(e as Error).message}`);
   }
+}
+
+function Swatch({ t }: { t: ThemeSeed }) {
+  const k = themeTokens(t);
+  return (
+    <span className="sw" aria-hidden>
+      <i style={{ background: k['--bg'] }} />
+      <i style={{ background: k['--panel-2'] }} />
+      <i style={{ background: k['--accent'] }} />
+      <i style={{ background: k['--svg-etch'] }} />
+    </span>
+  );
+}
+
+function AppearanceMenu() {
+  const theme = useStore((s) => s.ui.theme);
+  const setTheme = useStore((s) => s.setTheme);
+  const current = theme.id === 'system' ? null : (theme as ThemeSeed);
+  return (
+    <Menu label="Appearance">
+      {() => (
+        <div style={{ width: 300 }}>
+          <div className="head">Presets</div>
+          <div className="theme-grid">
+            <button className={`theme-swatch ${theme.id === 'system' ? 'on' : ''}`} onClick={() => setTheme({ id: 'system' })} title="Follow the system light/dark setting">
+              <span className="sw" aria-hidden>
+                <i style={{ background: '#efede8' }} />
+                <i style={{ background: '#141412' }} />
+                <i style={{ background: '#d4521c' }} />
+                <i style={{ background: '#2f5f9e' }} />
+              </span>
+              <span>System</span>
+            </button>
+            {THEME_PRESETS.map((t) => (
+              <button key={t.id} className={`theme-swatch ${theme.id === t.id ? 'on' : ''}`} onClick={() => setTheme(t)}>
+                <Swatch t={t} />
+                <span>{t.name}</span>
+              </button>
+            ))}
+          </div>
+          <div className="head">Random</div>
+          <div className="btnrow">
+            <button className="btn sm" onClick={() => setTheme(randomTheme('light'))}>
+              Light
+            </button>
+            <button className="btn sm" onClick={() => setTheme(randomTheme('light', 'blue'))}>
+              Blue
+            </button>
+            <button className="btn sm" onClick={() => setTheme(randomTheme('light', 'mauve'))}>
+              Mauve
+            </button>
+            <button className="btn sm" onClick={() => setTheme(randomTheme('dark'))}>
+              Dark
+            </button>
+          </div>
+          {current && (
+            <>
+              <div className="head">Tune</div>
+              <dl className="kv" style={{ alignItems: 'center', margin: 0 }}>
+                <dt>Accent</dt>
+                <dd>
+                  <input type="color" value={current.accent} onChange={(e) => setTheme({ ...current, id: 'custom', name: 'Custom', accent: e.target.value })} aria-label="Accent colour" />
+                </dd>
+                <dt>Tint</dt>
+                <dd>
+                  <input
+                    type="range"
+                    min={0}
+                    max={360}
+                    value={current.hue}
+                    onChange={(e) => setTheme({ ...current, id: 'custom', name: 'Custom', hue: Number(e.target.value) })}
+                    style={{ width: 150, accentColor: 'var(--accent)' }}
+                    aria-label="Surface tint"
+                  />
+                </dd>
+                <dt>Colourfulness</dt>
+                <dd>
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.8}
+                    step={0.01}
+                    value={current.sat}
+                    onChange={(e) => setTheme({ ...current, id: 'custom', name: 'Custom', sat: Number(e.target.value) })}
+                    style={{ width: 150, accentColor: 'var(--accent)' }}
+                    aria-label="Surface colourfulness"
+                  />
+                </dd>
+                <dt>Mode</dt>
+                <dd>
+                  <span className="seg">
+                    {(['light', 'dark'] as const).map((m) => (
+                      <button key={m} className={`btn sm ${current.mode === m ? 'on' : ''}`} onClick={() => setTheme({ ...current, id: 'custom', name: 'Custom', mode: m })}>
+                        {m}
+                      </button>
+                    ))}
+                  </span>
+                </dd>
+              </dl>
+            </>
+          )}
+        </div>
+      )}
+    </Menu>
+  );
 }
 
 export default function Toolbar() {
@@ -214,6 +320,9 @@ export default function Toolbar() {
             </>
           )}
         </Menu>
+      </div>
+      <div className="group">
+        <AppearanceMenu />
       </div>
       <div className="spacer" />
       <button className="tb primary" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">

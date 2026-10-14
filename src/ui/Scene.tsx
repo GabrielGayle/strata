@@ -10,6 +10,7 @@ import { etchSegments, extrudeOnPlane, extrudePlan } from '../core/geometry3d';
 import { planeToWorld } from '../core/section';
 import { shapeBBox } from '../core/geom2d';
 import { makeConcreteMaterial, METALS, PLY, type Band } from './materials';
+import { useStore } from '../state/store';
 
 export interface SceneOpts {
   selected: string | null;
@@ -211,10 +212,12 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const v = model.v;
   const metal = METALS[v.plateMaterial] ?? METALS.steel;
   const material = useMemo(() => new THREE.MeshStandardMaterial({ color: metal.color, metalness: metal.metalness, roughness: metal.roughness }), [metal]);
-  const selMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: cssVar('--accent', '#d4521c'), metalness: 0.2, roughness: 0.5, emissive: new THREE.Color('#5a1a00') }), []);
+  // re-read theme colours whenever the window appearance changes
+  const theme = useStore((st) => st.ui.theme);
+  const selMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: cssVar('--accent', '#d4521c'), metalness: 0.2, roughness: 0.5, emissive: new THREE.Color('#5a1a00') }), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => material.dispose(), [material]);
-  const gridA = useMemo(() => cssVar('--grid-a', '#cfcbc2'), []);
-  const gridB = useMemo(() => cssVar('--grid-b', '#a9a49a'), []);
+  const gridA = useMemo(() => cssVar('--grid-a', '#cfcbc2'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
+  const gridB = useMemo(() => cssVar('--grid-b', '#a9a49a'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <Env />

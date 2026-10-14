@@ -937,3 +937,43 @@ canvas.thumb {
 .stage .ms {
   color: var(--muted);
 }
+
+/* appearance menu */
+.theme-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--line-soft);
+}
+.theme-swatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  padding: 7px 8px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+.theme-swatch:nth-child(2n) {
+  border-right: 0;
+}
+.theme-swatch:hover {
+  background: var(--panel-2);
+}
+.theme-swatch.on {
+  background: var(--sel);
+  font-weight: 700;
+}
+.theme-swatch .sw {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  flex: none;
+}
+.theme-swatch .sw i {
+  display: block;
+  width: 9px;
+  height: 18px;
+}
