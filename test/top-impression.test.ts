@@ -118,4 +118,22 @@ describe('edges, master size and fit to image', () => {
     // the image now fills the footprint inside the margins (scale 0.9 of it)
     expect((win.r1 - win.r0) / w).toBeCloseTo(m.v.topScale, 2);
   });
+
+  it('balloon profile inflates a flat silhouette from its edges', () => {
+    const depthAt = (m: ReturnType<typeof run>, u: number) => {
+      const plate = m.sliced.plates[Math.floor(m.sliced.plates.length / 2)].parts[0];
+      return m.v.stackHeight - topAt(plate.shape, u)!;
+    };
+    const flat = run({ imgTopMode: 'carve', erosionAmp: '0', crest: '0', topDepth: '20', topSteps: '0', imgSmooth: '0', imgContrast: '1' }, disc());
+    const balloon = run({ imgTopMode: 'carve', erosionAmp: '0', crest: '0', topDepth: '20', topSteps: '0', imgSmooth: '0', imgContrast: '1', topProfile: 'balloon' }, disc());
+    // tone: one flat floor across the disc
+    expect(depthAt(flat, 0)).toBeCloseTo(depthAt(flat, 20), 0);
+    // balloon: deepest in the middle, easing out towards the rim
+    const d0 = depthAt(balloon, 0), d1 = depthAt(balloon, 15), d2 = depthAt(balloon, 27);
+    expect(d0).toBeGreaterThan(15);
+    expect(d0).toBeGreaterThan(d1);
+    expect(d1).toBeGreaterThan(d2);
+    expect(d2).toBeGreaterThan(0.5);
+    expect(balloon.issues.filter((x) => x.severity === 'error')).toEqual([]);
+  });
 });

@@ -28,7 +28,7 @@ import {
 import { offsetPlane, planeToWorld, sectionShape, type Plane, type V3 } from './section';
 import { stackFrame, type HeightField } from './heightfield';
 import type { IndexedMesh } from './forms';
-import { marchingSquares, sample, type Gray } from './image';
+import { distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
 
 export type Family = 'P' | 'X' | 'R';
@@ -400,6 +400,39 @@ export function topUV(win: TopWindow, p: V3): [number, number] | null {
   }
 }
 
+/**
+ * Depth field (0..1) for a top-surface profile. For "tone" it is the image's
+ * darkness above the threshold; for pillow / balloon / chamfer it comes from
+ * each point's distance to the edge of the dark shape, so a flat silhouette
+ * inflates from its outline.
+ */
+export function topProfileField(v: Values, img: Gray, win: TopWindow): Gray {
+  const thr = Math.min(0.99, v.topThreshold);
+  const n = img.w * img.h;
+  const data = new Float32Array(n);
+  if (v.topProfile === 'tone' || !v.topProfile) {
+    for (let i = 0; i < n; i++) data[i] = Math.max(0, Math.min(1, (1 - img.data[i] - thr) / (1 - thr)));
+    return { w: img.w, h: img.h, data };
+  }
+  const inside = new Uint8Array(n);
+  for (let i = 0; i < n; i++) inside[i] = 1 - img.data[i] > thr ? 1 : 0;
+  const dist = distanceInside(inside, img.w, img.h);
+  // image columns run along `right` unless the image is turned a quarter
+  const mmPerPx = (win.turns % 2 ? win.s1 - win.s0 : win.r1 - win.r0) / img.w;
+  let R = Math.max(0.5, v.topBillow) / mmPerPx;
+  if (v.topProfile === 'balloon') {
+    let max = 0;
+    for (let i = 0; i < n; i++) max = Math.max(max, dist[i]);
+    R = Math.max(1, max);
+  }
+  for (let i = 0; i < n; i++) {
+    if (!inside[i]) continue;
+    const t = Math.min(1, dist[i] / R);
+    data[i] = v.topProfile === 'chamfer' ? t : Math.sqrt(1 - (1 - t) * (1 - t)); // quarter-circle shoulder
+  }
+  return { w: img.w, h: img.h, data };
+}
+
 /** Highest point of the outline above u (the top edge), or null if the vertical misses it. */
 export function topAt(shape: Shape, u: number): number | null {
   let best = -Infinity;
@@ -423,7 +456,6 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
   const tops: number[] = [];
   const lv: number[] = [];
   const steps = Math.round(v.topSteps);
-  const thr = Math.min(0.99, v.topThreshold);
   for (let k = 0; k <= n; k++) {
     const u = def.u0 + ((def.u1 - def.u0) * k) / n;
     const t = topAt(outline, u);
@@ -433,23 +465,24 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
     let f = 0;
     const uv = t !== null && t > 0 ? topUV(win, p) : null;
     if (uv) {
-      const dark = 1 - sample(img, uv[0], uv[1]);
-      const level = Math.max(0, Math.min(1, (dark - thr) / (1 - thr)));
+      const level = sample(img, uv[0], uv[1]); // img is the profile field (0..1 depth)
       f = v.imgTopMode === 'raise' ? 1 - level : level;
       if (steps > 0) f = Math.round(f * steps) / steps;
     }
     lv.push(f);
   }
-  // drop runs narrower than the minimum feature (slivers of material or of cut)
+  // drop runs narrower than the minimum feature (slivers of material or of cut). Stepped
+  // profiles clean up every terrace; smooth ones only where the cut starts and stops.
   const minRun = Math.max(1, Math.ceil(Math.max(v.minFeature, 0.5) / step));
+  const key = (x: number) => (steps > 0 ? x : x > 0 ? 1 : 0);
   for (let pass = 0; pass < 2; pass++) {
     let a = 0;
     while (a < lv.length) {
       let b = a;
-      while (b + 1 < lv.length && lv[b + 1] === lv[a]) b++;
+      while (b + 1 < lv.length && key(lv[b + 1]) === key(lv[a])) b++;
       if (b - a + 1 < minRun && (a > 0 || b < lv.length - 1)) {
         const fill = a > 0 ? lv[a - 1] : lv[b + 1];
-        for (let k = a; k <= b; k++) lv[k] = fill;
+        for (let k = a; k <= b; k++) lv[k] = steps > 0 || key(fill) === 0 ? fill : Math.max(lv[k], fill);
       }
       a = b + 1;
     }
@@ -616,6 +649,7 @@ export function slice(input: SliceInput): SliceResult {
 
   const front = frontContext(v, input.front, defs, hf);
   const topWin = input.top && v.imgTopMode !== 'off' ? topWindow(v, input.top, defs) : null;
+  const topField = topWin && input.top ? topProfileField(v, input.top, topWin) : null;
   // datum for flat impression floors: the lowest plate top inside the image window
   let topDatum = Infinity;
   if (topWin)
@@ -683,7 +717,7 @@ export function slice(input: SliceInput): SliceResult {
 
     // 4b. image impression into the top surface
     if (topWin && input.top) {
-      const carve = topCarve(def, outlines[di], v, input.top, topWin, Number.isFinite(topDatum) ? topDatum : 0);
+      const carve = topCarve(def, outlines[di], v, topField!, topWin, Number.isFinite(topDatum) ? topDatum : 0);
       if (carve.length) imageCuts.push(carve);
     }
     if (imageCuts.length) shape = smoothImageCuts(shape, imageCuts.flat(), v.cutSmooth);

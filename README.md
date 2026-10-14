@@ -27,10 +27,15 @@ npm run build    # static site in dist/
   terraces), neighbour follow, crest and slope.
 - **Image-driven plates.** Top surface impression (each plate's top edge is cut down where its
   strip of the image is dark, so the picture reads looking down on the stack; carve or raise,
-  stepped or smooth, flat terraces or following the strata, turnable; a 3D relief preview with a
-  tilt slider to judge it in raking light); front face as layered cut-outs whose
+  stepped or smooth, flat terraces or following the strata, turnable; tone / pillow / balloon /
+  chamfer profiles so a flat PNG silhouette inflates from its edges; cut-edge smoothing; fit the
+  stack to the image proportions; a 3D relief preview with a tilt slider and a "gentle impression"
+  shuffle); front face as layered cut-outs whose
   depth follows darkness, halftone holes, and etched hatch / contour lines; side profile (image as
   overall plate height, or traced silhouette) mixed with the strata.
+- **Edges and size.** Strata flow (low-pass of the eroded top line) and round-all-corners
+  smoothing that leaves the insert cavity, anchor holes and slots crisp. Master size scales the
+  whole piece, including plate count and thickness, while tolerances and stock sizes stay real.
 - **Unfold.** Unrolls cylinders, cones, straight lofts and fins into flat patterns; faceted
   versions get bend lines with K-factor bend allowance. Double-curved forms are detected by the
   stretch they would need.

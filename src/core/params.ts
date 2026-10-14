@@ -226,6 +226,17 @@ export const PARAMS: ParamDef[] = [
   ], { show: (v) => v.imgTopMode !== 'off' }),
   num('topDepth', 'Impression depth', 'Image', 18, 1, 300, { show: (v) => v.imgTopMode !== 'off', help: 'How far the darkest areas are cut down into the top surface' }),
   num('topSteps', 'Depth steps', 'Image', 4, 0, 20, { int: true, unit: '', show: (v) => v.imgTopMode !== 'off', help: '0 = smooth; N = crisp terraces like layered cut-outs' }),
+  choice('topProfile', 'Impression profile', 'Image', 'tone', [
+    { value: 'tone', label: 'Tone (depth follows darkness)' },
+    { value: 'pillow', label: 'Pillow (rounded shoulders)' },
+    { value: 'balloon', label: 'Balloon (fully inflated dome)' },
+    { value: 'chamfer', label: 'Chamfer (straight bevel)' },
+  ], { show: (v) => v.imgTopMode !== 'off', help: 'Shape of the impression across the picture: for flat PNGs, pillow and balloon inflate the silhouette from its edges' }),
+  num('topBillow', 'Billow width', 'Image', 25, 1, 400, {
+    show: (v) => v.imgTopMode !== 'off' && (v.topProfile === 'pillow' || v.topProfile === 'chamfer'),
+    rand: true,
+    help: 'How far in from the edge of the shape the rounded shoulder reaches',
+  }),
   num('topThreshold', 'Ignore lighter than', 'Image', 0.15, 0, 0.95, { step: 0.01, unit: '', show: (v) => v.imgTopMode !== 'off', help: 'Darkness below this is left flat (keeps a white background uncut)' }),
   num('topScale', 'Image size', 'Image', 0.9, 0.1, 1, { step: 0.01, unit: '×', show: (v) => v.imgTopMode !== 'off' }),
   choice('topRotate', 'Turn image', 'Image', '0', [

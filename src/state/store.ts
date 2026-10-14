@@ -184,6 +184,8 @@ export const useStore = create<Store>((set, get) => {
         topSteps: () => pick(['0', '0', '0', '2', '3']),
         topFloor: () => pick(['follow', 'follow', 'flat']),
         topThreshold: () => r(0.05, 0.3),
+        topProfile: () => pick(['tone', 'pillow', 'pillow', 'balloon', 'balloon']),
+        topBillow: () => r(8, 45, 0),
         cutSmooth: () => r(2, 10, 1),
         edgeRound: () => r(0.5, 4, 1),
         edgeFlow: () => r(6, 40, 0),
