@@ -165,19 +165,25 @@ function halfReach(v: Values, c: [number, number], d: [number, number], cover: n
 
 // --- threaded rods ---------------------------------------------------------------
 
-export interface Rod {
-  /** Plate-u position and plate-y (negative: below the concrete surface). */
-  u: number;
-  y: number;
-  /** World end points. */
-  a: V3;
-  b: V3;
-}
-
 export interface Fixing {
   kind: 'nut' | 'washer';
   /** Distance along the rod from its centre. */
   s: number;
+}
+
+export interface Rod {
+  /** Plate-u position and plate-y (negative: below the concrete surface, positive: up in the exposed steel). */
+  u: number;
+  y: number;
+  /** Cast into the concrete (false: runs through the steel above it). */
+  embedded: boolean;
+  /** World end points. */
+  a: V3;
+  b: V3;
+  length: RodLength;
+  minLength: number;
+  maxLength: number;
+  fixings: Fixing[];
 }
 
 export interface RodPlan {
@@ -186,13 +192,8 @@ export interface RodPlan {
   hole: number;
   rods: Rod[];
   dir: V3;
-  length: RodLength;
-  minLength: number;
-  maxLength: number;
-  /** Nuts and washers on each rod, identical for every rod. */
-  fixings: Fixing[];
-  nutsPerRod: number;
-  washersPerRod: number;
+  nuts: number;
+  washers: number;
   issues: BraceIssue[];
 }
 
@@ -206,6 +207,36 @@ function lockedPlates(v: Values, n: number): boolean[] {
   });
 }
 
+/** "u, y; u, y" pairs: across the plate from its centre line, and height above the concrete. */
+export function parsePoints(text: unknown): [number, number][] {
+  return String(text ?? '')
+    .split(/[;\n]+/)
+    .map((pair) => pair.split(/[,\s]+/).filter(Boolean).map(Number))
+    .filter((p) => p.length >= 2 && p.every((x) => Number.isFinite(x)))
+    .map((p) => [p[0], p[1]] as [number, number]);
+}
+
+/** Rod positions on the plate (u, y), from the chosen layout. */
+export function rodPositions(v: Values, ua: number, ub: number): [number, number][] {
+  const k = Math.max(1, Math.round(v.rodCount));
+  const y0 = -v.rodDepth;
+  const us = spread(ua, ub, k, false);
+  switch (v.rodLayout) {
+    case 'stagger':
+      return us.map((u, i) => [u, i % 2 ? y0 + v.rodStagger : y0]);
+    case 'grid': {
+      const rows = Math.max(1, Math.round(v.rodRows));
+      return Array.from({ length: rows }, (_, r) => us.map((u) => [u, y0 + r * v.rodRowGap] as [number, number])).flat();
+    }
+    case 'custom': {
+      const mid = (ua + ub) / 2;
+      return parsePoints(v.rodPoints).map(([u, y]) => [mid + u, y]);
+    }
+    default:
+      return us.map((u) => [u, y0]);
+  }
+}
+
 export function planRods(v: Values, defs: { family: string; plane: Plane; u0: number; u1: number }[], top: number, embed: number): RodPlan | null {
   if (!v.rodsOn) return null;
   const spec = METRIC[String(v.rodSize)] ?? METRIC.M5;
@@ -216,25 +247,35 @@ export function planRods(v: Values, defs: { family: string; plane: Plane; u0: nu
   const t = v.thickness;
   const n = P.length;
   const hole = spec.d + Math.max(0, v.rodClearance);
-  const depth = v.rodDepth;
-  const y = -depth;
   const inset = Math.max(0, v.tabInset ?? 0);
   const ua = P[0].u0 + inset, ub = P[0].u1 - inset;
-  const k = Math.max(1, Math.round(v.rodCount));
   const xs = crossPlateUs(defs, fr);
-  const us = avoid(spread(ua, ub, k, false), xs, t / 2 + hole / 2 + (v.slotClearance ?? 0) + 1, ua, ub);
-  for (const u of us)
+  let pts = rodPositions(v, ua, ub);
+  if (v.rodLayout !== 'custom') {
+    const us = avoid(pts.map((p) => p[0]), xs, t / 2 + hole / 2 + (v.slotClearance ?? 0) + 1, ua, ub);
+    pts = pts.map((p, i) => [us[i], p[1]]);
+  }
+  if (!pts.length) {
+    issues.push({ severity: 'warn', message: 'No rod positions: add points as "u, y; u, y" (mm across from the plate centre, mm above the concrete).' });
+    return { size: String(v.rodSize), spec, hole, rods: [], dir: [fr.dir[0], 0, fr.dir[1]], nuts: 0, washers: 0, issues };
+  }
+  for (const [u] of pts)
     if (xs.some((x) => Math.abs(u - x) < t / 2 + hole / 2))
-      issues.push({ severity: 'error', message: `A threaded rod runs into a waffle cross plate at ${u.toFixed(0)} mm: change the rod count.` });
+      issues.push({ severity: 'error', message: `A threaded rod runs into a waffle cross plate at ${u.toFixed(0)} mm: move or recount the rods.` });
+  for (let i = 0; i < pts.length; i++)
+    for (let j = i + 1; j < pts.length; j++)
+      if (Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]) < hole + v.minFeature)
+        issues.push({ severity: 'error', message: `Two rods are closer than ${(hole + v.minFeature).toFixed(1)} mm at (${pts[i][0].toFixed(0)}, ${pts[i][1].toFixed(0)}): their holes would merge.` });
 
   // the stack, as distances along the rod
   const ss = P.map((d) => d.plane.origin[0] * fr.dir[0] + d.plane.origin[2] * fr.dir[1]);
   const locked = lockedPlates(v, n);
   const stackNut = spec.washerH + spec.nutH;
-  const fixings: Fixing[] = [];
+  const centre = (ss[0] + ss[n - 1]) / 2;
+  const lockFixings: Fixing[] = [];
   const lockFace = (s: number, side: 1 | -1) => {
-    fixings.push({ kind: 'washer', s: s + side * (t / 2 + spec.washerH / 2) });
-    fixings.push({ kind: 'nut', s: s + side * (t / 2 + spec.washerH + spec.nutH / 2) });
+    lockFixings.push({ kind: 'washer', s: s - centre + side * (t / 2 + spec.washerH / 2) });
+    lockFixings.push({ kind: 'nut', s: s - centre + side * (t / 2 + spec.washerH + spec.nutH / 2) });
   };
   ss.forEach((s, i) => {
     if (locked[i]) {
@@ -254,88 +295,92 @@ export function planRods(v: Values, defs: { family: string; plane: Plane; u0: nu
     issues.push({ severity: 'error', message: `Nuts and washers need ${worst.toFixed(1)} mm between plates but the gap is ${gap.toFixed(1)} mm: lock fewer plates or use a smaller rod.` });
 
   const reach = spec.d; // thread left proud of the last nut
-  let ext = stackNut + reach;
-  if (v.rodTipNuts) ext += spec.nutH + reach;
-  const minLength = ss[n - 1] - ss[0] + t + 2 * ext;
   const cover = v.braceCover;
-  const centre = (ss[0] + ss[n - 1]) / 2;
-  let maxLength = BIG;
-  for (const u of us) {
+  const stock = parseStock(v.rodStock);
+  const nutR = Math.max(spec.washerD, spec.nutS / Math.cos(Math.PI / 6)) / 2;
+  const rods: Rod[] = [];
+  for (const [u, y] of pts) {
+    const embedded = y + hole / 2 < 0;
+    if (!embedded && y - hole / 2 < 0)
+      issues.push({ severity: 'warn', message: `The rod at (${u.toFixed(0)}, ${y.toFixed(0)}) straddles the concrete surface: set it fully in the concrete or fully in the steel.` });
+    // anchor nuts at the tips only grip where the rod is cast in
+    const tips = embedded && v.rodTipNuts;
+    const minLength = ss[n - 1] - ss[0] + t + 2 * (stackNut + reach + (tips ? spec.nutH + reach : 0));
     const c: [number, number] = [u * fr.pu[0] + centre * fr.dir[0], u * fr.pu[1] + centre * fr.dir[1]];
-    maxLength = Math.min(maxLength, 2 * Math.min(halfReach(v, c, fr.dir, cover, 1), halfReach(v, c, fr.dir, cover, -1)));
+    const keep = embedded ? cover : 0;
+    const maxLength = 2 * Math.min(halfReach(v, c, fr.dir, keep, 1), halfReach(v, c, fr.dir, keep, -1));
+    const length = snapRodLength(minLength, maxLength, stock);
+    if (length.problem && !issues.some((i) => i.message === length.problem)) issues.push({ severity: 'error', message: length.problem });
+    const half = length.length / 2;
+    const fixings = [...lockFixings];
+    if (tips) {
+      const tipS = half - reach - spec.nutH / 2;
+      fixings.push({ kind: 'nut', s: -tipS }, { kind: 'nut', s: tipS });
+    }
+    rods.push({ u, y, embedded, a: [c[0] - fr.dir[0] * half, top + y, c[1] - fr.dir[1] * half], b: [c[0] + fr.dir[0] * half, top + y, c[1] + fr.dir[1] * half], length, minLength, maxLength, fixings });
   }
-  const length = snapRodLength(minLength, maxLength, parseStock(v.rodStock));
-  if (length.problem) issues.push({ severity: 'error', message: length.problem });
-  const half = length.length / 2;
-  if (v.rodTipNuts) {
-    const tipS = half - reach - spec.nutH / 2;
-    fixings.push({ kind: 'nut', s: centre - tipS }, { kind: 'nut', s: centre + tipS });
-  }
-  // fixings are kept relative to the rod centre
-  for (const f of fixings) f.s -= centre;
 
-  // concrete cover around the nuts (or the bare rod)
-  const r = fixings.length ? Math.max(spec.washerD, spec.nutS / Math.cos(Math.PI / 6)) / 2 : spec.d / 2;
-  if (depth - r < cover) issues.push({ severity: depth - r < 0 ? 'error' : 'warn', message: `Threaded rods sit ${depth.toFixed(0)} mm down, leaving ${(depth - r).toFixed(1)} mm of concrete over the nuts (want ${cover} mm). Set them deeper.` });
-  if (v.baseOn && v.baseHeight - depth - r < cover)
-    issues.push({ severity: v.baseHeight - depth - r < 0 ? 'error' : 'warn', message: `Only ${(v.baseHeight - depth - r).toFixed(1)} mm of concrete under the threaded rods (want ${cover} mm).` });
-  if (embed > 0 && depth + hole / 2 + v.minFeature > embed)
-    issues.push({ severity: 'error', message: `Rod holes Ø${hole.toFixed(1)} at ${depth.toFixed(0)} mm down break out of the ${embed} mm embedded tab: raise the rods or embed the plates deeper.` });
+  // concrete cover around the cast-in rods' nuts
+  const cast = rods.filter((r) => r.embedded);
+  if (cast.length) {
+    const topMost = Math.max(...cast.map((r) => r.y));
+    const lowest = Math.min(...cast.map((r) => r.y));
+    if (-topMost - nutR < cover)
+      issues.push({ severity: -topMost - nutR < 0 ? 'error' : 'warn', message: `A cast-in rod sits ${(-topMost).toFixed(0)} mm down, leaving ${(-topMost - nutR).toFixed(1)} mm of concrete over its nuts (want ${cover} mm). Set it deeper, or raise it into the steel.` });
+    if (v.baseOn && v.baseHeight + lowest - nutR < cover)
+      issues.push({ severity: v.baseHeight + lowest - nutR < 0 ? 'error' : 'warn', message: `Only ${(v.baseHeight + lowest - nutR).toFixed(1)} mm of concrete under the lowest rod (want ${cover} mm).` });
+    if (embed > 0 && -lowest + hole / 2 + v.minFeature > embed)
+      issues.push({ severity: 'error', message: `Rod holes Ø${hole.toFixed(1)} at ${(-lowest).toFixed(0)} mm down break out of the ${embed} mm embedded tab: raise the rods or embed the plates deeper.` });
+  }
   if (hole < spec.d + 0.2) issues.push({ severity: 'warn', message: `Rod holes Ø${hole.toFixed(1)} leave almost no clearance on ${spec.d} mm rod; laser holes come out tight.` });
 
-  const rods: Rod[] = us.map((u) => {
-    const c: [number, number] = [u * fr.pu[0] + centre * fr.dir[0], u * fr.pu[1] + centre * fr.dir[1]];
-    return {
-      u,
-      y,
-      a: [c[0] - fr.dir[0] * half, top + y, c[1] - fr.dir[1] * half],
-      b: [c[0] + fr.dir[0] * half, top + y, c[1] + fr.dir[1] * half],
-    };
-  });
   return {
     size: String(v.rodSize),
     spec,
     hole,
     rods,
     dir: [fr.dir[0], 0, fr.dir[1]],
-    length,
-    minLength,
-    maxLength,
-    fixings,
-    nutsPerRod: fixings.filter((f) => f.kind === 'nut').length,
-    washersPerRod: fixings.filter((f) => f.kind === 'washer').length,
+    nuts: rods.reduce((a, r) => a + r.fixings.filter((f) => f.kind === 'nut').length, 0),
+    washers: rods.reduce((a, r) => a + r.fixings.filter((f) => f.kind === 'washer').length, 0),
     issues,
   };
 }
 
-/** Rod holes for one plate, with how many land cleanly inside material. */
-export function rodHoles(plan: RodPlan, plate: { key: string; family: string; shape: Shape }, minFeature: number): { holes: Shape; held: number; issues: BraceIssue[] } {
+/** Rod holes for one plate; `held[i]` says whether rod i passes through steel with a clean edge around it. */
+export function rodHoles(plan: RodPlan, plate: { key: string; family: string; shape: Shape }, minFeature: number): { holes: Shape; held: boolean[]; issues: BraceIssue[] } {
   const issues: BraceIssue[] = [];
-  if (plate.family !== 'P' || !plate.shape.length) return { holes: [], held: 0, issues };
+  if (plate.family !== 'P' || !plate.shape.length) return { holes: [], held: plan.rods.map(() => false), issues };
   const r = plan.hole / 2;
   const ring = (rr: number, u: number, y: number): Vec2[] => Array.from({ length: 12 }, (_, i) => [u + rr * Math.cos((i * Math.PI) / 6), y + rr * Math.sin((i * Math.PI) / 6)] as Vec2);
   const holes: ExPoly[] = [];
-  let held = 0;
-  for (const rod of plan.rods) {
+  const held = plan.rods.map((rod) => {
     const centre: Vec2 = [rod.u, rod.y];
-    if (!pointInShape(centre, plate.shape)) continue;
+    if (!pointInShape(centre, plate.shape)) return false;
     holes.push({ outer: circlePath(rod.u, rod.y, r), holes: [] });
-    if (ring(r + minFeature, rod.u, rod.y).every((p) => pointInShape(p, plate.shape))) held++;
-    else issues.push({ severity: 'warn', plateKey: plate.key, at: centre, message: `Rod hole sits less than ${minFeature} mm from the plate edge.` });
-  }
+    if (ring(r + minFeature, rod.u, rod.y).every((p) => pointInShape(p, plate.shape))) return true;
+    issues.push({ severity: 'warn', plateKey: plate.key, at: centre, message: `Rod hole sits less than ${minFeature} mm from the plate edge.` });
+    return false;
+  });
   return { holes: holes.length ? union(holes.map((h) => h.outer)) : [], held, issues };
 }
 
 export function rodHardware(plan: RodPlan): HardwareRow[] {
-  const k = plan.rods.length;
-  const L = plan.length;
   const rows: HardwareRow[] = [];
-  if (L.cut) {
-    const per = Math.max(1, Math.floor(L.stock / (L.length + 2)));
-    rows.push({ item: 'Threaded rod', spec: `${plan.size} × ${L.length} mm (cut)`, qty: k, note: `cut from ${Math.ceil(k / per)} × ${L.stock} mm bar${Math.ceil(k / per) > 1 ? 's' : ''}` });
-  } else rows.push({ item: 'Threaded rod', spec: `${plan.size} × ${L.length} mm`, qty: k, note: 'stock length, DIN 976' });
-  if (plan.nutsPerRod) rows.push({ item: 'Hex nut', spec: `${plan.size} ISO 4032`, qty: k * plan.nutsPerRod });
-  if (plan.washersPerRod) rows.push({ item: 'Washer', spec: `${plan.size} ISO 7089`, qty: k * plan.washersPerRod });
+  const groups = new Map<string, Rod[]>();
+  for (const r of plan.rods) {
+    const k = `${r.length.length}|${r.length.cut}|${r.length.stock}`;
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  for (const rods of groups.values()) {
+    const L = rods[0].length;
+    const k = rods.length;
+    if (L.cut) {
+      const per = Math.max(1, Math.floor(L.stock / (L.length + 2)));
+      rows.push({ item: 'Threaded rod', spec: `${plan.size} × ${L.length} mm (cut)`, qty: k, note: `cut from ${Math.ceil(k / per)} × ${L.stock} mm bar${Math.ceil(k / per) > 1 ? 's' : ''}` });
+    } else rows.push({ item: 'Threaded rod', spec: `${plan.size} × ${L.length} mm`, qty: k, note: 'stock length, DIN 976' });
+  }
+  if (plan.nuts) rows.push({ item: 'Hex nut', spec: `${plan.size} ISO 4032`, qty: plan.nuts });
+  if (plan.washers) rows.push({ item: 'Washer', spec: `${plan.size} ISO 7089`, qty: plan.washers });
   return rows;
 }
 
@@ -542,7 +587,9 @@ export function buildSpacers(
   if (mode === 'template' || mode === 'both') {
     const m = Math.max(1, Math.round(v.templateCount));
     const d = fr.dir;
-    const cs = avoid(spread(ua, ub, m, true), xs, t + clr + 2, ua, ub);
+    // rods may run up through the exposed steel too, so the template keeps clear of every rod line
+    const tClear = Math.max(t + clr + 2, rods ? t / 2 + rods.spec.washerD / 2 + clr + 1 : 0);
+    const cs = avoid(spread(ua, ub, m, true), [...xs, ...(rods ? rods.rods.map((r) => r.u) : [])], tClear, ua, ub);
     const hw = t / 2 + clr;
     const lift = Math.max(0, v.templateLift);
     const engage = Math.max(1, v.templateEngage);

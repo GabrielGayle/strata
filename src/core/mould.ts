@@ -185,9 +185,10 @@ export function buildMoulds(v: Values, sliced: SliceResult, insert: IndexedMesh 
     const br = sliced.brace;
     if (br?.rods) {
       const rp = br.rods;
-      notes.push(
-        `Threaded rods: ${rp.rods.length} × ${rp.size} at ${(-rp.rods[0].y).toFixed(0)} mm below the surface, ${rp.length.length} mm long. Thread the plates on in order with their nuts and washers, square the stack, then tighten.`,
-      );
+      const cast = rp.rods.filter((r) => r.embedded).length;
+      const steel = rp.rods.length - cast;
+      const where = [cast && `${cast} cast in`, steel && `${steel} through the exposed steel`].filter(Boolean).join(', ');
+      notes.push(`Threaded rods: ${rp.rods.length} × ${rp.size} (${where}). Thread the plates on in order with their nuts and washers, square the stack, then tighten before the pour.`);
     }
     const cross = br?.spacers?.parts.filter((p) => p.family === 'C') ?? [];
     const tmpl = br?.spacers?.parts.filter((p) => p.family === 'T') ?? [];

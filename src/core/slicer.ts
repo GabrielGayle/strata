@@ -770,7 +770,8 @@ export function slice(input: SliceInput): SliceResult {
   const braceIssues: BraceIssue[] = rods ? [...rods.issues] : [];
   if (v.rodsOn && !rods && v.sliceMode !== 'parallel' && v.sliceMode !== 'waffle') braceIssues.push({ severity: 'info', message: 'Threaded rods need an upright parallel or waffle stack.' });
   if (rods && v.embedMode === 'slot') braceIssues.push({ severity: 'warn', message: 'Threaded rods are cast in with the plates: set Concrete › Plate fixing to "Cast in".' });
-  const rodMiss: string[] = [];
+  const rodMiss: number[] = rods ? rods.rods.map(() => 0) : [];
+  let rodMissKey: string | undefined;
 
   const front = frontContext(v, input.front, defs, hf);
   // datum for flat impression floors: the lowest plate top inside the image window
@@ -866,7 +867,11 @@ export function slice(input: SliceInput): SliceResult {
     if (rodCut && def.family === 'P') {
       if (rodCut.holes.length) cuts.push(rodCut.holes);
       braceIssues.push(...rodCut.issues);
-      if (rodCut.held < rods!.rods.length) rodMiss.push(def.key);
+      rodCut.held.forEach((ok, i) => {
+        if (ok) return;
+        rodMiss[i]++;
+        rodMissKey ??= def.key;
+      });
     }
 
     // 5b. flat stack registration pins (through every layer they fit, and on into the base)
@@ -978,7 +983,11 @@ export function slice(input: SliceInput): SliceResult {
   }
 
   // 9. laser-cut spacers: cross pieces cast in under the plates and the lift-off spacing template
-  if (rodMiss.length) braceIssues.push({ severity: 'warn', plateKey: rodMiss[0], message: `${rodMiss.length} plate(s) don't take every threaded rod cleanly: their tabs are too narrow where the rods run.` });
+  rodMiss.forEach((miss, i) => {
+    if (!miss) return;
+    const r = rods!.rods[i];
+    braceIssues.push({ severity: 'warn', plateKey: rodMissKey, message: `The rod at (${r.u.toFixed(0)}, ${r.y.toFixed(0)}) misses ${miss} of ${defs.filter((d) => d.family === 'P').length} plates: they have no steel (or too little) where it runs.` });
+  });
   const spacers = buildSpacers(
     v,
     defs,

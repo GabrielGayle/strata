@@ -148,7 +148,11 @@ export default function Inspector() {
             </dl>
           )}
           <div className="note">
-            {model.sliced.brace.rods && `Rods snap to ${model.sliced.brace.rods.length.cut ? 'a cut length' : 'stock'}: the stack and nuts need ${fmt(model.sliced.brace.rods.minLength, 0)} mm${Number.isFinite(model.sliced.brace.rods.maxLength) && model.sliced.brace.rods.maxLength < 1e6 ? `, the concrete fits ${fmt(model.sliced.brace.rods.maxLength, 0)} mm` : ''}. `}
+            {model.sliced.brace.rods && model.sliced.brace.rods.rods.length > 0 && (() => {
+              const rods = model.sliced.brace.rods.rods;
+              const steel = rods.filter((r) => !r.embedded).length;
+              return `Rods snap to the shortest stock length that spans the stack and its nuts and stays inside the base, or get cut down. ${steel ? `${steel} of ${rods.length} run through the exposed steel. ` : ''}`;
+            })()}
             {(() => {
               const sp = model.sliced.brace.spacers?.parts ?? [];
               const c = sp.filter((p) => p.family === 'C').length;

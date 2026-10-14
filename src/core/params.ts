@@ -142,8 +142,18 @@ export const PARAMS: ParamDef[] = [
   // Bracing: threaded rods through the embedded tabs + laser-cut spacers
   { id: 'rodsOn', label: 'Threaded rods', group: 'Bracing', kind: 'toggle', def: false, show: isUpright, help: 'Threaded rods run through every plate\'s embedded tab like rebar, with nuts locking the plates on them' },
   choice('rodSize', 'Rod size', 'Bracing', 'M5', ['M3', 'M4', 'M5', 'M6', 'M8', 'M10', 'M12'].map((m) => ({ value: m, label: m })), { show: hasRods }),
-  num('rodCount', 'Rods', 'Bracing', 2, 1, 8, { int: true, unit: '', show: hasRods, help: 'Spread evenly across the embedded tab' }),
-  num('rodDepth', 'Rod depth', 'Bracing', 'embedDepth / 2', 1, 400, { show: hasRods, help: 'Rod centre below the top of the concrete' }),
+  choice('rodLayout', 'Rod layout', 'Bracing', 'row', [
+    { value: 'row', label: 'One row' },
+    { value: 'stagger', label: 'Staggered' },
+    { value: 'grid', label: 'Rows (grid)' },
+    { value: 'custom', label: 'Custom points' },
+  ], { show: hasRods, help: 'Rods can sit in the concrete or up in the exposed steel; every plate gets a hole wherever a rod passes through it' }),
+  num('rodCount', 'Rods per row', 'Bracing', 2, 1, 12, { int: true, unit: '', show: (v) => hasRods(v) && v.rodLayout !== 'custom', help: 'Spread evenly across the plate width' }),
+  num('rodDepth', 'Rod depth', 'Bracing', 'embedDepth / 2', -3000, 400, { show: (v) => hasRods(v) && v.rodLayout !== 'custom', help: 'First row\'s centre below the top of the concrete. Negative puts it up in the exposed steel.' }),
+  num('rodStagger', 'Stagger rise', 'Bracing', 30, -3000, 3000, { show: (v) => hasRods(v) && v.rodLayout === 'stagger', help: 'Every other rod sits this much higher' }),
+  num('rodRows', 'Rows', 'Bracing', 2, 1, 12, { int: true, unit: '', show: (v) => hasRods(v) && v.rodLayout === 'grid' }),
+  num('rodRowGap', 'Row spacing', 'Bracing', 60, -3000, 3000, { show: (v) => hasRods(v) && v.rodLayout === 'grid', help: 'Each row sits this much above the one before' }),
+  { id: 'rodPoints', label: 'Rod points', group: 'Bracing', kind: 'text', def: '-60, -20; 60, -20; 0, 80', show: (v) => hasRods(v) && v.rodLayout === 'custom', help: '"u, y; u, y" in mm: across from the plate centre line, and height above the concrete (negative is in the concrete)' },
   num('rodClearance', 'Hole clearance', 'Bracing', 0.5, 0, 3, { step: 0.05, show: hasRods, noScale: true, help: 'Rod hole Ø = rod size + this' }),
   choice('nutPattern', 'Nuts', 'Bracing', 'ends', [
     { value: 'ends', label: 'Clamp the outer plates' },

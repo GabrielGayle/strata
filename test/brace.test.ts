@@ -49,11 +49,13 @@ describe('threaded rods', () => {
     // two more holes in every plate
     expect(holesOf(m).map((h, i) => h - holesOf(plain)[i])).toEqual(holesOf(m).map(() => 2));
     // rods stay inside the concrete
-    expect(rods.length.length).toBeLessThanOrEqual(rods.maxLength + 1e-6);
-    expect(rods.length.length).toBeGreaterThanOrEqual(rods.minLength - 1e-6);
+    for (const r of rods.rods) {
+      expect(r.length.length).toBeLessThanOrEqual(r.maxLength + 1e-6);
+      expect(r.length.length).toBeGreaterThanOrEqual(r.minLength - 1e-6);
+    }
     // clamp nuts outside the outer plates + an anchor nut at each tip
-    expect(rods.nutsPerRod).toBe(4);
-    expect(rods.washersPerRod).toBe(2);
+    expect(rods.nuts).toBe(8);
+    expect(rods.washers).toBe(4);
     const hw = m.bom.hardware;
     expect(hw.find((r) => r.item === 'Threaded rod')!.qty).toBe(2);
     expect(hw.find((r) => r.item === 'Hex nut')!.qty).toBe(8);
@@ -64,7 +66,7 @@ describe('threaded rods', () => {
   it('locks every plate when asked, and checks the nuts fit between plates', () => {
     const m = run({ insShape: 'none', rodsOn: true, nutPattern: 'every' });
     const n = m.sliced.plates.length;
-    expect(m.sliced.brace!.rods!.nutsPerRod).toBe(2 * n + 2);
+    expect(m.sliced.brace!.rods!.nuts).toBe(2 * (2 * n + 2));
     expect(errors(m)).toEqual([]);
     const tight = run({ insShape: 'none', rodsOn: true, nutPattern: 'every', rodSize: 'M12' });
     expect(errors(tight).some((e) => e.includes('between plates'))).toBe(true);
@@ -72,7 +74,7 @@ describe('threaded rods', () => {
 
   it('snaps to a stock length on a short stack', () => {
     const m = run({ insShape: 'none', rodsOn: true, plateCount: '10', pitch: '20' });
-    const L = m.sliced.brace!.rods!.length;
+    const L = m.sliced.brace!.rods!.rods[0].length;
     expect(L.cut).toBe(false);
     expect(L.length).toBe(250);
   });
@@ -95,6 +97,44 @@ describe('threaded rods', () => {
   it('stays out of radial stacks', () => {
     const m = run({ insShape: 'none', sliceMode: 'radial', rodsOn: true });
     expect(m.sliced.brace?.rods ?? null).toBeNull();
+  });
+});
+
+describe('rods through the exposed steel', () => {
+  it('drills plates above the concrete and leaves out the anchor nuts there', () => {
+    const plain = run({ insShape: 'none', anchorHoles: '0' });
+    const m = run({ insShape: 'none', anchorHoles: '0', rodsOn: true, rodDepth: '-60', rodCount: '3' });
+    const rods = m.sliced.brace!.rods!;
+    expect(rods.rods.every((r) => !r.embedded && r.y === 60)).toBe(true);
+    expect(holesOf(m).map((h, i) => h - holesOf(plain)[i])).toEqual(holesOf(m).map(() => 3));
+    // only the clamp nuts: no tip anchors out of the concrete
+    expect(rods.nuts).toBe(3 * 2);
+    expect(errors(m)).toEqual([]);
+  });
+
+  it('staggers rods off a single line', () => {
+    const m = run({ insShape: 'none', anchorHoles: '0', rodsOn: true, rodLayout: 'stagger', rodCount: '4', rodDepth: '20', rodStagger: '100' });
+    const ys = m.sliced.brace!.rods!.rods.map((r) => r.y);
+    expect(ys).toEqual([-20, 80, -20, 80]);
+    expect(m.sliced.brace!.rods!.rods.map((r) => r.embedded)).toEqual([true, false, true, false]);
+    expect(errors(m)).toEqual([]);
+  });
+
+  it('lays out rows and custom points', () => {
+    const grid = run({ insShape: 'none', anchorHoles: '0', rodsOn: true, rodLayout: 'grid', rodCount: '2', rodRows: '3', rodDepth: '20', rodRowGap: '70' });
+    expect(grid.sliced.brace!.rods!.rods.map((r) => r.y)).toEqual([-20, -20, 50, 50, 120, 120]);
+    const custom = run({ insShape: 'none', anchorHoles: '0', rodsOn: true, rodLayout: 'custom', rodPoints: '-80, -20; 0, 150; 80, -20' });
+    const rods = custom.sliced.brace!.rods!.rods;
+    expect(rods.map((r) => [Math.round(r.u), r.y])).toEqual([[-80, -20], [0, 150], [80, -20]]);
+    // rods of different kinds get their own lengths in the hardware list
+    expect(custom.bom.hardware.filter((h) => h.item === 'Threaded rod').reduce((a, h) => a + h.qty, 0)).toBe(3);
+  });
+
+  it('flags rods that miss plates and holes that merge', () => {
+    const high = run({ insShape: 'none', rodsOn: true, rodLayout: 'custom', rodPoints: '0, 2000' });
+    expect(high.issues.some((i) => i.message.includes('misses 40 of 40'))).toBe(true);
+    const close = run({ insShape: 'none', rodsOn: true, rodLayout: 'custom', rodPoints: '0, 60; 3, 60' });
+    expect(errors(close).some((e) => e.includes('merge'))).toBe(true);
   });
 });
 

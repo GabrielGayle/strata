@@ -191,15 +191,14 @@ function Rods({ model }: { model: Model }) {
     const dir = new THREE.Vector3(...plan.dir).normalize();
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
     const sp = plan.spec;
-    const rodGeo = new THREE.CylinderGeometry(sp.d / 2, sp.d / 2, plan.length.length, 12);
+    const rodGeo = new THREE.CylinderGeometry(sp.d / 2, sp.d / 2, 1, 12);
     const nutGeo = new THREE.CylinderGeometry(sp.nutS / Math.sqrt(3), sp.nutS / Math.sqrt(3), sp.nutH, 6);
     const washerGeo = new THREE.CylinderGeometry(sp.washerD / 2, sp.washerD / 2, sp.washerH, 16);
     const place = (kind: 'nut' | 'washer') => {
-      const fx = plan.fixings.filter((f) => f.kind === kind);
       const mats: THREE.Matrix4[] = [];
       for (const r of plan.rods) {
         const c = new THREE.Vector3(...r.a).add(new THREE.Vector3(...r.b)).multiplyScalar(0.5);
-        for (const f of fx) mats.push(new THREE.Matrix4().compose(c.clone().addScaledVector(dir, f.s), q, new THREE.Vector3(1, 1, 1)));
+        for (const f of r.fixings.filter((x) => x.kind === kind)) mats.push(new THREE.Matrix4().compose(c.clone().addScaledVector(dir, f.s), q, new THREE.Vector3(1, 1, 1)));
       }
       return mats;
     };
@@ -214,7 +213,7 @@ function Rods({ model }: { model: Model }) {
   return (
     <group>
       {plan.rods.map((r, i) => (
-        <mesh key={i} geometry={parts.rodGeo} quaternion={parts.q} position={new THREE.Vector3(...r.a).add(new THREE.Vector3(...r.b)).multiplyScalar(0.5)}>
+        <mesh key={i} geometry={parts.rodGeo} quaternion={parts.q} scale={[1, r.length.length, 1]} position={new THREE.Vector3(...r.a).add(new THREE.Vector3(...r.b)).multiplyScalar(0.5)}>
           <meshStandardMaterial color="#9aa0a6" metalness={0.85} roughness={0.35} />
         </mesh>
       ))}
