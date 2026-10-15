@@ -1505,3 +1505,179 @@ canvas.thumb {
 .appearance .ap-nth input {
   width: 38px;
 }
+
+/* ---------- workspaces: split, floating and saved view layouts ---------- */
+.main-head {
+  display: flex;
+  align-items: stretch;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+  flex: none;
+}
+.main-head .setup-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-bottom: 0;
+}
+.ws-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-left: 1px solid var(--line-soft);
+  flex: none;
+}
+.ws-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.ws-pick select {
+  font-size: 12px;
+  max-width: 160px;
+}
+.ws-menu {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 4px 6px;
+  color: var(--muted);
+}
+.ws-menu:hover {
+  color: var(--accent);
+}
+.ws-area {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  overflow: hidden;
+}
+.ws-split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-split.col {
+  flex-direction: column;
+}
+.ws-cell {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-divider {
+  flex: none;
+  background: var(--line);
+  touch-action: none;
+  position: relative;
+  z-index: 2;
+}
+.ws-split.row > .ws-divider {
+  width: 5px;
+  cursor: col-resize;
+}
+.ws-split.col > .ws-divider {
+  height: 5px;
+  cursor: row-resize;
+}
+.ws-divider:hover,
+.ws-divider:active {
+  background: var(--accent);
+}
+.ws-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-head {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  min-width: 0;
+  flex: none;
+}
+.ws-head .ws-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-bottom: 0;
+}
+.ws-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  flex: none;
+}
+.ws-tools .ibtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.ws-float {
+  position: absolute;
+  z-index: 20;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+.ws-grab {
+  cursor: move;
+  touch-action: none;
+}
+.ws-size {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  touch-action: none;
+  z-index: 6;
+  background: linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 60%, transparent 60%, transparent 72%, var(--muted) 72%, var(--muted) 82%, transparent 82%);
+}
+.ws-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}
+.ws-hint {
+  position: absolute;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border: 2px solid var(--accent);
+  pointer-events: none;
+}
+.ws-hint.center {
+  inset: 8px;
+}
+.ws-hint.left {
+  inset: 0 50% 0 0;
+}
+.ws-hint.right {
+  inset: 0 0 0 50%;
+}
+.ws-hint.top {
+  inset: 0 0 50% 0;
+}
+.ws-hint.bottom {
+  inset: 50% 0 0 0;
+}
+@media (max-width: 1000px) {
+  /* side-by-side panes are too narrow on a phone: stack them */
+  .ws-split.row {
+    flex-direction: column;
+  }
+  .ws-split.row > .ws-divider {
+    width: auto;
+    height: 5px;
+    cursor: row-resize;
+  }
+}

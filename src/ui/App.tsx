@@ -1,32 +1,16 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPipeline, type Model } from '../core/pipeline';
-import { useStore, type Tab } from '../state/store';
+import { useStore } from '../state/store';
+import { activeLayout, TABS, useWorkspaces } from '../state/workspaces';
+import { findTab, visibleTabs } from '../core/workspace';
 import { useAssets } from '../state/assets';
 import { FullModelContext, ModelContext, fmt } from './model';
 import Toolbar from './Toolbar';
 import ParamPanel from './ParamPanel';
 import Inspector from './Inspector';
-import PlatesView from './PlatesView';
-import NestView from './NestView';
-import MouldView from './MouldView';
-import UnfoldView from './UnfoldView';
-import ImageView from './ImageView';
-import GraphView from './GraphView';
 import SetupTabs from './SetupTabs';
+import WorkspaceArea, { WorkspaceBar } from './Workspace';
 
-const Viewport = lazy(() => import('./Viewport'));
-const CompareView = lazy(() => import('./CompareView'));
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: '3d', label: '3D' },
-  { id: 'plates', label: 'Plates' },
-  { id: 'nest', label: 'Nest' },
-  { id: 'mould', label: 'Mould + pour' },
-  { id: 'unfold', label: 'Unfold' },
-  { id: 'image', label: 'Image / Graphic' },
-  { id: 'graph', label: 'Graph' },
-  { id: 'compare', label: 'Compare' },
-];
 
 export default function App() {
   const project = useStore((s) => s.project);
@@ -35,6 +19,8 @@ export default function App() {
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const assets = useAssets(project);
+  const layout = useWorkspaces(activeLayout);
+  const reveal = useWorkspaces((s) => s.reveal);
   const pipeline = useMemo(() => createPipeline(), []);
   const [model, setModelState] = useState<Model>(() => pipeline(project, assets, 'full'));
   // what the last edit actually rebuilt (the deferred pass that follows is often all cache hits)
@@ -75,6 +61,17 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [undo, redo, setUi]);
 
+  // asking for a tab (a click, a number key, a "show in 3D" button) brings it up in whichever pane holds it
+  useEffect(() => reveal(ui.tab), [ui.tab, reveal]);
+  // and the current tab is always one on screen, so asking for it again still works
+  useEffect(() => {
+    const now = activeLayout(useWorkspaces.getState()); // fresh, after the reveal above
+    if (!visibleTabs(now).includes(ui.tab)) {
+      const holder = findTab(now, ui.tab);
+      if (holder) setUi({ tab: holder.active as typeof ui.tab });
+    }
+  }, [layout, ui.tab, setUi]);
+
   const getFull = useMemo(() => () => pipeline(project, assets, 'full'), [pipeline, project, assets]);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
@@ -88,26 +85,11 @@ export default function App() {
           <ParamPanel />
         </aside>
         <main className="main">
-          <SetupTabs />
-          <nav className="tabs" role="tablist">
-            {TABS.map((t, i) => (
-              <button key={t.id} role="tab" aria-selected={ui.tab === t.id} className={`tab ${ui.tab === t.id ? 'active' : ''}`} onClick={() => setUi({ tab: t.id })} title={`${t.label} (${i + 1})`}>
-                {t.label}
-              </button>
-            ))}
-          </nav>
-          <div className="view">
-            <Suspense fallback={<div className="empty">Loading…</div>}>
-              {ui.tab === '3d' && <Viewport />}
-              {ui.tab === 'plates' && <PlatesView />}
-              {ui.tab === 'nest' && <NestView />}
-              {ui.tab === 'mould' && <MouldView />}
-              {ui.tab === 'unfold' && <UnfoldView />}
-              {ui.tab === 'image' && <ImageView />}
-              {ui.tab === 'graph' && <GraphView />}
-              {ui.tab === 'compare' && <CompareView />}
-            </Suspense>
+          <div className="main-head">
+            <SetupTabs />
+            <WorkspaceBar />
           </div>
+          <WorkspaceArea />
         </main>
         <aside className="right">
           <Inspector />
