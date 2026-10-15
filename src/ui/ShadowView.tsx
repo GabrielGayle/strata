@@ -9,6 +9,8 @@ import { bestTry, fitLayouts, tryLayout, type FitTry } from '../core/shadowFit';
 import { frameMatch, renderWall, windowDays, type ShadowFrame } from '../core/shadow';
 import { clock, shiftSite, siteOf, sunTimes } from '../core/sun';
 import { SunBar } from './SunStudy';
+import VideoPicker from './VideoPicker';
+import { installCardHtml } from '../core/installCard';
 
 /** Read a picture file, shrunk so the longest side is at most `max` px (keeps the project small). */
 function readPicture(file: File, max = 400): Promise<string> {
@@ -222,7 +224,8 @@ function FitPanel() {
 export default function ShadowView() {
   const model = useModel();
   const v = model.v;
-  const frames = useStore((s) => s.project.shadow?.frames) ?? [];
+  const project = useStore((s) => s.project);
+  const frames = project.shadow?.frames ?? [];
   const setShadow = useStore((s) => s.setShadow);
   const setParams = useStore((s) => s.setParams);
   const setUi = useStore((s) => s.setUi);
@@ -232,6 +235,8 @@ export default function ShadowView() {
   const noon = useMemo(() => sunTimes(site).noon, [site.lat, site.lon, site.utc, site.month, site.day]); // eslint-disable-line react-hooks/exhaustive-deps
   const fileRef = useRef<HTMLInputElement>(null);
   const [failed, setFailed] = useState<string[]>([]);
+  const videoRef = useRef<HTMLInputElement>(null);
+  const [video, setVideo] = useState<File | null>(null);
 
   const save = (next: ShadowFrame[], key?: string) => setShadow({ frames: next }, key);
   const patch = (id: string, p: Partial<ShadowFrame>, key?: string) => save(frames.map((f) => (f.id === id ? { ...f, ...p } : f)), key);
@@ -242,18 +247,19 @@ export default function ShadowView() {
     [next[i], next[j]] = [next[j], next[i]];
     save(next);
   };
+  /** New frames after the last one (or centred on solar noon), half an hour apart. */
+  const append = (stills: { name: string; dataUrl: string }[]) => {
+    const step = 0.5;
+    const start = frames.length ? frames[frames.length - 1].time + step : noon - ((stills.length - 1) / 2) * step;
+    const added: ShadowFrame[] = stills.map((st, k) => ({ id: `f${Date.now().toString(36)}${k}`, name: st.name, dataUrl: st.dataUrl, time: Math.min(23.9, Math.max(0.1, start + k * step)), hold: 2 }));
+    if (added.length) save([...frames, ...added]);
+  };
   const add = async (files: FileList | null) => {
     if (!files?.length) return;
     const list = [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     const urls = await Promise.all(list.map((f) => readPicture(f).catch(() => null)));
-    const step = 0.5;
-    const start = frames.length ? frames[frames.length - 1].time + step : noon - ((list.length - 1) / 2) * step;
-    const added: ShadowFrame[] = [];
-    urls.forEach((u, k) => {
-      if (u) added.push({ id: `f${Date.now().toString(36)}${k}`, name: list[k].name.replace(/\.[^.]+$/, ''), dataUrl: u, time: Math.min(23.9, Math.max(0.1, start + k * step)), hold: 2 });
-    });
     setFailed(list.filter((_, k) => !urls[k]).map((f) => f.name));
-    if (added.length) save([...frames, ...added]);
+    append(list.flatMap((f, k) => (urls[k] ? [{ name: f.name.replace(/\.[^.]+$/, ''), dataUrl: urls[k]! }] : [])));
     if (fileRef.current) fileRef.current.value = '';
   };
   const spread = () => {
@@ -316,18 +322,55 @@ export default function ShadowView() {
               <button className="btn sm" onClick={() => fileRef.current?.click()}>
                 Add pictures
               </button>
+              {rep && !needs && (
+                <button
+                  className="btn sm"
+                  title="A printable page: which way to face it, level, where the screen goes, and the frame times"
+                  onClick={() => {
+                    const url = URL.createObjectURL(new Blob([installCardHtml(project, v, rep)], { type: 'text/html' }));
+                    window.open(url, '_blank', 'noopener');
+                    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                  }}
+                >
+                  Install card
+                </button>
+              )}
               {!allDay && frames.length > 1 && (
                 <button className="btn sm" onClick={spread} title="Half an hour apart, centred on solar noon">
                   Space round noon
                 </button>
               )}
+              <button className="btn sm" onClick={() => videoRef.current?.click()} title="Pull evenly spaced stills from a video clip">
+                Add video
+              </button>
               <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => add(e.target.files)} />
+              <input
+                ref={videoRef}
+                type="file"
+                accept="video/*"
+                hidden
+                onChange={(e) => {
+                  setVideo(e.target.files?.[0] ?? null);
+                  e.target.value = '';
+                }}
+              />
             </span>
           </div>
+          {video && (
+            <VideoPicker
+              key={video.name + video.size}
+              file={video}
+              onClose={() => setVideo(null)}
+              onAdd={(stills) => {
+                append(stills);
+                setVideo(null);
+              }}
+            />
+          )}
           {rep && !needs && <FitPanel />}
           {!frames.length && (
             <p className="note">
-              Add one picture, or a numbered sequence (stills from a video work well). Bright parts become light on the wall. Each frame gets a time of day; the plates are carved so the sun casts it at that time.
+              Add one picture, a numbered sequence, or stills from a video. Bright parts become light on the wall. Each frame gets a time of day; the plates are carved so the sun casts it at that time.
             </p>
           )}
           {frames.map((f, i) => {

@@ -2009,3 +2009,43 @@ canvas.thumb {
 .fit-result {
   font-size: 12px;
 }
+
+/* shadow kitchen: stills from a video */
+.video-picker {
+  border: 1px solid var(--line, #ccc);
+  background: var(--panel, #fff);
+  padding: 8px;
+  margin: 6px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.vp-video {
+  width: 100%;
+  max-height: 200px;
+  background: #000;
+}
+.vp-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+.vp-controls input[type='number'] {
+  width: 48px;
+}
+.vp-stills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.vp-stills img {
+  height: 44px;
+  border: 1px solid var(--line, #ccc);
+}
