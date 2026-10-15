@@ -2078,3 +2078,22 @@ canvas.thumb {
 .objects .ob-edit input:not([type='number']):not([type='checkbox']) {
   width: 110px;
 }
+.objects .shelf-edit {
+  align-items: flex-start;
+}
+.objects .shelf-edit textarea {
+  width: 220px;
+  font-family: var(--mono);
+  font-size: 11px;
+  resize: vertical;
+}
+.objects .shelf-side {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  max-width: 420px;
+}
+.objects .ap-edit .ap-nth input {
+  width: 42px;
+}

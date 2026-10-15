@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
+import ShelfPanel from './ShelfPanel';
 import { KIND_NAMES, newObject, type CutObject, type ObjectKind } from '../core/objects';
 
 type NumKey = 'w' | 'h' | 'd' | 'x' | 'y' | 'z' | 'rx' | 'ry' | 'rz' | 'clearance';
@@ -32,8 +33,26 @@ const GAP: Field = { key: 'clearance', label: 'Gap', step: 0.1, hint: 'Space lef
 
 const DEFAULT_HINT = 'Objects are cut out of every plate they pass through, so the plates end up shaped to hold them. Hover any value to see what it does.';
 
-/** Placed objects: add postcards, boxes and so on, and set where each sits. */
+/** Placed objects and the postcard shelf, in the 3D view. */
 export default function ObjectsPanel() {
+  const [view, setView] = useState<'objects' | 'shelf'>(() => (useStore.getState().project.shelf ? 'shelf' : 'objects'));
+  return (
+    <div className="overlay movepanel appearance objects">
+      <div className="mp-row">
+        <button className={`btn sm ${view === 'objects' ? 'on' : ''}`} onClick={() => setView('objects')} title="Single objects you place one by one">
+          Objects
+        </button>
+        <button className={`btn sm ${view === 'shelf' ? 'on' : ''}`} onClick={() => setView('shelf')} title="A list of postcards laid along an arc, each held in a notch">
+          Postcard shelf
+        </button>
+      </div>
+      {view === 'shelf' ? <ShelfPanel /> : <ObjectList />}
+    </div>
+  );
+}
+
+/** Placed objects: add postcards, boxes and so on, and set where each sits. */
+function ObjectList() {
   const model = useModel();
   const objects = useStore((s) => s.project.objects) ?? [];
   const setObjects = useStore((s) => s.setObjects);
@@ -92,7 +111,7 @@ export default function ObjectsPanel() {
 
   const n = cur ? cuts(cur) : 0;
   return (
-    <div className="overlay movepanel appearance objects">
+    <>
       <div className="mp-row">
         {objects.map((o) => (
           <button key={o.id} className={`btn sm bucket ${o.id === sel ? 'on' : ''} ${o.on ? '' : 'off'}`} onClick={() => setUi({ objectSel: o.id })} title={`${KIND_NAMES[o.kind]}, ${fmt(o.w, 0)} × ${fmt(o.h, 0)} mm. Click to edit (or click it in the 3D view).`}>
@@ -126,7 +145,7 @@ export default function ObjectsPanel() {
       <div className="mp-info">
         {hint ?? (cur ? `${cur.name} ${cur.on ? `passes through ${n} plate${n === 1 ? '' : 's'}` : 'is off'}. ${DEFAULT_HINT}` : objects.length ? 'Pick an object to edit it, or click one in the 3D view.' : DEFAULT_HINT)}
       </div>
-    </div>
+    </>
   );
 }
 
