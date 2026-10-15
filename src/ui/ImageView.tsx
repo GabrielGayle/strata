@@ -4,15 +4,11 @@ import { useModel, fmt } from './model';
 import type { Gray } from '../core/image';
 import type { Snap } from '../state/store';
 import { sampleCliff } from './sample';
-import PatternModal, { patternDataUrl } from './PatternModal';
 import { PATTERN_PRESETS, type PatternSpec } from '../core/pattern';
 import { grayDataUrl, readImage, topAspectGuess } from './surfaces';
-import ComposerModal, { seedComposition } from './ComposerModal';
-import SoundModal from './SoundModal';
 import { DEFAULT_SOUND, type SoundSpec } from '../core/sound';
 import type { Composition, Surface } from '../core/compose';
-import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, invertDataUrl } from '../core/depth';
-import DepthControls from './DepthControls';
+import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, invertDataUrl, wakeDepth } from '../core/depth';
 
 function GrayCanvas({ g }: { g: Gray | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -37,6 +33,22 @@ function GrayCanvas({ g }: { g: Gray | null }) {
 }
 
 const ReliefPreview = lazy(() => import('./ReliefPreview'));
+// the tools load when first opened; hovering their button starts the fetch
+const loadComposer = () => import('./ComposerModal');
+const loadPattern = () => import('./PatternModal');
+const loadSound = () => import('./SoundModal');
+const ComposerModal = lazy(loadComposer);
+const PatternModal = lazy(loadPattern);
+const SoundModal = lazy(loadSound);
+const DepthControls = lazy(() => import('./DepthControls'));
+const preload = (load: () => Promise<unknown>) => () => {
+  load().catch(() => {});
+};
+const modalFallback = (
+  <div className="pm-back">
+    <div className="empty">Loading…</div>
+  </div>
+);
 
 type Slot = 'top' | 'side' | 'front';
 
@@ -54,7 +66,14 @@ export default function ImageView() {
   const [editing, setEditing] = useState<Slot | null>(null);
   const [hearing, setHearing] = useState<Slot | null>(null);
   const [composing, setComposing] = useState<{ comp: Composition; surface: Surface } | null>(null);
-  const openComposer = async (surface: Surface) => setComposing({ comp: await seedComposition(useStore.getState().project, topAspectGuess(v)), surface });
+  const openComposer = async (surface: Surface) => {
+    const { seedComposition } = await loadComposer();
+    setComposing({ comp: await seedComposition(useStore.getState().project, topAspectGuess(v)), surface });
+  };
+  // the depth service takes ~45 s to boot cold: start it now, while a photo is being chosen
+  useEffect(() => {
+    if (DEPTH_URL) wakeDepth(DEPTH_URL);
+  }, []);
   const sourceOf = (slot: Slot) => source[slot] ?? (project.images[slot]?.composed ? 'compose' : project.images[slot]?.pattern ? 'graphic' : project.images[slot]?.sound ? 'sound' : 'image');
   const [depthBusy, setDepthBusy] = useState<Slot | null>(null);
   const [depthError, setDepthError] = useState<{ slot: Slot; msg: string } | null>(null);
@@ -157,19 +176,23 @@ export default function ImageView() {
                     </button>
                   </span>
                 </div>
-                {asset?.depth && sourceOf(s.slot) === 'image' && <DepthControls slot={s.slot} depth={asset.depth} />}
+                {asset?.depth && sourceOf(s.slot) === 'image' && (
+                  <Suspense fallback={null}>
+                    <DepthControls slot={s.slot} depth={asset.depth} />
+                  </Suspense>
+                )}
                 {depthError?.slot === s.slot && <div className="note" style={{ color: 'var(--err)' }}>Depth from photo failed: {depthError.msg}</div>}
                 <div className="btnrow">
                   {sourceOf(s.slot) === 'compose' ? (
-                    <button className="btn primary" onClick={() => openComposer(s.slot)}>
+                    <button className="btn primary" onClick={() => openComposer(s.slot)} onPointerEnter={preload(loadComposer)}>
                       {project.composition?.blocks.some((b) => b.surface === s.slot) ? 'Edit composition…' : 'Open composer…'}
                     </button>
                   ) : sourceOf(s.slot) === 'sound' ? (
-                    <button className="btn primary" onClick={() => setHearing(s.slot)}>
+                    <button className="btn primary" onClick={() => setHearing(s.slot)} onPointerEnter={preload(loadSound)}>
                       {asset?.sound ? 'Edit sound…' : 'Make from sound…'}
                     </button>
                   ) : sourceOf(s.slot) === 'graphic' ? (
-                    <button className="btn primary" onClick={() => setEditing(s.slot)}>
+                    <button className="btn primary" onClick={() => setEditing(s.slot)} onPointerEnter={preload(loadPattern)}>
                       {asset?.pattern ? 'Edit pattern…' : 'Make pattern…'}
                     </button>
                   ) : (
@@ -312,6 +335,7 @@ export default function ImageView() {
           </div>
         </div>
       </div>
+      <Suspense fallback={modalFallback}>
       {composing && <ComposerModal initial={composing.comp} initialSurface={composing.surface} stackAspect={topAspectGuess(v)} onClose={() => setComposing(null)} />}
       {hearing && (
         <SoundModal
@@ -331,14 +355,16 @@ export default function ImageView() {
           title={`${slots.find((x) => x.slot === editing)!.title}: pattern`}
           initial={project.images[editing]?.pattern ?? (editing === 'top' ? { ...PATTERN_PRESETS[2].spec(), aspect: topAspectGuess(v) } : PATTERN_PRESETS[2].spec())}
           onClose={() => setEditing(null)}
-          onApply={(spec: PatternSpec) => {
+          onApply={async (spec: PatternSpec) => {
             const slot = slots.find((x) => x.slot === editing)!;
+            const { patternDataUrl } = await loadPattern();
             setAsset('image', editing, { name: 'pattern.png', dataUrl: patternDataUrl(spec), pattern: spec });
             open(slot.enable);
             setEditing(null);
           }}
         />
       )}
+      </Suspense>
     </div>
   );
 }

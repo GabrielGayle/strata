@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { defaultDepthSettings, depthFromPhoto, depthToGray, parseDepthResponse, type DepthData } from '../src/core/depth';
+import { defaultDepthSettings, depthFromPhoto, depthToGray, parseDepthResponse, wakeDepth, type DepthData } from '../src/core/depth';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
 
@@ -32,6 +32,24 @@ describe('depth from photo', () => {
 
   it('refuses to run without an endpoint', async () => {
     await expect(depthFromPhoto('x', { url: '' })).rejects.toThrow('not configured');
+  });
+
+  it('wakes the service with one quiet GET every few minutes, ignoring failures', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const t = 1e12;
+    expect(wakeDepth(undefined, t)).toBe(false);
+    expect(wakeDepth('https://x.modal.run/strata', t)).toBe(true);
+    expect(wakeDepth('https://x.modal.run/strata', t + 60_000)).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://x.modal.run/strata');
+    expect(init).toMatchObject({ method: 'GET', mode: 'no-cors' });
+    await Promise.resolve();
+    expect(wakeDepth('https://x.modal.run/strata', t + 5 * 60_000)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
