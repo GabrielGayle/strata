@@ -44,6 +44,8 @@ export interface Variant {
    */
   images?: Project['images'];
   composition?: Composition;
+  /** The shadow pictures as they were. Missing on variants saved before this existed: those keep the project's. */
+  shadow?: ShadowSpec | null;
   createdAt: string;
 }
 
@@ -203,7 +205,7 @@ export function applyPreset(p: Project, preset: Preset, images: Project['images'
   return { ...p, name: preset.name, params: { ...defaultRaw(), ...preset.params }, locks: {}, images: { ...p.images, ...images }, moves: undefined };
 }
 
-/** Stands in for a variant image that is the same as the project's own image in that slot, so files don't carry it twice. */
+/** Stands in for a variant image (or set of shadow pictures) that is the same as the project's own, so files don't carry it twice. */
 const SAME_IMAGE = '=current';
 
 export function serialize(p: Project): string {
@@ -215,14 +217,15 @@ export function serialize(p: Project): string {
       images[slot] = a && (a === cur || (cur && JSON.stringify(a) === JSON.stringify(cur))) ? SAME_IMAGE : a;
     }
     return { ...v, images };
-  });
+  }).map((v) => (v.shadow && p.shadow && JSON.stringify(v.shadow) === JSON.stringify(p.shadow) ? { ...v, shadow: SAME_IMAGE } : v));
   return JSON.stringify({ ...p, variants }, null, 2);
 }
 
 function readVariants(raw: any): Variant[] {
   if (!Array.isArray(raw.variants)) return [];
   const own = raw.images ?? {};
-  return raw.variants.map((v: any) => {
+  const shadow = (v: any) => (v.shadow === SAME_IMAGE ? cleanShadow(raw.shadow) ?? null : v.shadow === undefined ? undefined : cleanShadow(v.shadow) ?? null);
+  return raw.variants.map((v: any) => (v && typeof v === 'object' && 'shadow' in v ? { ...v, shadow: shadow(v) } : v)).map((v: any) => {
     if (!v?.images || typeof v.images !== 'object') return v;
     const images: Project['images'] = {};
     for (const [slot, a] of Object.entries(v.images)) {
@@ -243,6 +246,7 @@ export function applyVariant(p: Project, v: Variant): Project {
     moves: v.moves,
     appearance: v.appearance ?? p.appearance,
     ...(v.images ? { images: { ...v.images }, composition: v.composition } : {}),
+    ...(v.shadow !== undefined ? { shadow: v.shadow ?? undefined } : {}),
   };
 }
 

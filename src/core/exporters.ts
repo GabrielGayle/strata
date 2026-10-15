@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
 import { zipSync, strToU8 } from 'fflate';
+import { installCardHtml } from './installCard';
 import { fitArcs, type Seg } from './arcs';
 import { DxfWriter, LAYERS } from './dxf';
 import { bboxOf, offset, type Path, type Shape, type Vec2 } from './geom2d';
@@ -216,6 +217,7 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   if (model.bom.hardware.length) files['hardware.csv'] = strToU8(hardwareCsv(model.bom));
   files['pour-plan.txt'] = strToU8(pourPlanText(model));
   if (model.bom.partCount) files['price-estimate.txt'] = strToU8(priceText(withHardware(estimateMix(model.bom, v.thickness, rates), model.bom.hardware, rates), rates));
+  if (model.shadow && project.shadow?.frames.length) files['shadow-install-card.html'] = strToU8(installCardHtml(project, v, model.shadow));
   files['project.strata.json'] = strToU8(serialize(project));
   return zipSync(files, { level: 6 });
 }

@@ -380,6 +380,7 @@ export const useStore = create<Store>((set, get) => {
         appearance: p.appearance,
         images: { ...p.images },
         composition: p.composition,
+        shadow: p.shadow ?? null,
         createdAt: new Date().toISOString(),
       };
       commit({ ...p, variants: [...p.variants, v] }, `variant:${v.id}`);

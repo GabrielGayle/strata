@@ -40,4 +40,18 @@ describe('variants', () => {
     expect(back.variants[0].images?.side?.dataUrl).toBe('data:side-old');
     expect(back.images.side?.dataUrl).toBe('data:side-new');
   });
+  it('keep their own shadow pictures, stored once in the file when shared', () => {
+    const p = newProject();
+    p.shadow = { frames: [{ id: 'a', name: 'A', dataUrl: 'data:a', time: 12, hold: 2 }] };
+    const v = { ...variantOf(p, 'A'), shadow: p.shadow };
+    const same = { ...variantOf(p, 'B'), shadow: p.shadow };
+    const later: Project = { ...p, shadow: { frames: [{ id: 'b', name: 'B', dataUrl: 'data:b', time: 13, hold: 0 }] }, variants: [v] };
+    expect(applyVariant(later, v).shadow?.frames[0].dataUrl).toBe('data:a');
+    // a variant saved with no pictures clears them; one saved before pictures were kept leaves them
+    expect(applyVariant(later, { ...v, shadow: null }).shadow).toBeUndefined();
+    expect(applyVariant(later, variantOf(p, 'old')).shadow?.frames[0].dataUrl).toBe('data:b');
+    const text = serialize({ ...p, variants: [same] });
+    expect(text.split('data:a').length - 1).toBe(1);
+    expect(deserialize(text).variants[0].shadow?.frames[0].dataUrl).toBe('data:a');
+  });
 });
