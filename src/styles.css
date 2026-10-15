@@ -1924,6 +1924,11 @@ canvas.thumb {
 .sf-score .err {
   color: var(--err, #c0281f);
 }
+.sf-score .sf-hint {
+  display: block;
+  font-family: var(--sans, inherit);
+  white-space: normal;
+}
 .sf-btns {
   display: flex;
   flex-wrap: wrap;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFrontPipeline } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
-import { renderWall, cleanShadow } from '../src/core/shadow';
+import { renderWall, cleanShadow, wallPoint } from '../src/core/shadow';
 import type { Gray } from '../src/core/image';
 
 /** A test picture: white blob on black, w × h, lit where `on(x, y)` (0..1, y down). */
@@ -70,6 +70,69 @@ describe('shadow carving', () => {
   it('leaves the plates alone when off', () => {
     const g = setup({ shadowOn: false });
     expect(g.shadow).toBeNull();
+  });
+
+  it('counts the plates it actually cuts', () => {
+    const rep = f.shadow!;
+    expect(rep.cut).toBeGreaterThan(rep.plates / 2);
+    expect(rep.cut).toBeLessThanOrEqual(rep.plates);
+    // high June sun drops through the back of the stack: only the plates nearest the wall get cut
+    const june = setup({ sunMonth: '6' }).shadow!;
+    expect(june.cut).toBeLessThan(june.plates / 3);
+  });
+
+  it('holds useful loose bits in with bridges, and cuts the rest away', () => {
+    const rep = f.shadow!;
+    expect(rep.islands).toBeGreaterThan(0);
+    expect(rep.bridged).toBeGreaterThan(0);
+    expect(rep.bridged).toBeLessThanOrEqual(rep.islands);
+    const none = setup({ shadowBridge: 0 });
+    expect(none.shadow!.bridged).toBe(0);
+    expect(none.sliced.warnings.some((w) => w.includes('cut away'))).toBe(true);
+    // bridged steel stays: less is cut away than without bridges
+    const area = (m: typeof f) => m.sliced.parts.reduce((a, p) => a + p.area, 0);
+    expect(area(f)).toBeGreaterThan(area(none));
+  });
+
+  it('lays frames side by side where their light comes through the plates', () => {
+    const side = setup({ shadowExec: 'side', shadowW: 50, shadowH: 40 });
+    const g = side.shadow!.geom;
+    expect(g.slots).toHaveLength(3);
+    // in time order across the row, spaced by the sun's swing, all inside the screen grid
+    const c0 = g.slots!.map((s) => s.c0);
+    expect(new Set(c0).size).toBe(3);
+    for (const s of g.slots!) expect(s.c0 + s.cols).toBeLessThanOrEqual(g.cols);
+    // each frame lights only its own patch
+    for (const [i, s] of g.slots!.entries()) {
+      const t = side.shadow!.targets[i];
+      for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) if (t[r * g.cols + c]) expect(c >= s.c0 && c < s.c0 + s.cols).toBe(true);
+    }
+    for (const sc of side.shadow!.scores) expect(sc.match).toBeGreaterThan(0.6);
+  });
+
+  it('crossfade stretches each frame toward its neighbours', () => {
+    const fade = setup({ shadowFade: 60 });
+    expect(fade.shadow!.removed).toBeGreaterThan(f.shadow!.removed);
+  });
+
+  it('puts the picture on the ground, outside the concrete', () => {
+    const g = setup({ shadowScreen: 'ground', shadowGap: 200 });
+    const rep = g.shadow!;
+    expect(rep.geom.screen).toBe('ground');
+    expect(wallPoint(rep.geom, 0, rep.geom.y0)[1]).toBe(0);
+    // grid under the base is not screen
+    const under = setup({ shadowScreen: 'ground', shadowGap: -100 }).shadow!;
+    expect(under.valid.some((x) => !x)).toBe(true);
+    expect(rep.valid.every((x) => x)).toBe(true);
+  });
+
+  it('puts the picture on the concrete top, but not inside the plates', () => {
+    const b = setup({ shadowScreen: 'base', shadowGap: -60, shadowH: 50, shadowRim: 0 }).shadow!;
+    expect(wallPoint(b.geom, 0, 0)[1]).toBe(120);
+    const off = b.valid.filter((x) => !x).length;
+    expect(off).toBeGreaterThan(0); // plate slots
+    expect(off).toBeLessThan(b.valid.length / 2);
+    expect(b.scores.some((s) => !s.problem && s.match > 0.3)).toBe(true);
   });
 
   it('cleans saved frames', () => {

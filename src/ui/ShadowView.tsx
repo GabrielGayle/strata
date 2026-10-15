@@ -1,6 +1,6 @@
 // The shadow kitchen: pictures and the times they appear, a live view of the
 // wall through the day, and how well each frame comes out of the carved plates.
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import { renderWall, type ShadowFrame } from '../core/shadow';
@@ -52,21 +52,23 @@ function WallCanvas() {
     const img = ctx.createImageData(cols, rows);
     for (let r = 0; r < rows; r++)
       for (let c = 0; c < cols; c++) {
-        const on = up && lit[r * cols + c];
-        const k = ((rows - 1 - r) * cols + c) * 4; // row 0 is the bottom of the wall
-        img.data[k] = on ? 250 : 70;
-        img.data[k + 1] = on ? 236 : 66;
-        img.data[k + 2] = on ? 205 : 62;
+        const x = lit[r * cols + c];
+        const k = ((rows - 1 - r) * cols + c) * 4; // row 0 is the bottom of the screen
+        // sunlit, shadow, or not screen at all (inside the concrete or a plate), hatched
+        const [cr, cg, cb] = x === 2 ? ((r + c) % 4 < 2 ? [120, 116, 108] : [104, 100, 94]) : up && x === 1 ? [250, 236, 205] : [70, 66, 62];
+        img.data[k] = cr;
+        img.data[k + 1] = cg;
+        img.data[k + 2] = cb;
         img.data[k + 3] = 255;
       }
     ctx.putImageData(img, 0, 0);
-    // the picture rectangle
+    // the picture rectangle (one per frame side by side)
     ctx.strokeStyle = 'rgba(224,112,28,0.8)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(margin + 0.5, margin + 0.5, rep.geom.cols - 1, rep.geom.rows - 1);
+    for (const sl of rep.geom.slots ?? [{ c0: 0, cols: rep.geom.cols }]) ctx.strokeRect(margin + sl.c0 + 0.5, margin + 0.5, sl.cols - 1, rep.geom.rows - 1);
   }, [rep, time, margin, model.v]);
   if (!rep) return null;
-  return <canvas ref={ref} className="shadow-wall" aria-label="The wall behind the piece at this time" />;
+  return <canvas ref={ref} className="shadow-wall" aria-label="The screen behind the piece at this time" />;
 }
 
 export default function ShadowView() {
@@ -81,6 +83,7 @@ export default function ShadowView() {
   const site = siteOf(v);
   const noon = useMemo(() => sunTimes(site).noon, [site.lat, site.lon, site.utc, site.month, site.day]); // eslint-disable-line react-hooks/exhaustive-deps
   const fileRef = useRef<HTMLInputElement>(null);
+  const [failed, setFailed] = useState<string[]>([]);
 
   const save = (next: ShadowFrame[], key?: string) => setShadow({ frames: next }, key);
   const patch = (id: string, p: Partial<ShadowFrame>, key?: string) => save(frames.map((f) => (f.id === id ? { ...f, ...p } : f)), key);
@@ -101,6 +104,7 @@ export default function ShadowView() {
     urls.forEach((u, k) => {
       if (u) added.push({ id: `f${Date.now().toString(36)}${k}`, name: list[k].name.replace(/\.[^.]+$/, ''), dataUrl: u, time: Math.min(23.9, Math.max(0.1, start + k * step)), hold: 2 });
     });
+    setFailed(list.filter((_, k) => !urls[k]).map((f) => f.name));
     if (added.length) save([...frames, ...added]);
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -111,12 +115,15 @@ export default function ShadowView() {
 
   const needs = !v.sunOn ? 'sun' : !v.shadowOn ? 'shadow' : v.sliceMode !== 'parallel' ? 'parallel' : null;
   const allDay = v.shadowExec === 'allday';
+  const allSide = v.shadowExec === 'side' && frames.length > 1;
   return (
     <div className="scroll shadow-view">
       <div className="panel-title">
         <span>Shadow pictures</span>
         <span className="mono" style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
-          {rep ? `${rep.plates} plates carved · ${fmt(rep.removed * 100, 0)}% of the carvable steel cut away${rep.islands ? ` · ${rep.islands} loose bits removed` : ''} · ${fmt(rep.ms, 0)} ms` : ''}
+          {rep
+            ? `${rep.cut} of ${rep.plates} plates cut · ${fmt(rep.removed * 100, 0)}% of the carvable steel cut away${rep.bridged ? ` · ${rep.bridged} loose bits held by bridges` : ''}${rep.islands - rep.bridged ? ` · ${rep.islands - rep.bridged} cut away` : ''} · ${fmt(rep.ms, 0)} ms`
+            : ''}
         </span>
       </div>
       {needs && (
@@ -138,6 +145,19 @@ export default function ShadowView() {
             </>
           )}
           {needs === 'parallel' && <>Shadow pictures work with parallel plates for now. Set Slicer › Slicing to parallel.</>}
+        </div>
+      )}
+      {rep && !needs && rep.cut > 0 && rep.cut < rep.plates / 3 && (
+        <div className="note shadow-needs">
+          Only the {rep.cut} plate{rep.cut === 1 ? '' : 's'} nearest the screen {rep.cut === 1 ? 'is' : 'are'} cut: the sun is high enough that its light drops through the back of the stack before it reaches the screen. A lower sun (winter months, or morning and evening times) uses more of the plates and makes each frame show for a shorter time.
+        </div>
+      )}
+      {failed.length > 0 && (
+        <div className="note warn shadow-needs">
+          Couldn't read {failed.join(', ')}. Use PNG, JPEG, GIF or WebP (iPhone HEIC photos need converting first).{' '}
+          <button className="btn sm" onClick={() => setFailed([])}>
+            OK
+          </button>
         </div>
       )}
       <div className="shadow-grid">
@@ -185,7 +205,10 @@ export default function ShadowView() {
                       : sc?.problem
                         ? <span className="err">{sc.problem}</span>
                         : sc
-                          ? <span className={sc.match >= 0.75 ? 'ok' : sc.match >= 0.5 ? 'warn' : 'err'}>{fmt(sc.match * 100, 0)}% match · {fmt(sc.stray * 100, 0)}% stray light</span>
+                          ? <>
+                              <span className={sc.match >= 0.75 ? 'ok' : sc.match >= 0.5 ? 'warn' : 'err'}>{fmt(sc.match * 100, 0)}% match · {fmt(sc.stray * 100, 0)}% stray light</span>
+                              {sc.hint && <span className="warn sf-hint">{sc.hint}</span>}
+                            </>
                           : needs ? '' : 'Carving…'}
                   </div>
                 </div>
@@ -215,8 +238,18 @@ export default function ShadowView() {
             {v.sunOn && <SunBar model={model} />}
           </div>
           <p className="note">
-            The wall {fmt(v.shadowGap, 0)} mm behind the back plate, seen from the front of the piece. The orange box is the picture area ({fmt(v.shadowW, 0)} × {fmt(v.shadowH, 0)} mm,{' '}
-            {fmt(v.shadowY, 0)} mm up). Warm light is sunlit wall and dark is shadow. The carved plates are live in the 3D view, where the wall catches the real shadow.
+            {v.shadowScreen === 'ground' || v.shadowScreen === 'base' ? (
+              <>
+                The {v.shadowScreen === 'ground' ? 'ground' : 'top of the concrete'} behind the piece, seen from above with the front of the piece at the bottom. The picture starts {fmt(v.shadowGap, 0)} mm
+                behind the back plate. Hatching is not screen (inside the concrete or a plate).
+              </>
+            ) : (
+              <>
+                The wall {fmt(v.shadowGap, 0)} mm behind the back plate, seen from the front of the piece, with the picture's bottom {fmt(v.shadowY, 0)} mm up.
+              </>
+            )}{' '}
+            The orange box{allSide ? 'es are' : ' is'} the picture area ({fmt(v.shadowW, 0)} × {fmt(v.shadowH, 0)} mm{allSide ? ' each, placed where each frame\'s light comes straight through the plates' : ''}). Warm light is sun and dark is shadow. The carved
+            plates are live in the 3D view, where the screen catches the real shadow.
           </p>
         </section>
       </div>

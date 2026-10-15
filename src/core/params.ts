@@ -428,16 +428,34 @@ export const PARAMS: ParamDef[] = [
   { id: 'sunPath', label: 'Show sun path', group: 'Sun', kind: 'toggle', def: true, help: "Today's path across the sky, with midsummer and midwinter for reference, and a compass on the ground" },
 
   // Shadow carving: holes through the plates so the sun casts pictures on a wall behind
-  { id: 'shadowOn', label: 'Shadow pictures', group: 'Shadow', kind: 'toggle', def: false, help: 'Carve the plates so the sun casts your pictures on a wall behind the piece. Add pictures and their times in the Shadow view.' },
+  { id: 'shadowOn', label: 'Shadow pictures', group: 'Shadow', kind: 'toggle', def: false, help: 'Carve the plates so the sun casts your pictures on a wall, the ground or the concrete behind the piece. Add pictures and their times in the Shadow view.' },
   choice('shadowExec', 'Execution', 'Shadow', 'frames', [
-    { value: 'frames', label: 'Timed frames (a flip book)' },
+    { value: 'frames', label: 'Timed frames in place (a flip book)' },
+    { value: 'side', label: 'Timed frames side by side (a film strip)' },
     { value: 'allday', label: 'One picture, all day' },
-  ], { help: 'Timed frames: each picture appears at its own time, all in the same place on the wall. All day: the first picture is carved for every hour of daylight (softer, but always there)' }),
-  num('shadowGap', 'Wall distance', 'Shadow', 30, 0, 3000, { help: 'From the back plate to the wall. Closer is crisper: the sun blurs shadows about 1 mm per 100 mm' }),
-  num('shadowW', 'Picture width', 'Shadow', 180, 10, 3000),
-  num('shadowH', 'Picture height', 'Shadow', 120, 10, 3000),
-  num('shadowX', 'Picture across', 'Shadow', 0, -3000, 3000, { help: 'Centre of the picture, right of the middle as you look at the wall from the front' }),
-  num('shadowY', 'Picture bottom', 'Shadow', 'baseHeight + 20', 0, 3000, { help: 'Height of the bottom of the picture above the ground' }),
+  ], { help: 'In place: each picture appears at its own time, all on the same patch of screen. Side by side: each picture sits where its own light comes straight through the plates, so they make a row along the screen (spaced by the sun) and light up in turn. All day: the first picture is carved for every hour of daylight (softer, but always there)' }),
+  choice('shadowScreen', 'Screen', 'Shadow', 'wall', [
+    { value: 'wall', label: 'Wall behind' },
+    { value: 'ground', label: 'Ground behind' },
+    { value: 'base', label: 'Top of the concrete' },
+  ], { help: 'Where the shadow lands. The ground and the concrete top need the sun fairly high, and the ground picture usually sits well back from the base so the light clears it' }),
+  num('shadowGap', 'Screen distance', 'Shadow', 30, -3000, 3000, {
+    help: 'Wall: from the back plate to the wall (closer is crisper: the sun blurs shadows about 1 mm per 100 mm). Ground or concrete top: from the back plate to the near edge of the picture; negative starts it under the plates',
+  }),
+  num('shadowW', 'Picture width', 'Shadow', 180, 10, 3000, { help: 'Each picture, side by side or not' }),
+  num('shadowH', 'Picture height', 'Shadow', 120, 10, 3000, { help: 'On the ground or the concrete, this runs away from the front of the piece' }),
+  num('shadowX', 'Picture across', 'Shadow', 0, -3000, 3000, { help: 'Centre of the picture (or the row of pictures), right of the middle as you look from the front' }),
+  num('shadowY', 'Picture bottom', 'Shadow', 'baseHeight + 20', 0, 3000, { show: (v) => v.shadowScreen === 'wall', help: 'Height of the bottom of the picture above the ground' }),
+  num('shadowFade', 'Crossfade', 'Shadow', 0, 0, 100, {
+    unit: '%',
+    noScale: true,
+    show: (v) => v.shadowExec !== 'allday',
+    help: 'Stretches each frame toward its neighbours\' times so one fades out as the next fades in. 50% meets halfway; more overlaps. Softer pictures and more stray light',
+  }),
+  num('shadowBridge', 'Bridge width', 'Shadow', 'thickness', 0, 30, {
+    step: 0.5,
+    help: 'Loose bits inside the cut-outs are held in by bridges this wide, like a stencil. 0 cuts them away instead (cleaner plates, more stray light)',
+  }),
   num('shadowRim', 'Solid rim', 'Shadow', 8, 0, 100, { help: 'Uncut border kept up both sides of every plate and above the concrete. The top edge may be notched where the low sun reaches over it' }),
   num('shadowCell', 'Resolution', 'Shadow', 3, 1, 10, { step: 0.5, noScale: true, help: 'Size of one picture pixel on the wall and in the plates. Finer is sharper but makes more, smaller holes' }),
   num('shadowThreshold', 'Light above', 'Shadow', 0.5, 0, 1, { unit: '', step: 0.01, noScale: true, help: 'Picture brightness above which the wall should be lit' }),
