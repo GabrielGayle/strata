@@ -64,7 +64,7 @@ export interface Model {
 
 const formKeys = (p: string) => ['Shape', 'X', 'Y', 'Z', 'Rot', 'Length', 'Width', 'Height', 'Taper', 'Sweep', 'Camber', 'Bend', 'Twist', 'Scale'].map((k) => p + k);
 const NON_SLICE = new Set([
-  ...PARAMS.filter((p) => p.group === 'Mould' || p.group === 'Unfold').map((p) => p.id),
+  ...PARAMS.filter((p) => p.group === 'Mould' || p.group === 'Unfold' || p.group === 'Sun').map((p) => p.id),
   'kerf', 'arcTolerance', 'sheetW', 'sheetH', 'partSpacing', 'dxfMode', 'minPartSize',
   'insTint', 'insMaterial', 'concreteTint', 'pourView', 'erodeAmount', 'slotGap',
 ]);
