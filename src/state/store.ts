@@ -10,6 +10,7 @@ import { keepPlatesInPlace } from '../core/remap';
 import type { Appearance } from '../core/appearance';
 import type { DepthSettings } from '../core/depth';
 import type { ShadowSpec } from '../core/shadow';
+import type { CutObject } from '../core/objects';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { createSaver, defaultKV, readWithLegacy, type KV, type SaveStatus } from './persist';
 
@@ -42,6 +43,9 @@ export interface UiState {
   /** Material picking in the 3D view: clicks put plates in the active bucket. */
   paintMode: boolean;
   activeBucket: string;
+  /** Placed objects panel in the 3D view, and which object it is editing. */
+  objectsMode: boolean;
+  objectSel: string | null;
   /** Sun study: clock time of day in hours, and whether the day is playing. Not part of the undo history. */
   sunTime: number;
   sunPlaying: boolean;
@@ -77,6 +81,8 @@ interface Store {
   resetMoves: () => void;
   /** Material buckets and which plates are in them. */
   setAppearance: (a: Appearance | undefined, label?: string) => void;
+  /** Objects placed among the plates; `key` merges rapid edits (a value being dragged) into one undo step. */
+  setObjects: (objects: CutObject[], key?: string) => void;
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
   /** Change how a depth image is shaped; slider drags merge into one undo step. `dataUrl` refreshes its picture. */
@@ -227,6 +233,8 @@ export const useStore = create<Store>((set, get) => {
       gizmoSpace: 'world',
       paintMode: false,
       activeBucket: 'b1',
+      objectsMode: false,
+      objectSel: null,
       sunTime: 12,
       sunPlaying: false,
       ...loadUi(),
@@ -263,6 +271,7 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       commit({ ...p, appearance: a }, `${label}:${performance.now()}`);
     },
+    setObjects: (objects, key = `objects:${performance.now()}`) => commit({ ...get().project, objects: objects.length ? objects : undefined }, key),
     setName: (name) => commit({ ...get().project, name }, 'name'),
     setAsset: (kind, slot, asset) => {
       const p = get().project;
@@ -381,6 +390,7 @@ export const useStore = create<Store>((set, get) => {
         images: { ...p.images },
         composition: p.composition,
         shadow: p.shadow ?? null,
+        objects: p.objects ?? null,
         createdAt: new Date().toISOString(),
       };
       commit({ ...p, variants: [...p.variants, v] }, `variant:${v.id}`);

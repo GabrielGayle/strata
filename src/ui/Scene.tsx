@@ -147,6 +147,36 @@ function Insert({ model }: { model: Model }) {
   return <mesh geometry={ins.form.geometry} material={mat} castShadow receiveShadow />;
 }
 
+/** Objects placed among the plates: postcards read as paper, the rest as see-through cutters. */
+function PlacedObjects({ model }: { model: Model }) {
+  const sel = useStore((s) => (s.ui.objectsMode ? s.ui.objectSel : null));
+  const setUi = useStore((s) => s.setUi);
+  const accent = cssVar('--accent', '#d4521c');
+  return (
+    <>
+      {model.objects.map(({ object: o, geometry }) => {
+        const picked = o.id === sel;
+        const card = o.kind === 'card';
+        return (
+          <mesh
+            key={o.id}
+            geometry={geometry}
+            castShadow={card}
+            onClick={(e) => {
+              if (!useStore.getState().ui.objectsMode) return;
+              e.stopPropagation();
+              setUi({ objectSel: o.id });
+            }}
+          >
+            <meshStandardMaterial color={card ? '#f3eee2' : '#7fb3d5'} roughness={0.85} transparent={!card} opacity={card ? 1 : 0.35} depthWrite={card} />
+            <Edges color={picked ? accent : card ? '#8a8378' : '#3d6f91'} threshold={20} />
+          </mesh>
+        );
+      })}
+    </>
+  );
+}
+
 function explodeOffset(mp: MouldPart, center: THREE.Vector2, model: Model): THREE.Vector3 {
   const bb = shapeBBox(mp.shape);
   const cx = (bb.minX + bb.maxX) / 2 - center.x;
@@ -313,6 +343,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       <Etches parts={model.sliced.parts} />
       <Rods model={model} />
       <Insert model={model} />
+      <PlacedObjects model={model} />
       {opts.showSource && model.source && v.stackSource === 'form' && (
         <mesh geometry={model.source.form.geometry}>
           <meshBasicMaterial color={cssVar('--info', '#2f5f9e')} wireframe transparent opacity={0.12} />
