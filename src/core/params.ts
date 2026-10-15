@@ -40,6 +40,7 @@ export const GROUPS = [
   'Insert',
   'Source form',
   'Image',
+  'Margins',
   'Tuning',
   'Concrete',
   'Mould',
@@ -130,6 +131,7 @@ export const PARAMS: ParamDef[] = [
   num('baseEdgeChamfer', 'Top edge chamfer', 'Base', 0, 0, 100, { show: (v) => v.baseOn, help: 'Bevels the top edge of the base at 45°. Formed by a chamfer strip fixed inside the top of the mould.' }),
 
   // Embedded support
+  { id: 'supportOn', label: 'Embedded support on', group: 'Support', kind: 'toggle', def: true, show: (v) => v.baseOn },
   choice('supportMode', 'Embedded support', 'Support', 'off', [
     { value: 'off', label: 'Off' },
     { value: 'radial', label: 'Radial ring' },
@@ -143,6 +145,7 @@ export const PARAMS: ParamDef[] = [
   num('supportClearance', 'Slot clearance', 'Support', 0.3, 0, 3, { step: 0.05, show: hasSupport, noScale: true, help: 'Added around each tenon in the ring slots' }),
 
   // Bracing: threaded rods through the embedded tabs + laser-cut spacers
+  { id: 'bracingOn', label: 'Bracing on', group: 'Bracing', kind: 'toggle', def: true, show: isUpright },
   { id: 'rodsOn', label: 'Threaded rods', group: 'Bracing', kind: 'toggle', def: false, show: isUpright, help: 'Threaded rods run through every plate\'s embedded tab like rebar, with nuts locking the plates on them' },
   choice('rodSize', 'Rod size', 'Bracing', 'M5', ['M3', 'M4', 'M5', 'M6', 'M8', 'M10', 'M12'].map((m) => ({ value: m, label: m })), { show: hasRods }),
   choice('rodLayout', 'Rod layout', 'Bracing', 'row', [
@@ -197,12 +200,11 @@ export const PARAMS: ParamDef[] = [
   ], { show: isParallelish, help: 'Fixed gap sets the clear space between plate faces; the stack stays centred on the base' }),
   num('plateGap', 'Gap between plates', 'Plates', 10, 0.5, 500, { step: 0.5, show: (v) => isParallelish(v) && v.spacingMode !== 'fit', help: 'Clear space between neighbouring plate faces (pitch = thickness + gap)' }),
   num('plateCount', 'Plate count', 'Plates', 40, 2, 300, { int: true, unit: '', show: isParallelish, scaleCount: true }),
-  num('endMargin', 'End margin', 'Plates', 40, 0, 1000, { show: isParallelish, help: 'Base end to the outer plate centre (the minimum when a fixed gap fills the base)' }),
   num('stackLength', 'Stack run', 'Plates', 'alongWidth ? baseWidth : baseLength', 1, 5000, { show: isParallelish, help: 'Base length the plates are stacked along (alongWidth = 1 when slicing across)' }),
   num('acrossLength', 'Across run', 'Plates', 'alongWidth ? baseLength : baseWidth', 1, 5000, { show: isParallelish }),
   num('pitch', 'Pitch', 'Plates', '(stackLength - 2*endMargin) / (plateCount - 1)', 1, 500, { step: 0.1, show: isUpright }),
-  num('sideMargin', 'Side margin', 'Plates', 20, 0, 1000),
   num('plateWidth', 'Plate width', 'Plates', 'acrossLength - 2*sideMargin', 5, 3000, { show: isParallelish }),
+  num('stackHeight', 'Plate height', 'Plates', 220, 10, 2000, { show: strataSource, help: 'Height of the plate tops above the concrete before erosion, crest and slope' }),
   num('embedDepth', 'Embed depth', 'Plates', 40, 0, 400, { show: (v) => !isFlat(v), help: 'How far each plate sinks into the concrete' }),
   num('tabInset', 'Embed tab inset', 'Plates', 0, 0, 200, { show: (v) => !isFlat(v), help: 'Narrows the embedded tab on each side' }),
   num('anchorHoles', 'Anchor holes', 'Plates', 2, 0, 12, { int: true, unit: '', show: (v) => !isFlat(v), help: 'Holes in the embedded tab that concrete flows through' }),
@@ -233,7 +235,7 @@ export const PARAMS: ParamDef[] = [
   num('sampleStep', 'Profile resolution', 'Slicer', 2, 0.5, 20, { step: 0.5, noScale: true }),
 
   // Strata / erosion
-  num('stackHeight', 'Plate height', 'Strata', 220, 10, 2000, { show: strataSource }),
+  { id: 'strataOn', label: 'Strata erosion on', group: 'Strata', kind: 'toggle', def: true, show: strataSource, help: 'Off gives flat-topped plates at Plates › Plate height (images still apply)' },
   num('erosionAmp', 'Erosion amplitude', 'Strata', 45, 0, 500, { show: strataSource, rand: true }),
   num('erosionScale', 'Erosion wavelength', 'Strata', 170, 10, 2000, { show: strataSource, rand: true }),
   num('octaves', 'Octaves', 'Strata', 4, 1, 8, { int: true, unit: '', show: strataSource, rand: true }),
@@ -246,6 +248,7 @@ export const PARAMS: ParamDef[] = [
   num('seed', 'Seed', 'Strata', 7, 0, 9999, { int: true, unit: '', rand: true }),
 
   // Edges
+  { id: 'edgesOn', label: 'Edge smoothing on', group: 'Edges', kind: 'toggle', def: true },
   num('edgeFlow', 'Strata flow', 'Edges', 0, 0, 120, {
     step: 0.5,
     show: strataSource,
@@ -259,6 +262,7 @@ export const PARAMS: ParamDef[] = [
   }),
 
   // Insert
+  { id: 'insertOn', label: 'Insert on', group: 'Insert', kind: 'toggle', def: true },
   ...formParams('ins', 'Insert', () => true, { shape: 'fin', length: 330, width: 56, height: 360, taper: 0.35, sweep: 90, camber: 22, bend: 18 }),
   choice('insMaterial', 'Material', 'Insert', 'concrete', [
     { value: 'concrete', label: 'Concrete (cast)' },
@@ -277,6 +281,7 @@ export const PARAMS: ParamDef[] = [
   ...formParams('src', 'Source form', (v) => v.stackSource === 'form', { shape: 'revolve', width: 260, height: 300, taper: 0.5, camber: 60, length: 600 }),
 
   // Image
+  { id: 'imageOn', label: 'Image on', group: 'Image', kind: 'toggle', def: true, help: 'Off ignores every image (side, top, front and etching) without clearing them' },
   choice('imgSideMode', 'Side profile', 'Image', 'off', [
     { value: 'off', label: 'Off' },
     { value: 'heightmap', label: 'Image as height (strip per plate)' },
@@ -325,7 +330,6 @@ export const PARAMS: ParamDef[] = [
   ], { show: (v) => v.imgTopMode !== 'off' }),
   num('topX', 'Image offset X', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
   num('topZ', 'Image offset Z', 'Image', 0, -1500, 1500, { show: (v) => v.imgTopMode !== 'off' }),
-  num('topMargin', 'Top margin', 'Image', 10, 0, 300, { show: (v) => v.imgTopMode !== 'off' }),
   choice('topOutline', 'Shape outline', 'Image', 'alpha', [
     { value: 'off', label: 'Off (plates keep their full width)' },
     { value: 'alpha', label: 'Transparent PNG edge' },
@@ -353,7 +357,6 @@ export const PARAMS: ParamDef[] = [
   ], { show: (v) => v.sliceMode === 'parallel' }),
   num('imgFrontStrength', 'Front strength', 'Image', 0.5, 0, 1, { step: 0.01, unit: '', show: (v) => v.sliceMode === 'parallel' && v.imgFrontMode !== 'off' }),
   num('frontDepth', 'Plates carrying image', 'Image', 10, 1, 300, { int: true, unit: '', show: (v) => v.sliceMode === 'parallel' && v.imgFrontMode === 'layers' }),
-  num('frontMargin', 'Frame margin', 'Image', 15, 0, 300, { show: (v) => v.sliceMode === 'parallel' && v.imgFrontMode !== 'off' }),
   num('halftoneSpacing', 'Dot spacing', 'Image', 12, 3, 100, { show: (v) => v.sliceMode === 'parallel' && v.imgFrontMode === 'halftone' }),
   choice('etchMode', 'Etched lines', 'Image', 'off', [
     { value: 'off', label: 'Off' },
@@ -362,7 +365,14 @@ export const PARAMS: ParamDef[] = [
   ], { show: (v) => v.sliceMode === 'parallel' }),
   num('etchSpacing', 'Etch spacing', 'Image', 4, 0.5, 50, { step: 0.5, show: (v) => v.sliceMode === 'parallel' && v.etchMode !== 'off' }),
 
+  // Margins: every inset from the base edge or plate edge, in one place
+  num('endMargin', 'End margin', 'Margins', 40, 0, 1000, { show: isParallelish, help: 'Base end to the outer plate centre (the minimum when a fixed gap fills the base)' }),
+  num('sideMargin', 'Side margin', 'Margins', 20, 0, 1000, { help: 'Base side to the plate edge' }),
+  num('topMargin', 'Top image margin', 'Margins', 10, 0, 300, { show: (v) => v.imgTopMode !== 'off', help: 'Keeps the top image this far in from the plate footprint edge' }),
+  num('frontMargin', 'Front image frame', 'Margins', 15, 0, 300, { show: (v) => v.sliceMode === 'parallel' && v.imgFrontMode !== 'off', help: 'Solid frame left round the front image cut-outs on each plate' }),
+
   // Tuning: plates cut to ring at chosen notes
+  { id: 'tuneOn', label: 'Tuning on', group: 'Tuning', kind: 'toggle', def: true, show: (v) => strataSource(v) && (v.sliceMode === 'parallel' || v.sliceMode === 'radial') },
   choice('tuneMode', 'Tuned plates', 'Tuning', 'off', [
     { value: 'off', label: 'Off' },
     { value: 'scale', label: 'Climb a scale' },
@@ -450,6 +460,40 @@ export const PARAMS: ParamDef[] = [
 ];
 
 export const PARAM_MAP: Record<string, ParamDef> = Object.fromEntries(PARAMS.map((p) => [p.id, p]));
+
+export interface GroupSwitch {
+  /** Toggle parameter shown as the switch in the group's header. */
+  id: string;
+  /** Values the model sees while the switch is off. The stored settings are kept for when it goes back on. */
+  forces?: Record<string, RawValue>;
+  /** Keep the group's settings on show while off (they still shape the rest of the piece). */
+  keepOpen?: boolean;
+}
+
+/** Groups with an on/off switch in their header. */
+export const GROUP_SWITCHES: Partial<Record<(typeof GROUPS)[number], GroupSwitch>> = {
+  Base: { id: 'baseOn', keepOpen: true },
+  Support: { id: 'supportOn', forces: { supportMode: 'off' } },
+  Bracing: { id: 'bracingOn', forces: { rodsOn: false, spacerMode: 'off' } },
+  Strata: { id: 'strataOn', forces: { erosionAmp: '0', banding: '0', crest: '0', slope: '0' } },
+  Edges: { id: 'edgesOn', forces: { edgeFlow: '0', edgeRound: '0' } },
+  Insert: { id: 'insertOn', forces: { insShape: 'none' } },
+  Image: { id: 'imageOn', forces: { imgSideMode: 'off', imgTopMode: 'off', imgFrontMode: 'off', etchMode: 'off', topOutline: 'off', imgFit: 'off' } },
+  Tuning: { id: 'tuneOn', forces: { tuneMode: 'off' } },
+  Mould: { id: 'mouldOn' },
+};
+export const SWITCH_IDS = new Set(Object.values(GROUP_SWITCHES).map((s) => s!.id));
+
+/** The raw values with every switched-off group's forced values laid over them. */
+export function applySwitches(raw: Record<string, RawValue>): Record<string, RawValue> {
+  let out = raw;
+  for (const sw of Object.values(GROUP_SWITCHES)) {
+    if (!sw!.forces || isOn(raw, sw!.id)) continue;
+    if (out === raw) out = { ...raw };
+    Object.assign(out, sw!.forces);
+  }
+  return out;
+}
 
 export function defaultRaw(): Record<string, RawValue> {
   return Object.fromEntries(PARAMS.map((p) => [p.id, p.def]));
@@ -553,7 +597,9 @@ export function overrideSource(id: string): 'spacing' | 'image' {
 export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'imgAspect'];
 
 /** Evaluate the whole parameter graph in dependency order. */
-export function evaluateParams(rawIn: Record<string, RawValue>, extra: Record<string, number> = {}): EvalResult {
+export function evaluateParams(rawArg: Record<string, RawValue>, extra: Record<string, number> = {}): EvalResult {
+  // switched-off groups (header switches) are evaluated with their features off
+  const rawIn = applySwitches(rawArg);
   // Master size multiplies literal values; image fit swaps in expressions
   const overrides = { ...fitOverrides(rawIn), ...spacingOverrides(rawIn) };
   const raw: Record<string, RawValue> = { ...rawIn, ...overrides };

@@ -347,6 +347,65 @@ input[type='number'],
 .section-body {
   padding: 4px 0 6px;
 }
+.section-headrow {
+  display: flex;
+  align-items: stretch;
+  background: var(--panel-2);
+}
+.section-headrow .section-head {
+  flex: 1;
+  min-width: 0;
+}
+.section.off .section-head > span:first-child {
+  color: var(--muted);
+}
+.gswitch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 10px 0 4px;
+  cursor: pointer;
+}
+.gswitch input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.gswitch .track {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--line);
+  transition: background 0.12s;
+}
+.gswitch .track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--panel);
+  transition: left 0.12s;
+}
+.gswitch.on .track {
+  background: var(--accent);
+}
+.gswitch.on .track::after {
+  left: 14px;
+}
+.gswitch input:focus-visible + .track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.note.section-off {
+  margin: 4px 10px;
+}
 .panel-title {
   padding: 8px 10px;
   border-bottom: 1px solid var(--line);
