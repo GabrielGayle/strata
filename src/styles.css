@@ -1067,6 +1067,23 @@ canvas.thumb {
 .pm-seg {
   flex-wrap: wrap;
 }
+/* depth-from-photo shaping, inside an image slot */
+.depth-ctl {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px 4px;
+  border-top: 1px solid var(--line-soft);
+}
+.depth-ctl .note {
+  padding: 0 0 2px;
+  border-bottom: 0;
+}
+.depth-ctl .pm-row > span:first-child {
+  width: 64px;
+}
+.depth-ctl .pm-row .mono {
+  width: 52px;
+}
 
 /* composer */
 .pm.cm {

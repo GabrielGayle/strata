@@ -7,10 +7,13 @@ import { decodeImage, type Gray } from '../core/image';
 import { prepareMesh } from '../core/forms';
 import { mergeGeometries } from '../core/geometry3d';
 import type { Assets } from '../core/pipeline';
-import type { MeshAsset, Project } from '../core/project';
+import type { ImageAsset, MeshAsset, Project } from '../core/project';
+import { depthToGray, type DepthData } from '../core/depth';
 
 const imgCache = new Map<string, Gray>();
 const meshCache = new Map<string, THREE.BufferGeometry>();
+// full-precision grid straight from the depth data (not the 8-bit picture), per settings object
+const depthCache = new WeakMap<DepthData, Gray>();
 
 export function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -48,15 +51,29 @@ export function parseMesh(asset: MeshAsset): THREE.BufferGeometry {
 
 export function useAssets(project: Project): Assets {
   const [assets, setAssets] = useState<Assets>({ sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null });
-  const sideUrl = project.images.side?.dataUrl;
-  const frontUrl = project.images.front?.dataUrl;
-  const topUrl = project.images.top?.dataUrl;
+  const side = project.images.side;
+  const front = project.images.front;
+  const top = project.images.top;
+  const sideKey = side?.depth ?? side?.dataUrl;
+  const frontKey = front?.depth ?? front?.dataUrl;
+  const topKey = top?.depth ?? top?.dataUrl;
   const insData = project.meshes.ins;
   const srcData = project.meshes.src;
   useEffect(() => {
     let alive = true;
     (async () => {
-      const img = async (url?: string) => {
+      const img = async (a?: ImageAsset) => {
+        if (a?.depth) {
+          if (!depthCache.has(a.depth)) {
+            try {
+              depthCache.set(a.depth, depthToGray(a.depth));
+            } catch {
+              return null;
+            }
+          }
+          return depthCache.get(a.depth)!;
+        }
+        const url = a?.dataUrl;
         if (!url) return null;
         if (!imgCache.has(url)) {
           try {
@@ -79,7 +96,7 @@ export function useAssets(project: Project): Assets {
         }
         return meshCache.get(key)!;
       };
-      const next: Assets = { sideImg: await img(sideUrl), frontImg: await img(frontUrl), topImg: await img(topUrl), insMesh: mesh(insData), srcMesh: mesh(srcData) };
+      const next: Assets = { sideImg: await img(side), frontImg: await img(front), topImg: await img(top), insMesh: mesh(insData), srcMesh: mesh(srcData) };
       if (alive)
         setAssets((prev) =>
           prev.sideImg === next.sideImg && prev.frontImg === next.frontImg && prev.topImg === next.topImg && prev.insMesh === next.insMesh && prev.srcMesh === next.srcMesh ? prev : next,
@@ -88,6 +105,7 @@ export function useAssets(project: Project): Assets {
     return () => {
       alive = false;
     };
-  }, [sideUrl, frontUrl, topUrl, insData, srcData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideKey, frontKey, topKey, insData, srcData]);
   return assets;
 }
