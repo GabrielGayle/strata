@@ -65,13 +65,26 @@ function SunLight({ model, dir, elevation }: { model: Model; dir: THREE.Vector3;
   );
 }
 
-/** The wall the shadow pictures fall on: a pale panel behind the piece that catches the real shadow. */
-function ShadowWall({ model }: { model: Model }) {
+/** The screen the shadow pictures fall on: a pale panel (wall or ground) that catches the real shadow. */
+function ShadowScreen({ model }: { model: Model }) {
   const g = model.shadow!.geom;
+  if (g.screen === 'base') return null; // the concrete itself catches it
   const pad = Math.max(g.w, g.h) * 0.35;
   const w = g.w + pad * 2;
-  const top = g.y0 + g.h + pad;
   const a = g.x0 + g.w / 2;
+  if (g.screen === 'ground') {
+    const len = g.h + pad * 2;
+    const b = g.y0 + g.h / 2;
+    const cx = g.right[0] * a + g.s[0] * b;
+    const cz = g.right[1] * a + g.s[1] * b;
+    return (
+      <mesh position={[cx, 0.5, cz]} rotation={[-Math.PI / 2, 0, Math.atan2(-g.s[1], g.s[0])]} receiveShadow>
+        <planeGeometry args={[len, w]} />
+        <meshStandardMaterial color="#efe9dd" roughness={0.95} metalness={0} />
+      </mesh>
+    );
+  }
+  const top = g.y0 + g.h + pad;
   // centre of the panel, a hair in front of the wall so it never fights the grid
   const cx = g.s[0] * (g.wallS + 1) + g.right[0] * a;
   const cz = g.s[1] * (g.wallS + 1) + g.right[1] * a;
@@ -132,7 +145,7 @@ export function SunStudy3D({ model }: { model: Model }) {
         <planeGeometry args={[r * 8, r * 8]} />
         <shadowMaterial transparent opacity={0.32} depthWrite={false} />
       </mesh>
-      {model.shadow && <ShadowWall model={model} />}
+      {model.shadow && <ShadowScreen model={model} />}
       {paths && (
         <>
           <PathLine points={ring} color="#8a8478" opacity={0.6} />
