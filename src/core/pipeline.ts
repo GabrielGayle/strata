@@ -76,35 +76,83 @@ const CHECK_KEYS = ['minFeature', 'kerf', 'minPartSize', 'sheetW', 'sheetH', 'pa
 const MOULD_KEYS = [...PARAMS.filter((p) => p.group === 'Mould').map((p) => p.id), ...BASE_KEYS, 'embedDepth', 'thickness', 'insMaterial', 'insShape', 'clearance', 'sliceMode'];
 const UNFOLD_KEYS = PARAMS.filter((p) => p.group === 'Unfold').map((p) => p.id);
 
-export function createPipeline() {
-  const cache = new Map<string, { deps: unknown[]; value: unknown; ms: number }>();
-  /**
-   * mode 'fast' recomputes what the 3D view needs (forms, strata, plates) and
-   * reuses the last result of the deferred stages; 'full' brings everything up to date.
-   */
-  return function compute(project: Project, assets: Assets, mode: 'fast' | 'full' = 'full'): Model {
-    const t0 = performance.now();
-    const stages: StageLog[] = [];
-    let stale = false;
-    function stage<T>(name: string, deps: unknown[], fn: () => T, deferred = false): T {
-      const prev = cache.get(name);
-      if (prev && prev.deps.length === deps.length && prev.deps.every((d, i) => d === deps[i])) {
-        stages.push({ name, ms: prev.ms, cached: true });
-        return prev.value as T;
-      }
-      if (deferred && mode === 'fast' && prev) {
-        stale = true;
-        stages.push({ name, ms: prev.ms, cached: true, stale: true });
-        return prev.value as T;
-      }
-      const s = performance.now();
-      const value = fn();
-      const ms = performance.now() - s;
-      cache.set(name, { deps, value, ms });
-      stages.push({ name, ms, cached: false });
-      return value;
+type Cache = Map<string, { deps: unknown[]; value: unknown; ms: number }>;
+
+/** Runs memoised stages against one cache, logging what each did. */
+function stager(cache: Cache, mode: 'fast' | 'full') {
+  const stages: StageLog[] = [];
+  const out = { stages, stale: false, stage };
+  function stage<T>(name: string, deps: unknown[], fn: () => T, deferred = false): T {
+    const prev = cache.get(name);
+    if (prev && prev.deps.length === deps.length && prev.deps.every((d, i) => d === deps[i])) {
+      stages.push({ name, ms: prev.ms, cached: true });
+      return prev.value as T;
     }
-    const pick = (v: Values, keys: string[]) => keys.map((k) => v[k]);
+    if (deferred && mode === 'fast' && prev) {
+      out.stale = true;
+      stages.push({ name, ms: prev.ms, cached: true, stale: true });
+      return prev.value as T;
+    }
+    const s = performance.now();
+    const value = fn();
+    const ms = performance.now() - s;
+    cache.set(name, { deps, value, ms });
+    stages.push({ name, ms, cached: false });
+    return value;
+  }
+  return out;
+}
+
+const pick = (v: Values, keys: string[]) => keys.map((k) => v[k]);
+
+/** Everything the 3D view needs: parameters, forms, images, strata, plates, unfold, pour. */
+export type FrontModel = Omit<Model, 'issues' | 'nested' | 'moulds' | 'mouldNest' | 'bom' | 'stale'>;
+
+/**
+ * What the deferred stages read. Plain data only, so it can be posted to a
+ * Web Worker (no THREE objects, no functions).
+ */
+export interface DeferredInput {
+  v: Values;
+  sliced: SliceResult;
+  insert: { mesh: IndexedMesh; minY: number; maxY: number; volume: number } | null;
+  pourRows: PourPlanRow[];
+  appearance: Project['appearance'];
+}
+
+export interface DeferredModel {
+  issues: Issue[];
+  nested: NestResult;
+  moulds: MouldResult;
+  mouldNest: NestResult;
+  bom: Bom;
+  stages: StageLog[];
+  totalMs: number;
+  stale: boolean;
+}
+
+// one plain insert per form build, so stages keyed on it stay cached
+const plainInserts = new WeakMap<FormBuild, NonNullable<DeferredInput['insert']>>();
+const plainInsert = (b: FormBuild) => {
+  let p = plainInserts.get(b);
+  if (!p) plainInserts.set(b, (p = { mesh: b.mesh, minY: b.form.bbox.min.y, maxY: b.form.bbox.max.y, volume: b.volume }));
+  return p;
+};
+
+export const deferredInput = (f: FrontModel, project: Project): DeferredInput => ({
+  v: f.v,
+  sliced: f.sliced,
+  insert: f.insert ? plainInsert(f.insert) : null,
+  pourRows: f.pour.rows,
+  appearance: project.appearance,
+});
+
+/** The front stages. Fast enough to run on every edit. */
+export function createFrontPipeline() {
+  const cache: Cache = new Map();
+  return function computeFront(project: Project, assets: Assets): FrontModel {
+    const t0 = performance.now();
+    const { stage, stages } = stager(cache, 'full');
 
     // the top image's on-surface aspect (width across the plates / length along the stack), for "Fit stack to image"
     const imgAspect = (() => {
@@ -143,6 +191,27 @@ export function createPipeline() {
     const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : ''], () =>
       share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg, topMask, moves: project.moves, materialFor })),
     );
+    const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
+    const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
+    const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced, unfolded, pour, stages, totalMs: performance.now() - t0 };
+  };
+}
+
+/**
+ * The deferred stages: fit checks, nesting, moulds and the BOM. They only read
+ * plain data, so the app runs them in a Web Worker (see deferred.worker.ts).
+ * Mode 'fast' reuses the last result of any stage whose inputs changed.
+ */
+export function createDeferredPipeline() {
+  const cache: Cache = new Map();
+  return function computeDeferred(input: DeferredInput, mode: 'fast' | 'full' = 'full'): DeferredModel {
+    const t0 = performance.now();
+    const st = stager(cache, mode);
+    const { stage } = st;
+    const { v, sliced, insert, appearance } = input;
+    const mats = materialKey(appearance, String(v.plateMaterial));
+    const materialFor = (key: string) => materialOf(appearance, key, String(v.plateMaterial));
     const issues = stage('Fit checks', [sliced, ...pick(v, CHECK_KEYS)], () => runChecks(v, sliced), true);
     const nested = stage('Nest sheets', [sliced, v.sheetW, v.sheetH, v.partSpacing, mats], () => {
       // a laser shop cuts each metal from its own sheet
@@ -155,7 +224,7 @@ export function createPipeline() {
       return nestGroups([...groups.values()].filter((g, i) => i === 0 || g.items.length), v.sheetW, v.sheetH, v.partSpacing);
     }, true);
     const moulds = stage('Moulds', [sliced, insert, ...pick(v, MOULD_KEYS)], () =>
-      buildMoulds(v, sliced, insert?.mesh ?? null, insert ? { minY: insert.form.bbox.min.y, maxY: insert.form.bbox.max.y } : null),
+      buildMoulds(v, sliced, insert?.mesh ?? null, insert ? { minY: insert.minY, maxY: insert.maxY } : null),
       true,
     );
     const mouldNest = stage('Nest plywood', [moulds, v.plySheetW, v.plySheetH, v.partSpacing], () =>
@@ -170,13 +239,38 @@ export function createPipeline() {
       ),
       true,
     );
-    const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
-    const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
-    const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
-    const bom = stage('Cut list + BOM', [sliced, nested, moulds, mouldNest, insert, pour, v.plateMaterial, v.insMaterial, project.appearance], () =>
-      buildBom(v, sliced, nested, moulds, mouldNest, insert?.volume ?? 0, pour.rows, project.appearance),
+    const bom = stage('Cut list + BOM', [sliced, nested, moulds, mouldNest, insert, input.pourRows, v.plateMaterial, v.insMaterial, appearance], () =>
+      buildBom(v, sliced, nested, moulds, mouldNest, insert?.volume ?? 0, input.pourRows, appearance),
       true,
     );
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced, issues, nested, moulds, mouldNest, unfolded, pour, bom, stages, totalMs: performance.now() - t0, stale };
+    return { issues, nested, moulds, mouldNest, bom, stages: st.stages, totalMs: performance.now() - t0, stale: st.stale };
+  };
+}
+
+/** Joins a front pass with a deferred result into the model the UI reads. */
+export function assemble(f: FrontModel, d: Omit<DeferredModel, 'totalMs'> & { totalMs?: number }, stale = d.stale): Model {
+  return {
+    ...f,
+    issues: d.issues,
+    nested: d.nested,
+    moulds: d.moulds,
+    mouldNest: d.mouldNest,
+    bom: d.bom,
+    stages: [...f.stages, ...d.stages],
+    totalMs: f.totalMs + (d.totalMs ?? 0),
+    stale,
+  };
+}
+
+export function createPipeline() {
+  const front = createFrontPipeline();
+  const deferred = createDeferredPipeline();
+  /**
+   * mode 'fast' recomputes what the 3D view needs (forms, strata, plates) and
+   * reuses the last result of the deferred stages; 'full' brings everything up to date.
+   */
+  return function compute(project: Project, assets: Assets, mode: 'fast' | 'full' = 'full'): Model {
+    const f = front(project, assets);
+    return assemble(f, deferred(deferredInput(f, project), mode));
   };
 }
