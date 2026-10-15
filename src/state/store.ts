@@ -39,6 +39,9 @@ export interface UiState {
   /** Material picking in the 3D view: clicks put plates in the active bucket. */
   paintMode: boolean;
   activeBucket: string;
+  /** Sun study: clock time of day in hours, and whether the day is playing. Not part of the undo history. */
+  sunTime: number;
+  sunPlaying: boolean;
 }
 
 /** A whole master setup (project) open in its own tab. The active one lives in `project`. */
@@ -211,6 +214,8 @@ export const useStore = create<Store>((set, get) => {
       gizmoSpace: 'world',
       paintMode: false,
       activeBucket: 'b1',
+      sunTime: 12,
+      sunPlaying: false,
       ...loadUi(),
     },
     setParam: (id, value) => {

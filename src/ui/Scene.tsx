@@ -14,6 +14,7 @@ import { makeConcreteMaterial, METALS, PLY, type Band } from './materials';
 import { lookOf, MAIN, type Appearance } from '../core/appearance';
 import { useStore } from '../state/store';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
+import { SunStudy3D } from './SunStudy';
 
 export interface SceneOpts {
   selected: string | null;
@@ -293,9 +294,9 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   return (
     <>
       <Env />
-      <ambientLight intensity={0.35} />
-      <ShadowSun model={model} />
-      <directionalLight position={[-900, 500, -600]} intensity={0.45} />
+      <ambientLight intensity={v.sunOn ? 0.28 : 0.35} />
+      {v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
+      <directionalLight position={[-900, 500, -600]} intensity={v.sunOn ? 0.18 : 0.45} />
       <Grid args={[20000, 20000]} cellSize={10} sectionSize={100} cellColor={gridA} sectionColor={gridB} cellThickness={0.6} sectionThickness={1} fadeDistance={7000} fadeStrength={1.5} infiniteGrid position={[0, -0.05, 0]} />
       {v.baseOn && <Base model={model} xray={opts.xray} />}
       {model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (

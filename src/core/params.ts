@@ -42,6 +42,7 @@ export const GROUPS = [
   'Image',
   'Tuning',
   'Concrete',
+  'Sun',
   'Mould',
   'Unfold',
   'Fabrication',
@@ -404,6 +405,16 @@ export const PARAMS: ParamDef[] = [
     { value: 'slot', label: 'Cast slots, fit later' },
   ]),
   num('slotGap', 'Slot gap', 'Concrete', 1, 0, 10, { step: 0.1, show: (v) => v.embedMode === 'slot', help: 'Slot width = thickness + gap', noScale: true }),
+
+  // Sun study: where the piece stands, for real sunlight and shadows in the 3D view
+  { id: 'sunOn', label: 'Sun study', group: 'Sun', kind: 'toggle', def: false, help: 'Light the 3D view with the real sun for this place and date. Scrub the time of day at the bottom of the 3D view.' },
+  num('sunLat', 'Latitude', 'Sun', 51.5, -89, 89, { unit: '°N', step: 0.1, noScale: true, show: (v) => v.sunOn, help: 'Degrees north; negative for the southern hemisphere. London 51.5, Edinburgh 56.0' }),
+  num('sunLon', 'Longitude', 'Sun', -0.1, -180, 180, { unit: '°E', step: 0.1, noScale: true, show: (v) => v.sunOn, help: 'Degrees east; negative for west. Only shifts the clock times' }),
+  num('sunUtc', 'Clock offset from UTC', 'Sun', 0, -12, 14, { unit: 'h', step: 0.5, noScale: true, show: (v) => v.sunOn, help: 'UK: 0 in winter (GMT), 1 in summer (BST)' }),
+  num('sunFacing', 'Front faces', 'Sun', 180, 0, 360, { unit: '°', step: 1, noScale: true, show: (v) => v.sunOn, help: 'Compass bearing the front of the piece looks out to (the end the Front view looks at): 0 north, 90 east, 180 south, 270 west' }),
+  choice('sunMonth', 'Month', 'Sun', '6', ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((m, i) => ({ value: String(i + 1), label: m })), { show: (v) => v.sunOn }),
+  num('sunDay', 'Day', 'Sun', 21, 1, 31, { unit: '', int: true, noScale: true, show: (v) => v.sunOn }),
+  { id: 'sunPath', label: 'Show sun path', group: 'Sun', kind: 'toggle', def: true, show: (v) => v.sunOn, help: "Today's path across the sky, with midsummer and midwinter for reference, and a compass on the ground" },
 
   // Mould
   { id: 'mouldOn', label: 'Generate moulds', group: 'Mould', kind: 'toggle', def: true },

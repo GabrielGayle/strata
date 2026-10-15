@@ -9,6 +9,7 @@ import Scene, { modelBounds } from './Scene';
 import { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { useModel, fmt } from './model';
 import AppearancePanel, { paintClick } from './AppearancePanel';
+import { SunBar } from './SunStudy';
 
 export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
@@ -164,6 +165,7 @@ export default function Viewport() {
       </div>
       {ui.moveMode && !ui.paintMode && <MovePanel />}
       {ui.paintMode && <AppearancePanel />}
+      {v.sunOn && <SunBar model={model} />}
       {v.pourView !== 'plain' && model.pour.rows.length > 0 && (
         <div className="overlay br info">
           {[...model.pour.rows].reverse().map((r) => (
