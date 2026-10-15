@@ -2,34 +2,30 @@
 // or stacked, float over the rest, and save as named workspaces. Drag a tab
 // onto the middle of a pane to join it, onto an edge to split, or use the
 // pane's buttons (which also work on touch screens).
-import { createContext, lazy, Suspense, useContext, useEffect, useRef, useState, type DragEvent, type ReactNode, type PointerEvent as RPointerEvent } from 'react';
+import { createContext, lazy, Suspense, useContext, useEffect, useRef, useState, type ComponentType, type DragEvent, type LazyExoticComponent, type PointerEvent as RPointerEvent } from 'react';
 import { zoneAt, type Float, type LayoutNode, type Pane, type Zone } from '../core/workspace';
 import { useStore, type Tab } from '../state/store';
 import { activeLayout, PRESETS, TABS, useWorkspaces } from '../state/workspaces';
 import { Menu } from './Toolbar';
-import PlatesView from './PlatesView';
-import NestView from './NestView';
-import MouldView from './MouldView';
-import UnfoldView from './UnfoldView';
-import ImageView from './ImageView';
-import GraphView from './GraphView';
-import NodesView from './NodesView';
 
-const Viewport = lazy(() => import('./Viewport'));
-const CompareView = lazy(() => import('./CompareView'));
-const ShadowView = lazy(() => import('./ShadowView'));
-
-const VIEWS: Record<Tab, () => ReactNode> = {
-  '3d': () => <Viewport />,
-  plates: () => <PlatesView />,
-  nest: () => <NestView />,
-  mould: () => <MouldView />,
-  unfold: () => <UnfoldView />,
-  image: () => <ImageView />,
-  shadow: () => <ShadowView />,
-  graph: () => <GraphView />,
-  nodes: () => <NodesView />,
-  compare: () => <CompareView />,
+// Every view loads on first open (the 3D one included), so the first screen only
+// waits for the views it shows. Hovering a tab starts fetching its view early.
+const LOAD: Record<Tab, () => Promise<{ default: ComponentType }>> = {
+  '3d': () => import('./Viewport'),
+  plates: () => import('./PlatesView'),
+  nest: () => import('./NestView'),
+  mould: () => import('./MouldView'),
+  unfold: () => import('./UnfoldView'),
+  image: () => import('./ImageView'),
+  shadow: () => import('./ShadowView'),
+  graph: () => import('./GraphView'),
+  nodes: () => import('./NodesView'),
+  compare: () => import('./CompareView'),
+};
+const VIEWS = Object.fromEntries(Object.entries(LOAD).map(([t, load]) => [t, lazy(load)])) as Record<Tab, LazyExoticComponent<ComponentType>>;
+/** Start fetching a view before it is opened (repeat calls are free). */
+export const preloadView = (t: string) => {
+  LOAD[t as Tab]?.().catch(() => {});
 };
 const label = (t: string) => TABS.find((x) => x.id === t)?.label ?? t;
 const keyOf = (t: string) => TABS.findIndex((x) => x.id === t) + 1;
@@ -126,6 +122,8 @@ function TabStrip({ p }: { p: Pane | Float }) {
           aria-selected={p.active === t}
           className={`tab ${p.active === t ? 'active' : ''}`}
           onClick={() => setUi({ tab: t as Tab })}
+          onPointerEnter={() => preloadView(t)}
+          onFocus={() => preloadView(t)}
           onDragStart={(e) => {
             e.dataTransfer.setData(MIME, t);
             e.dataTransfer.effectAllowed = 'move';
@@ -178,9 +176,10 @@ function DropZones({ id }: { id: string }) {
 }
 
 function PaneBody({ p }: { p: Pane | Float }) {
+  const View = VIEWS[p.active as Tab];
   return (
     <div className="view">
-      <Suspense fallback={<div className="empty">Loading…</div>}>{VIEWS[p.active as Tab]?.()}</Suspense>
+      <Suspense fallback={<div className="empty">Loading…</div>}>{View && <View />}</Suspense>
       <DropZones id={p.id} />
     </div>
   );
