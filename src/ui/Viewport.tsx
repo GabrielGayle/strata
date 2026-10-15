@@ -9,6 +9,7 @@ import Scene, { modelBounds } from './Scene';
 import { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { useModel, fmt } from './model';
 import AppearancePanel, { paintClick } from './AppearancePanel';
+import ObjectsPanel from './ObjectsPanel';
 import { SunBar } from './SunStudy';
 
 export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
@@ -85,6 +86,7 @@ export default function Viewport() {
   );
   const bucketed = Object.keys(useStore((s) => s.project.appearance?.assign) ?? {}).length;
   const movedCount = Object.keys(useStore((s) => s.project.moves) ?? {}).length;
+  const objectCount = useStore((s) => s.project.objects?.length ?? 0);
   useEffect(() => {
     if (!ui.moveMode) return;
     const onKey = (e: KeyboardEvent) => {
@@ -125,11 +127,14 @@ export default function Viewport() {
         </button>
       </div>
       <div className="overlay tr col">
-        <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
+        <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false, objectsMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
           Materials{bucketed ? ` (${bucketed})` : ''}
         </button>
-        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
+        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false, objectsMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
           Move plates{movedCount ? ` (${movedCount})` : ''}
+        </button>
+        <button className={`btn sm ${ui.objectsMode ? 'on' : ''}`} onClick={() => setUi({ objectsMode: !ui.objectsMode, paintMode: false, moveMode: false })} title="Place postcards, boxes and other objects; each is cut out of the plates it passes through">
+          Objects{objectCount ? ` (${objectCount})` : ''}
         </button>
         <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
           X-ray concrete
@@ -165,6 +170,7 @@ export default function Viewport() {
       </div>
       {ui.moveMode && !ui.paintMode && <MovePanel />}
       {ui.paintMode && <AppearancePanel />}
+      {ui.objectsMode && <ObjectsPanel />}
       {v.sunOn && <SunBar model={model} />}
       {v.pourView !== 'plain' && model.pour.rows.length > 0 && (
         <div className="overlay br info">

@@ -128,6 +128,8 @@ export interface SliceInput {
   topMask?: Gray | null;
   /** Metal each plate is cut from, by plate key (tuned plates ring by it). */
   materialFor?: (key: string) => string;
+  /** Placed objects (postcards, boxes…) cut out of every plate they pass through, each with its own clearance. */
+  objects?: { mesh: IndexedMesh; clearance: number }[];
 }
 
 const UP: V3 = [0, 1, 0];
@@ -1036,6 +1038,12 @@ export function slice(input: SliceInput): SliceResult {
           info.collisionAt = [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2];
         }
       }
+    }
+
+    // 3b. placed objects: each one's section through the plate, grown by its clearance
+    for (const o of input.objects ?? []) {
+      const cav = insertCavity(o.mesh, def.plane, t, 'larger', o.clearance);
+      if (cav) cuts.push(cav.cavity);
     }
 
     // 4. image-driven front cut-outs

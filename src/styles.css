@@ -2049,3 +2049,32 @@ canvas.thumb {
   height: 44px;
   border: 1px solid var(--line, #ccc);
 }
+
+/* placed objects (postcards, boxes…) */
+.objects .bucket.off {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.objects .ob-edit {
+  flex-wrap: wrap;
+}
+.objects .ob-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  padding: 0 4px;
+  border-left: 1px solid var(--line);
+}
+.objects .ob-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+}
+.objects .ob-num input[type='number'] {
+  width: 54px;
+}
+.objects .ob-edit input:not([type='number']):not([type='checkbox']) {
+  width: 110px;
+}
