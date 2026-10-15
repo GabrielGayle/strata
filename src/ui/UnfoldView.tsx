@@ -61,8 +61,8 @@ export default function UnfoldView() {
           </div>
         </div>
       </div>
-      <div className="list" style={{ borderRight: 0, borderLeft: '1px solid var(--line)' }}>
-        <div className="panel-title">
+      <div className="list sunken-panel" style={{ borderRight: 0, borderLeft: 0 }}>
+        <div className="title-bar panel-title">
           <span>Flat pattern</span>
           <button className="btn sm" onClick={() => download('flat-pattern.dxf', unfoldDxf(all, v), 'application/dxf')}>
             DXF

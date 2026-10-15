@@ -11,15 +11,16 @@ export default function SetupTabs() {
   const closeSetup = useStore((s) => s.closeSetup);
   const newSetup = useStore((s) => s.newSetup);
   return (
-    <nav className="setup-tabs" role="tablist" aria-label="Master setups">
+    <div className="setup-tabs">
+      <menu role="tablist" aria-label="Master setups">
       {setups.map((t) => {
         const on = t.id === active;
         const name = (on ? project : t.project).name || 'Untitled';
         return (
-          <div key={t.id} className={`setup-tab ${on ? 'active' : ''}`}>
-            <button role="tab" aria-selected={on} className="setup-name" onClick={() => switchSetup(t.id)} title={on ? 'Rename it in the box at the top left' : `Switch to ${name}`}>
+          <li key={t.id} role="tab" aria-selected={on} className="setup-tab">
+            <a href={`#${t.id}`} onClick={(e) => { e.preventDefault(); switchSetup(t.id); }} title={on ? 'Rename it in the box at the top left' : `Switch to ${name}`}>
               {name}
-            </button>
+            </a>
             {setups.length > 1 && (
               <button
                 className="setup-x"
@@ -32,9 +33,10 @@ export default function SetupTabs() {
                 ✕
               </button>
             )}
-          </div>
+          </li>
         );
       })}
+      </menu>
       <Menu label="+" className="setup-add">
         {(close) => (
           <>
@@ -59,6 +61,6 @@ export default function SetupTabs() {
           </>
         )}
       </Menu>
-    </nav>
+    </div>
   );
 }

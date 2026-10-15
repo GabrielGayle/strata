@@ -46,8 +46,8 @@ export default function MouldView() {
     <div className="scroll">
       <div className="pad" style={{ display: 'grid', gap: 12 }}>
         <div className="grid2">
-          <div className="box">
-            <div className="box-head">
+          <div className="window box">
+            <div className="title-bar box-head">
               <span>Strata pour plan</span>
               <span className="seg">
                 {(['plain', 'layers', 'eroded'] as const).map((m) => (
@@ -70,8 +70,8 @@ export default function MouldView() {
               </button>
             </div>
           </div>
-          <div className="box">
-            <div className="box-head">
+          <div className="window box">
+            <div className="title-bar box-head">
               <span>Mould notes</span>
               <span className="mono" style={{ fontWeight: 400 }}>
                 {model.moulds.parts.length} ply parts · {model.bom.dowels} dowels · {model.bom.bolts} clamp bolts
@@ -114,8 +114,8 @@ export default function MouldView() {
           const parts = model.moulds.parts.filter((p) => p.body === g.body);
           if (!parts.length) return null;
           return (
-            <div className="box" key={g.body}>
-              <div className="box-head">
+            <div className="window box" key={g.body}>
+              <div className="title-bar box-head">
                 <span>
                   {g.title} · {parts.length} parts
                 </span>

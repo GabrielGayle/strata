@@ -90,14 +90,14 @@ export default function DrawModal({ initial, onApply, onClose }: { initial: Draw
 
   return (
     <div className="pm-back" style={{ zIndex: 95 }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="pm" role="dialog" aria-modal="true" aria-label="Drawing pad">
-        <div className="box-head">
-          <span>Drawing pad</span>
-          <button className="btn sm" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
+      <div className="window pm" role="dialog" aria-modal="true" aria-label="Drawing pad">
+        <div className="title-bar">
+          <div className="title-bar-text">Drawing pad</div>
+          <div className="title-bar-controls">
+            <button aria-label="Close" onClick={onClose}></button>
+          </div>
         </div>
-        <div className="pm-body">
+        <div className="window-body pm-body">
           <div className="pm-left">
             <div className="pm-preview draw-pad">
               <div className="draw-stack" style={{ aspectRatio: `${W} / ${H}` }}>
@@ -130,7 +130,7 @@ export default function DrawModal({ initial, onApply, onClose }: { initial: Draw
           </div>
           <div className="pm-right">
             <div className="pm-group">Brush</div>
-            <div className="pm-row">
+            <div className="field-row pm-row">
               <span>Tone</span>
               <span className="seg pm-seg">
                 {TONES.map((t) => (
@@ -140,18 +140,18 @@ export default function DrawModal({ initial, onApply, onClose }: { initial: Draw
                 ))}
               </span>
             </div>
-            <label className="pm-row">
+            <label className="field-row pm-row">
               <span>Size</span>
               <input type="range" min={0.005} max={0.3} step={0.005} value={size} onChange={(e) => setSize(Number(e.target.value))} aria-label="Brush size" />
               <span className="mono">{(size * 100).toFixed(1)}</span>
             </label>
-            <label className="pm-row">
+            <label className="field-row pm-row">
               <span>Softness</span>
               <input type="range" min={0} max={1} step={0.05} value={soft} onChange={(e) => setSoft(Number(e.target.value))} aria-label="Brush softness" />
               <span className="mono">{soft.toFixed(2)}</span>
             </label>
             <div className="pm-group">Pad</div>
-            <div className="pm-row">
+            <div className="field-row pm-row">
               <span>Frame</span>
               <select value={ASPECTS.find((x) => Math.abs(x.value - spec.aspect) < 1e-3)?.value ?? spec.aspect} onChange={(e) => setSpec({ ...spec, aspect: Number(e.target.value) })} aria-label="Pad proportions">
                 {!ASPECTS.some((x) => Math.abs(x.value - spec.aspect) < 1e-3) && <option value={spec.aspect}>{spec.aspect.toFixed(2)} : 1</option>}
@@ -162,7 +162,7 @@ export default function DrawModal({ initial, onApply, onClose }: { initial: Draw
                 ))}
               </select>
             </div>
-            <label className="pm-row">
+            <label className="field-row pm-row">
               <span>Background</span>
               <input type="range" min={0} max={1} step={0.05} value={spec.background} onChange={(e) => setSpec({ ...spec, background: Number(e.target.value) })} aria-label="Background tone" />
               <span className="mono">{spec.background.toFixed(2)}</span>
@@ -194,7 +194,7 @@ export default function DrawModal({ initial, onApply, onClose }: { initial: Draw
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn primary" onClick={() => onApply(spec)}>
+          <button className="btn default" onClick={() => onApply(spec)}>
             Use drawing
           </button>
         </div>

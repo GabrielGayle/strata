@@ -76,13 +76,14 @@ export default function VideoPicker({ file, onAdd, onClose }: { file: File; onAd
 
   const [a, b] = range;
   return (
-    <div className="video-picker" role="dialog" aria-label="Stills from a video">
-      <div className="vp-head">
-        <strong>Stills from {file.name}</strong>
-        <button className="btn sm" onClick={onClose} aria-label="Close">
-          ×
-        </button>
+    <div className="window video-picker" role="dialog" aria-label="Stills from a video">
+      <div className="title-bar vp-head">
+        <div className="title-bar-text">Stills from {file.name}</div>
+        <div className="title-bar-controls">
+          <button aria-label="Close" onClick={onClose}></button>
+        </div>
       </div>
+      <div className="window-body">
       <video
         ref={ref}
         src={url}
@@ -131,6 +132,7 @@ export default function VideoPicker({ file, onAdd, onClose }: { file: File; onAd
       ) : (
         <p className="note">Opening the video…</p>
       )}
+      </div>
     </div>
   );
 }

@@ -19,8 +19,8 @@
   --svg-fill: #e7e2d8;
   --svg-cut: #141414;
   --svg-etch: #2f5f9e;
-  --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --mono: "Courier New", Courier, monospace;
+  --sans: "Pixelated MS Sans Serif", Arial, sans-serif;
   color-scheme: light;
 }
 
@@ -67,7 +67,6 @@
 
 * {
   box-sizing: border-box;
-  border-radius: 0 !important;
 }
 html,
 body,
@@ -76,17 +75,10 @@ body,
   margin: 0;
 }
 body {
-  background: var(--bg);
-  color: var(--ink);
-  font: 13px/1.35 var(--sans);
-  -webkit-font-smoothing: antialiased;
-}
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  color: inherit;
+  background: #008080;
+  color: #222;
+  font: 12px/1.35 "Pixelated MS Sans Serif", Arial, sans-serif;
+  -webkit-font-smoothing: none;
 }
 .mono,
 input[type='number'],
@@ -98,14 +90,19 @@ input[type='number'],
 /* ---------- layout ---------- */
 .app {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto;
   grid-template-columns: 300px 1fr 300px;
   grid-template-areas:
+    'title title title'
     'top top top'
     'left main right'
     'status status status';
-  height: 100%;
+  height: calc(100% - 8px);
+  margin: 4px;
   gap: 0;
+}
+.app > .title-bar {
+  grid-area: title;
 }
 .topbar {
   grid-area: top;
@@ -156,10 +153,10 @@ input[type='number'],
 @media (max-width: 1000px) {
   .app {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto auto auto;
-    grid-template-areas: 'top' 'main' 'left' 'right' 'status';
+    grid-template-rows: auto auto auto auto auto auto;
+    grid-template-areas: 'title' 'top' 'main' 'left' 'right' 'status';
     height: auto;
-    min-height: 100%;
+    min-height: calc(100% - 8px);
   }
   .left,
   .right {

@@ -46,7 +46,7 @@ export function patternDataUrl(spec: PatternSpec, long = 640): string {
 
 function Num({ label, value, min, max, step = 0.01, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (v: number) => void }) {
   return (
-    <label className="pm-row">
+    <label className="field-row pm-row">
       <span>{label}</span>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={label} />
       <span className="mono">{step >= 1 ? value : value.toFixed(2)}</span>
@@ -56,7 +56,7 @@ function Num({ label, value, min, max, step = 0.01, onChange }: { label: string;
 
 function Choice<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
   return (
-    <div className="pm-row">
+    <div className="field-row pm-row">
       <span>{label}</span>
       <span className="seg pm-seg">
         {options.map((o) => (
@@ -106,36 +106,37 @@ export default function PatternModal({ title, initial, onApply, onClose }: { tit
 
   return (
     <div className="pm-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="pm" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="box-head">
-          <span>{title}</span>
-          <button className="btn sm" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
+      <div className="window pm" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="title-bar">
+          <div className="title-bar-text">{title}</div>
+          <div className="title-bar-controls">
+            <button aria-label="Close" onClick={onClose}></button>
+          </div>
         </div>
-        <div className="pm-body">
+        <div className="window-body pm-body">
           <div className="pm-left">
             <div className="pm-preview">
               <canvas ref={ref} style={{ aspectRatio: `${preview.w} / ${preview.h}` }} />
             </div>
             <div className="note">Dark cuts deepest. Soft edges give domed heights; solid edges give crisp steps.</div>
-            <div className="pm-presets">
+            <ul className="tree-view">
               {PATTERN_PRESETS.map((p) => (
-                <button
-                  key={p.name}
-                  className="btn sm"
-                  onClick={() => {
-                    const next = p.spec();
-                    // keep the chosen frame unless the preset needs its own (e.g. a wide text banner)
-                    setSpec(next.aspect === 1 ? { ...next, aspect: spec.aspect, invert: spec.invert } : next);
-                    setSel(0);
-                  }}
-                >
-                  {p.name}
-                </button>
+                <li key={p.name}>
+                  <button
+                    className="item"
+                    onClick={() => {
+                      const next = p.spec();
+                      // keep the chosen frame unless the preset needs its own (e.g. a wide text banner)
+                      setSpec(next.aspect === 1 ? { ...next, aspect: spec.aspect, invert: spec.invert } : next);
+                      setSel(0);
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                </li>
               ))}
-            </div>
-            <div className="pm-row">
+            </ul>
+            <div className="field-row pm-row">
               <span>Frame</span>
               <select value={aspects.find((a) => Math.abs(a.value - spec.aspect) < 1e-3)?.value ?? 1} onChange={(e) => setSpec({ ...spec, aspect: Number(e.target.value) })} aria-label="Frame proportions">
                 {aspects.map((a) => (
@@ -177,7 +178,7 @@ export default function PatternModal({ title, initial, onApply, onClose }: { tit
               >
                 Remove
               </button>
-              <button className="btn sm primary" onClick={shuffle} title="Random shape, layout and symmetry for this layer">
+              <button className="btn sm default" onClick={shuffle} title="Random shape, layout and symmetry for this layer">
                 Shuffle
               </button>
             </div>
@@ -191,7 +192,7 @@ export default function PatternModal({ title, initial, onApply, onClose }: { tit
               ))}
             </div>
             {s === 'text' && (
-              <label className="pm-row">
+              <label className="field-row pm-row">
                 <span>Text</span>
                 <textarea rows={2} value={layer.text} onChange={(e) => setLayer({ text: e.target.value })} aria-label="Text" style={{ flex: 1, fontFamily: 'var(--mono)', textTransform: 'uppercase' }} />
               </label>
@@ -276,7 +277,7 @@ export default function PatternModal({ title, initial, onApply, onClose }: { tit
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn primary" onClick={() => onApply(spec)}>
+          <button className="btn default" onClick={() => onApply(spec)}>
             Use pattern
           </button>
         </div>

@@ -42,8 +42,11 @@ export function Menu({ label, children, className = 'tb' }: { label: ReactNode; 
         {label} ▾
       </button>
       {open && (
-        <div ref={pop} className="menu-pop" style={{ left: Math.max(4, pos.x), top: pos.y }}>
-          {children(() => setOpen(false))}
+        <div ref={pop} className="menu-pop window" style={{ left: Math.max(4, pos.x), top: pos.y }}>
+          <div className="title-bar">
+            <div className="title-bar-text">{label}</div>
+          </div>
+          <div className="window-body">{children(() => setOpen(false))}</div>
         </div>
       )}
     </div>
@@ -226,11 +229,10 @@ export default function Toolbar() {
 
   return (
     <header className="topbar">
-      <div className="brand">
-        <span className="mark" />
-        STRATA
-      </div>
-      <input className="name-input" value={project.name} onChange={(e) => setName(e.target.value)} aria-label="Project name" />
+      <label className="field-row" title="Project name">
+        <span>Name</span>
+        <input className="name-input" value={project.name} onChange={(e) => setName(e.target.value)} aria-label="Project name" />
+      </label>
       <span
         className={`save-mark ${saveStatus}`}
         role="status"
@@ -253,63 +255,73 @@ export default function Toolbar() {
       <div className="group">
         <Menu label="Presets">
           {(close) => (
-            <>
+            <ul className="tree-view">
               {[
                 { head: 'Start from', list: PRESETS.filter((p) => !p.small) },
                 { head: 'Small (under 10 cm)', list: PRESETS.filter((p) => p.small) },
-              ].map(({ head, list }) => [
-                <div key={head} className="head">
-                  {head}
-                </div>,
-                ...list.map((p) => (
-                  <button
-                    key={p.name}
-                    className="item"
-                    onClick={() => {
-                      loadPreset(p);
-                      close();
-                    }}
-                  >
-                    <span>{p.name}</span>
-                    <small>{p.note}</small>
-                  </button>
-                )),
-              ])}
-              <div className="head">Sound</div>
-              {SOUND_PRESETS.map((p) => (
-                <button
-                  key={p.name}
-                  className="item"
-                  onClick={() => {
-                    const url = p.sound ? soundDataUrl(p.sound.spec) : null;
-                    loadPreset(p, p.sound && url ? { [p.sound.slot]: { name: 'sound.png', dataUrl: url, sound: p.sound.spec } } : {});
-                    close();
-                  }}
-                >
-                  <span>{p.name}</span>
-                  <small>{p.note}</small>
-                </button>
+              ].map(({ head, list }) => (
+                <li key={head}>
+                  <details open>
+                    <summary>{head}</summary>
+                    <ul>
+                      {list.map((p) => (
+                        <li key={p.name}>
+                          <button
+                            onClick={() => {
+                              loadPreset(p);
+                              close();
+                            }}
+                          >
+                            <span>{p.name}</span>
+                            <small>{p.note}</small>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                </li>
               ))}
-            </>
+              <li>
+                <details open>
+                  <summary>Sound</summary>
+                  <ul>
+                    {SOUND_PRESETS.map((p) => (
+                      <li key={p.name}>
+                        <button
+                          onClick={() => {
+                            const url = p.sound ? soundDataUrl(p.sound.spec) : null;
+                            loadPreset(p, p.sound && url ? { [p.sound.slot]: { name: 'sound.png', dataUrl: url, sound: p.sound.spec } } : {});
+                            close();
+                          }}
+                        >
+                          <span>{p.name}</span>
+                          <small>{p.note}</small>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </li>
+            </ul>
           )}
         </Menu>
         <Menu label={`Variants${project.variants.length ? ` (${project.variants.length})` : ''}`}>
           {(close) => (
-            <>
-              <button
-                className="item"
-                onClick={() => {
-                  const name = window.prompt('Variant name', `${project.name} ${project.variants.length + 1}`);
-                  if (name) saveVariant(name);
-                  close();
-                }}
-              >
-                <span>+ Save current as variant</span>
-              </button>
-              {project.variants.length > 0 && <div className="head">Saved</div>}
+            <ul className="tree-view">
+              <li>
+                <button
+                  onClick={() => {
+                    const name = window.prompt('Variant name', `${project.name} ${project.variants.length + 1}`);
+                    if (name) saveVariant(name);
+                    close();
+                  }}
+                >
+                  + Save current as variant
+                </button>
+              </li>
               {project.variants.map((v) => (
-                <div key={v.id} className="item" style={{ cursor: 'default' }}>
-                  <span>{v.name}</span>
+                <li key={v.id}>
+                  {v.name}
                   <span className="seg">
                     <button className="btn sm" onClick={() => (loadVariant(v.id), close())}>
                       Load
@@ -321,9 +333,9 @@ export default function Toolbar() {
                       ✕
                     </button>
                   </span>
-                </div>
+                </li>
               ))}
-            </>
+            </ul>
           )}
         </Menu>
         <Menu label="Shuffle">
@@ -368,7 +380,7 @@ export default function Toolbar() {
         <AppearanceMenu />
       </div>
       <div className="spacer" />
-      <button className="tb primary" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">
+      <button className="tb default" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">
         Export ZIP
       </button>
     </header>

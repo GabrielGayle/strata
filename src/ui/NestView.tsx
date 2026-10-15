@@ -70,7 +70,7 @@ export default function NestView() {
   const items = which === 'metal' ? metalItems : plyItems;
   return (
     <div className="scroll">
-      <div className="panel-title">
+      <div className="title-bar panel-title">
         <span className="seg">
           <button className={`btn sm ${which === 'metal' ? 'on' : ''}`} onClick={() => setWhich('metal')}>
             Laser sheets ({model.nested.sheets.length})
@@ -110,8 +110,8 @@ export default function NestView() {
       {nest.unplaced.length > 0 && <div className="note err">Too big for the sheet: {nest.unplaced.join(', ')}</div>}
       <div className="pad" style={{ display: 'grid', gap: 12 }}>
         {nest.sheets.map((s, i) => (
-          <div className="box" key={i}>
-            <div className="box-head">
+          <div className="window box" key={i}>
+            <div className="title-bar box-head">
               <span>
                 Sheet {i + 1}{s.material ? ` · ${MATERIAL_NAME[s.material] ?? s.material}` : ''} · {s.placements.length} parts · {fmt((s.used / (nest.sheetW * nest.sheetH)) * 100, 0)}%
               </span>

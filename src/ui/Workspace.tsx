@@ -112,14 +112,13 @@ function TabStrip({ p }: { p: Pane | Float }) {
   const setUi = useStore((s) => s.setUi);
   const drag = useContext(DragCtx);
   return (
-    <nav className="tabs ws-tabs" role="tablist">
+    <menu className="ws-tabs" role="tablist">
       {p.tabs.map((t) => (
-        <button
+        <li
           key={t}
           role="tab"
           draggable
           aria-selected={p.active === t}
-          className={`tab ${p.active === t ? 'active' : ''}`}
           onClick={() => setUi({ tab: t as Tab })}
           onPointerEnter={() => preloadView(t)}
           onFocus={() => preloadView(t)}
@@ -131,10 +130,15 @@ function TabStrip({ p }: { p: Pane | Float }) {
           }}
           title={`${label(t)} (${keyOf(t)}) · drag to another pane, or onto an edge to split`}
         >
-          {label(t)}
-        </button>
+          <a
+            href={`#${t}`}
+            onClick={(e) => e.preventDefault()}
+          >
+            {label(t)}
+          </a>
+        </li>
       ))}
-    </nav>
+    </menu>
   );
 }
 
@@ -246,15 +250,16 @@ function FloatPane({ f }: { f: Float }) {
     window.addEventListener('pointerup', up);
   };
   return (
-    <section className="ws-pane ws-float" style={{ left: x, top: y, width: w, height: h }} onPointerDownCapture={() => raise(f.id)}>
-      <header className="ws-head ws-grab" onPointerDown={(e) => dragFrom(e, 'move')}>
-        <TabStrip p={f} />
-        <span className="ws-tools">
-          <button className="ibtn" onClick={() => dock(f.id)} title="Dock: put these tabs back in the main pane" aria-label="Dock">
-            ⇲
-          </button>
-        </span>
+    <section className="ws-pane ws-float window" style={{ left: x, top: y, width: w, height: h }} onPointerDownCapture={() => raise(f.id)}>
+      <header className="title-bar ws-grab" onPointerDown={(e) => dragFrom(e, 'move')}>
+        <div className="title-bar-text">{label(f.active as Tab)}</div>
+        <div className="title-bar-controls">
+          <button aria-label="Restore" onClick={() => dock(f.id)} title="Dock: put these tabs back in the main pane"></button>
+        </div>
       </header>
+      <div className="ws-head">
+        <TabStrip p={f} />
+      </div>
       <PaneBody p={f} />
       <div className="ws-size" onPointerDown={(e) => dragFrom(e, 'size')} title="Drag to resize" />
     </section>

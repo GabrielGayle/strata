@@ -274,7 +274,7 @@ export default function ShadowView() {
   const allSide = v.shadowExec === 'side' && frames.length > 1;
   return (
     <div className="scroll shadow-view">
-      <div className="panel-title">
+      <div className="title-bar panel-title">
         <span>Shadow pictures</span>
         <span className="mono" style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
           {rep
