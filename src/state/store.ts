@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { isLiteral } from '../core/expr';
 import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
-import { applyPreset, deserialize, newProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
+import { applyPreset, applyVariant, deserialize, newProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
 import type { Composition, Surface } from '../core/compose';
 import type { PourLayer } from '../core/mould';
 import { isIdentity, type PartMove } from '../core/moves';
@@ -9,6 +9,7 @@ import { mulberry32 } from '../core/rng';
 import type { Appearance } from '../core/appearance';
 import type { DepthSettings } from '../core/depth';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
+import { createSaver, defaultKV, readWithLegacy, type KV, type SaveStatus } from './persist';
 
 export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'graph' | 'compare';
 export type Snap = 'iso' | 'front' | 'side' | 'top';
@@ -57,6 +58,8 @@ interface Store {
   closeSetup: (id: string) => void;
   past: Project[];
   future: Project[];
+  /** Whether the browser autosave has caught up with the latest change. */
+  saveStatus: SaveStatus;
   ui: UiState;
   setParam: (id: string, value: RawValue) => void;
   setParams: (patch: Record<string, RawValue>, label?: string) => void;
@@ -92,20 +95,18 @@ const STORAGE_KEY = 'strata.project.v1';
 const UI_KEY = 'strata.ui.v1';
 const SETUPS_KEY = 'strata.setups.v1';
 
-function loadInitial(): Project {
+function parseProject(s: string | undefined): Project | null {
+  if (!s) return null;
   try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    if (s) return deserialize(s);
+    return deserialize(s);
   } catch {
-    /* storage unavailable or corrupt: start fresh */
+    return null; // corrupt: start fresh
   }
-  return newProject();
 }
 
 /** Tabs from last time. The active tab's project is the autosaved one, so it isn't stored twice. */
-function loadSetups(active: Project): { setups: SetupTab[]; activeSetup: string } {
+function parseSetups(s: string | undefined, active: Project): { setups: SetupTab[]; activeSetup: string } {
   try {
-    const s = localStorage.getItem(SETUPS_KEY);
     if (s) {
       const raw = JSON.parse(s);
       const list: SetupTab[] = [];
@@ -151,7 +152,7 @@ export const useStore = create<Store>((set, get) => {
     lastTime = now;
     set({ project: next, past: merge ? past : [...past.slice(-199), project], future: [] });
   };
-  const initial = loadInitial();
+  const initial = newProject();
   /** Park the active tab (project and history) and bring another one in. */
   const activate = (id: string, setups: SetupTab[]) => {
     const { project, past, future, activeSetup } = get();
@@ -164,9 +165,11 @@ export const useStore = create<Store>((set, get) => {
   };
   return {
     project: initial,
-    ...loadSetups(initial),
+    setups: [{ id: 's1', project: initial }],
+    activeSetup: 's1',
     past: [],
     future: [],
+    saveStatus: 'saved',
     newSetup: (mode) => {
       const { project, setups } = get();
       const id = `s${Date.now().toString(36)}`;
@@ -359,6 +362,8 @@ export const useStore = create<Store>((set, get) => {
         pour: p.pour.map((x) => ({ ...x })),
         moves: p.moves,
         appearance: p.appearance,
+        images: { ...p.images },
+        composition: p.composition,
         createdAt: new Date().toISOString(),
       };
       commit({ ...p, variants: [...p.variants, v] }, `variant:${v.id}`);
@@ -368,7 +373,7 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       const v = p.variants.find((x) => x.id === id);
       if (!v) return;
-      commit({ ...p, params: { ...p.params, ...v.params }, locks: { ...v.locks }, pour: v.pour.map((x) => ({ ...x })), moves: v.moves, appearance: v.appearance ?? p.appearance }, `loadvar:${performance.now()}`);
+      commit(applyVariant(p, v), `loadvar:${performance.now()}`);
       get().toast(`Loaded variant "${v.name}"`);
     },
     deleteVariant: (id) => {
@@ -389,26 +394,55 @@ export const useStore = create<Store>((set, get) => {
   };
 });
 
-// autosave (per-browser convenience; the JSON file is the real save)
+// Autosave (per-browser convenience; the JSON file is the real save). Nothing
+// is written until hydrate() has read the last session back, so a slow read
+// can't overwrite it with the blank starting project.
+let kv: KV = defaultKV();
+let hydrated = false;
+let warned = false;
+const saver = createSaver(
+  { get: (k) => kv.get(k), set: (k, v) => kv.set(k, v) },
+  (status, err) => {
+    useStore.setState({ saveStatus: status });
+    if (status === 'failed' && !warned) {
+      warned = true;
+      console.warn('Strata autosave failed', err);
+      useStore.getState().toast('This browser could not keep the latest changes. Save the project file (Save) to be safe.');
+    }
+    if (status === 'saved') warned = false;
+  },
+);
+
+const setupsJson = (s: Store) => JSON.stringify({ active: s.activeSetup, list: s.setups.map((t) => (t.id === s.activeSetup ? { id: t.id } : t)) });
+
+/** Read the last session back from browser storage. Call once before the app renders. */
+export async function hydrate(store: KV = kv): Promise<void> {
+  kv = store;
+  const legacy = typeof localStorage !== 'undefined' ? localStorage : undefined;
+  const project = parseProject(await readWithLegacy(kv, STORAGE_KEY, legacy));
+  if (project) {
+    const { setups, activeSetup } = parseSetups(await readWithLegacy(kv, SETUPS_KEY, legacy), project);
+    useStore.setState({ project, setups, activeSetup, past: [], future: [] });
+  }
+  hydrated = true;
+}
+
+/** Wait for every queued autosave write (tests, and before a reload). */
+export const flushSaves = () => saver.flush();
+
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((s, prev) => {
-  if (s.project !== prev.project) {
+  if (hydrated && s.project !== prev.project) {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(s.project));
-      } catch {
-        /* quota or disabled storage */
-      }
-    }, 500);
+    if (s.saveStatus === 'saved') useStore.setState({ saveStatus: 'saving' });
+    saveTimer = setTimeout(() => void saver.save(STORAGE_KEY, JSON.stringify(useStore.getState().project)), 500);
   }
-  if (s.setups !== prev.setups || s.activeSetup !== prev.activeSetup) {
-    try {
-      localStorage.setItem(SETUPS_KEY, JSON.stringify({ active: s.activeSetup, list: s.setups.map((t) => (t.id === s.activeSetup ? { id: t.id } : t)) }));
-      // the active tab's project must match straight away, not after the autosave delay
-      if (s.activeSetup !== prev.activeSetup) localStorage.setItem(STORAGE_KEY, JSON.stringify(s.project));
-    } catch {
-      s.toast('This browser is out of room to keep every setup tab; save the ones you need as project files.');
+  if (hydrated && (s.setups !== prev.setups || s.activeSetup !== prev.activeSetup)) {
+    void saver.save(SETUPS_KEY, setupsJson(s));
+    // the active tab's project must match straight away, not after the autosave delay
+    if (s.activeSetup !== prev.activeSetup) {
+      clearTimeout(saveTimer);
+      void saver.save(STORAGE_KEY, JSON.stringify(s.project));
     }
   }
   if (s.ui.tab !== prev.ui.tab || s.ui.collapsed !== prev.ui.collapsed || s.ui.ortho !== prev.ui.ortho) {

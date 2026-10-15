@@ -197,6 +197,7 @@ export default function Toolbar() {
   const project = useStore((s) => s.project);
   const past = useStore((s) => s.past.length);
   const future = useStore((s) => s.future.length);
+  const saveStatus = useStore((s) => s.saveStatus);
   const { undo, redo, setName, randomise, loadPreset, saveVariant, loadVariant, deleteVariant, replaceProject, toast, setUi } = useStore.getState();
   const fullModel = useFullModel();
 
@@ -229,6 +230,17 @@ export default function Toolbar() {
         STRATA
       </div>
       <input className="name-input" value={project.name} onChange={(e) => setName(e.target.value)} aria-label="Project name" />
+      <span
+        className={`save-mark ${saveStatus}`}
+        role="status"
+        title={
+          saveStatus === 'failed'
+            ? 'This browser could not keep the latest changes (its storage may be full). Use Save to keep a project file.'
+            : 'Kept in this browser as you work. Use Save for a project file you can move or back up.'
+        }
+      >
+        {saveStatus === 'saved' ? 'Saved' : saveStatus === 'saving' ? 'Saving…' : 'Not saved'}
+      </span>
       <div className="group">
         <button className="tb" onClick={undo} disabled={!past} title="Undo (Ctrl+Z)">
           Undo
