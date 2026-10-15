@@ -7,6 +7,7 @@ import type { PourLayer } from '../core/mould';
 import { isIdentity, type PartMove } from '../core/moves';
 import { mulberry32 } from '../core/rng';
 import type { Appearance } from '../core/appearance';
+import type { DepthSettings } from '../core/depth';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 
 export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'graph' | 'compare';
@@ -68,6 +69,8 @@ interface Store {
   setAppearance: (a: Appearance | undefined, label?: string) => void;
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
+  /** Change how a depth image is shaped; slider drags merge into one undo step. `dataUrl` refreshes its picture. */
+  setDepthSettings: (slot: 'top' | 'front' | 'side', patch: Partial<DepthSettings>, dataUrl?: string) => void;
   replaceProject: (p: Project) => void;
   /** Store the composer's blocks and the rendered surface images in one undo step. */
   applyComposition: (comp: Composition, images: Partial<Record<Surface, ImageAsset | null>>, patch: Record<string, RawValue>) => void;
@@ -246,6 +249,13 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       if (kind === 'image') commit({ ...p, images: { ...p.images, [slot]: asset ?? undefined } }, `img:${slot}:${performance.now()}`);
       else commit({ ...p, meshes: { ...p.meshes, [slot]: asset ?? undefined } }, `mesh:${slot}:${performance.now()}`);
+    },
+    setDepthSettings: (slot, patch, dataUrl) => {
+      const p = get().project;
+      const a = p.images[slot];
+      if (!a?.depth) return;
+      const depth = Object.keys(patch).length ? { ...a.depth, settings: { ...a.depth.settings, ...patch } } : a.depth;
+      commit({ ...p, images: { ...p.images, [slot]: { ...a, depth, ...(dataUrl ? { dataUrl } : {}) } } }, `depth:${slot}`);
     },
     replaceProject: (np) => commit(np, `replace:${performance.now()}`),
     applyComposition: (comp, imgs, patch) => {

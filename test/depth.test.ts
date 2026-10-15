@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { depthFromPhoto, parseDepthResponse } from '../src/core/depth';
+import { defaultDepthSettings, depthFromPhoto, depthToGray, parseDepthResponse, type DepthData } from '../src/core/depth';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
 
@@ -22,7 +22,7 @@ describe('depth from photo', () => {
     expect(r.png).toBe(PNG);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://x.modal.run/strata');
-    expect(JSON.parse(String(init.body))).toMatchObject({ image: 'data:image/jpeg;base64,AAAA', mode: 'depth' });
+    expect(JSON.parse(String(init.body))).toMatchObject({ image: 'data:image/jpeg;base64,AAAA', mode: 'depth', return_depth: true });
   });
 
   it('turns an HTTP error into a readable message', async () => {
@@ -32,5 +32,60 @@ describe('depth from photo', () => {
 
   it('refuses to run without an endpoint', async () => {
     await expect(depthFromPhoto('x', { url: '' })).rejects.toThrow('not configured');
+  });
+});
+
+// 4×1 depth map: 1 m, 2 m, 4 m, no depth; service range 1..5 m
+function u16(metres: (number | null)[], lo: number, hi: number): string {
+  const b = new Uint8Array(metres.length * 2);
+  metres.forEach((m, i) => {
+    const q = m === null ? 0 : 1 + Math.round(((m - lo) / (hi - lo)) * 65534);
+    b[i * 2] = q & 255;
+    b[i * 2 + 1] = q >> 8;
+  });
+  return btoa(String.fromCharCode(...b));
+}
+
+const RAW = { w: 4, h: 1, minM: 1, maxM: 5, nearM: 1, farM: 4, data: u16([1, 2, 4, null], 1, 5) };
+const map = (patch: Partial<DepthData['settings']> = {}): DepthData => ({ ...RAW, settings: { ...defaultDepthSettings(RAW), ...patch } });
+const near = (g: { data: Float32Array }) => Array.from(g.data, (v) => +v.toFixed(3));
+
+describe('depth shaping', () => {
+  it('reads the metric depth from the service reply', () => {
+    const r = parseDepthResponse({ png: PNG, depth: { w: 4, h: 1, min_m: 1, max_m: 5, near_m: 1, far_m: 4, data: RAW.data, mask: null } });
+    expect(r.depth).toMatchObject({ w: 4, h: 1, minM: 1, maxM: 5, nearM: 1, farM: 4 });
+    expect(r.depth?.mask).toBeUndefined();
+    expect(parseDepthResponse({ png: PNG }).depth).toBeUndefined();
+  });
+
+  it('maps near to dark and far / missing depth to white, evenly in 1/distance', () => {
+    // perspective: 1/1=1 → 1, 1/2 → (0.5-0.25)/(0.75) = 1/3, 1/4 → 0
+    expect(near(depthToGray(map()))).toEqual([0, 0.667, 1, 1]);
+  });
+
+  it('linear spacing is even in metres', () => {
+    expect(near(depthToGray(map({ spacing: 'linear' })))).toEqual([0, 0.333, 1, 1]);
+  });
+
+  it('far cuts the background and near clamps to full height', () => {
+    expect(near(depthToGray(map({ near: 2, far: 3 })))).toEqual([0, 0, 1, 1]);
+  });
+
+  it('curve and invert shape the height', () => {
+    expect(near(depthToGray(map({ spacing: 'linear', curve: 2 })))).toEqual([0, 0.556, 1, 1]);
+    expect(near(depthToGray(map({ invert: true })))).toEqual([1, 0.333, 0, 0]);
+  });
+
+  it('applies the subject matte unless turned off', () => {
+    const mask = btoa(String.fromCharCode(255, 0, 255, 255));
+    expect(near(depthToGray({ ...map(), mask }))).toEqual([0, 1, 1, 1]);
+    expect(near(depthToGray({ ...map({ matte: false }), mask }))).toEqual([0, 0.667, 1, 1]);
+  });
+
+  it('resolution caps the grid size', () => {
+    const big = { ...RAW, w: 40, h: 20, data: u16(Array.from({ length: 800 }, (_, i) => 1 + (i % 40) / 10), 1, 5) };
+    const g = depthToGray({ ...big, settings: { ...defaultDepthSettings(big), resolution: 16 } });
+    expect([g.w, g.h]).toEqual([16, 8]);
+    expect(g.data.every((v) => v >= 0 && v <= 1)).toBe(true);
   });
 });

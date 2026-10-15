@@ -6,12 +6,13 @@ import type { Snap } from '../state/store';
 import { sampleCliff } from './sample';
 import PatternModal, { patternDataUrl } from './PatternModal';
 import { PATTERN_PRESETS, type PatternSpec } from '../core/pattern';
-import { readImage, topAspectGuess } from './surfaces';
+import { grayDataUrl, readImage, topAspectGuess } from './surfaces';
 import ComposerModal, { seedComposition } from './ComposerModal';
 import SoundModal from './SoundModal';
 import { DEFAULT_SOUND, type SoundSpec } from '../core/sound';
 import type { Composition, Surface } from '../core/compose';
-import { DEPTH_URL, depthFromPhoto, invertDataUrl } from '../core/depth';
+import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, invertDataUrl } from '../core/depth';
+import DepthControls from './DepthControls';
 
 function GrayCanvas({ g }: { g: Gray | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -63,10 +64,16 @@ export default function ImageView() {
     setDepthBusy(slot);
     setDepthError(null);
     try {
-      const { png } = await depthFromPhoto(photo.dataUrl);
-      // side profile reads bright as high, the other slots read dark as deep / proud
-      const dataUrl = slot === 'side' ? await invertDataUrl(png) : png;
-      setAsset('image', slot, { name: `depth · ${photo.name}`, dataUrl });
+      const { png, depth } = await depthFromPhoto(photo.dataUrl);
+      const name = `depth · ${photo.name}`;
+      if (depth) {
+        // keep the real depth so near / far / curve can be changed here; side profile reads bright as high
+        const d = { ...depth, settings: defaultDepthSettings(depth, slot === 'side') };
+        setAsset('image', slot, { name, dataUrl: grayDataUrl(depthToGray(d)), depth: d });
+      } else {
+        // older service: only the finished grey picture
+        setAsset('image', slot, { name, dataUrl: slot === 'side' ? await invertDataUrl(png) : png });
+      }
       // near parts of the photo stand proud on the top surface rather than sinking
       open(slot === 'top' ? { ...enable, imgTopMode: 'raise' } : enable);
     } catch (e) {
@@ -150,6 +157,7 @@ export default function ImageView() {
                     </button>
                   </span>
                 </div>
+                {asset?.depth && sourceOf(s.slot) === 'image' && <DepthControls slot={s.slot} depth={asset.depth} />}
                 {depthError?.slot === s.slot && <div className="note" style={{ color: 'var(--err)' }}>Depth from photo failed: {depthError.msg}</div>}
                 <div className="btnrow">
                   {sourceOf(s.slot) === 'compose' ? (

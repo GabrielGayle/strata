@@ -6,6 +6,7 @@ import type { Composition } from './compose';
 import { cleanMoves, type PartMoves } from './moves';
 import type { SoundSpec } from './sound';
 import { cleanAppearance, type Appearance } from './appearance';
+import type { DepthData } from './depth';
 
 export interface ImageAsset {
   name: string;
@@ -16,6 +17,8 @@ export interface ImageAsset {
   composed?: boolean;
   /** Set when the image is drawn from a sound, so it can be reopened and edited. */
   sound?: SoundSpec;
+  /** Set when the image came from "Depth from photo": the metric depth, and how it is turned into grey. */
+  depth?: DepthData;
 }
 
 export interface MeshAsset {
