@@ -57,6 +57,8 @@ export function useAssets(project: Project): Assets {
   const sideKey = side?.depth ?? side?.dataUrl;
   const frontKey = front?.depth ?? front?.dataUrl;
   const topKey = top?.depth ?? top?.dataUrl;
+  const frames = project.shadow?.frames;
+  const framesKey = (frames ?? []).map((f) => f.dataUrl.length + ':' + f.dataUrl.slice(-48)).join('|');
   const insData = project.meshes.ins;
   const srcData = project.meshes.src;
   useEffect(() => {
@@ -96,16 +98,20 @@ export function useAssets(project: Project): Assets {
         }
         return meshCache.get(key)!;
       };
-      const next: Assets = { sideImg: await img(side), frontImg: await img(front), topImg: await img(top), insMesh: mesh(insData), srcMesh: mesh(srcData) };
+      const shadowFrames = frames?.length ? await Promise.all(frames.map((f) => img({ name: f.name, dataUrl: f.dataUrl }))) : undefined;
+      const next: Assets = { sideImg: await img(side), frontImg: await img(front), topImg: await img(top), insMesh: mesh(insData), srcMesh: mesh(srcData), shadowFrames };
+      const sameFrames = (a?: (Gray | null)[], b?: (Gray | null)[]) => a === b || (!!a && !!b && a.length === b.length && a.every((g, i) => g === b[i]));
       if (alive)
         setAssets((prev) =>
-          prev.sideImg === next.sideImg && prev.frontImg === next.frontImg && prev.topImg === next.topImg && prev.insMesh === next.insMesh && prev.srcMesh === next.srcMesh ? prev : next,
+          prev.sideImg === next.sideImg && prev.frontImg === next.frontImg && prev.topImg === next.topImg && prev.insMesh === next.insMesh && prev.srcMesh === next.srcMesh && sameFrames(prev.shadowFrames, next.shadowFrames)
+            ? prev
+            : next,
         );
     })();
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sideKey, frontKey, topKey, insData, srcData]);
+  }, [sideKey, frontKey, topKey, insData, srcData, framesKey]);
   return assets;
 }

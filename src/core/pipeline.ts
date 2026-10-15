@@ -15,6 +15,7 @@ import { buildMoulds, pourPlan, type MouldResult, type PourPlanRow } from './mou
 import { unfold, type UnfoldResult } from './unfold';
 import { buildBom, type Bom } from './bom';
 import { share } from './memo';
+import { carveShadow, type ShadowReport } from './shadow';
 import type { Project } from './project';
 
 export interface Assets {
@@ -23,6 +24,8 @@ export interface Assets {
   topImg?: Gray | null;
   insMesh: THREE.BufferGeometry | null;
   srcMesh: THREE.BufferGeometry | null;
+  /** Shadow pictures, decoded, in the order of project.shadow.frames. */
+  shadowFrames?: (Gray | null)[];
 }
 
 export interface FormBuild {
@@ -49,6 +52,8 @@ export interface Model {
   topImg: Gray | null;
   hf: HeightField | null;
   sliced: SliceResult;
+  /** Shadow carving: the wall, carved plate grids and how well each frame comes out (null when off). */
+  shadow: ShadowReport | null;
   issues: Issue[];
   nested: NestResult;
   moulds: MouldResult;
@@ -64,7 +69,7 @@ export interface Model {
 
 const formKeys = (p: string) => ['Shape', 'X', 'Y', 'Z', 'Rot', 'Length', 'Width', 'Height', 'Taper', 'Sweep', 'Camber', 'Bend', 'Twist', 'Scale'].map((k) => p + k);
 const NON_SLICE = new Set([
-  ...PARAMS.filter((p) => p.group === 'Mould' || p.group === 'Unfold' || p.group === 'Sun').map((p) => p.id),
+  ...PARAMS.filter((p) => p.group === 'Mould' || p.group === 'Unfold' || p.group === 'Sun' || p.group === 'Shadow').map((p) => p.id),
   'kerf', 'arcTolerance', 'sheetW', 'sheetH', 'partSpacing', 'dxfMode', 'minPartSize',
   'insTint', 'insMaterial', 'concreteTint', 'pourView', 'erodeAmount', 'slotGap',
 ]);
@@ -74,6 +79,7 @@ const IMG_KEYS = ['imgContrast', 'imgSmooth', 'imgInvert', 'imgRotate'];
 const BASE_KEYS = ['baseOn', 'baseLength', 'baseWidth', 'baseHeight', 'baseCornerChamfer', 'baseEdgeChamfer'];
 const CHECK_KEYS = ['minFeature', 'kerf', 'minPartSize', 'sheetW', 'sheetH', 'partSpacing', 'pitch', 'thickness', 'radialHub', 'radialCount', 'sliceMode', 'embedMode', ...BASE_KEYS];
 const MOULD_KEYS = [...PARAMS.filter((p) => p.group === 'Mould').map((p) => p.id), ...BASE_KEYS, 'embedDepth', 'thickness', 'insMaterial', 'insShape', 'clearance', 'sliceMode'];
+const SHADOW_KEYS = PARAMS.filter((p) => p.group === 'Shadow' || p.group === 'Sun').map((p) => p.id);
 const UNFOLD_KEYS = PARAMS.filter((p) => p.group === 'Unfold').map((p) => p.id);
 
 type Cache = Map<string, { deps: unknown[]; value: unknown; ms: number }>;
@@ -191,10 +197,18 @@ export function createFrontPipeline() {
     const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : ''], () =>
       share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg, topMask, moves: project.moves, materialFor })),
     );
+    const carved = stage('Shadow carve', [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow], () => {
+      if (!v.shadowOn || !v.sunOn || v.sliceMode !== 'parallel') return null;
+      const frames = (project.shadow?.frames ?? []).flatMap((f, i) => {
+        const gray = assets.shadowFrames?.[i];
+        return gray ? [{ gray, time: f.time, hold: f.hold }] : [];
+      });
+      return frames.length ? carveShadow(v, sliced, frames) : null;
+    });
     const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
     const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
     const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced, unfolded, pour, stages, totalMs: performance.now() - t0 };
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: carved?.sliced ?? sliced, shadow: carved?.report ?? null, unfolded, pour, stages, totalMs: performance.now() - t0 };
   };
 }
 

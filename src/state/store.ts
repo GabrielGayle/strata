@@ -9,10 +9,11 @@ import { mulberry32 } from '../core/rng';
 import { keepPlatesInPlace } from '../core/remap';
 import type { Appearance } from '../core/appearance';
 import type { DepthSettings } from '../core/depth';
+import type { ShadowSpec } from '../core/shadow';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { createSaver, defaultKV, readWithLegacy, type KV, type SaveStatus } from './persist';
 
-export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'graph' | 'compare';
+export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'shadow' | 'graph' | 'compare';
 export type Snap = 'iso' | 'front' | 'side' | 'top';
 
 export interface UiState {
@@ -69,6 +70,8 @@ interface Store {
   setParams: (patch: Record<string, RawValue>, label?: string) => void;
   toggleLock: (id: string) => void;
   setPour: (pour: PourLayer[]) => void;
+  /** Shadow pictures and their times; `key` merges rapid edits (a time being typed) into one undo step. */
+  setShadow: (shadow: ShadowSpec | undefined, key?: string) => void;
   /** Place one plate by hand (null puts it back where it was designed). */
   movePart: (key: string, move: PartMove | null) => void;
   resetMoves: () => void;
@@ -242,6 +245,7 @@ export const useStore = create<Store>((set, get) => {
       commit({ ...p, locks: { ...p.locks, [id]: !p.locks[id] } }, `lock:${id}:${performance.now()}`);
     },
     setPour: (pour) => commit({ ...get().project, pour }, 'pour'),
+    setShadow: (shadow, key = 'shadow') => commit({ ...get().project, shadow: shadow?.frames.length ? shadow : undefined }, key),
     movePart: (key, move) => {
       const p = get().project;
       const moves = { ...p.moves };

@@ -1830,3 +1830,124 @@ canvas.thumb {
   font-size: 10px;
   opacity: 0.8;
 }
+
+/* shadow kitchen */
+.shadow-view .shadow-needs {
+  margin: 8px 12px;
+}
+.shadow-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) 1fr;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+@media (max-width: 900px) {
+  .shadow-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.shadow-frames .sf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+}
+.shadow-frames .sf-actions {
+  display: flex;
+  gap: 4px;
+}
+.sf-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  margin-bottom: 6px;
+}
+.sf-row.now {
+  border-color: var(--accent);
+}
+.sf-row.inactive {
+  opacity: 0.55;
+}
+.sf-thumb {
+  width: 64px;
+  height: 48px;
+  object-fit: contain;
+  background: #000;
+  flex: none;
+}
+.sf-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sf-name {
+  width: 100%;
+  font: inherit;
+  font-weight: 600;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+}
+.sf-times {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.sf-times input {
+  font: inherit;
+  font-family: var(--mono);
+  width: auto;
+  max-width: 92px;
+}
+.sf-times input[type='number'] {
+  width: 48px;
+}
+.sf-score {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.sf-score .ok {
+  color: var(--ok, #2e7d32);
+}
+.sf-score .warn {
+  color: var(--warn, #b7791f);
+}
+.sf-score .err {
+  color: var(--err, #c0281f);
+}
+.sf-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  width: 64px;
+  justify-content: flex-end;
+}
+.shadow-preview .sp-wall {
+  position: relative;
+  min-height: 260px;
+  padding-bottom: 72px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.shadow-wall {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  image-rendering: pixelated;
+  display: block;
+}
+.shadow-preview .sunbar {
+  width: min(520px, calc(100% - 16px));
+}

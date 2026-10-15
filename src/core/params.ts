@@ -44,6 +44,7 @@ export const GROUPS = [
   'Tuning',
   'Concrete',
   'Sun',
+  'Shadow',
   'Mould',
   'Unfold',
   'Fabrication',
@@ -418,13 +419,29 @@ export const PARAMS: ParamDef[] = [
 
   // Sun study: where the piece stands, for real sunlight and shadows in the 3D view
   { id: 'sunOn', label: 'Sun study', group: 'Sun', kind: 'toggle', def: false, help: 'Light the 3D view with the real sun for this place and date. Scrub the time of day at the bottom of the 3D view.' },
-  num('sunLat', 'Latitude', 'Sun', 51.5, -89, 89, { unit: '°N', step: 0.1, noScale: true, show: (v) => v.sunOn, help: 'Degrees north; negative for the southern hemisphere. London 51.5, Edinburgh 56.0' }),
-  num('sunLon', 'Longitude', 'Sun', -0.1, -180, 180, { unit: '°E', step: 0.1, noScale: true, show: (v) => v.sunOn, help: 'Degrees east; negative for west. Only shifts the clock times' }),
-  num('sunUtc', 'Clock offset from UTC', 'Sun', 0, -12, 14, { unit: 'h', step: 0.5, noScale: true, show: (v) => v.sunOn, help: 'UK: 0 in winter (GMT), 1 in summer (BST)' }),
-  num('sunFacing', 'Front faces', 'Sun', 180, 0, 360, { unit: '°', step: 1, noScale: true, show: (v) => v.sunOn, help: 'Compass bearing the front of the piece looks out to (the end the Front view looks at): 0 north, 90 east, 180 south, 270 west' }),
-  choice('sunMonth', 'Month', 'Sun', '6', ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((m, i) => ({ value: String(i + 1), label: m })), { show: (v) => v.sunOn }),
-  num('sunDay', 'Day', 'Sun', 21, 1, 31, { unit: '', int: true, noScale: true, show: (v) => v.sunOn }),
-  { id: 'sunPath', label: 'Show sun path', group: 'Sun', kind: 'toggle', def: true, show: (v) => v.sunOn, help: "Today's path across the sky, with midsummer and midwinter for reference, and a compass on the ground" },
+  num('sunLat', 'Latitude', 'Sun', 51.5, -89, 89, { unit: '°N', step: 0.1, noScale: true, help: 'Degrees north; negative for the southern hemisphere. London 51.5, Edinburgh 56.0' }),
+  num('sunLon', 'Longitude', 'Sun', -0.1, -180, 180, { unit: '°E', step: 0.1, noScale: true, help: 'Degrees east; negative for west. Only shifts the clock times' }),
+  num('sunUtc', 'Clock offset from UTC', 'Sun', 0, -12, 14, { unit: 'h', step: 0.5, noScale: true, help: 'UK: 0 in winter (GMT), 1 in summer (BST)' }),
+  num('sunFacing', 'Front faces', 'Sun', 180, 0, 360, { unit: '°', step: 1, noScale: true, help: 'Compass bearing the front of the piece looks out to (the end the Front view looks at): 0 north, 90 east, 180 south, 270 west' }),
+  choice('sunMonth', 'Month', 'Sun', '6', ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((m, i) => ({ value: String(i + 1), label: m })), {}),
+  num('sunDay', 'Day', 'Sun', 21, 1, 31, { unit: '', int: true, noScale: true }),
+  { id: 'sunPath', label: 'Show sun path', group: 'Sun', kind: 'toggle', def: true, help: "Today's path across the sky, with midsummer and midwinter for reference, and a compass on the ground" },
+
+  // Shadow carving: holes through the plates so the sun casts pictures on a wall behind
+  { id: 'shadowOn', label: 'Shadow pictures', group: 'Shadow', kind: 'toggle', def: false, help: 'Carve the plates so the sun casts your pictures on a wall behind the piece. Add pictures and their times in the Shadow view.' },
+  choice('shadowExec', 'Execution', 'Shadow', 'frames', [
+    { value: 'frames', label: 'Timed frames (a flip book)' },
+    { value: 'allday', label: 'One picture, all day' },
+  ], { help: 'Timed frames: each picture appears at its own time, all in the same place on the wall. All day: the first picture is carved for every hour of daylight (softer, but always there)' }),
+  num('shadowGap', 'Wall distance', 'Shadow', 30, 0, 3000, { help: 'From the back plate to the wall. Closer is crisper: the sun blurs shadows about 1 mm per 100 mm' }),
+  num('shadowW', 'Picture width', 'Shadow', 180, 10, 3000),
+  num('shadowH', 'Picture height', 'Shadow', 120, 10, 3000),
+  num('shadowX', 'Picture across', 'Shadow', 0, -3000, 3000, { help: 'Centre of the picture, right of the middle as you look at the wall from the front' }),
+  num('shadowY', 'Picture bottom', 'Shadow', 'baseHeight + 20', 0, 3000, { help: 'Height of the bottom of the picture above the ground' }),
+  num('shadowRim', 'Solid rim', 'Shadow', 8, 0, 100, { help: 'Uncut border kept up both sides of every plate and above the concrete. The top edge may be notched where the low sun reaches over it' }),
+  num('shadowCell', 'Resolution', 'Shadow', 3, 1, 10, { step: 0.5, noScale: true, help: 'Size of one picture pixel on the wall and in the plates. Finer is sharper but makes more, smaller holes' }),
+  num('shadowThreshold', 'Light above', 'Shadow', 0.5, 0, 1, { unit: '', step: 0.01, noScale: true, help: 'Picture brightness above which the wall should be lit' }),
+  { id: 'shadowInvert', label: 'Swap light and dark', group: 'Shadow', kind: 'toggle', def: false, help: 'Light the dark parts of the pictures instead' },
 
   // Mould
   { id: 'mouldOn', label: 'Generate moulds', group: 'Mould', kind: 'toggle', def: true },
@@ -492,6 +509,8 @@ export const GROUP_SWITCHES: Partial<Record<(typeof GROUPS)[number], GroupSwitch
   Image: { id: 'imageOn', forces: { imgSideMode: 'off', imgTopMode: 'off', imgFrontMode: 'off', etchMode: 'off', topOutline: 'off', imgFit: 'off' } },
   Tuning: { id: 'tuneOn', forces: { tuneMode: 'off' } },
   Mould: { id: 'mouldOn' },
+  Sun: { id: 'sunOn' },
+  Shadow: { id: 'shadowOn' },
 };
 const SLICE_NAME: Record<string, string> = { parallel: 'parallel', radial: 'radial', waffle: 'waffle', flat: 'flat stack' };
 
@@ -510,6 +529,7 @@ export const GROUP_IDLE: Partial<Record<(typeof GROUPS)[number], (v: Values) => 
       : v.sliceMode === 'parallel' || v.sliceMode === 'radial'
         ? null
         : `Not used with ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing: tuning works on parallel or radial plates.`,
+  Shadow: (v) => (!v.shadowOn ? null : !v.sunOn ? 'Needs Sun study on: the pictures are carved for the real sun at its place and date.' : v.sliceMode !== 'parallel' ? `Works with parallel plates for now, not ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing.` : null),
 };
 
 export const SWITCH_IDS = new Set(Object.values(GROUP_SWITCHES).map((s) => s!.id));

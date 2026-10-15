@@ -16,6 +16,7 @@ import GraphView from './GraphView';
 
 const Viewport = lazy(() => import('./Viewport'));
 const CompareView = lazy(() => import('./CompareView'));
+const ShadowView = lazy(() => import('./ShadowView'));
 
 const VIEWS: Record<Tab, () => ReactNode> = {
   '3d': () => <Viewport />,
@@ -24,6 +25,7 @@ const VIEWS: Record<Tab, () => ReactNode> = {
   mould: () => <MouldView />,
   unfold: () => <UnfoldView />,
   image: () => <ImageView />,
+  shadow: () => <ShadowView />,
   graph: () => <GraphView />,
   compare: () => <CompareView />,
 };
