@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createFrontPipeline } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
-import { renderWall, cleanShadow, wallPoint } from '../src/core/shadow';
+import { renderWall, cleanShadow, wallPoint, windowDays, frameMatch } from '../src/core/shadow';
+import { bestTry, fitLayouts, tryLayout } from '../src/core/shadowFit';
 import type { Gray } from '../src/core/image';
 
 /** A test picture: white blob on black, w × h, lit where `on(x, y)` (0..1, y down). */
@@ -20,7 +21,7 @@ const frames = [
 
 function setup(extra: Record<string, string | number | boolean> = {}) {
   const p = newProject();
-  p.params = { ...p.params, sunOn: true, shadowOn: true, sunMonth: '12', sunDay: 21, sunLat: 51.5, sunLon: 0, sunUtc: 0, sunFacing: 180, shadowW: 120, shadowH: 80, insertOn: false, ...extra };
+  p.params = { ...p.params, sunOn: true, shadowOn: true, sunMonth: '12', sunDay: 21, sunLat: 51.5, sunLon: 0, sunUtc: 0, sunFacing: 180, shadowW: 120, shadowH: 80, insertOn: false, shadowDays: 0, ...extra };
   p.shadow = { frames: frames.map((_, i) => ({ id: `f${i}`, name: `F${i}`, dataUrl: `data:x${i}`, time: 11.75 + i * 0.25, hold: 0 })) };
   const front = createFrontPipeline()(p, { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null, shadowFrames: frames });
   return front;
@@ -133,6 +134,36 @@ describe('shadow carving', () => {
     expect(off).toBeGreaterThan(0); // plate slots
     expect(off).toBeLessThan(b.valid.length / 2);
     expect(b.scores.some((s) => !s.problem && s.match > 0.3)).toBe(true);
+  });
+
+  it('spreads the carve across the date window', () => {
+    expect(windowDays({ shadowDays: 0 } as any)).toEqual([0]);
+    expect(windowDays({ shadowDays: 21 } as any)).toEqual([-11, -5, 0, 5, 11]);
+    const one = setup({ shadowDays: 0 }).shadow!;
+    const win = setup({ shadowDays: 21 }).shadow!;
+    // the window version holds up better ten days off, and is a little softer on the day
+    const mean = (rep: typeof one, d: number) => rep.scores.reduce((a, s, i) => a + frameMatch(f.v, rep, i, s.time, d).match, 0) / rep.scores.length;
+    expect(mean(win, 10)).toBeGreaterThan(mean(one, 10));
+    expect(win.removed).toBeGreaterThan(one.removed);
+  });
+
+  it('fit tries plate layouts and picks the best, cheapest on a tie', () => {
+    const p = newProject();
+    p.params = { ...p.params, sunOn: true, shadowOn: true, sunMonth: '12', sunDay: 21, sunLat: 51.5, sunLon: 0, sunUtc: 0, shadowW: 120, shadowH: 80, insertOn: false, shadowDays: 0 };
+    p.shadow = { frames: frames.map((_, i) => ({ id: `f${i}`, name: `F${i}`, dataUrl: `data:x${i}`, time: 11.75 + i * 0.25, hold: 0 })) };
+    const assets = { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null, shadowFrames: frames };
+    const v = createFrontPipeline()(p, assets).v;
+    const layouts = fitLayouts(v);
+    expect(layouts.length).toBe(15);
+    expect(layouts).toContainEqual({ plateCount: v.plateCount, stackHeight: v.stackHeight });
+    const run = createFrontPipeline();
+    const tries = layouts.slice(0, 6).map((l) => tryLayout(run, p, assets, v, l));
+    for (const t of tries) expect(t.match).toBeGreaterThan(0);
+    const best = bestTry(tries, v)!;
+    expect(best.score).toBeGreaterThanOrEqual(Math.max(...tries.map((t) => t.score)) - 0.01);
+    // a tie goes to less steel
+    const tie = bestTry([{ ...tries[0], score: 0.5, params: { plateCount: 60 } }, { ...tries[0], score: 0.495, params: { plateCount: 20 } }], v)!;
+    expect(tie.params.plateCount).toBe(20);
   });
 
   it('cleans saved frames', () => {

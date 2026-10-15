@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { renderWall, type ShadowFrame } from '../core/shadow';
-import { clock, siteOf, sunTimes } from '../core/sun';
+import { useAssets } from '../state/assets';
+import { createFrontPipeline } from '../core/pipeline';
+import { bestTry, fitLayouts, tryLayout, type FitTry } from '../core/shadowFit';
+import { frameMatch, renderWall, windowDays, type ShadowFrame } from '../core/shadow';
+import { clock, shiftSite, siteOf, sunTimes } from '../core/sun';
 import { SunBar } from './SunStudy';
 
 /** Read a picture file, shrunk so the longest side is at most `max` px (keeps the project small). */
@@ -69,6 +72,151 @@ function WallCanvas() {
   }, [rep, time, margin, model.v]);
   if (!rep) return null;
   return <canvas ref={ref} className="shadow-wall" aria-label="The screen behind the piece at this time" />;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const STRIP_DAYS = Array.from({ length: 21 }, (_, i) => (i - 10) * 3);
+
+/**
+ * How each frame holds up on other dates: a row per frame, a cell every three
+ * days for a month either side, with the carve's date window outlined.
+ */
+function QualityStrip({ names }: { names: string[] }) {
+  const model = useModel();
+  const rep = model.shadow;
+  const v = model.v;
+  const [rows, setRows] = useState<number[][] | null>(null);
+  useEffect(() => {
+    setRows(null);
+    if (!rep) return;
+    // a frame's worth of renders at a time, so typing stays smooth
+    const out = rep.scores.map(() => [] as number[]);
+    let k = 0;
+    let timer = 0;
+    const step = () => {
+      const d = STRIP_DAYS[k++];
+      rep.scores.forEach((sc, fi) => out[fi].push(sc.problem ? NaN : frameMatch(v, rep, fi, sc.time, d).match));
+      if (k < STRIP_DAYS.length) timer = window.setTimeout(step, 0);
+      else setRows(out.map((r) => [...r]));
+    };
+    timer = window.setTimeout(step, 200);
+    return () => clearTimeout(timer);
+  }, [rep, v]);
+  if (!rep) return null;
+  const site = siteOf(v);
+  const label = (d: number) => {
+    const s = shiftSite(site, d);
+    return `${s.day} ${MONTHS[s.month - 1]}`;
+  };
+  const win = windowDays(v);
+  const lo = win[0];
+  const hi = win[win.length - 1];
+  // the dates every frame stays at half its best or better
+  const mean = rows ? STRIP_DAYS.map((_, j) => rows.reduce((a, r) => a + (Number.isFinite(r[j]) ? r[j] : 0), 0) / rows.length) : null;
+  const best = mean ? Math.max(...mean) : 0;
+  const good = mean ? STRIP_DAYS.filter((_, j) => mean[j] >= best / 2 && mean[j] >= 0.3) : [];
+  return (
+    <div className="quality-strip">
+      <div className="qs-head">
+        <strong>Through the year</strong>
+        <span className="note">
+          {!rows ? 'Working…' : good.length ? `Reads well from about ${label(good[0])} to ${label(good[good.length - 1])}` : 'Weak on every date: try a lower sun or fewer frames'}
+        </span>
+      </div>
+      <div className="qs-grid" style={{ gridTemplateColumns: `minmax(40px, 90px) repeat(${STRIP_DAYS.length}, 1fr)` }}>
+        {rep.scores.map((_, fi) => (
+          <div key={fi} className="qs-row" style={{ display: 'contents' }}>
+            <span className="qs-name">{names[fi] ?? `Frame ${fi + 1}`}</span>
+            {STRIP_DAYS.map((d, j) => {
+              const m = rows?.[fi]?.[j];
+              const inWin = d >= lo && d <= hi;
+              return (
+                <span
+                  key={d}
+                  className={`qs-cell ${inWin ? 'win' : ''} ${d === 0 ? 'today' : ''}`}
+                  style={{ background: m === undefined || !Number.isFinite(m) ? undefined : `rgba(224, 112, 28, ${0.08 + 0.92 * m})` }}
+                  title={`${label(d)}: ${m === undefined ? '…' : Number.isFinite(m) ? `${Math.round(m * 100)}% match` : 'sun not usable'}`}
+                />
+              );
+            })}
+          </div>
+        ))}
+        <span />
+        {STRIP_DAYS.map((d) => (
+          <span key={d} className="qs-tick">
+            {d === STRIP_DAYS[0] || d === 0 || d === STRIP_DAYS[STRIP_DAYS.length - 1] ? label(d) : ''}
+          </span>
+        ))}
+      </div>
+      <p className="note">
+        Brighter is a better match at each frame's time. The outlined cells are the {Number(v.shadowDays) || 0}-day date window the plates are carved for.
+      </p>
+    </div>
+  );
+}
+
+/** Fit: try plate layouts for this sun and offer the best. */
+function FitPanel() {
+  const model = useModel();
+  const v = model.v;
+  const project = useStore((s) => s.project);
+  const assets = useAssets(project);
+  const setParams = useStore((s) => s.setParams);
+  const [state, setState] = useState<{ done: number; total: number; tries: FitTry[] } | null>(null);
+  const stop = useRef(false);
+  useEffect(() => () => void (stop.current = true), []);
+  const run = () => {
+    const layouts = fitLayouts(v);
+    const pipe = createFrontPipeline();
+    const tries: FitTry[] = [];
+    stop.current = false;
+    setState({ done: 0, total: layouts.length, tries });
+    const step = (k: number) => {
+      if (stop.current) return;
+      tries.push(tryLayout(pipe, project, assets, v, layouts[k]));
+      setState({ done: k + 1, total: layouts.length, tries: [...tries] });
+      if (k + 1 < layouts.length) window.setTimeout(() => step(k + 1), 0);
+    };
+    window.setTimeout(() => step(0), 30);
+  };
+  const busy = state && state.done < state.total;
+  const best = state && !busy ? bestTry(state.tries, v) : null;
+  const same = (t: FitTry) => Object.entries(t.params).every(([k, x]) => Number(v[k]) === x);
+  const now = state?.tries.find(same);
+  const describe = (t: FitTry) =>
+    [t.params.plateCount !== undefined ? `${t.params.plateCount} plates` : null, t.params.plateGap !== undefined ? `${fmt(t.params.plateGap, 1)} mm gaps` : null, t.params.stackHeight !== undefined ? `${t.params.stackHeight} mm tall` : null]
+      .filter(Boolean)
+      .join(', ');
+  return (
+    <div className="fit-panel">
+      <button className="btn sm" onClick={run} disabled={!!busy} title="Try plate counts and heights for this sun and suggest the one whose frames come out best">
+        {busy ? `Fitting ${state!.done}/${state!.total}…` : 'Fit plates'}
+      </button>
+      {best && (
+        <span className="fit-result">
+          {same(best) ? (
+            <>Your plates are already the best of the {state!.tries.length} layouts tried.</>
+          ) : (
+            <>
+              Best: {describe(best)}, about {fmt(best.match * 100, 0)}% average match{now ? ` (about ${fmt(now.match * 100, 0)}% now)` : ''}.{' '}
+              <button
+                className="btn sm"
+                onClick={() => {
+                  setParams(best.params, 'Fit plates to the shadow');
+                  setState(null);
+                }}
+              >
+                Use it
+              </button>
+            </>
+          )}{' '}
+          <button className="btn sm" onClick={() => setState(null)} aria-label="Dismiss">
+            ×
+          </button>
+        </span>
+      )}
+    </div>
+  );
 }
 
 export default function ShadowView() {
@@ -176,6 +324,7 @@ export default function ShadowView() {
               <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => add(e.target.files)} />
             </span>
           </div>
+          {rep && !needs && <FitPanel />}
           {!frames.length && (
             <p className="note">
               Add one picture, or a numbered sequence (stills from a video work well). Bright parts become light on the wall. Each frame gets a time of day; the plates are carved so the sun casts it at that time.
@@ -251,6 +400,7 @@ export default function ShadowView() {
             The orange box{allSide ? 'es are' : ' is'} the picture area ({fmt(v.shadowW, 0)} × {fmt(v.shadowH, 0)} mm{allSide ? ' each, placed where each frame\'s light comes straight through the plates' : ''}). Warm light is sun and dark is shadow. The carved
             plates are live in the 3D view, where the screen catches the real shadow.
           </p>
+          {rep && !needs && <QualityStrip names={allDay ? frames.slice(0, 1).map((f) => f.name) : frames.map((f) => f.name)} />}
         </section>
       </div>
     </div>

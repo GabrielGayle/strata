@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bearingToWorld, clock, dayOfYear, sunPosition, sunTimes, sunVector, type Site } from '../src/core/sun';
+import { shiftSite, bearingToWorld, clock, dayOfYear, sunPosition, sunTimes, sunVector, type Site } from '../src/core/sun';
 import { defaultRaw, evaluateParams } from '../src/core/params';
 
 const london = (month: number, day: number, utc = 0): Site => ({ lat: 51.5074, lon: -0.1278, utc, month, day });
@@ -63,5 +63,12 @@ describe('compass on the design', () => {
     const s = sunVector(v, { elevation: 30, azimuth: 180 });
     expect(s[1]).toBeCloseTo(0.5);
     expect(Math.hypot(...s)).toBeCloseTo(1);
+  });
+  it('shifts a site by days across month and year ends', () => {
+    const site = { lat: 51.5, lon: 0, utc: 0, month: 12, day: 25 };
+    expect(shiftSite(site, 10)).toMatchObject({ month: 1, day: 4 });
+    expect(shiftSite(site, -25)).toMatchObject({ month: 11, day: 30 });
+    expect(shiftSite({ ...site, month: 3, day: 1 }, -1)).toMatchObject({ month: 2, day: 28 });
+    expect(shiftSite(site, 0)).toBe(site);
   });
 });

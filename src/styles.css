@@ -1956,3 +1956,56 @@ canvas.thumb {
 .shadow-preview .sunbar {
   width: min(520px, calc(100% - 16px));
 }
+
+/* shadow kitchen: how the frames hold up across the dates */
+.quality-strip {
+  margin-top: 10px;
+}
+.qs-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.qs-grid {
+  display: grid;
+  gap: 2px;
+  align-items: center;
+}
+.qs-name {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qs-cell {
+  height: 14px;
+  background: var(--panel-2, #ece7dd);
+  border: 1px solid transparent;
+}
+.qs-cell.win {
+  border-top-color: var(--ink, #222);
+  border-bottom-color: var(--ink, #222);
+}
+.qs-cell.today {
+  outline: 1px solid var(--ink, #222);
+  outline-offset: -1px;
+}
+.qs-tick {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: visible;
+}
+.fit-panel {
+  display: flex;
+  margin: 4px 0 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.fit-result {
+  font-size: 12px;
+}

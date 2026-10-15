@@ -14,7 +14,7 @@ import type { Plane, V3 } from './section';
 import { sample, marchingSquares, type Gray } from './image';
 import { bboxOf, clipLines, difference, offset, shapeArea, shapePerimeter, simplifyShape, union, type Shape, type Vec2 } from './geom2d';
 import { stackFrame } from './heightfield';
-import { siteOf, sunPosition, sunTimes, sunVector } from './sun';
+import { shiftSite, siteOf, sunPosition, sunTimes, sunVector } from './sun';
 
 /** One picture in the project, with when it should appear. */
 export interface ShadowFrame {
@@ -351,12 +351,12 @@ function throughPlates(cvs: Carving[], P: V3, L: V3): boolean {
  * screen (inside the concrete or a plate). The grid covers the picture rectangle
  * grown by `margin` cells each side.
  */
-export function renderWall(v: Values, rep: ShadowReport, time: number, margin = 0): { lit: Uint8Array; cols: number; rows: number; up: boolean } {
+export function renderWall(v: Values, rep: ShadowReport, time: number, margin = 0, dayOffset = 0): { lit: Uint8Array; cols: number; rows: number; up: boolean } {
   const g = rep.geom;
   const cols = g.cols + margin * 2;
   const rows = g.rows + margin * 2;
   const lit = new Uint8Array(cols * rows);
-  const pos = sunPosition(siteOf(v), time);
+  const pos = sunPosition(shiftSite(siteOf(v), dayOffset), time);
   const L = sunVector(v, pos);
   const up = pos.elevation > 0 && facesSun(g, L);
   const plates = rep.grids.map((p) => ({ plane: p.plane, thickness: p.thickness }));
@@ -367,6 +367,15 @@ export function renderWall(v: Values, rep: ShadowReport, time: number, margin = 
       else if (up && !blocked(rep.grids, g.base, P, L)) lit[r * cols + c] = 1;
     }
   return { lit, cols, rows, up };
+}
+
+/** Days either side of the set date the carve is tuned for: evenly spread across the date window. */
+export function windowDays(v: Values): number[] {
+  const d = Math.max(0, Math.round(Number(v.shadowDays) || 0));
+  if (d < 2) return [0];
+  const n = Math.min(5, 2 * Math.ceil(d / 10) + 1);
+  const at = (x: number) => Math.sign(x) * Math.round(Math.abs(x)); // symmetric about the set date
+  return Array.from({ length: n }, (_, i) => at(-d / 2 + (d * i) / (n - 1)));
 }
 
 /**
@@ -395,6 +404,45 @@ function sampleTimes(v: Values, f: ShadowInput, allDay: boolean, prev: number | 
   const n = Math.min(121, Math.max(1, Math.round((hi - lo) * 60) + 1));
   if (n === 1) return [f.time];
   return Array.from({ length: n }, (_, i) => lo + ((hi - lo) * i) / (n - 1));
+}
+
+/**
+ * Make the cut mask laser-friendly. A cut that is one cell on its own makes a
+ * pinhole smaller than the sheet is thick, so it is left solid. Where cuts
+ * touch only at a corner, the steel between them comes out as a sliver
+ * narrower than the kerf, so the corner is opened up (or, if that steel can't
+ * be cut, one of the cuts is closed).
+ */
+function tidyCuts(cv: Carving) {
+  const { cols, rows, solid, carvable, hole } = cv;
+  const cut = (i: number) => solid[i] && hole[i];
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (let r = 0; r + 1 < rows; r++)
+      for (let c = 0; c + 1 < cols; c++) {
+        const a = r * cols + c;
+        const b = a + 1;
+        const d = a + cols;
+        const e = d + 1;
+        for (const [p, q, x, y] of [
+          [a, e, b, d],
+          [b, d, a, e],
+        ]) {
+          if (!cut(p) || !cut(q) || cut(x) || cut(y) || !solid[x] || !solid[y]) continue;
+          if (carvable[x]) hole[x] = 1;
+          else if (carvable[y]) hole[y] = 1;
+          else hole[q] = 0;
+          changed = true;
+        }
+      }
+    if (!changed) break;
+  }
+  for (let i = 0; i < hole.length; i++) {
+    if (!cut(i)) continue;
+    const c = i % cols;
+    const alone = (c === 0 || !cut(i - 1)) && (c === cols - 1 || !cut(i + 1)) && (i < cols || !cut(i - cols)) && (i + cols >= hole.length || !cut(i + cols));
+    if (alone) hole[i] = 0;
+  }
 }
 
 /**
@@ -508,6 +556,24 @@ function islandMatters(cells: number[], cv: Carving, cvs: Carving[], g: ShadowGe
   }
 }
 
+/** How well frame `fi` comes out at a clock time, some days from the set date. */
+export function frameMatch(v: Values, rep: ShadowReport, fi: number, time: number, dayOffset = 0): { match: number; stray: number } {
+  const tgt = rep.targets[fi];
+  const { lit } = renderWall(v, rep, time, 0, dayOffset);
+  let both = 0, either = 0, stray = 0, dark = 0;
+  for (let i = 0; i < tgt.length; i++) {
+    if (!rep.valid[i]) continue;
+    const on = lit[i] === 1;
+    if (on && tgt[i]) both++;
+    if (on || tgt[i]) either++;
+    if (!tgt[i]) {
+      dark++;
+      if (on) stray++;
+    }
+  }
+  return { match: either ? both / either : 1, stray: dark ? stray / dark : 0 };
+}
+
 /** Cut the frames' tunnels into the parallel plates. Returns the carved plates and a report. */
 export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[]): { sliced: SliceResult; report: ShadowReport } {
   const t0 = performance.now();
@@ -550,6 +616,7 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
   const problems: (string | null)[] = use.map(() => null);
   const hints: (string | null)[] = use.map(() => null);
   const byTime = use.map((f) => f.time).sort((a, b) => a - b);
+  const days = windowDays(v);
 
   // 2. open the plates along every lit pixel's ray, for every sample time
   use.forEach((f, fi) => {
@@ -560,17 +627,21 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
     const prev = k > 0 ? byTime[k - 1] : null;
     const next = k >= 0 && k < byTime.length - 1 ? byTime[k + 1] : null;
     const tgt = targets[fi];
-    for (const time of sampleTimes(v, f, allDay, prev, next)) {
-      const pos = sunPosition(site, time);
-      const L = sunVector(v, pos);
-      if (pos.elevation <= 1 || !facesSun(geom, L)) continue;
-      usable++;
-      for (let r = 0; r < geom.rows; r++)
-        for (let c = 0; c < geom.cols; c++) {
-          if (!tgt[r * geom.cols + c]) continue;
-          const P = wallPoint(geom, geom.x0 + (c + 0.5) * cell, geom.y0 + (r + 0.5) * cell);
-          for (const cv of carvings) for (const i of hits(cv, P, L)) if (i >= 0 && cv.carvable[i]) cv.hole[i] = 1;
-        }
+    const times = sampleTimes(v, f, allDay, prev, next);
+    for (const day of days) {
+      const siteD = shiftSite(site, day);
+      for (const time of times) {
+        const pos = sunPosition(siteD, time);
+        const L = sunVector(v, pos);
+        if (pos.elevation <= 1 || !facesSun(geom, L)) continue;
+        usable++;
+        for (let r = 0; r < geom.rows; r++)
+          for (let c = 0; c < geom.cols; c++) {
+            if (!tgt[r * geom.cols + c]) continue;
+            const P = wallPoint(geom, geom.x0 + (c + 0.5) * cell, geom.y0 + (r + 0.5) * cell);
+            for (const cv of carvings) for (const i of hits(cv, P, L)) if (i >= 0 && cv.carvable[i]) cv.hole[i] = 1;
+          }
+      }
     }
     if (!usable) {
       problems[fi] =
@@ -600,8 +671,11 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
       }
     if (lit && missing / lit > 0.5) problems[fi] = 'At this time most of the sun reaching the picture misses the plates. Move the picture or the screen so the light comes through the plates.';
     else if (want && stuck / want > 0.5)
-      hints[fi] = geom.screen === 'wall' ? 'Most of this picture\'s light would have to pass the uncut rim at the plates\' sides or bottom. Move the picture, or lower the Solid rim.' : 'Most of this picture\'s light would have to pass the concrete or the uncut rim low on the plates. Move the picture further back, or lower the Solid rim.';
+      hints[fi] = geom.screen === 'wall' ? `Most of this picture's light would have to pass the uncut rim at the plates' sides or bottom${v.insertOn ? ', or round the insert' : ''}. Move the picture, or lower the Solid rim.` : 'Most of this picture\'s light would have to pass the concrete or the uncut rim low on the plates. Move the picture further back, or lower the Solid rim.';
   });
+
+  // tidy the cuts for the laser: no lone pinholes, and no steel joined only at a corner
+  for (const cv of carvings) tidyCuts(cv);
 
   // 3. anything cut loose would fall out: hold it in with bridges, or cut it away
   const bridgeW = Math.max(0, Number(v.shadowBridge) || 0);
@@ -682,6 +756,20 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
     if (!cv.hole.some(Boolean)) continue;
     const field = new Float32Array(cv.cols * cv.rows);
     for (let i = 0; i < field.length; i++) field[i] = cv.hole[i] ? 1 : -1;
+    // carry cuts that reach the plate's edge out past it, so no sliver of steel is left along the outline
+    for (let i = 0; i < field.length; i++) {
+      if (!cv.hole[i] || !cv.solid[i]) continue;
+      const r = Math.floor(i / cv.cols);
+      const c = i % cv.cols;
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++) {
+          const rr = r + dr;
+          const cc = c + dc;
+          if (rr < 0 || cc < 0 || rr >= cv.rows || cc >= cv.cols) continue;
+          const j = rr * cv.cols + cc;
+          if (!cv.solid[j]) field[j] = 1;
+        }
+    }
     const loops = marchingSquares(field, cv.cols, cv.rows).map((l) => l.map(([x, y]) => [cv.x0 + x * cv.cell, cv.y0 + y * cv.cell] as Vec2));
     if (!loops.length) continue;
     const holes = simplifyShape(union(loops, 'evenodd'), cv.cell * 0.12);
@@ -709,21 +797,8 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
 
   // 5. how well each frame comes out
   report.scores = use.map((f, fi) => {
-    const tgt = targets[fi];
     if (problems[fi]) return { time: f.time, match: 0, stray: 0, problem: problems[fi] };
-    const { lit } = renderWall(v, report, f.time);
-    let both = 0, either = 0, stray = 0, dark = 0;
-    for (let i = 0; i < tgt.length; i++) {
-      if (!valid[i]) continue;
-      const on = lit[i] === 1;
-      if (on && tgt[i]) both++;
-      if (on || tgt[i]) either++;
-      if (!tgt[i]) {
-        dark++;
-        if (on) stray++;
-      }
-    }
-    return { time: f.time, match: either ? both / either : 1, stray: dark ? stray / dark : 0, problem: null, hint: hints[fi] };
+    return { time: f.time, ...frameMatch(v, report, fi, f.time), problem: null, hint: hints[fi] };
   });
 
   const swap = (p: Part) => replaced.get(p) ?? p;
