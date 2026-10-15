@@ -34,3 +34,25 @@ describe('price estimate', () => {
     expect(e.warnings.some((w) => w.includes('outside'))).toBe(true);
   });
 });
+
+describe('bracing hardware in the price', () => {
+  it('adds rod, nuts and washers outside the laser minimum', async () => {
+    const { withHardware } = await import('../src/core/price');
+    const p = newProject();
+    p.params = { ...p.params, insShape: 'none', anchorHoles: '0', rodsOn: true, rodCount: '2', rodSize: 'M6' };
+    const m = createPipeline()(p, assets);
+    expect(m.bom.hardware.some((r) => r.kind === 'rod' && (r.metres ?? 0) > 0)).toBe(true);
+    const base = estimatePrice(m.bom, 'corten', m.v.thickness);
+    const rates = { ...DEFAULT_RATES, hardware: { rodPerM: 4, nut: 0.5, washer: 0.25 } };
+    const e = withHardware(base, m.bom.hardware, rates);
+    const metres = m.bom.hardware.reduce((a, r) => a + (r.metres ?? 0), 0);
+    const nuts = m.bom.hardware.filter((r) => r.kind === 'nut').reduce((a, r) => a + r.qty, 0);
+    const washers = m.bom.hardware.filter((r) => r.kind === 'washer').reduce((a, r) => a + r.qty, 0);
+    const hw = metres * 4 + nuts * 0.5 + washers * 0.25;
+    expect(e.hardware).toBeCloseTo(hw, 6);
+    expect(e.net).toBeCloseTo(base.net + hw, 6);
+    expect(e.total).toBeCloseTo(e.net * 1.2, 6);
+    expect(e.lines.map((l) => l.label)).toContain('Threaded rod');
+    expect(withHardware(base, [], rates)).toBe(base);
+  });
+});

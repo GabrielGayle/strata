@@ -1,17 +1,18 @@
 import { useMemo, useState } from 'react';
 import type { Bom } from '../core/bom';
 import { MATERIAL_NAME } from '../core/bom';
-import { CHOPCHOP_QUOTE_URL, DEFAULT_RATES, estimateMix, type PriceRates } from '../core/price';
+import { CHOPCHOP_QUOTE_URL, DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from '../core/price';
 import { fmt } from './model';
 
 const KEY = 'strata.priceRates';
 
-function loadRates(): PriceRates {
+/** The rates last set in the estimate panel (defaults if none). */
+export function loadRates(): PriceRates {
   try {
     const s = localStorage.getItem(KEY);
     if (s) {
       const r = JSON.parse(s);
-      return { ...DEFAULT_RATES, ...r, perKg: { ...DEFAULT_RATES.perKg, ...r.perKg } };
+      return { ...DEFAULT_RATES, ...r, perKg: { ...DEFAULT_RATES.perKg, ...r.perKg }, hardware: { ...DEFAULT_RATES.hardware, ...r.hardware } };
     }
   } catch {
     /* fall back to defaults */
@@ -47,7 +48,8 @@ function RateInput({ label, value, onChange, step = 0.05, unit }: { label: strin
 export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material: string; thickness: number }) {
   const [rates, setRatesState] = useState(loadRates);
   const [editing, setEditing] = useState(false);
-  const est = useMemo(() => estimateMix(bom, thickness, rates), [bom, thickness, rates]);
+  const est = useMemo(() => withHardware(estimateMix(bom, thickness, rates), bom.hardware, rates), [bom, thickness, rates]);
+  const laserNet = est.net - (est.hardware ?? 0);
   const metals = bom.byMaterial?.filter((g) => g.partCount).map((g) => g.material) ?? [];
   const metalText = (metals.length ? metals : [material]).map((m) => MATERIAL_NAME[m] ?? m).join(' and ');
 
@@ -59,7 +61,8 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
       /* not persisted */
     }
   };
-  const set = (k: keyof Omit<PriceRates, 'perKg'>) => (x: number) => setRates({ ...rates, [k]: x });
+  const set = (k: keyof Omit<PriceRates, 'perKg' | 'hardware'>) => (x: number) => setRates({ ...rates, [k]: x });
+  const setHw = (k: keyof PriceRates['hardware']) => (x: number) => setRates({ ...rates, hardware: { ...rates.hardware, [k]: x } });
 
   return (
     <>
@@ -84,10 +87,10 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
             <dd>{gbp(l.cost)}</dd>
           </div>
         ))}
-        {est.net > est.subtotal && (
+        {laserNet > est.subtotal + 1e-9 && (
           <>
             <dt>Minimum order</dt>
-            <dd>+{gbp(est.net - est.subtotal)}</dd>
+            <dd>+{gbp(laserNet - est.subtotal)}</dd>
           </>
         )}
         <dt>VAT {fmt(rates.vat * 100, 0)}%</dt>
@@ -100,7 +103,7 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
       ))}
       <div className="note">
         Estimate only, not a Chop Chop quote. They don&rsquo;t publish rates, so this uses typical UK laser rates applied to the cut list ({metalText} {fmt(thickness, 1)} mm{metals.length > 1 ? ', each metal priced as its own job' : ''}).
-        Delivery, etching and the concrete base aren&rsquo;t included. For a real price, upload the plate DXFs to their{' '}
+        {est.hardware ? 'Bracing rods, nuts and washers are priced separately at fastener-supplier rates. ' : ''}Delivery, etching and the concrete base aren&rsquo;t included. For a real price, upload the plate DXFs to their{' '}
         <a href={CHOPCHOP_QUOTE_URL} target="_blank" rel="noreferrer">
           instant quote
         </a>
@@ -127,6 +130,13 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
           <RateInput label="Handling" unit="£/part" value={rates.perPart} onChange={set('perPart')} />
           <RateInput label="Minimum order" unit="£" step={5} value={rates.minimum} onChange={set('minimum')} />
           <RateInput label="VAT" unit="%" step={1} value={Math.round(rates.vat * 100)} onChange={(x) => set('vat')(x / 100)} />
+          {bom.hardware.length > 0 && (
+            <>
+              <RateInput label="Threaded rod" unit="£/m" step={0.25} value={rates.hardware.rodPerM} onChange={setHw('rodPerM')} />
+              <RateInput label="Nut" unit="£ each" step={0.01} value={rates.hardware.nut} onChange={setHw('nut')} />
+              <RateInput label="Washer" unit="£ each" step={0.01} value={rates.hardware.washer} onChange={setHw('washer')} />
+            </>
+          )}
         </dl>
       )}
     </>

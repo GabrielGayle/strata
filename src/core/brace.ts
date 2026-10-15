@@ -101,6 +101,9 @@ export interface HardwareRow {
   spec: string;
   qty: number;
   note?: string;
+  /** For pricing: what is bought, and for rod the metres of bar. */
+  kind?: 'rod' | 'nut' | 'washer';
+  metres?: number;
 }
 
 /** A plate the bracing works with: its key, plane, and current outline. */
@@ -376,11 +379,12 @@ export function rodHardware(plan: RodPlan): HardwareRow[] {
     const k = rods.length;
     if (L.cut) {
       const per = Math.max(1, Math.floor(L.stock / (L.length + 2)));
-      rows.push({ item: 'Threaded rod', spec: `${plan.size} × ${L.length} mm (cut)`, qty: k, note: `cut from ${Math.ceil(k / per)} × ${L.stock} mm bar${Math.ceil(k / per) > 1 ? 's' : ''}` });
-    } else rows.push({ item: 'Threaded rod', spec: `${plan.size} × ${L.length} mm`, qty: k, note: 'stock length, DIN 976' });
+      const bars = Math.ceil(k / per);
+      rows.push({ item: 'Threaded rod', spec: `${plan.size} × ${L.length} mm (cut)`, qty: k, note: `cut from ${bars} × ${L.stock} mm bar${bars > 1 ? 's' : ''}`, kind: 'rod', metres: (bars * L.stock) / 1000 });
+    } else rows.push({ item: 'Threaded rod', spec: `${plan.size} × ${L.length} mm`, qty: k, note: 'stock length, DIN 976', kind: 'rod', metres: (k * L.length) / 1000 });
   }
-  if (plan.nuts) rows.push({ item: 'Hex nut', spec: `${plan.size} ISO 4032`, qty: plan.nuts });
-  if (plan.washers) rows.push({ item: 'Washer', spec: `${plan.size} ISO 7089`, qty: plan.washers });
+  if (plan.nuts) rows.push({ item: 'Hex nut', spec: `${plan.size} ISO 4032`, qty: plan.nuts, kind: 'nut' });
+  if (plan.washers) rows.push({ item: 'Washer', spec: `${plan.size} ISO 7089`, qty: plan.washers, kind: 'washer' });
   return rows;
 }
 

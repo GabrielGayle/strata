@@ -6,6 +6,7 @@ import { soundDataUrl } from './audio';
 import { buildZip, download } from '../core/exporters';
 import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
+import { loadRates } from './PriceEstimate';
 import { randomTheme, themeTokens, THEME_PRESETS, type ThemeSeed } from './theme';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
@@ -215,7 +216,7 @@ export default function Toolbar() {
   const exportZip = () => {
     try {
       const model = fullModel();
-      const zip = buildZip(model, project);
+      const zip = buildZip(model, project, loadRates());
       download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}-fabrication.zip`, zip, 'application/zip');
       toast(`Exported ${model.sliced.parts.length} plate DXFs, ${model.nested.sheets.length} sheets, ${model.moulds.parts.length} mould parts`);
     } catch (e) {
