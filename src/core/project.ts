@@ -8,6 +8,7 @@ import type { SoundSpec } from './sound';
 import { cleanAppearance, type Appearance } from './appearance';
 import type { DepthData } from './depth';
 import { cleanShadow, type ShadowSpec } from './shadow';
+import { cleanObjects, type CutObject } from './objects';
 
 export interface ImageAsset {
   name: string;
@@ -46,6 +47,8 @@ export interface Variant {
   composition?: Composition;
   /** The shadow pictures as they were. Missing on variants saved before this existed: those keep the project's. */
   shadow?: ShadowSpec | null;
+  /** The placed objects as they were. Missing on variants saved before this existed: those keep the project's. */
+  objects?: CutObject[] | null;
   createdAt: string;
 }
 
@@ -67,6 +70,8 @@ export interface Project {
   appearance?: Appearance;
   /** Shadow pictures and the times they appear (Shadow view). */
   shadow?: ShadowSpec;
+  /** Objects placed among the plates (postcards, boxes…), each cut out of the plates it passes through. */
+  objects?: CutObject[];
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -225,7 +230,7 @@ function readVariants(raw: any): Variant[] {
   if (!Array.isArray(raw.variants)) return [];
   const own = raw.images ?? {};
   const shadow = (v: any) => (v.shadow === SAME_IMAGE ? cleanShadow(raw.shadow) ?? null : v.shadow === undefined ? undefined : cleanShadow(v.shadow) ?? null);
-  return raw.variants.map((v: any) => (v && typeof v === 'object' && 'shadow' in v ? { ...v, shadow: shadow(v) } : v)).map((v: any) => {
+  return raw.variants.map((v: any) => (v && typeof v === 'object' && 'shadow' in v ? { ...v, shadow: shadow(v) } : v)).map((v: any) => (v && typeof v === 'object' && 'objects' in v ? { ...v, objects: cleanObjects(v.objects) ?? null } : v)).map((v: any) => {
     if (!v?.images || typeof v.images !== 'object') return v;
     const images: Project['images'] = {};
     for (const [slot, a] of Object.entries(v.images)) {
@@ -247,6 +252,7 @@ export function applyVariant(p: Project, v: Variant): Project {
     appearance: v.appearance ?? p.appearance,
     ...(v.images ? { images: { ...v.images }, composition: v.composition } : {}),
     ...(v.shadow !== undefined ? { shadow: v.shadow ?? undefined } : {}),
+    ...(v.objects !== undefined ? { objects: v.objects ?? undefined } : {}),
   };
 }
 
@@ -269,5 +275,6 @@ export function deserialize(text: string): Project {
     moves: cleanMoves(raw.moves),
     appearance: cleanAppearance(raw.appearance),
     shadow: cleanShadow(raw.shadow),
+    objects: cleanObjects(raw.objects),
   };
 }
