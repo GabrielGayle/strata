@@ -191,7 +191,7 @@ export function shelfCards(spec: ShelfSpec | undefined, baseTop: number): CutObj
   const y0 = baseTop + spec.lift - spec.seat;
 
   if (spec.layout === 'arch') {
-    // a rainbow standing up: bottom edges follow a semicircle in the front plane
+    // a rainbow standing up: bottom edges follow a semicircle in the front plane, cards facing the viewer (+z) and leaning back
     const R = spec.radius;
     const L = cards.reduce((a, c) => a + c.w, 0) + spec.gap * (cards.length - 1);
     const span = Math.min(L / R, Math.PI * 0.98);
@@ -201,12 +201,12 @@ export function shelfCards(spec: ShelfSpec | undefined, baseTop: number): CutObj
     cards.forEach((c, i) => {
       const th = (s + c.w / 2) * k;
       s += c.w + spec.gap;
-      put(c, i, R * Math.sin(th), cy + R * Math.cos(th), 0, 0, -th);
+      put(c, i, R * Math.sin(th), cy + R * Math.cos(th), 0, Math.PI, th);
     });
     return out;
   }
 
-  // plan arcs: the arc bulges away from the viewer, cards face its centre
+  // plan arcs: the arc bulges away from the viewer (towards -z), cards face its centre and lean back
   const fanRow = (row: CardSize[], R: number, y: number, z0: number, start: number) => {
     const L = row.reduce((a, c) => a + c.w, 0) + spec.gap * Math.max(0, row.length - 1);
     const span = L / R;
@@ -215,7 +215,7 @@ export function shelfCards(spec: ShelfSpec | undefined, baseTop: number): CutObj
     row.forEach((c, j) => {
       const th = (s + c.w / 2) / R;
       s += c.w + spec.gap;
-      put(c, start + j, R * Math.sin(th), y, cz + R * Math.cos(th), th, 0);
+      put(c, start + j, R * Math.sin(th), y, -(cz + R * Math.cos(th)), Math.PI - th, 0);
     });
   };
 
@@ -238,7 +238,7 @@ export function shelfCards(spec: ShelfSpec | undefined, baseTop: number): CutObj
       const f = (s + c.w / 2) / L;
       const R = spec.radius + spec.rowStep * f * 2;
       th += c.w / 2 / R;
-      put(c, i, R * Math.sin(th), y0 + spec.rowRise * f, R * Math.cos(th) - spec.radius, th, 0);
+      put(c, i, R * Math.sin(th), y0 + spec.rowRise * f, spec.radius - R * Math.cos(th), Math.PI - th, 0);
       th += (c.w / 2 + spec.gap) / R;
       s += c.w + spec.gap;
     });
