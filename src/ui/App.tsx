@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPipeline, type Model } from '../core/pipeline';
+import { assemble, createDeferredPipeline, createFrontPipeline, deferredInput, type DeferredInput, type DeferredModel, type FrontModel, type Model } from '../core/pipeline';
+import { DeferredWorker, sameInput, shareResult } from '../core/deferred';
 import { useStore } from '../state/store';
 import { activeLayout, TABS, useWorkspaces } from '../state/workspaces';
 import { findTab, visibleTabs } from '../core/workspace';
@@ -21,25 +22,87 @@ export default function App() {
   const assets = useAssets(project);
   const layout = useWorkspaces(activeLayout);
   const reveal = useWorkspaces((s) => s.reveal);
-  const pipeline = useMemo(() => createPipeline(), []);
-  const [model, setModelState] = useState<Model>(() => pipeline(project, assets, 'full'));
+  const front = useMemo(() => createFrontPipeline(), []);
+  // the deferred stages run here only for the first frame, exports, and when workers are unavailable
+  const local = useMemo(() => createDeferredPipeline(), []);
+  // the latest front pass, and the last deferred result with the input it was computed from
+  const latest = useRef<{ f: FrontModel; input: DeferredInput } | null>(null);
+  const deferred = useRef<{ result: DeferredModel; input: DeferredInput } | null>(null);
+  const [model, setModelState] = useState<Model>(() => {
+    const f = front(project, assets);
+    const input = deferredInput(f, project);
+    latest.current = { f, input };
+    deferred.current = { result: local(input, 'full'), input };
+    return assemble(f, deferred.current.result);
+  });
+  const modelRef = useRef(model);
   // what the last edit actually rebuilt (the deferred pass that follows is often all cache hits)
   const work = useRef({ stages: 0, ms: 0 });
   const setModel = (m: Model) => {
     const rebuilt = m.stages.filter((s) => !s.cached);
     if (rebuilt.length) work.current = { stages: rebuilt.length, ms: m.totalMs };
+    modelRef.current = m;
     setModelState(m);
   };
-  const fullTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const worker = useRef<DeferredWorker | null>(null);
+  const localTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // regenerate: fast pass on the next frame, full pass once edits settle
+  const showDeferred = (result: DeferredModel, input: DeferredInput) => {
+    const shared = shareResult(deferred.current?.result ?? null, result);
+    deferred.current = { result: shared, input };
+    const now = latest.current!;
+    setModel(assemble(now.f, shared, !sameInput(input, now.input)));
+  };
+  // no worker: the old way, on this thread once edits settle
+  const runLocal = (input: DeferredInput) => {
+    clearTimeout(localTimer.current);
+    localTimer.current = setTimeout(() => {
+      if (latest.current?.input === input) showDeferred(local(input, 'full'), input);
+    }, 320);
+  };
+
   useEffect(() => {
-    const raf = requestAnimationFrame(() => setModel(pipeline(project, assets, 'fast')));
-    clearTimeout(fullTimer.current);
-    fullTimer.current = setTimeout(() => setModel(pipeline(project, assets, 'full')), 320);
+    if (typeof Worker === 'undefined') return;
+    let w: DeferredWorker;
+    try {
+      w = new DeferredWorker(
+        new Worker(new URL('../core/deferred.worker.ts', import.meta.url), { type: 'module' }),
+        // an older job's results still beat what's on screen; they stay marked as updating
+        (_id, result, input) => showDeferred(result, input),
+        (_id, input, fatal) => {
+          if (fatal && worker.current === w) worker.current = null;
+          if (latest.current?.input === input) runLocal(input);
+        },
+      );
+    } catch {
+      return;
+    }
+    worker.current = w;
+    // catch up on anything edited before the worker was ready
+    if (latest.current && deferred.current && !sameInput(latest.current.input, deferred.current.input)) w.run(latest.current.input);
+    return () => {
+      w.terminate();
+      if (worker.current === w) worker.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // regenerate: the plates on the next frame, then checks, nesting, moulds and BOM in the worker
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      const f = front(project, assets);
+      const input = deferredInput(f, project);
+      latest.current = { f, input };
+      const d = deferred.current!;
+      const fresh = sameInput(d.input, input);
+      setModel(assemble(f, d.result, !fresh));
+      if (fresh) return;
+      if (worker.current) worker.current.run(input);
+      else runLocal(input);
+    });
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, assets, pipeline]);
+  }, [project, assets, front]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -72,7 +135,16 @@ export default function App() {
     }
   }, [layout, ui.tab, setUi]);
 
-  const getFull = useMemo(() => () => pipeline(project, assets, 'full'), [pipeline, project, assets]);
+  // exports want everything current: the model on screen when it is, else finish it here
+  const getFull = useMemo(
+    () => () => {
+      const f = front(project, assets);
+      const input = deferredInput(f, project);
+      const d = deferred.current;
+      return assemble(f, d && sameInput(d.input, input) ? d.result : local(input, 'full'), false);
+    },
+    [front, local, project, assets],
+  );
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
 
