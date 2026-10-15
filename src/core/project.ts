@@ -10,6 +10,7 @@ import type { DepthData } from './depth';
 import { cleanShadow, type ShadowSpec } from './shadow';
 import { cleanObjects, type CutObject } from './objects';
 import { cleanShelf, type ShelfSpec } from './shelf';
+import { cleanOrigin, type WorldOrigin } from './origin';
 
 export interface ImageAsset {
   name: string;
@@ -52,6 +53,8 @@ export interface Variant {
   objects?: CutObject[] | null;
   /** The postcard shelf as it was. Missing on variants saved before this existed: those keep the project's. */
   shelf?: ShelfSpec | null;
+  /** The world origin as it was. Missing on variants saved before this existed: those keep the project's. */
+  origin?: WorldOrigin | null;
   createdAt: string;
 }
 
@@ -77,6 +80,8 @@ export interface Project {
   objects?: CutObject[];
   /** Postcards laid along an arc, each held in a seat cut into the plates. */
   shelf?: ShelfSpec;
+  /** Where placed objects and the shelf are measured from (the middle of the floor under the base when missing). */
+  origin?: WorldOrigin;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -235,7 +240,7 @@ function readVariants(raw: any): Variant[] {
   if (!Array.isArray(raw.variants)) return [];
   const own = raw.images ?? {};
   const shadow = (v: any) => (v.shadow === SAME_IMAGE ? cleanShadow(raw.shadow) ?? null : v.shadow === undefined ? undefined : cleanShadow(v.shadow) ?? null);
-  return raw.variants.map((v: any) => (v && typeof v === 'object' && 'shadow' in v ? { ...v, shadow: shadow(v) } : v)).map((v: any) => (v && typeof v === 'object' && 'objects' in v ? { ...v, objects: cleanObjects(v.objects) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'shelf' in v ? { ...v, shelf: cleanShelf(v.shelf) ?? null } : v)).map((v: any) => {
+  return raw.variants.map((v: any) => (v && typeof v === 'object' && 'shadow' in v ? { ...v, shadow: shadow(v) } : v)).map((v: any) => (v && typeof v === 'object' && 'objects' in v ? { ...v, objects: cleanObjects(v.objects) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'shelf' in v ? { ...v, shelf: cleanShelf(v.shelf) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'origin' in v ? { ...v, origin: cleanOrigin(v.origin) ?? null } : v)).map((v: any) => {
     if (!v?.images || typeof v.images !== 'object') return v;
     const images: Project['images'] = {};
     for (const [slot, a] of Object.entries(v.images)) {
@@ -259,6 +264,7 @@ export function applyVariant(p: Project, v: Variant): Project {
     ...(v.shadow !== undefined ? { shadow: v.shadow ?? undefined } : {}),
     ...(v.objects !== undefined ? { objects: v.objects ?? undefined } : {}),
     ...(v.shelf !== undefined ? { shelf: v.shelf ?? undefined } : {}),
+    ...(v.origin !== undefined ? { origin: v.origin ?? undefined } : {}),
   };
 }
 
@@ -283,5 +289,6 @@ export function deserialize(text: string): Project {
     shadow: cleanShadow(raw.shadow),
     objects: cleanObjects(raw.objects),
     shelf: cleanShelf(raw.shelf),
+    origin: cleanOrigin(raw.origin),
   };
 }

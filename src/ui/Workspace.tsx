@@ -13,6 +13,7 @@ import MouldView from './MouldView';
 import UnfoldView from './UnfoldView';
 import ImageView from './ImageView';
 import GraphView from './GraphView';
+import NodesView from './NodesView';
 
 const Viewport = lazy(() => import('./Viewport'));
 const CompareView = lazy(() => import('./CompareView'));
@@ -27,6 +28,7 @@ const VIEWS: Record<Tab, () => ReactNode> = {
   image: () => <ImageView />,
   shadow: () => <ShadowView />,
   graph: () => <GraphView />,
+  nodes: () => <NodesView />,
   compare: () => <CompareView />,
 };
 const label = (t: string) => TABS.find((x) => x.id === t)?.label ?? t;
