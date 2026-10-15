@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { GROUPS, GROUP_SWITCHES, PARAMS, PARAM_MAP, SWITCH_IDS, overrideSource, scaleFactorFor, type ParamDef, type Values } from '../core/params';
+import { GROUPS, GROUP_IDLE, GROUP_SWITCHES, PARAMS, PARAM_MAP, SWITCH_IDS, overrideSource, scaleFactorFor, type ParamDef, type Values } from '../core/params';
 import TuningTable from './TuningTable';
 import { isLiteral } from '../core/expr';
 import { useStore } from '../state/store';
@@ -239,24 +239,31 @@ export default function ParamPanel() {
         const swShown = !!sw && (!PARAM_MAP[sw.id].show || PARAM_MAP[sw.id].show!(v));
         const on = !swShown || !!v[sw!.id];
         const defs = PARAMS.filter((p) => p.group === g && !SWITCH_IDS.has(p.id) && visible(p));
-        if (!defs.length && !(g === 'Concrete' && !filter)) return null;
+        // a group that does nothing here stays listed, greyed, with the reason in place of its settings
+        const idle = on ? (GROUP_IDLE[g]?.(v) ?? null) : null;
+        if (idle && filter) return null;
+        if (!idle && !defs.length && !(g === 'Concrete' && !filter)) return null;
         const open = filter ? true : !ui.collapsed[g];
-        const hideBody = !on && !sw?.keepOpen;
+        const hideBody = (!on && !sw?.keepOpen) || !!idle;
         const errs = hideBody ? 0 : defs.filter((d) => model.ev.errors[d.id]).length;
         return (
-          <section className={`section ${on ? '' : 'off'}`} key={g}>
+          <section className={`section ${on && !idle ? '' : 'off'}`} key={g} title={idle ?? undefined}>
             <div className="section-headrow">
               <button className="section-head" onClick={() => setUi({ collapsed: { ...ui.collapsed, [g]: open } })} aria-expanded={open}>
                 <span>
                   {open ? '−' : '+'} {g}
                 </span>
                 <span className="count" style={errs ? { color: 'var(--err)' } : undefined}>
-                  {errs ? `${errs} err` : on ? defs.length : 'off'}
+                  {errs ? `${errs} err` : idle ? 'not used' : on ? defs.length : 'off'}
                 </span>
               </button>
               {swShown && <GroupSwitch id={sw!.id} on={on} group={g} />}
             </div>
-            {open && hideBody && <div className="section-body"><div className="note section-off">Off: left out of the model and exports. Its settings are kept for when you switch it back on.</div></div>}
+            {open && hideBody && (
+              <div className="section-body">
+                <div className="note section-off">{idle ?? 'Off: left out of the model and exports. Its settings are kept for when you switch it back on.'}</div>
+              </div>
+            )}
             {open && !hideBody && (
               <div className="section-body">
                 {defs.map((d) =>

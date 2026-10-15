@@ -482,6 +482,25 @@ export const GROUP_SWITCHES: Partial<Record<(typeof GROUPS)[number], GroupSwitch
   Tuning: { id: 'tuneOn', forces: { tuneMode: 'off' } },
   Mould: { id: 'mouldOn' },
 };
+const SLICE_NAME: Record<string, string> = { parallel: 'parallel', radial: 'radial', waffle: 'waffle', flat: 'flat stack' };
+
+/**
+ * Groups that do nothing in the current setup, with the one-line reason shown
+ * in their place (null while the group is in use). Their settings are kept.
+ */
+export const GROUP_IDLE: Partial<Record<(typeof GROUPS)[number], (v: Values) => string | null>> = {
+  Support: (v) => (v.baseOn ? null : 'Not used while Base is off: the ring is cast into the concrete.'),
+  Bracing: (v) => (isUpright(v) ? null : `Not used with ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing: rods and spacers brace upright parallel or waffle plates.`),
+  Strata: (v) => (strataSource(v) ? null : 'Not used while Slicer › Slice what is Source form: plate edges come from the form.'),
+  'Source form': (v) => (v.stackSource === 'form' ? null : 'Used only when Slicer › Slice what is Source form.'),
+  Tuning: (v) =>
+    !strataSource(v)
+      ? 'Not used while Slicer › Slice what is Source form.'
+      : v.sliceMode === 'parallel' || v.sliceMode === 'radial'
+        ? null
+        : `Not used with ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing: tuning works on parallel or radial plates.`,
+};
+
 export const SWITCH_IDS = new Set(Object.values(GROUP_SWITCHES).map((s) => s!.id));
 
 /** The raw values with every switched-off group's forced values laid over them. */
