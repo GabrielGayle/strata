@@ -1,10 +1,11 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { GROUPS, GROUP_IDLE, GROUP_SWITCHES, PARAMS, PARAM_MAP, SWITCH_IDS, overrideSource, scaleFactorFor, type ParamDef, type Values } from '../core/params';
 import TuningTable from './TuningTable';
 import { isLiteral } from '../core/expr';
 import { useStore } from '../state/store';
 import { useModel } from './model';
 import PourEditor from './PourEditor';
+import { changedByGroup, resetGroupPatch } from '../core/paramDiff';
 
 function fmtVal(x: number, step = 1): string {
   if (!Number.isFinite(x)) return '–';
@@ -225,7 +226,19 @@ export default function ParamPanel() {
   const setUi = useStore((s) => s.setUi);
   const v: Values = model.v;
   const filter = ui.filter.trim().toLowerCase();
-  const visible = (p: ParamDef) => (!p.show || p.show(v)) && (!filter || p.label.toLowerCase().includes(filter) || p.id.toLowerCase().includes(filter));
+  // "Changed only": just what differs from the defaults, panel by panel
+  const [changedOnly, setChangedOnly] = useState(false);
+  const changed = useMemo(() => changedByGroup(project.params), [project.params]);
+  const totalChanged = Object.values(changed).reduce((n, ids) => n + ids.length, 0);
+  const visible = (p: ParamDef) =>
+    (!p.show || p.show(v)) && (!filter || p.label.toLowerCase().includes(filter) || p.id.toLowerCase().includes(filter)) && (!changedOnly || !!changed[p.group]?.includes(p.id));
+  const resetGroup = (g: string) => {
+    const patch = resetGroupPatch(useStore.getState().project.params, g);
+    const n = Object.keys(patch).length;
+    if (!n) return;
+    useStore.getState().setParams(patch, `reset:${g}`);
+    useStore.getState().toast(`${g}: ${n} value${n === 1 ? '' : 's'} back to default · Ctrl+Z to undo`);
+  };
 
   return (
     <div>
@@ -234,6 +247,12 @@ export default function ParamPanel() {
         <span className="pill" title="Every value regenerates everything downstream">live graph</span>
       </div>
       <input className="search" placeholder="Filter parameters…" value={ui.filter} onChange={(e) => setUi({ filter: e.target.value })} aria-label="Filter parameters" />
+      <label className="changed-only" title="Show only the parameters that differ from their defaults">
+        <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
+        <span>Changed only</span>
+        <span className="count">{totalChanged ? `${totalChanged} changed` : 'all at defaults'}</span>
+      </label>
+      {changedOnly && !totalChanged && <div className="note">Every parameter is at its default.</div>}
       {GROUPS.map((g) => {
         const sw = GROUP_SWITCHES[g];
         const swShown = !!sw && (!PARAM_MAP[sw.id].show || PARAM_MAP[sw.id].show!(v));
@@ -241,22 +260,34 @@ export default function ParamPanel() {
         const defs = PARAMS.filter((p) => p.group === g && !SWITCH_IDS.has(p.id) && visible(p));
         // a group that does nothing here stays listed, greyed, with the reason in place of its settings
         const idle = on ? (GROUP_IDLE[g]?.(v) ?? null) : null;
+        const nChanged = changed[g]?.length ?? 0;
+        if (changedOnly && !nChanged) return null;
         if (idle && filter) return null;
-        if (!idle && !defs.length && !(g === 'Concrete' && !filter)) return null;
-        const open = filter ? true : !ui.collapsed[g];
+        if (!changedOnly && !idle && !defs.length && !(g === 'Concrete' && !filter)) return null;
+        const open = filter || changedOnly ? true : !ui.collapsed[g];
         const hideBody = (!on && !sw?.keepOpen) || !!idle;
         const errs = hideBody ? 0 : defs.filter((d) => model.ev.errors[d.id]).length;
         return (
-          <section className={`section ${on && !idle ? '' : 'off'}`} key={g} title={idle ?? undefined}>
+          <section className={`section ${on && !idle ? '' : 'off'}`} key={g} title={idle ?? undefined} data-group={g}>
             <div className="section-headrow">
               <button className="section-head" onClick={() => setUi({ collapsed: { ...ui.collapsed, [g]: open } })} aria-expanded={open}>
                 <span>
                   {open ? '−' : '+'} {g}
                 </span>
                 <span className="count" style={errs ? { color: 'var(--err)' } : undefined}>
+                  {nChanged > 0 && (
+                    <span className="changed-badge" title={`${nChanged} changed from the default`}>
+                      {nChanged}
+                    </span>
+                  )}
                   {errs ? `${errs} err` : idle ? 'not used' : on ? defs.length : 'off'}
                 </span>
               </button>
+              {nChanged > 0 && (
+                <button className="group-reset" onClick={() => resetGroup(g)} title={`Put ${nChanged} changed ${g} value${nChanged === 1 ? '' : 's'} back to default (undo with Ctrl+Z)`} aria-label={`Reset ${g} to defaults`}>
+                  ↺
+                </button>
+              )}
               {swShown && <GroupSwitch id={sw!.id} on={on} group={g} />}
             </div>
             {open && hideBody && (
@@ -266,6 +297,7 @@ export default function ParamPanel() {
             )}
             {open && !hideBody && (
               <div className="section-body">
+                {changedOnly && !defs.length && <div className="note section-off">Its changed values are hidden by the current setup. Reset puts them back too.</div>}
                 {defs.map((d) =>
                   d.kind === 'number' ? (
                     <NumberParam
@@ -284,9 +316,9 @@ export default function ParamPanel() {
                     <OtherParam key={d.id} def={d} value={v[d.id]} />
                   ),
                 )}
-                {g === 'Master' && <MasterButtons value={v.masterScale} />}
-                {g === 'Concrete' && <PourEditor compact />}
-                {g === 'Tuning' && <TuningTable />}
+                {g === 'Master' && !changedOnly && <MasterButtons value={v.masterScale} />}
+                {g === 'Concrete' && !changedOnly && <PourEditor compact />}
+                {g === 'Tuning' && !changedOnly && <TuningTable />}
               </div>
             )}
           </section>

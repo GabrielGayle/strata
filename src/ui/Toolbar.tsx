@@ -60,9 +60,10 @@ function pickFile(accept: string): Promise<File | null> {
   });
 }
 
-export async function importMeshInto(slot: 'ins' | 'src') {
+/** Load an STL / OBJ as the insert or the source form; picks a file when none is given (e.g. dropped). */
+export async function importMeshInto(slot: 'ins' | 'src', dropped?: File) {
   const st = useStore.getState();
-  const file = await pickFile('.stl,.obj,.step,.stp');
+  const file = dropped ?? (await pickFile('.stl,.obj,.step,.stp'));
   if (!file) return;
   const ext = file.name.split('.').pop()!.toLowerCase();
   if (ext === 'step' || ext === 'stp') {
@@ -80,6 +81,17 @@ export async function importMeshInto(slot: 'ins' | 'src') {
     st.toast(`Imported ${file.name}: ${(bb.max.x - bb.min.x).toFixed(0)} × ${(bb.max.y - bb.min.y).toFixed(0)} × ${(bb.max.z - bb.min.z).toFixed(0)} mm`);
   } catch (e) {
     st.toast(`Could not read ${file.name}: ${(e as Error).message}`);
+  }
+}
+
+/** Replace the working copy with a saved .strata.json (undo brings the old one back). */
+export async function openProjectFile(f: File) {
+  const { replaceProject, toast } = useStore.getState();
+  try {
+    replaceProject(deserialize(await f.text()));
+    toast(`Opened ${f.name}`);
+  } catch (e) {
+    toast(`Could not open: ${(e as Error).message}`);
   }
 }
 
@@ -199,19 +211,13 @@ export default function Toolbar() {
   const past = useStore((s) => s.past.length);
   const future = useStore((s) => s.future.length);
   const saveStatus = useStore((s) => s.saveStatus);
-  const { undo, redo, setName, randomise, loadPreset, saveVariant, loadVariant, deleteVariant, replaceProject, toast, setUi } = useStore.getState();
+  const { undo, redo, setName, randomise, loadPreset, saveVariant, loadVariant, deleteVariant, toast, setUi } = useStore.getState();
   const fullModel = useFullModel();
 
   const save = () => download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}.strata.json`, serialize(project), 'application/json');
   const open = async () => {
     const f = await pickFile('.json');
-    if (!f) return;
-    try {
-      replaceProject(deserialize(await f.text()));
-      toast(`Opened ${f.name}`);
-    } catch (e) {
-      toast(`Could not open: ${(e as Error).message}`);
-    }
+    if (f) openProjectFile(f);
   };
   const exportZip = () => {
     try {
