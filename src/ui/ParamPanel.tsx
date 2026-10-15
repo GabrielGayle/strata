@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { GROUPS, PARAMS, overrideSource, scaleFactorFor, type ParamDef, type Values } from '../core/params';
+import { GROUPS, GROUP_SWITCHES, PARAMS, PARAM_MAP, SWITCH_IDS, overrideSource, scaleFactorFor, type ParamDef, type Values } from '../core/params';
 import TuningTable from './TuningTable';
 import { isLiteral } from '../core/expr';
 import { useStore } from '../state/store';
@@ -206,6 +206,18 @@ function MasterButtons({ value }: { value: number }) {
   );
 }
 
+/** The on/off switch in a group's header. */
+function GroupSwitch({ id, on, group }: { id: string; on: boolean; group: string }) {
+  const setParam = useStore((s) => s.setParam);
+  const def = PARAM_MAP[id];
+  return (
+    <label className={`gswitch ${on ? 'on' : ''}`} title={def.help ?? `${on ? 'Turn off' : 'Turn on'} ${group} (settings are kept)`}>
+      <input type="checkbox" role="switch" checked={on} onChange={(e) => setParam(id, e.target.checked)} aria-label={`${group} on`} />
+      <span className="track" aria-hidden />
+    </label>
+  );
+}
+
 export default function ParamPanel() {
   const model = useModel();
   const project = useStore((s) => s.project);
@@ -223,21 +235,29 @@ export default function ParamPanel() {
       </div>
       <input className="search" placeholder="Filter parameters…" value={ui.filter} onChange={(e) => setUi({ filter: e.target.value })} aria-label="Filter parameters" />
       {GROUPS.map((g) => {
-        const defs = PARAMS.filter((p) => p.group === g && visible(p));
+        const sw = GROUP_SWITCHES[g];
+        const swShown = !!sw && (!PARAM_MAP[sw.id].show || PARAM_MAP[sw.id].show!(v));
+        const on = !swShown || !!v[sw!.id];
+        const defs = PARAMS.filter((p) => p.group === g && !SWITCH_IDS.has(p.id) && visible(p));
         if (!defs.length && !(g === 'Concrete' && !filter)) return null;
         const open = filter ? true : !ui.collapsed[g];
-        const errs = defs.filter((d) => model.ev.errors[d.id]).length;
+        const hideBody = !on && !sw?.keepOpen;
+        const errs = hideBody ? 0 : defs.filter((d) => model.ev.errors[d.id]).length;
         return (
-          <section className="section" key={g}>
-            <button className="section-head" onClick={() => setUi({ collapsed: { ...ui.collapsed, [g]: open } })} aria-expanded={open}>
-              <span>
-                {open ? '−' : '+'} {g}
-              </span>
-              <span className="count" style={errs ? { color: 'var(--err)' } : undefined}>
-                {errs ? `${errs} err` : defs.length}
-              </span>
-            </button>
-            {open && (
+          <section className={`section ${on ? '' : 'off'}`} key={g}>
+            <div className="section-headrow">
+              <button className="section-head" onClick={() => setUi({ collapsed: { ...ui.collapsed, [g]: open } })} aria-expanded={open}>
+                <span>
+                  {open ? '−' : '+'} {g}
+                </span>
+                <span className="count" style={errs ? { color: 'var(--err)' } : undefined}>
+                  {errs ? `${errs} err` : on ? defs.length : 'off'}
+                </span>
+              </button>
+              {swShown && <GroupSwitch id={sw!.id} on={on} group={g} />}
+            </div>
+            {open && hideBody && <div className="section-body"><div className="note section-off">Off: left out of the model and exports. Its settings are kept for when you switch it back on.</div></div>}
+            {open && !hideBody && (
               <div className="section-body">
                 {defs.map((d) =>
                   d.kind === 'number' ? (
