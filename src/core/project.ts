@@ -7,6 +7,7 @@ import { cleanMoves, type PartMoves } from './moves';
 import type { SoundSpec } from './sound';
 import { cleanAppearance, type Appearance } from './appearance';
 import type { DepthData } from './depth';
+import { cleanShadow, type ShadowSpec } from './shadow';
 
 export interface ImageAsset {
   name: string;
@@ -62,6 +63,8 @@ export interface Project {
   moves?: PartMoves;
   /** Material buckets: which plates are cut from which metal, and how each looks. */
   appearance?: Appearance;
+  /** Shadow pictures and the times they appear (Shadow view). */
+  shadow?: ShadowSpec;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -261,5 +264,6 @@ export function deserialize(text: string): Project {
     composition: raw.composition?.kind === 'composition' ? raw.composition : undefined,
     moves: cleanMoves(raw.moves),
     appearance: cleanAppearance(raw.appearance),
+    shadow: cleanShadow(raw.shadow),
   };
 }

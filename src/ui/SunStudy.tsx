@@ -65,6 +65,26 @@ function SunLight({ model, dir, elevation }: { model: Model; dir: THREE.Vector3;
   );
 }
 
+/** The wall the shadow pictures fall on: a pale panel behind the piece that catches the real shadow. */
+function ShadowWall({ model }: { model: Model }) {
+  const g = model.shadow!.geom;
+  const pad = Math.max(g.w, g.h) * 0.35;
+  const w = g.w + pad * 2;
+  const top = g.y0 + g.h + pad;
+  const a = g.x0 + g.w / 2;
+  // centre of the panel, a hair in front of the wall so it never fights the grid
+  const cx = g.s[0] * (g.wallS + 1) + g.right[0] * a;
+  const cz = g.s[1] * (g.wallS + 1) + g.right[1] * a;
+  // the panel's face looks back along the stack, toward the piece
+  const rotY = Math.atan2(-g.s[0], -g.s[1]);
+  return (
+    <mesh position={[cx, top / 2, cz]} rotation={[0, rotY, 0]} receiveShadow>
+      <planeGeometry args={[w, top]} />
+      <meshStandardMaterial color="#efe9dd" roughness={0.95} metalness={0} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
 /** Everything the sun study adds to the 3D scene. */
 export function SunStudy3D({ model }: { model: Model }) {
   const v = model.v;
@@ -112,6 +132,7 @@ export function SunStudy3D({ model }: { model: Model }) {
         <planeGeometry args={[r * 8, r * 8]} />
         <shadowMaterial transparent opacity={0.32} depthWrite={false} />
       </mesh>
+      {model.shadow && <ShadowWall model={model} />}
       {paths && (
         <>
           <PathLine points={ring} color="#8a8478" opacity={0.6} />
