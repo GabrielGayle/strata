@@ -1770,3 +1770,63 @@ canvas.thumb {
     cursor: row-resize;
   }
 }
+
+/* sun study: time bar and labels in the 3D view */
+.overlay.bc {
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.sunbar {
+  flex-direction: column;
+  /* between the size readout (bottom left) and the pour legend (bottom right) */
+  width: min(480px, calc(100% - 520px));
+  min-width: min(300px, calc(100% - 16px));
+}
+.sunbar .sb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-right: 9px;
+}
+.sunbar .sb-row .btn {
+  border-right: 1px solid var(--line);
+  min-width: 56px;
+}
+.sunbar input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.sunbar .sb-time {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+.sunbar .sb-info {
+  padding: 4px 9px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted, inherit);
+}
+.sun-compass,
+.sun-hour {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+.sun-compass {
+  font-weight: 700;
+  font-size: 13px;
+}
+.sun-compass.north {
+  color: var(--accent);
+}
+.sun-hour {
+  font-size: 10px;
+  opacity: 0.8;
+}
