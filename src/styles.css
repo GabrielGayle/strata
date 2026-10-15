@@ -1449,3 +1449,59 @@ canvas.thumb {
   font-size: 11px;
   color: var(--muted, inherit);
 }
+/* appearance: material buckets */
+.overlay.appearance {
+  /* under the view buttons, clear of the toggles on the right */
+  top: 44px;
+  left: 8px;
+  width: min(760px, calc(100% - 190px));
+  max-height: calc(100% - 120px);
+  overflow: auto;
+}
+.appearance .bucket {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.appearance .bucket small {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.appearance .swatch {
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--line);
+  display: inline-block;
+}
+.appearance .ap-edit,
+.appearance .ap-fill {
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+}
+.appearance .ap-edit input:not([type='color']) {
+  width: 130px;
+}
+.appearance .ap-edit input[type='color'] {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+}
+.appearance .ap-label {
+  font-weight: 700;
+  padding: 0 4px;
+}
+.appearance .ap-fill .btn,
+.appearance .ap-nth .btn {
+  border: 1px solid var(--line);
+}
+.appearance .ap-nth {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+}
+.appearance .ap-nth input {
+  width: 38px;
+}

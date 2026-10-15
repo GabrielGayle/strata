@@ -109,3 +109,34 @@ export function estimatePrice(bom: Bom, material: string, thickness: number, rat
 
   return { lines, subtotal, net, vat, total: net + vat, minutes, sheetKg, warnings };
 }
+
+const METAL_LABEL: Record<string, string> = { steel: 'Mild steel', corten: 'Corten', aluminium: 'Aluminium' };
+
+/**
+ * Plates in more than one metal: each metal is its own job (its own sheet,
+ * cutting speed and setup), with the minimum order applied once to the lot.
+ */
+export function estimateMix(bom: Bom, thickness: number, rates: PriceRates = DEFAULT_RATES): PriceEstimate {
+  const groups = bom.byMaterial?.filter((g) => g.partCount) ?? [];
+  const main = bom.byMaterial?.[0]?.material ?? 'steel';
+  if (groups.length <= 1) return estimatePrice(bom, groups[0]?.material ?? main, thickness, rates);
+  const parts = groups.map((g) => {
+    const sub = { ...bom, rows: g.rows, partCount: g.partCount, cutLength: g.cutLength, pierces: g.pierces };
+    return { g, est: estimatePrice(sub, g.material, thickness, { ...rates, minimum: 0 }) };
+  });
+  const lines: PriceLine[] = parts.flatMap(({ g, est }) => est.lines.map((l) => ({ ...l, label: `${METAL_LABEL[g.material] ?? g.material} ${l.label.toLowerCase()}` })));
+  const subtotal = lines.reduce((a, l) => a + l.cost, 0);
+  const net = Math.max(subtotal, bom.partCount ? rates.minimum : 0);
+  const vat = net * rates.vat;
+  const warnings = [...new Set(parts.flatMap((p) => p.est.warnings))];
+  return {
+    lines,
+    subtotal,
+    net,
+    vat,
+    total: net + vat,
+    minutes: parts.reduce((a, p) => a + p.est.minutes, 0),
+    sheetKg: parts.reduce((a, p) => a + p.est.sheetKg, 0),
+    warnings,
+  };
+}

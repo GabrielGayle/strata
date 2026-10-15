@@ -126,6 +126,8 @@ export interface SliceInput {
   moves?: PartMoves;
   /** Silhouette of the top image (1 = shape), when the plates should follow its outline. */
   topMask?: Gray | null;
+  /** Metal each plate is cut from, by plate key (tuned plates ring by it). */
+  materialFor?: (key: string) => string;
 }
 
 const UP: V3 = [0, 1, 0];
@@ -882,7 +884,7 @@ export function slice(input: SliceInput): SliceResult {
 
   // tuned plates: every main plate gets a flat top at the height that rings its note
   const main = defs.filter((d) => d.family === 'P' || d.family === 'R');
-  const tunes = !useForm && tuningActive(v) ? tunePlates(v, main.length) : null;
+  const tunes = !useForm && tuningActive(v) ? tunePlates(v, main.length, input.materialFor ? main.map((d) => input.materialFor!(d.key)) : undefined) : null;
   if (!useForm && tuningActive(v) && !tunes) warnings.push('Tuning: no readable notes. Use names like C3, F#2 or Bb4.');
   const tuning = tunes ? defs.map((d) => (d.family === 'P' || d.family === 'R' ? tunes[main.indexOf(d)] : null)) : null;
   if (tunes) {

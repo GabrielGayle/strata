@@ -20,6 +20,8 @@ export interface NestSheet {
   index: number;
   placements: Placement[];
   used: number; // part area placed
+  /** Metal on this sheet, when the plates mix metals (each is cut on its own sheets). */
+  material?: string;
 }
 
 export interface NestResult {
@@ -123,4 +125,18 @@ export function nest(items: NestItem[], sheetW: number, sheetH: number, spacing:
     sheetH,
     utilisation: sheets.length ? used / (sheets.length * sheetW * sheetH) : 0,
   };
+}
+
+/** Nest each group onto its own sheets (one metal per sheet), numbered in group order. */
+export function nestGroups(groups: { material: string; items: NestItem[] }[], sheetW: number, sheetH: number, spacing: number): NestResult {
+  if (groups.length <= 1) return nest(groups[0]?.items ?? [], sheetW, sheetH, spacing);
+  const sheets: NestSheet[] = [];
+  const unplaced: string[] = [];
+  for (const g of groups) {
+    const r = nest(g.items, sheetW, sheetH, spacing);
+    for (const s of r.sheets) sheets.push({ ...s, index: sheets.length, material: g.material });
+    unplaced.push(...r.unplaced);
+  }
+  const used = sheets.reduce((a, s) => a + s.used, 0);
+  return { sheets, unplaced, sheetW, sheetH, utilisation: sheets.length ? used / (sheets.length * sheetW * sheetH) : 0 };
 }

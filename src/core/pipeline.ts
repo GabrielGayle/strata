@@ -8,7 +8,9 @@ import { processImage, rotate, silhouetteMask, type Gray } from './image';
 import { buildHeightField, type HeightField } from './heightfield';
 import { slice, type SliceResult } from './slicer';
 import { runChecks, type Issue } from './checks';
-import { nest, type NestResult } from './nest';
+import { nest, nestGroups, type NestResult } from './nest';
+import { materialKey, materialOf } from './appearance';
+import { tuningActive } from './tuning';
 import { buildMoulds, pourPlan, type MouldResult, type PourPlanRow } from './mould';
 import { unfold, type UnfoldResult } from './unfold';
 import { buildBom, type Bom } from './bom';
@@ -134,19 +136,24 @@ export function createPipeline() {
     );
     const hf = stage('Strata field', [...pick(v, STRATA_KEYS), sideImg], () => (v.stackSource === 'strata' ? buildHeightField(v, sideImg) : null));
     // parts that come out unchanged keep their identity, so checks, nesting and the 3D view skip them
-    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves], () =>
-      share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg, topMask, moves: project.moves })),
+    // which metal each plate is: a string, so it only counts as changed when a plate's metal does
+    const mats = materialKey(project.appearance, String(v.plateMaterial));
+    const materialFor = (key: string) => materialOf(project.appearance, key, String(v.plateMaterial));
+    // tuned plates ring by their own metal, so only then does the metal change the cut
+    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : ''], () =>
+      share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg, topMask, moves: project.moves, materialFor })),
     );
     const issues = stage('Fit checks', [sliced, ...pick(v, CHECK_KEYS)], () => runChecks(v, sliced), true);
-    const nested = stage('Nest sheets', [sliced, v.sheetW, v.sheetH, v.partSpacing], () =>
-      nest(
-        sliced.parts.map((p) => ({ id: p.id, w: p.bbox.maxX - p.bbox.minX, h: p.bbox.maxY - p.bbox.minY, area: p.area })),
-        v.sheetW,
-        v.sheetH,
-        v.partSpacing,
-      ),
-      true,
-    );
+    const nested = stage('Nest sheets', [sliced, v.sheetW, v.sheetH, v.partSpacing, mats], () => {
+      // a laser shop cuts each metal from its own sheet
+      const groups = new Map<string, { material: string; items: { id: string; w: number; h: number; area: number }[] }>([[String(v.plateMaterial), { material: String(v.plateMaterial), items: [] }]]);
+      for (const p of sliced.parts) {
+        const m = materialFor(p.plateKey);
+        if (!groups.has(m)) groups.set(m, { material: m, items: [] });
+        groups.get(m)!.items.push({ id: p.id, w: p.bbox.maxX - p.bbox.minX, h: p.bbox.maxY - p.bbox.minY, area: p.area });
+      }
+      return nestGroups([...groups.values()].filter((g, i) => i === 0 || g.items.length), v.sheetW, v.sheetH, v.partSpacing);
+    }, true);
     const moulds = stage('Moulds', [sliced, insert, ...pick(v, MOULD_KEYS)], () =>
       buildMoulds(v, sliced, insert?.mesh ?? null, insert ? { minY: insert.form.bbox.min.y, maxY: insert.form.bbox.max.y } : null),
       true,
@@ -166,8 +173,8 @@ export function createPipeline() {
     const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
     const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
     const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
-    const bom = stage('Cut list + BOM', [sliced, nested, moulds, mouldNest, insert, pour, v.plateMaterial, v.insMaterial], () =>
-      buildBom(v, sliced, nested, moulds, mouldNest, insert?.volume ?? 0, pour.rows),
+    const bom = stage('Cut list + BOM', [sliced, nested, moulds, mouldNest, insert, pour, v.plateMaterial, v.insMaterial, project.appearance], () =>
+      buildBom(v, sliced, nested, moulds, mouldNest, insert?.volume ?? 0, pour.rows, project.appearance),
       true,
     );
     return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced, issues, nested, moulds, mouldNest, unfolded, pour, bom, stages, totalMs: performance.now() - t0, stale };

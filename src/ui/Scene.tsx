@@ -11,6 +11,7 @@ import { planeToWorld } from '../core/section';
 import { baseGeometry } from '../core/base';
 import { shapeBBox } from '../core/geom2d';
 import { makeConcreteMaterial, METALS, PLY, type Band } from './materials';
+import { lookOf, MAIN, type Appearance } from '../core/appearance';
 import { useStore } from '../state/store';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 
@@ -24,6 +25,8 @@ export interface SceneOpts {
   showSource: boolean;
   /** Hand placement: the selected plate gets a move / rotate gizmo. */
   moveMode?: boolean;
+  /** Material picking: a click puts the plate in the active bucket (shift-click: the run since the last one). */
+  onPaint?: (plateKey: string, shift: boolean) => void;
 }
 
 export function cssVar(name: string, fallback: string): string {
@@ -48,7 +51,7 @@ export function Env() {
   return null;
 }
 
-const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selected, onSelect }: { part: Part; material: THREE.Material; selMaterial: THREE.Material; selected: boolean; onSelect?: (id: string) => void }) {
+const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selected, onSelect, onPaint }: { part: Part; material: THREE.Material; selMaterial: THREE.Material; selected: boolean; onSelect?: (id: string) => void; onPaint?: (key: string, shift: boolean) => void }) {
   const geo = useMemo(() => extrudeOnPlane(part.shape, part.thickness, part.plane), [part]);
   useEffect(() => () => geo.dispose(), [geo]);
   return (
@@ -58,13 +61,19 @@ const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selecte
       receiveShadow
       material={selected ? selMaterial : material}
       onClick={
-        onSelect
+        onPaint
           ? (e: ThreeEvent<MouseEvent>) => {
-              if (e.delta > 4 || gizmoIsBusy()) return;
+              if (e.delta > 4) return;
               e.stopPropagation();
-              onSelect(part.id);
+              onPaint(part.plateKey, e.nativeEvent.shiftKey);
             }
-          : undefined
+          : onSelect
+            ? (e: ThreeEvent<MouseEvent>) => {
+                if (e.delta > 4 || gizmoIsBusy()) return;
+                e.stopPropagation();
+                onSelect(part.id);
+              }
+            : undefined
       }
     />
   );
@@ -263,12 +272,20 @@ function IssueMarkers({ model }: { model: Model }) {
 
 export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }) {
   const v = model.v;
-  const metal = METALS[v.plateMaterial] ?? METALS.steel;
-  const material = useMemo(() => new THREE.MeshStandardMaterial({ color: metal.color, metalness: metal.metalness, roughness: metal.roughness }), [metal]);
+  const appearance = useStore((st) => st.project.appearance);
+  // one material per bucket; plates in no bucket wear the main metal
+  const looks = useMemo(() => bucketLooks(appearance, String(v.plateMaterial)), [appearance, v.plateMaterial]);
+  const lookKey = JSON.stringify(looks);
+  const materials = useMemo(
+    () => new Map(Object.entries(looks).map(([id, l]) => [id, new THREE.MeshStandardMaterial({ color: l.color, metalness: l.metalness, roughness: l.roughness })])),
+    [lookKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const material = materials.get(MAIN)!;
+  const matFor = (p: Part) => materials.get(appearance?.assign[p.plateKey] ?? MAIN) ?? material;
   // re-read theme colours whenever the window appearance changes
   const theme = useStore((st) => st.ui.theme);
   const selMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: cssVar('--accent', '#d4521c'), metalness: 0.2, roughness: 0.5, emissive: new THREE.Color('#5a1a00') }), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => () => material.dispose(), [material]);
+  useEffect(() => () => materials.forEach((m) => m.dispose()), [materials]);
   const gridA = useMemo(() => cssVar('--grid-a', '#cfcbc2'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const gridB = useMemo(() => cssVar('--grid-b', '#a9a49a'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const preview = useRef<THREE.Group>(null);
@@ -282,13 +299,13 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       <Grid args={[20000, 20000]} cellSize={10} sectionSize={100} cellColor={gridA} sectionColor={gridB} cellThickness={0.6} sectionThickness={1} fadeDistance={7000} fadeStrength={1.5} infiniteGrid position={[0, -0.05, 0]} />
       {v.baseOn && <Base model={model} xray={opts.xray} />}
       {model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
-        <PlateMesh key={p.id} part={p} material={material} selMaterial={selMaterial} selected={opts.selected === p.id} onSelect={opts.onSelect} />
+        <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={!opts.onPaint && opts.selected === p.id} onSelect={opts.onSelect} onPaint={opts.onPaint} />
       ))}
       {/* the plate under the gizmo, carried rigidly while it is dragged */}
       <group ref={preview} matrixAutoUpdate={false}>
         {dragKey &&
           model.sliced.parts.filter((p) => p.plateKey === dragKey).map((p) => (
-            <PlateMesh key={p.id} part={p} material={material} selMaterial={selMaterial} selected onSelect={opts.onSelect} />
+            <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected onSelect={opts.onSelect} />
           ))}
       </group>
       {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
@@ -304,6 +321,14 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       {opts.showIssues && <IssueMarkers model={model} />}
     </>
   );
+}
+
+/** The look of each bucket (and MAIN for plates in none). */
+export function bucketLooks(app: Appearance | undefined, main: string) {
+  const out: Record<string, { color: string; metalness: number; roughness: number }> = {};
+  out[MAIN] = app ? lookOf(main, app.main?.finish, app.main?.color) : (METALS[main] ?? METALS.steel);
+  for (const b of app?.buckets ?? []) out[b.id] = lookOf(b.material, b.finish, b.color);
+  return out;
 }
 
 /** Key light with a shadow camera fitted to the design, so carved recesses and cavities read. */

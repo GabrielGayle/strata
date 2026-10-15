@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../state/store';
 import { useFullModel, useModel, fmt } from './model';
-import { download, fitShape, mouldPartDxf, sheetDxf } from '../core/exporters';
+import { download, fitShape, mouldPartDxf, sheetDxf, sheetFiles } from '../core/exporters';
 import { shapeD, pathD, segsD } from './svg';
 import type { Shape, Path } from '../core/geom2d';
 import type { NestResult } from '../core/nest';
+import { MATERIAL_NAME } from '../core/bom';
 import { zipSync, strToU8 } from 'fflate';
 
 interface Item {
@@ -87,9 +88,7 @@ export default function NestView() {
             className="btn sm"
             onClick={() => {
               const m = fullModel();
-              const files: Record<string, Uint8Array> = {};
-              m.nested.sheets.forEach((s, i) => (files[`sheet-${String(i + 1).padStart(2, '0')}.dxf`] = strToU8(sheetDxf(m, s.index))));
-              download('sheets.zip', zipSync(files), 'application/zip');
+              download('sheets.zip', zipSync(sheetFiles(m)), 'application/zip');
             }}
           >
             All sheet DXFs
@@ -114,7 +113,7 @@ export default function NestView() {
           <div className="box" key={i}>
             <div className="box-head">
               <span>
-                Sheet {i + 1} · {s.placements.length} parts · {fmt((s.used / (nest.sheetW * nest.sheetH)) * 100, 0)}%
+                Sheet {i + 1}{s.material ? ` · ${MATERIAL_NAME[s.material] ?? s.material}` : ''} · {s.placements.length} parts · {fmt((s.used / (nest.sheetW * nest.sheetH)) * 100, 0)}%
               </span>
               {which === 'metal' && (
                 <button className="btn sm" onClick={() => download(`sheet-${i + 1}.dxf`, sheetDxf(fullModel(), i), 'application/dxf')}>

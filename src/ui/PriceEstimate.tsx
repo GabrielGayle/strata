@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Bom } from '../core/bom';
 import { MATERIAL_NAME } from '../core/bom';
-import { CHOPCHOP_QUOTE_URL, DEFAULT_RATES, estimatePrice, type PriceRates } from '../core/price';
+import { CHOPCHOP_QUOTE_URL, DEFAULT_RATES, estimateMix, type PriceRates } from '../core/price';
 import { fmt } from './model';
 
 const KEY = 'strata.priceRates';
@@ -47,7 +47,9 @@ function RateInput({ label, value, onChange, step = 0.05, unit }: { label: strin
 export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material: string; thickness: number }) {
   const [rates, setRatesState] = useState(loadRates);
   const [editing, setEditing] = useState(false);
-  const est = useMemo(() => estimatePrice(bom, material, thickness, rates), [bom, material, thickness, rates]);
+  const est = useMemo(() => estimateMix(bom, thickness, rates), [bom, thickness, rates]);
+  const metals = bom.byMaterial?.filter((g) => g.partCount).map((g) => g.material) ?? [];
+  const metalText = (metals.length ? metals : [material]).map((m) => MATERIAL_NAME[m] ?? m).join(' and ');
 
   const setRates = (r: PriceRates) => {
     setRatesState(r);
@@ -97,7 +99,7 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
         </div>
       ))}
       <div className="note">
-        Estimate only, not a Chop Chop quote. They don&rsquo;t publish rates, so this uses typical UK laser rates applied to the cut list ({MATERIAL_NAME[material] ?? material} {fmt(thickness, 1)} mm).
+        Estimate only, not a Chop Chop quote. They don&rsquo;t publish rates, so this uses typical UK laser rates applied to the cut list ({metalText} {fmt(thickness, 1)} mm{metals.length > 1 ? ', each metal priced as its own job' : ''}).
         Delivery, etching and the concrete base aren&rsquo;t included. For a real price, upload the plate DXFs to their{' '}
         <a href={CHOPCHOP_QUOTE_URL} target="_blank" rel="noreferrer">
           instant quote

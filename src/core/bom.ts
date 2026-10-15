@@ -6,6 +6,7 @@ import type { NestResult } from './nest';
 import type { MouldResult, PourPlanRow } from './mould';
 import { embedOf } from './slicer';
 import type { HardwareRow } from './brace';
+import { bucketOf, type Appearance } from './appearance';
 
 export const DENSITY: Record<string, number> = { steel: 7850, aluminium: 2700, corten: 7850 };
 export const MATERIAL_NAME: Record<string, string> = { steel: 'Mild steel', aluminium: 'Aluminium', corten: 'Corten steel' };
@@ -18,10 +19,26 @@ export interface CutRow {
   cut: number; // mm of cut path
   pierces: number;
   mass: number; // kg
+  /** Metal the part is cut from. */
+  material: string;
+  /** Appearance bucket name, when the part is in one. */
+  bucket?: string;
+}
+
+/** Plates cut from one metal: a laser shop runs each as its own job. */
+export interface MaterialGroup {
+  material: string;
+  rows: CutRow[];
+  partCount: number;
+  plateMass: number; // kg
+  cutLength: number; // m
+  pierces: number;
 }
 
 export interface Bom {
   rows: CutRow[];
+  /** One entry per metal, main material first. */
+  byMaterial: MaterialGroup[];
   plateCount: number;
   partCount: number;
   plateArea: number; // m²
@@ -51,11 +68,14 @@ export function buildBom(
   mouldNest: NestResult,
   insertVolume: number, // mm³
   pour: PourPlanRow[],
+  appearance?: Appearance,
 ): Bom {
-  const rho = DENSITY[v.plateMaterial] ?? 7850;
   const rows: CutRow[] = sliced.parts.map((p) => {
     const ex = p.shape[0];
     const pierces = 1 + ex.holes.length;
+    const bucket = bucketOf(appearance, p.plateKey);
+    const material = bucket?.material ?? v.plateMaterial;
+    const rho = DENSITY[material] ?? 7850;
     return {
       id: p.id,
       w: p.bbox.maxX - p.bbox.minX,
@@ -64,6 +84,8 @@ export function buildBom(
       cut: p.perimeter,
       pierces,
       mass: (p.area * p.thickness * 1e-9) * rho,
+      material,
+      ...(bucket ? { bucket: bucket.name } : {}),
     };
   });
   const plateArea = rows.reduce((a, r) => a + r.area, 0) / 1e6;
@@ -80,6 +102,7 @@ export function buildBom(
   const plyArea = moulds.parts.reduce((a, p) => a + p.area, 0) / 1e6;
   return {
     rows,
+    byMaterial: groupByMaterial(rows, v.plateMaterial),
     plateCount: sliced.plates.filter((p) => p.parts.length).length,
     partCount: sliced.parts.length,
     plateArea,
@@ -101,6 +124,24 @@ export function buildBom(
   };
 }
 
+export function groupByMaterial(rows: CutRow[], main: string): MaterialGroup[] {
+  const groups = new Map<string, CutRow[]>([[main, []]]);
+  for (const r of rows) {
+    if (!groups.has(r.material)) groups.set(r.material, []);
+    groups.get(r.material)!.push(r);
+  }
+  return [...groups]
+    .filter(([m, rs]) => rs.length || m === main)
+    .map(([material, rs]) => ({
+      material,
+      rows: rs,
+      partCount: rs.length,
+      plateMass: rs.reduce((a, r) => a + r.mass, 0),
+      cutLength: rs.reduce((a, r) => a + r.cut, 0) / 1000,
+      pierces: rs.reduce((a, r) => a + r.pierces, 0),
+    }));
+}
+
 export function hardwareCsv(bom: Bom): string {
   const q = (s: string) => (/[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   const lines = ['item,spec,qty,note'];
@@ -109,8 +150,9 @@ export function hardwareCsv(bom: Bom): string {
 }
 
 export function cutListCsv(v: Values, bom: Bom): string {
-  const lines = ['part,width_mm,height_mm,area_mm2,cut_length_mm,pierces,mass_kg,material,thickness_mm'];
+  const q = (s: string) => (/[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  const lines = ['part,width_mm,height_mm,area_mm2,cut_length_mm,pierces,mass_kg,material,thickness_mm,bucket'];
   for (const r of bom.rows)
-    lines.push([r.id, r.w.toFixed(2), r.h.toFixed(2), r.area.toFixed(1), r.cut.toFixed(1), r.pierces, r.mass.toFixed(3), MATERIAL_NAME[v.plateMaterial], v.thickness].join(','));
+    lines.push([r.id, r.w.toFixed(2), r.h.toFixed(2), r.area.toFixed(1), r.cut.toFixed(1), r.pierces, r.mass.toFixed(3), MATERIAL_NAME[r.material] ?? r.material, v.thickness, q(r.bucket ?? '')].join(','));
   return lines.join('\n') + '\n';
 }

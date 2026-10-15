@@ -6,6 +6,7 @@ import type { Composition, Surface } from '../core/compose';
 import type { PourLayer } from '../core/mould';
 import { isIdentity, type PartMove } from '../core/moves';
 import { mulberry32 } from '../core/rng';
+import type { Appearance } from '../core/appearance';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 
 export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'graph' | 'compare';
@@ -34,6 +35,9 @@ export interface UiState {
   moveMode: boolean;
   gizmoMode: 'translate' | 'rotate';
   gizmoSpace: 'world' | 'local';
+  /** Material picking in the 3D view: clicks put plates in the active bucket. */
+  paintMode: boolean;
+  activeBucket: string;
 }
 
 /** A whole master setup (project) open in its own tab. The active one lives in `project`. */
@@ -60,6 +64,8 @@ interface Store {
   /** Place one plate by hand (null puts it back where it was designed). */
   movePart: (key: string, move: PartMove | null) => void;
   resetMoves: () => void;
+  /** Material buckets and which plates are in them. */
+  setAppearance: (a: Appearance | undefined, label?: string) => void;
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
   replaceProject: (p: Project) => void;
@@ -200,6 +206,8 @@ export const useStore = create<Store>((set, get) => {
       moveMode: false,
       gizmoMode: 'translate',
       gizmoSpace: 'world',
+      paintMode: false,
+      activeBucket: 'b1',
       ...loadUi(),
     },
     setParam: (id, value) => {
@@ -228,6 +236,10 @@ export const useStore = create<Store>((set, get) => {
       if (!p.moves) return;
       commit({ ...p, moves: undefined }, `moves:${performance.now()}`);
       get().toast('Every plate is back where it was designed');
+    },
+    setAppearance: (a, label = 'appearance') => {
+      const p = get().project;
+      commit({ ...p, appearance: a }, `${label}:${performance.now()}`);
     },
     setName: (name) => commit({ ...get().project, name }, 'name'),
     setAsset: (kind, slot, asset) => {
@@ -336,6 +348,7 @@ export const useStore = create<Store>((set, get) => {
         locks: { ...p.locks },
         pour: p.pour.map((x) => ({ ...x })),
         moves: p.moves,
+        appearance: p.appearance,
         createdAt: new Date().toISOString(),
       };
       commit({ ...p, variants: [...p.variants, v] }, `variant:${v.id}`);
@@ -345,7 +358,7 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       const v = p.variants.find((x) => x.id === id);
       if (!v) return;
-      commit({ ...p, params: { ...p.params, ...v.params }, locks: { ...v.locks }, pour: v.pour.map((x) => ({ ...x })), moves: v.moves }, `loadvar:${performance.now()}`);
+      commit({ ...p, params: { ...p.params, ...v.params }, locks: { ...v.locks }, pour: v.pour.map((x) => ({ ...x })), moves: v.moves, appearance: v.appearance ?? p.appearance }, `loadvar:${performance.now()}`);
       get().toast(`Loaded variant "${v.name}"`);
     },
     deleteVariant: (id) => {

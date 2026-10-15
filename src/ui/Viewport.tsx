@@ -8,6 +8,7 @@ import type { Model } from '../core/pipeline';
 import Scene, { modelBounds } from './Scene';
 import { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { useModel, fmt } from './model';
+import AppearancePanel, { paintClick } from './AppearancePanel';
 
 export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
@@ -76,10 +77,12 @@ export default function Viewport() {
       xray: ui.xray,
       showIssues: ui.showIssues,
       showSource: ui.showSource,
-      moveMode: ui.moveMode,
+      moveMode: ui.moveMode && !ui.paintMode,
+      onPaint: ui.paintMode ? (key: string, shift: boolean) => paintClick(model, key, shift) : undefined,
     }),
-    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.moveMode, setUi],
+    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.moveMode, ui.paintMode, model, setUi],
   );
+  const bucketed = Object.keys(useStore((s) => s.project.appearance?.assign) ?? {}).length;
   const movedCount = Object.keys(useStore((s) => s.project.moves) ?? {}).length;
   useEffect(() => {
     if (!ui.moveMode) return;
@@ -103,7 +106,7 @@ export default function Viewport() {
   const hMax = heights.length ? Math.max(...heights) : 0;
   return (
     <>
-      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => !gizmoIsBusy() && setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
+      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
         <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={1} far={60000} position={[1500, 1100, 1800]} />
         <OrthographicCamera makeDefault={ui.ortho} near={-50000} far={50000} position={[1500, 1100, 1800]} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
@@ -121,7 +124,10 @@ export default function Viewport() {
         </button>
       </div>
       <div className="overlay tr col">
-        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
+        <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
+          Materials{bucketed ? ` (${bucketed})` : ''}
+        </button>
+        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
           Move plates{movedCount ? ` (${movedCount})` : ''}
         </button>
         <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
@@ -156,7 +162,8 @@ export default function Viewport() {
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
       </div>
-      {ui.moveMode && <MovePanel />}
+      {ui.moveMode && !ui.paintMode && <MovePanel />}
+      {ui.paintMode && <AppearancePanel />}
       {v.pourView !== 'plain' && model.pour.rows.length > 0 && (
         <div className="overlay br info">
           {[...model.pour.rows].reverse().map((r) => (

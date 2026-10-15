@@ -16,6 +16,7 @@ import { baseGeometry } from './base';
 import { serialize, type Project } from './project';
 import { strokeTextCentered } from './strokefont';
 import type { UnfoldPiece } from './unfold';
+import { materialOf } from './appearance';
 
 export interface FittedContour {
   segs: Seg[];
@@ -171,11 +172,34 @@ export function mouldStl(model: Model, body: 'base' | 'insert'): Uint8Array | nu
 
 const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, '_');
 
+/** Laser sheet DXFs by file name. With mixed metals each metal gets its own folder, numbered from 1. */
+export function sheetFiles(model: Model): Record<string, Uint8Array> {
+  const files: Record<string, Uint8Array> = {};
+  const mixed = new Set(model.nested.sheets.map((s) => s.material ?? '')).size > 1;
+  const counts: Record<string, number> = {};
+  model.nested.sheets.forEach((s, i) => {
+    const dir = mixed && s.material ? `${safe(s.material)}/` : '';
+    counts[dir] = (counts[dir] ?? 0) + 1;
+    files[`${dir}sheet-${String(counts[dir]).padStart(2, '0')}.dxf`] = strToU8(sheetDxf(model, i));
+  });
+  return files;
+}
+
+/** One DXF per laser part. With mixed metals each metal gets its own folder. */
+export function partFiles(model: Model, project?: Project): Record<string, Uint8Array> {
+  const files: Record<string, Uint8Array> = {};
+  const main = String(model.v.plateMaterial);
+  const metal = (key: string) => materialOf(project?.appearance, key, main);
+  const mixed = new Set(model.sliced.parts.map((p) => metal(p.plateKey))).size > 1;
+  for (const p of model.sliced.parts) files[`${mixed ? `${safe(metal(p.plateKey))}/` : ''}${safe(p.id)}.dxf`] = strToU8(partDxf(p, model.v));
+  return files;
+}
+
 export function buildZip(model: Model, project: Project): Uint8Array {
   const v = model.v;
   const files: Record<string, Uint8Array> = {};
-  for (const p of model.sliced.parts) files[`laser/parts/${safe(p.id)}.dxf`] = strToU8(partDxf(p, v));
-  model.nested.sheets.forEach((s, i) => (files[`laser/sheets/sheet-${String(i + 1).padStart(2, '0')}.dxf`] = strToU8(sheetDxf(model, s.index))));
+  for (const [name, data] of Object.entries(partFiles(model, project))) files[`laser/parts/${name}`] = data;
+  for (const [name, data] of Object.entries(sheetFiles(model))) files[`laser/sheets/${name}`] = data;
   for (const mp of model.moulds.parts) {
     files[`mould/dxf/${safe(mp.id)}.dxf`] = strToU8(mouldPartDxf(mp, v));
     files[`mould/svg/${safe(mp.id)}.svg`] = strToU8(shapeSvg([{ shape: mp.shape }]));

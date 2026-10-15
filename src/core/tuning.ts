@@ -165,6 +165,8 @@ export interface PlateTune {
   cut: number;
   /** Predicted ring of the plate as cut (before trimming). */
   cutHz: number;
+  /** Metal the plate is cut from (aluminium needs a different length than steel for the same note). */
+  material: string;
   /** The length was held to MIN_TUNED…MAX_TUNED, so the plate won't reach its note. */
   clamped: boolean;
 }
@@ -173,15 +175,16 @@ export const MIN_TUNED = 10;
 export const MAX_TUNED = 2500;
 
 /** Per-plate target notes and free lengths for `count` plates, or null when the notes can't be read. */
-export function tunePlates(v: Values, count: number): PlateTune[] | null {
+export function tunePlates(v: Values, count: number, materials?: string[]): PlateTune[] | null {
   const notes = plateNotes(v, count);
   if (!notes.length) return null;
   const allow = 1 + Math.max(0, v.tuneAllowance) / 100;
-  return notes.map((midi) => {
+  return notes.map((midi, i) => {
+    const material = materials?.[i] ?? String(v.plateMaterial);
     const hz = midiToHz(midi);
-    const length = lengthForHz(hz, v.thickness, v.plateMaterial);
+    const length = lengthForHz(hz, v.thickness, material);
     const want = length * allow;
     const cut = Math.min(MAX_TUNED, Math.max(MIN_TUNED, want));
-    return { midi, name: midiName(midi), hz, length, cut, cutHz: cantileverHz(cut, v.thickness, v.plateMaterial), clamped: cut !== want };
+    return { midi, name: midiName(midi), hz, length, cut, cutHz: cantileverHz(cut, v.thickness, material), material, clamped: cut !== want };
   });
 }

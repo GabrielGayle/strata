@@ -102,6 +102,12 @@ function AppearanceMenu() {
     <Menu label="Appearance">
       {() => (
         <div style={{ width: 300 }}>
+          <div className="head">Plates</div>
+          <div className="btnrow">
+            <button className="btn sm" onClick={() => useStore.getState().setUi({ tab: '3d', paintMode: true, moveMode: false })} title="Sort plates into material buckets (Corten, aluminium…) by clicking them in the 3D view">
+              Plate materials…
+            </button>
+          </div>
           <div className="head">Presets</div>
           <div className="theme-grid">
             <button className={`theme-swatch ${theme.id === 'system' ? 'on' : ''}`} onClick={() => setTheme({ id: 'system' })} title="Follow the system light/dark setting">

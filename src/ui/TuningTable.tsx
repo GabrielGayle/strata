@@ -22,7 +22,7 @@ export default function TuningTable() {
   if (!tuning) return null;
   const rows = model.sliced.plates.map((p, i) => ({ plate: p, tune: tuning[i] })).filter((r) => r.tune) as { plate: (typeof model.sliced.plates)[number]; tune: PlateTune }[];
   if (!rows.length) return null;
-  const mat = MATERIALS[v.plateMaterial] ?? MATERIALS.steel;
+  const matLabel = [...new Set(rows.map((r) => r.tune.material ?? v.plateMaterial))].map((m) => (MATERIALS[m] ?? MATERIALS.steel).label).join(' and ');
   return (
     <div style={{ display: 'grid', gap: 6, padding: '4px 0 6px' }}>
       <table className="tbl" style={{ fontSize: 11 }}>
@@ -41,7 +41,7 @@ export default function TuningTable() {
             return (
               <tr key={plate.def.key} className="click" onClick={() => setUi({ selected: id })} style={tune.clamped ? { color: 'var(--warn)' } : undefined}>
                 <td className="mono">{id}</td>
-                <td className="mono" title={`${fmt(tune.hz, 1)} Hz at ${fmt(tune.length, 1)} mm`}>
+                <td className="mono" title={`${fmt(tune.hz, 1)} Hz at ${fmt(tune.length, 1)} mm in ${(MATERIALS[tune.material] ?? MATERIALS.steel).label}`}>
                   {tune.name}
                 </td>
                 <td className="num">{fmt(tune.cut, 1)}</td>
@@ -66,7 +66,7 @@ export default function TuningTable() {
         </tbody>
       </table>
       <div className="perr" style={{ color: 'var(--muted)' }}>
-        Predicted for {fmt(v.thickness, 1)} mm {mat.label} clamped rigidly in the concrete. Real plates land off this, often by a semitone or more: the concrete grip
+        Predicted for {fmt(v.thickness, 1)} mm {matLabel} clamped rigidly in the concrete. Real plates land off this, often by a semitone or more: the concrete grip
         gives a little, wide plates are stiffer than the simple model, and cut-outs change it. Plates are cut {fmt(v.tuneAllowance, 1)}% tall so they start flat: strike each one, check
         it with a tuner or by ear, and grind the top down a little at a time to bring it up to pitch.
       </div>
