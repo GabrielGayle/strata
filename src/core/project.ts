@@ -5,6 +5,7 @@ import type { PatternSpec } from './pattern';
 import type { Composition } from './compose';
 import { cleanMoves, type PartMoves } from './moves';
 import type { SoundSpec } from './sound';
+import { cleanAppearance, type Appearance } from './appearance';
 
 export interface ImageAsset {
   name: string;
@@ -31,6 +32,7 @@ export interface Variant {
   locks: Record<string, boolean>;
   pour: PourLayer[];
   moves?: PartMoves;
+  appearance?: Appearance;
   createdAt: string;
 }
 
@@ -48,6 +50,8 @@ export interface Project {
   composition?: Composition;
   /** Plates moved by hand in the 3D view, keyed by plate key (P3, X1, R5…). */
   moves?: PartMoves;
+  /** Material buckets: which plates are cut from which metal, and how each looks. */
+  appearance?: Appearance;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -207,5 +211,6 @@ export function deserialize(text: string): Project {
     variants: Array.isArray(raw.variants) ? raw.variants : [],
     composition: raw.composition?.kind === 'composition' ? raw.composition : undefined,
     moves: cleanMoves(raw.moves),
+    appearance: cleanAppearance(raw.appearance),
   };
 }

@@ -1,10 +1,10 @@
 import { Fragment, useState } from 'react';
 import { useStore } from '../state/store';
 import { useFullModel, useModel, fmt, fmtInt } from './model';
-import { buildZip, download, modelStl, partDxf, pourPlanText, sheetDxf } from '../core/exporters';
+import { buildZip, download, modelStl, partDxf, partFiles, pourPlanText, sheetFiles } from '../core/exporters';
 import { cutListCsv, hardwareCsv, MATERIAL_NAME } from '../core/bom';
 import { serialize } from '../core/project';
-import { zipSync, strToU8 } from 'fflate';
+import { zipSync } from 'fflate';
 import type { Issue } from '../core/checks';
 import { PriceEstimate } from './PriceEstimate';
 
@@ -67,15 +67,11 @@ export default function Inspector() {
 
   const plateZip = () => {
     const m = fullModel();
-    const files: Record<string, Uint8Array> = {};
-    for (const p of m.sliced.parts) files[`${p.id}.dxf`] = strToU8(partDxf(p, m.v));
-    download(`${base}-plates.zip`, zipSync(files), 'application/zip');
+    download(`${base}-plates.zip`, zipSync(partFiles(m, useStore.getState().project)), 'application/zip');
   };
   const sheetZip = () => {
     const m = fullModel();
-    const files: Record<string, Uint8Array> = {};
-    m.nested.sheets.forEach((s, i) => (files[`sheet-${String(i + 1).padStart(2, '0')}.dxf`] = strToU8(sheetDxf(m, s.index))));
-    download(`${base}-sheets.zip`, zipSync(files), 'application/zip');
+    download(`${base}-sheets.zip`, zipSync(sheetFiles(m)), 'application/zip');
   };
 
   return (
@@ -234,7 +230,8 @@ export default function Inspector() {
         </div>
         <div className="note">
           DXF R12, mm. Layers CUT (red), ETCH (blue: part numbers + image lines), BEND. Curves are fitted as true arcs within {fmt(v.arcTolerance, 3)} mm; kerf {fmt(v.kerf, 2)} mm
-          compensated. {MATERIAL_NAME[v.plateMaterial]} {fmt(v.thickness, 1)} mm.
+          compensated. {b.byMaterial.filter((g) => g.partCount).map((g) => `${MATERIAL_NAME[g.material] ?? g.material} (${g.partCount})`).join(' + ') || MATERIAL_NAME[v.plateMaterial]} {fmt(v.thickness, 1)} mm.
+          {b.byMaterial.filter((g) => g.partCount).length > 1 && ' Mixed metals: the ZIP puts each metal’s parts and sheets in its own folder, and every sheet carries one metal.'}
         </div>
       </Section>
 
