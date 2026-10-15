@@ -6,6 +6,7 @@ import type { Composition, Surface } from '../core/compose';
 import type { PourLayer } from '../core/mould';
 import { isIdentity, type PartMove } from '../core/moves';
 import { mulberry32 } from '../core/rng';
+import { keepPlatesInPlace } from '../core/remap';
 import type { Appearance } from '../core/appearance';
 import type { DepthSettings } from '../core/depth';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
@@ -152,6 +153,12 @@ export const useStore = create<Store>((set, get) => {
     lastTime = now;
     set({ project: next, past: merge ? past : [...past.slice(-199), project], future: [] });
   };
+  /** Commit a settings change, carrying hand moves and material picks to the plates where they were made. */
+  const commitParams = (next: Project, key: string) => {
+    const r = keepPlatesInPlace(get().project, next);
+    commit(r.project, key);
+    if (r.message) get().toast(r.message);
+  };
   const initial = newProject();
   /** Park the active tab (project and history) and bring another one in. */
   const activate = (id: string, setups: SetupTab[]) => {
@@ -219,11 +226,11 @@ export const useStore = create<Store>((set, get) => {
     setParam: (id, value) => {
       const p = get().project;
       if (p.params[id] === value) return;
-      commit({ ...p, params: { ...p.params, [id]: value } }, `param:${id}`);
+      commitParams({ ...p, params: { ...p.params, [id]: value } }, `param:${id}`);
     },
     setParams: (patch, label = 'params') => {
       const p = get().project;
-      commit({ ...p, params: { ...p.params, ...patch } }, `${label}:${performance.now()}`);
+      commitParams({ ...p, params: { ...p.params, ...patch } }, `${label}:${performance.now()}`);
     },
     toggleLock: (id) => {
       const p = get().project;
@@ -265,7 +272,7 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       const images = { ...p.images };
       for (const [k, a] of Object.entries(imgs) as [Surface, ImageAsset | null][]) images[k] = a ?? undefined;
-      commit({ ...p, composition: comp, images, params: { ...p.params, ...patch } }, `compose:${performance.now()}`);
+      commitParams({ ...p, composition: comp, images, params: { ...p.params, ...patch } }, `compose:${performance.now()}`);
     },
     undo: () => {
       const { past, project, future } = get();
@@ -299,7 +306,7 @@ export const useStore = create<Store>((set, get) => {
         if (d.int) x = Math.round(x);
         patch[d.id] = String(+x.toFixed(4));
       }
-      commit({ ...p, params: { ...p.params, ...patch } }, `rand:${performance.now()}`);
+      commitParams({ ...p, params: { ...p.params, ...patch } }, `rand:${performance.now()}`);
       get().toast(`Randomised ${Object.keys(patch).length} unlocked values`);
     },
     shuffleGentle: () => {
@@ -341,12 +348,12 @@ export const useStore = create<Store>((set, get) => {
         patch[id] = gen();
       }
       if (p.images.top && String(p.params.imgTopMode ?? 'off') === 'off') patch.imgTopMode = 'carve';
-      commit({ ...p, params: { ...p.params, ...patch } }, `gentle:${performance.now()}`);
+      commitParams({ ...p, params: { ...p.params, ...patch } }, `gentle:${performance.now()}`);
       get().toast(p.images.top ? 'Shuffled a gentle impression (undo to step back)' : 'Shuffled gentle strata. Load a top image to press it in.');
     },
     loadPreset: (preset, images) => {
       const p = get().project;
-      commit(applyPreset(p, preset, images), `preset:${performance.now()}`);
+      commitParams(applyPreset(p, preset, images), `preset:${performance.now()}`);
       // re-frame the camera: presets range from 6 cm to 80 cm across
       const ui = get().ui;
       set({ ui: { ...ui, snap: { dir: ui.snap.dir, n: ui.snap.n + 1, follow: true } } });
