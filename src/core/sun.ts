@@ -34,6 +34,15 @@ export function dayOfYear(month: number, day: number): number {
   return n;
 }
 
+/** The same site some days later (or earlier, negative), wrapping round the year. */
+export function shiftSite(site: Site, days: number): Site {
+  if (!days) return site;
+  let n = ((((dayOfYear(site.month, site.day) - 1 + Math.round(days)) % 365) + 365) % 365) + 1;
+  let m = 0;
+  while (n > DAYS[m]) n -= DAYS[m++];
+  return { ...site, month: m + 1, day: n };
+}
+
 /** Declination and equation of time (minutes) for a day of the year and UTC hour. */
 function solarTerms(doy: number, utcHour: number) {
   const g = ((2 * Math.PI) / 365) * (doy - 1 + (utcHour - 12) / 24);

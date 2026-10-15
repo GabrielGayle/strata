@@ -446,6 +446,12 @@ export const PARAMS: ParamDef[] = [
   num('shadowH', 'Picture height', 'Shadow', 120, 10, 3000, { help: 'On the ground or the concrete, this runs away from the front of the piece' }),
   num('shadowX', 'Picture across', 'Shadow', 0, -3000, 3000, { help: 'Centre of the picture (or the row of pictures), right of the middle as you look from the front' }),
   num('shadowY', 'Picture bottom', 'Shadow', 'baseHeight + 20', 0, 3000, { show: (v) => v.shadowScreen === 'wall', help: 'Height of the bottom of the picture above the ground' }),
+  num('shadowDays', 'Date window', 'Shadow', 21, 0, 90, {
+    unit: 'days',
+    int: true,
+    noScale: true,
+    help: 'Carve for this many days around the Sun date, not just the one day. A wider window lasts longer but is softer; 0 is sharpest on the day and fades within days',
+  }),
   num('shadowFade', 'Crossfade', 'Shadow', 0, 0, 100, {
     unit: '%',
     noScale: true,
