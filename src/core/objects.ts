@@ -19,7 +19,7 @@ export interface CutObject {
   x: number;
   y: number;
   z: number;
-  /** Turn about x, y, z in degrees (applied x, then y, then z). */
+  /** Turn in degrees: ry turns it to face a new way, rx tips it back, rz rolls it in its own plane. */
   rx: number;
   ry: number;
   rz: number;
@@ -27,6 +27,10 @@ export interface CutObject {
   clearance: number;
   /** Off keeps it in the list without cutting or showing it. */
   on: boolean;
+  /** Shelf cards: trim the plate tops to this far above the card's bottom edge (mm), so it sits in a seat. */
+  seat?: number;
+  /** Shelf cards: plate kept either side of the notch above the trimmed tops (mm). */
+  shoulder?: number;
 }
 
 export const KIND_NAMES: Record<ObjectKind, string> = {
@@ -93,7 +97,7 @@ export function objectGeometry(o: CutObject): THREE.BufferGeometry {
     g.scale(o.w, o.h, o.d);
   } else g = new THREE.BoxGeometry(o.w, o.h, o.d);
   const r = (deg: number) => (deg * Math.PI) / 180;
-  const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(r(o.rx), r(o.ry), r(o.rz), 'XYZ'));
+  const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(r(o.rx), r(o.ry), r(o.rz), 'YXZ'));
   m.setPosition(o.x, o.y, o.z);
   g.applyMatrix4(m);
   g.computeVertexNormals();

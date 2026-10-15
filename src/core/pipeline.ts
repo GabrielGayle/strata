@@ -18,6 +18,8 @@ import { share } from './memo';
 import { carveShadow, type ShadowReport } from './shadow';
 import type { Project } from './project';
 import { buildObjects, type ObjectBuild } from './objects';
+import { shelfCards } from './shelf';
+import { baseTop } from './slicer';
 
 export interface Assets {
   sideImg: Gray | null;
@@ -197,8 +199,9 @@ export function createFrontPipeline() {
     const mats = materialKey(project.appearance, String(v.plateMaterial));
     const materialFor = (key: string) => materialOf(project.appearance, key, String(v.plateMaterial));
     // tuned plates ring by their own metal, so only then does the metal change the cut
-    const objects = stage('Objects', [project.objects], () => buildObjects(project.objects));
-    const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance }));
+    const shelf = stage('Postcard shelf', [project.shelf, baseTop(v)], () => shelfCards(project.shelf, baseTop(v)));
+    const objects = stage('Objects', [project.objects, shelf], () => buildObjects([...(project.objects ?? []), ...shelf]));
+    const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder }));
     const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects], () =>
       share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg, topMask, moves: project.moves, materialFor, objects: cutters })),
     );
