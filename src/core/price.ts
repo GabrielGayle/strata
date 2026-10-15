@@ -4,6 +4,7 @@
 // weight, machine time from cut length and pierces, plus setup and handling. Every rate is
 // editable; the defaults are typical UK fibre-laser figures, not Chop Chop's own.
 import type { Bom } from './bom';
+import type { HardwareRow } from './brace';
 
 export const CHOPCHOP_URL = 'https://www.chopchoplaser.co.uk/';
 export const CHOPCHOP_QUOTE_URL = 'https://qm.tempustools.com/store/3bf51dae-32c7-4592-9ec5-17fea51a6558';
@@ -22,6 +23,8 @@ export interface PriceRates {
   perPart: number; // £ handling / deburr per part
   minimum: number; // £ minimum order
   vat: number; // fraction
+  /** Bracing hardware bought in (not from Chop Chop): £ per metre of threaded bar, £ per nut, £ per washer. */
+  hardware: { rodPerM: number; nut: number; washer: number };
 }
 
 export const DEFAULT_RATES: PriceRates = {
@@ -32,6 +35,8 @@ export const DEFAULT_RATES: PriceRates = {
   perPart: 0.35,
   minimum: 40,
   vat: 0.2,
+  // zinc-plated M6–M8 from a fastener supplier, small-pack prices
+  hardware: { rodPerM: 3, nut: 0.08, washer: 0.05 },
 };
 
 // Fibre laser (~4 kW) cutting speed in m/min by thickness. Corten cuts like mild steel.
@@ -77,6 +82,8 @@ export interface PriceEstimate {
   sheetKg: number;
   /** Notes on what Chop Chop may not take as drawn. */
   warnings: string[];
+  /** Bracing hardware included in net, ex VAT (outside the laser minimum). */
+  hardware?: number;
 }
 
 export function estimatePrice(bom: Bom, material: string, thickness: number, rates: PriceRates = DEFAULT_RATES): PriceEstimate {
@@ -139,4 +146,50 @@ export function estimateMix(bom: Bom, thickness: number, rates: PriceRates = DEF
     sheetKg: parts.reduce((a, p) => a + p.est.sheetKg, 0),
     warnings,
   };
+}
+
+/**
+ * Add the bracing hardware (rods, nuts, washers) on top of the laser estimate.
+ * It is bought from a fastener supplier, so it sits outside the laser job's
+ * minimum order.
+ */
+export function withHardware(est: PriceEstimate, rows: HardwareRow[], rates: PriceRates = DEFAULT_RATES): PriceEstimate {
+  const hw = rates.hardware ?? DEFAULT_RATES.hardware;
+  const sum = (kind: HardwareRow['kind'], f: (r: HardwareRow) => number) => rows.filter((r) => r.kind === kind).reduce((a, r) => a + f(r), 0);
+  const metres = sum('rod', (r) => r.metres ?? 0);
+  const nuts = sum('nut', (r) => r.qty);
+  const washers = sum('washer', (r) => r.qty);
+  const add: PriceLine[] = [];
+  if (metres) add.push({ label: 'Threaded rod', detail: `${metres.toFixed(2)} m bar at £${hw.rodPerM.toFixed(2)}/m`, cost: metres * hw.rodPerM });
+  if (nuts || washers)
+    add.push({
+      label: 'Nuts and washers',
+      detail: [nuts && `${nuts} nuts at £${hw.nut.toFixed(2)}`, washers && `${washers} washers at £${hw.washer.toFixed(2)}`].filter(Boolean).join(', '),
+      cost: nuts * hw.nut + washers * hw.washer,
+    });
+  if (!add.length) return est;
+  const extra = add.reduce((a, l) => a + l.cost, 0);
+  const net = est.net + extra;
+  const vat = net * rates.vat;
+  return { ...est, lines: [...est.lines, ...add], hardware: extra, net, vat, total: net + vat };
+}
+
+const gbp = (x: number) => `£${x.toFixed(2)}`;
+
+/** The estimate as a plain-text sheet for the fabrication zip. */
+export function priceText(est: PriceEstimate, rates: PriceRates = DEFAULT_RATES): string {
+  const laserNet = est.net - (est.hardware ?? 0);
+  const lines = ['Strata price estimate (not a quote)', ''];
+  for (const l of est.lines) lines.push(`${l.label.padEnd(28)} ${gbp(l.cost).padStart(10)}   ${l.detail}`);
+  if (laserNet > est.subtotal + 1e-9) lines.push(`${'Minimum order'.padEnd(28)} ${gbp(laserNet - est.subtotal).padStart(10)}`);
+  lines.push(`${'Ex VAT'.padEnd(28)} ${gbp(est.net).padStart(10)}`);
+  lines.push(`${`VAT ${Math.round(rates.vat * 100)}%`.padEnd(28)} ${gbp(est.vat).padStart(10)}`);
+  lines.push(`${'Total'.padEnd(28)} ${gbp(est.total).padStart(10)}`);
+  if (est.warnings.length) lines.push('', ...est.warnings.map((w) => `NOTE: ${w}`));
+  lines.push(
+    '',
+    'Laser cutting uses typical UK fibre-laser rates applied to the cut list; Chop Chop Laser publishes no rates.',
+    `For a real price, upload laser/parts to their instant quote: ${CHOPCHOP_QUOTE_URL}`,
+  );
+  return lines.join('\n') + '\n';
 }

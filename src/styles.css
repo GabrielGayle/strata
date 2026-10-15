@@ -241,6 +241,19 @@ input[type='number'],
   outline: none;
   background: var(--panel-2);
 }
+.save-mark {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+}
+.save-mark.failed {
+  color: var(--err);
+  font-weight: 700;
+}
 
 .menu {
   position: relative;

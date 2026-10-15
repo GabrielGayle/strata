@@ -36,6 +36,13 @@ export interface Variant {
   pour: PourLayer[];
   moves?: PartMoves;
   appearance?: Appearance;
+  /**
+   * The images as they were (graphics, sound pictures and depth settings ride
+   * along inside each asset). Missing on variants saved before this existed:
+   * those keep whatever images the project has.
+   */
+  images?: Project['images'];
+  composition?: Composition;
   createdAt: string;
 }
 
@@ -193,8 +200,47 @@ export function applyPreset(p: Project, preset: Preset, images: Project['images'
   return { ...p, name: preset.name, params: { ...defaultRaw(), ...preset.params }, locks: {}, images: { ...p.images, ...images }, moves: undefined };
 }
 
+/** Stands in for a variant image that is the same as the project's own image in that slot, so files don't carry it twice. */
+const SAME_IMAGE = '=current';
+
 export function serialize(p: Project): string {
-  return JSON.stringify(p, null, 2);
+  const variants = p.variants.map((v) => {
+    if (!v.images) return v;
+    const images: Record<string, unknown> = {};
+    for (const [slot, a] of Object.entries(v.images)) {
+      const cur = p.images[slot as keyof Project['images']];
+      images[slot] = a && (a === cur || (cur && JSON.stringify(a) === JSON.stringify(cur))) ? SAME_IMAGE : a;
+    }
+    return { ...v, images };
+  });
+  return JSON.stringify({ ...p, variants }, null, 2);
+}
+
+function readVariants(raw: any): Variant[] {
+  if (!Array.isArray(raw.variants)) return [];
+  const own = raw.images ?? {};
+  return raw.variants.map((v: any) => {
+    if (!v?.images || typeof v.images !== 'object') return v;
+    const images: Project['images'] = {};
+    for (const [slot, a] of Object.entries(v.images)) {
+      const asset = a === SAME_IMAGE ? own[slot] : a;
+      if (asset) images[slot as keyof Project['images']] = asset as ImageAsset;
+    }
+    return { ...v, images, composition: v.composition?.kind === 'composition' ? v.composition : undefined };
+  });
+}
+
+/** The project as a variant left it: its settings, images and composition over the current project. */
+export function applyVariant(p: Project, v: Variant): Project {
+  return {
+    ...p,
+    params: { ...p.params, ...v.params },
+    locks: { ...v.locks },
+    pour: v.pour.map((x) => ({ ...x })),
+    moves: v.moves,
+    appearance: v.appearance ?? p.appearance,
+    ...(v.images ? { images: { ...v.images }, composition: v.composition } : {}),
+  };
 }
 
 export function deserialize(text: string): Project {
@@ -211,7 +257,7 @@ export function deserialize(text: string): Project {
     pour: Array.isArray(raw.pour) ? raw.pour : base.pour,
     images: raw.images ?? {},
     meshes: raw.meshes ?? {},
-    variants: Array.isArray(raw.variants) ? raw.variants : [],
+    variants: readVariants(raw),
     composition: raw.composition?.kind === 'composition' ? raw.composition : undefined,
     moves: cleanMoves(raw.moves),
     appearance: cleanAppearance(raw.appearance),

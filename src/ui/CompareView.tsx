@@ -5,7 +5,7 @@ import { useStore } from '../state/store';
 import { useAssets } from '../state/assets';
 import { createPipeline, type Model } from '../core/pipeline';
 import { PARAMS, PARAM_MAP } from '../core/params';
-import type { Project } from '../core/project';
+import { applyVariant, type Project } from '../core/project';
 import Scene from './Scene';
 import { CameraRig } from './Viewport';
 import { fmt } from './model';
@@ -34,18 +34,20 @@ export default function CompareView() {
   const project = useStore((s) => s.project);
   const ui = useStore((s) => s.ui);
   const setUi = useStore((s) => s.setUi);
-  const assets = useAssets(project);
   const pipeA = useMemo(() => createPipeline(), []);
   const pipeB = useMemo(() => createPipeline(), []);
   const resolve = (id: string): { p: Project; name: string } => {
     const v = project.variants.find((x) => x.id === id);
     if (!v) return { p: project, name: 'Current' };
-    return { p: { ...project, params: { ...project.params, ...v.params }, pour: v.pour, moves: v.moves }, name: v.name };
+    return { p: applyVariant(project, v), name: v.name };
   };
-  const A = resolve(ui.compareA);
-  const B = resolve(ui.compareB);
-  const mA = useMemo(() => pipeA(A.p, assets), [A.p, assets, pipeA]);
-  const mB = useMemo(() => pipeB(B.p, assets), [B.p, assets, pipeB]);
+  const A = useMemo(() => resolve(ui.compareA), [project, ui.compareA]); // eslint-disable-line react-hooks/exhaustive-deps
+  const B = useMemo(() => resolve(ui.compareB), [project, ui.compareB]); // eslint-disable-line react-hooks/exhaustive-deps
+  // each side decodes its own images: variants can carry different pictures
+  const assetsA = useAssets(A.p);
+  const assetsB = useAssets(B.p);
+  const mA = useMemo(() => pipeA(A.p, assetsA), [A.p, assetsA, pipeA]);
+  const mB = useMemo(() => pipeB(B.p, assetsB), [B.p, assetsB, pipeB]);
   const diffs = PARAMS.filter((d) => String(A.p.params[d.id] ?? d.def) !== String(B.p.params[d.id] ?? d.def));
   const metrics: [string, (m: Model) => number, number, string][] = [
     ['Parts', (m) => m.sliced.parts.length, 0, ''],

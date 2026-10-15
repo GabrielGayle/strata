@@ -12,6 +12,7 @@ import type { MouldPart } from './mould';
 import type { Values } from './params';
 import { extrudeOnPlane, extrudePlan, mergeGeometries } from './geometry3d';
 import { cutListCsv, hardwareCsv } from './bom';
+import { DEFAULT_RATES, estimateMix, priceText, withHardware, type PriceRates } from './price';
 import { baseGeometry } from './base';
 import { serialize, type Project } from './project';
 import { strokeTextCentered } from './strokefont';
@@ -195,7 +196,8 @@ export function partFiles(model: Model, project?: Project): Record<string, Uint8
   return files;
 }
 
-export function buildZip(model: Model, project: Project): Uint8Array {
+/** `rates` are the price estimate's (the user's edited ones, when the UI has them). */
+export function buildZip(model: Model, project: Project, rates: PriceRates = DEFAULT_RATES): Uint8Array {
   const v = model.v;
   const files: Record<string, Uint8Array> = {};
   for (const [name, data] of Object.entries(partFiles(model, project))) files[`laser/parts/${name}`] = data;
@@ -213,6 +215,7 @@ export function buildZip(model: Model, project: Project): Uint8Array {
   files['cutlist.csv'] = strToU8(cutListCsv(v, model.bom));
   if (model.bom.hardware.length) files['hardware.csv'] = strToU8(hardwareCsv(model.bom));
   files['pour-plan.txt'] = strToU8(pourPlanText(model));
+  if (model.bom.partCount) files['price-estimate.txt'] = strToU8(priceText(withHardware(estimateMix(model.bom, v.thickness, rates), model.bom.hardware, rates), rates));
   files['project.strata.json'] = strToU8(serialize(project));
   return zipSync(files, { level: 6 });
 }
