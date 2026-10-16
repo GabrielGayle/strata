@@ -114,12 +114,9 @@ interface Args {
   rates?: string;
   size?: string;
   orientation?: string;
-<<<<<<< HEAD
   render?: string;
-=======
   autoDimension: DepthFace[];
   reliefExaggeration: number;
->>>>>>> origin/cursor/map-t9-cli-eeba
   map?: {
     title?: string;
     bbox?: string;
@@ -207,13 +204,9 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--engrave=')) args.map!.engrave = parseEngraveFlag(a.slice(10), true);
     else if (a === '--map-cache') args.map!.cacheDir = take(argv, ++i, a);
     else if (a.startsWith('--map-cache=')) args.map!.cacheDir = a.slice(12);
-<<<<<<< HEAD
     else if (a === '--render') args.render = take(argv, ++i, a);
     else if (a.startsWith('--render=')) args.render = a.slice(9);
-    else if (a === '--help' || a === '-h') return { cmd: 'help', images: {} };
-=======
     else if (a === '--help' || a === '-h') return { cmd: 'help', images: {}, autoDimension: [], reliefExaggeration: 1 };
->>>>>>> origin/cursor/map-t9-cli-eeba
     else throw new Error(`unknown argument '${a}'`);
   }
   if (!args.out) throw new Error(`missing --out <dir>\n\n${USAGE}`);
