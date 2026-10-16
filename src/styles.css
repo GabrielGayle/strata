@@ -2263,6 +2263,7 @@ kbd {
 .tour-card .btnrow {
   padding-left: 0;
   padding-right: 0;
+}
 /* placed objects (postcards, boxes…) */
 .objects .bucket.off {
   opacity: 0.5;
