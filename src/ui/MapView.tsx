@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { defaultMapSpec, type MapModel, type MapSource, type MapSpec, type MapWater, type LayerBudgetMode } from '../core/mapSpec';
 import { MAP_ENGRAVE_PRESETS, type MapEngravePresetId } from '../core/mapEngravePresets';
-import { MAP_PRESET_CATALOG, mapPresetSpec } from '../core/mapPresets';
+import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
 import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/mapNominatim';
 import { MAP_SOURCE_REGISTRY } from '../core/mapSourceRegistry';
 import { noticesWithoutStaleEngraveSkip } from '../core/mapNotices';
@@ -116,7 +116,7 @@ export default function MapView() {
   const applyFromFields = () => commit({});
 
   const loadPreset = (id: string) => {
-    const spec = mapPresetSpec(id);
+    const spec = mapPresetSpecKeepingUser(id, existing);
     setTitle(spec.title ?? id);
     applyBbox(spec.bbox);
     setTopMap(spec);

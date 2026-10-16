@@ -4,10 +4,14 @@ import {
   fetchOverpassDeduped,
   fetchOverpassWithMirrors,
   resetOverpassInflight,
+  resolveOverpassBackoffMs,
+  resolveOverpassBrowserRetryMs,
+  setOverpassTestDelays,
 } from '../src/core/mapOverpassFetch';
 
 afterEach(() => {
   resetOverpassInflight();
+  setOverpassTestDelays(null);
   vi.unstubAllGlobals();
 });
 
@@ -21,6 +25,14 @@ function jsonOk(): Response {
 }
 
 describe('Overpass mirror fallback', () => {
+  it('uses zero backoff and browser retry under vitest so suites never really sleep', () => {
+    expect(resolveOverpassBackoffMs()).toEqual([0, 0]);
+    expect(resolveOverpassBrowserRetryMs()).toBe(0);
+    setOverpassTestDelays({ backoffMs: [0, 0], timeoutMs: 1, browserRetryMs: 0 });
+    expect(resolveOverpassBackoffMs()).toEqual([0, 0]);
+    expect(resolveOverpassBrowserRetryMs()).toBe(0);
+  });
+
   it('returns the first 200 JSON among parallel mirrors after others 502', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

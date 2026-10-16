@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFrontPipeline, createPipeline, deferredInput, type Assets, type DeferredInput } from '../src/core/pipeline';
 import { changedFields, createDeferredHandler, DeferredWorker, type DeferredReply, type DeferredRequest } from '../src/core/deferred';
-import { newProject } from '../src/core/project';
+import { smallProject } from './small-project';
 
 const assets: Assets = { sideImg: null, frontImg: null, insMesh: null, srcMesh: null };
 // what crossing to a worker does to the data
@@ -11,13 +11,13 @@ const summary = (d: { issues: unknown[]; nested: unknown; moulds: unknown; mould
 
 describe('deferred stages in a worker', () => {
   it('give the same results from posted (cloned) inputs, and keep their cache across posts', () => {
-    const project = newProject();
+    const project = smallProject();
     const front = createFrontPipeline();
     const f = front(project, assets);
     const input = deferredInput(f, project);
     const t0 = performance.now();
     const cloned = post(changedFields(null, input));
-    console.log('posting the Vermilion 40 inputs costs', (performance.now() - t0).toFixed(1), 'ms');
+    console.log('posting the compact-stack inputs costs', (performance.now() - t0).toFixed(1), 'ms');
 
     const handle = createDeferredHandler();
     const r1 = handle({ id: 1, changes: cloned }) as Extract<DeferredReply, { result: unknown }>;

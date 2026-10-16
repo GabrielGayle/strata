@@ -76,26 +76,30 @@ describe('Neasden auto exaggeration', () => {
   });
 
   it('buildMapBundle auto lands near ×18–21 for Neasden EA clip (not layer-budget ×50 clamp)', async () => {
-    setMapTileFetcher(fixtureTileFetcher);
+    // A3 30×3 mm on the full ~3.25 km bbox with ~35 m p98−p2 (plan number), not the 9 m fixture trap.
     const bundle = await buildMapBundle(
       defaultMapSpec({
         ...mapPresetSpec('neasden'),
-        bbox: NEASDEN_FAST_BBOX,
+        bbox: NEASDEN_BBOX,
         source: 'ea-dtm',
+        water: 'raw',
         engrave: { enabled: false, features: [] },
+        layerBudget: 'equal',
       }),
       {
-        fetch: fixtureTileFetcher,
-        eaLoader: async () => loadBuiltinEaFixture(),
+        fetch: async () => {
+          throw new Error('terrarium must not run when EA succeeds');
+        },
+        eaLoader: async () => neasdenRampGrid(16, 56),
         allowOverpassNetwork: false,
-        stack: { plateCount: 30, thicknessMm: 3, masterWidthMm: 420, layerBudget: 'jenks' },
+        stack: { plateCount: 30, thicknessMm: 3, masterWidthMm: 420, layerBudget: 'equal' },
       },
     );
     const factor = bundle.asset.map?.exaggerationFactor;
-    expect(factor).toBeGreaterThan(15);
-    expect(factor).toBeLessThanOrEqual(21);
+    expect(factor).toBeGreaterThanOrEqual(18);
+    expect(factor).toBeLessThanOrEqual(22);
     expect(factor).not.toBe(50);
-    expect(mapNoticesMatching(bundle.asset.map?.sourceWarnings, /bathymetry/i, 'info')).toBe(true);
+    expect(bundle.asset.map?.resolvedSource).toBe('ea-dtm');
   });
 
   it('auto exaggeration uses the final ea-dtm grid (~45 m → ×11 on Vermilion 40), not a Terrarium pass', async () => {
@@ -174,6 +178,39 @@ describe('Neasden auto exaggeration', () => {
     );
     expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(ortho.reliefM)} m relief`);
     expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(expectedMm)} mm stack on 800 mm`);
+  });
+
+  it('browser EA fixture over the full Neasden bbox is live-scale (~45 m → ×11), not 9 m → ×50', async () => {
+    const g = loadBuiltinEaFixture();
+    expect(g).toBeTruthy();
+    expect(reliefMetres(g!)).toBeGreaterThan(40);
+    expect(reliefMetres(g!)).toBeLessThan(50);
+    const bundle = await buildMapBundle(
+      defaultMapSpec({
+        bbox: NEASDEN_BBOX,
+        source: 'ea-dtm',
+        exaggeration: 'auto',
+        water: 'raw',
+        engrave: { enabled: false, features: [] },
+        layerBudget: 'equal',
+      }),
+      {
+        eaLoader: async () => g,
+        allowOverpassNetwork: false,
+        fetch: async () => {
+          throw new Error('terrarium must not run when the EA fixture succeeds');
+        },
+        stack: VERMILION,
+      },
+    );
+    expect(bundle.asset.map?.resolvedSource).toBe('ea-dtm');
+    expect(mapNoticesMatching(bundle.asset.map?.sourceWarnings, /falling back to terrarium/i)).toBe(false);
+    expect(bundle.asset.map?.exaggeration).toBe('auto');
+    expect(bundle.asset.map?.exaggerationFactor).toBeGreaterThanOrEqual(10);
+    expect(bundle.asset.map?.exaggerationFactor).toBeLessThanOrEqual(12);
+    expect(bundle.asset.map?.exaggerationReadout).toMatch(/×1[0-2]/);
+    expect(bundle.asset.map?.exaggerationReadout).toMatch(/4[0-9] m relief/);
+    expect(bundle.asset.map?.exaggerationReadout).toMatch(/120 mm stack on 800 mm/);
   });
 
   it('9 m Terrarium-scale relief on the full Neasden width clamps Vermilion 40 auto to ×50', () => {

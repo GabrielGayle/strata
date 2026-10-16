@@ -117,3 +117,21 @@ export function mapPresetSpec(id: string): MapSpec {
       throw new Error(`unknown map preset '${id}' (valid: ${mapPresetIdList()})`);
   }
 }
+
+/**
+ * Re-clicking a map preset (Maps menu or Map tab) must not wipe user-set
+ * exaggeration, sunken frame, or gift size. Compatible with #91 depth/project
+ * override helpers: those merge near/far and master size on rebuild.
+ */
+export function keepUserMapSettings(prev: MapSpec | undefined, next: MapSpec): MapSpec {
+  if (!prev) return next;
+  const out: MapSpec = { ...next };
+  if (typeof prev.exaggeration === 'number' && prev.exaggeration > 0) out.exaggeration = prev.exaggeration;
+  if (prev.sunkenFrame) out.sunkenFrame = { ...prev.sunkenFrame };
+  if (prev.giftSizeId) out.giftSizeId = prev.giftSizeId;
+  return out;
+}
+
+export function mapPresetSpecKeepingUser(id: string, prev?: MapSpec): MapSpec {
+  return keepUserMapSettings(prev, mapPresetSpec(id));
+}

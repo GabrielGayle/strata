@@ -24,13 +24,29 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
   await assertPlateHeightMatchesRelief(page, 0.3);
   await openWorkspaceTab(page, 'Map');
   await expect(page.locator('.map-view h2')).toBeVisible();
-  await expect(page.locator('#map-model-dtm')).toBeChecked();
+  const dtm = page.locator('#map-model-dtm');
+  await expect(dtm).toBeChecked();
+  await expect.poll(async () => dtm.evaluate((el) => el.nextElementSibling?.getAttribute('for'))).toBe('map-model-dtm');
+  await expect(page.locator('label[for="map-model-dtm"]')).toBeVisible();
   await expect(page.locator('#map-water-bathy')).toBeChecked();
   await assertMapPreviewNonUniform(page);
 
   await mkdir(join(process.cwd(), 'docs/screenshots'), { recursive: true });
   await page.screenshot({ path: join(process.cwd(), 'docs/screenshots/neasden-map-3d.png'), fullPage: false });
   await page.locator('.map-view').screenshot({ path: join(process.cwd(), 'docs/screenshots/map-tab.png') });
+});
+
+test('re-clicking Neasden keeps user vertical exaggeration ×21', async ({ page }) => {
+  await openApp(page);
+  await pickNeasdenPreset(page);
+  await openWorkspaceTab(page, 'Map');
+  await page.getByLabel('Vertical exaggeration').selectOption('21');
+  await expect(page.getByLabel('Vertical exaggeration')).toHaveValue('21');
+  await page.getByRole('button', { name: 'Maps ▾' }).click();
+  await page.locator('.menu-pop').getByRole('button', { name: /^Neasden\b/ }).first().click();
+  await expect(page.getByLabel('Vertical exaggeration')).toHaveValue('21');
+  await page.locator('.map-preset-row').getByRole('button', { name: 'Neasden', exact: true }).click();
+  await expect(page.getByLabel('Vertical exaggeration')).toHaveValue('21');
 });
 
 test('neasden 3D and Plates screenshots in light and dark', async ({ page }) => {

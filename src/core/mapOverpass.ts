@@ -1,6 +1,12 @@
 // Overpass API client with polite User-Agent and on-disk cache (offline tests use fixtures).
 import { cachedMapJson, readMapCacheJson, writeMapCacheJson } from './mapCache';
-import { fetchOverpassDeduped, fetchOverpassWithMirrors, STRATA_OVERPASS_UA } from './mapOverpassFetch';
+import {
+  fetchOverpassDeduped,
+  fetchOverpassWithMirrors,
+  resolveOverpassBrowserRetryMs,
+  sleep,
+  STRATA_OVERPASS_UA,
+} from './mapOverpassFetch';
 
 export const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 export { STRATA_OVERPASS_UA };
@@ -31,11 +37,6 @@ async function postBrowserProxy(query: string): Promise<unknown> {
   return res.json();
 }
 
-function sleep(ms: number): Promise<void> {
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /** Browser: local Vite/Vercel proxy (server already walks mirrors). Node CLI: mirror list. */
 export async function defaultOverpassFetch(query: string): Promise<unknown> {
   if (typeof window !== 'undefined') {
@@ -43,7 +44,7 @@ export async function defaultOverpassFetch(query: string): Promise<unknown> {
       try {
         return await postBrowserProxy(q);
       } catch (e) {
-        await sleep(500);
+        await sleep(resolveOverpassBrowserRetryMs());
         try {
           return await postBrowserProxy(q);
         } catch {
