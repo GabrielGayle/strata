@@ -57,16 +57,6 @@ async function waitForViewportCanvas(page) {
   await page.waitForTimeout(800);
 }
 
-async function openMapTab(page) {
-  const mapTab = page.getByRole('tab', { name: /^Map$/i });
-  if (await mapTab.count()) {
-    await mapTab.click();
-    return;
-  }
-  await page.getByRole('button', { name: /Maps/i }).click();
-  await page.getByRole('button', { name: /Open Map tab/i }).click();
-}
-
 async function show3dTab(page) {
   const tab3d = page.getByRole('tab', { name: /^3D$/i });
   if (await tab3d.count()) await tab3d.click();
@@ -92,10 +82,12 @@ async function setupPage(page, presetId) {
   await expectStatusReady(page);
 
   if (presetId === 'map-x18-frame') {
-    console.log('map: opening Maps › Neasden');
+    console.log('map: opening Map tab');
     await page.getByRole('button', { name: /Maps/i }).click();
-    await page.getByRole('button', { name: 'Neasden', exact: true }).click();
+    await page.getByRole('button', { name: /Open Map tab/i }).click();
     await page.waitForSelector('.map-view', { timeout: 60000 });
+    console.log('map: Neasden preset');
+    await page.locator('.map-view').getByRole('button', { name: 'Neasden', exact: true }).click();
     await waitMapReady(page);
     console.log('map: set ×18 + sunken frame');
     const ex = page.locator('.map-section').filter({ hasText: 'Vertical exaggeration' }).locator('select');
