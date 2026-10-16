@@ -29,6 +29,9 @@ describe('build pack', { timeout: 30_000 }, () => {
     for (const id of ['layout', 'elevations', 'schedule', 'gallery', 'assembly', 'pour', 'parts']) expect(section(html, id)).toBe(true);
     expect(html).toContain('id="show-spacers"');
     expect(html).toContain(`data-plate-count="${m.sliced.plates.length}"`);
+    expect(html.match(/class="plate-card"/g)?.length).toBe(m.sliced.plates.length);
+    expect(html).toContain('class="plate-card-n"');
+    expect(html).not.toContain('fill-opacity="0"');
     for (const pl of m.sliced.plates) expect(html).toContain(`data-plate-key="${pl.def.key}"`);
     expect(section(html, 'rods')).toBe(false);
     expect(section(html, 'glue')).toBe(false);

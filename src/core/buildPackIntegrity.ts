@@ -200,6 +200,14 @@ export function assertHtmlBuildPackIntegrity(_project: Project, model: Model, ht
   if (!legend || Number(legend[1]) !== n) {
     throw new BuildPackIntegrityError(`Build pack HTML legend plate count ${legend?.[1] ?? 'missing'} ≠ model ${n}`);
   }
+  const gallery = html.match(/class="plate-gallery"[^>]*data-plate-count="(\d+)"/);
+  if (!gallery || Number(gallery[1]) !== n) {
+    throw new BuildPackIntegrityError(`Build pack HTML gallery plate count ${gallery?.[1] ?? 'missing'} ≠ model ${n}`);
+  }
+  const cards = html.match(/class="plate-card"/g)?.length ?? 0;
+  if (cards !== n) {
+    throw new BuildPackIntegrityError(`Build pack HTML gallery has ${cards} cards, model has ${n} plates`);
+  }
   for (const pl of model.sliced.plates) {
     if (!html.includes(`data-plate-key="${pl.def.key}"`)) {
       throw new BuildPackIntegrityError(`Build pack HTML gallery missing plate ${pl.def.key}`);
@@ -211,7 +219,7 @@ export function assertHtmlBuildPackIntegrity(_project: Project, model: Model, ht
       throw new BuildPackIntegrityError(`Build pack HTML schedule missing part ${p.id}`);
     }
   }
-  if (!html.includes('id="show-spacers"')) {
+  if (!html.includes('id="show-spacers"') || !html.includes('hide-spacers')) {
     throw new BuildPackIntegrityError('Build pack HTML missing spacer visibility toggle');
   }
 }

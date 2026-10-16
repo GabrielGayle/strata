@@ -350,7 +350,12 @@ function elevationSvg(m: Model, right: P2, title: string, opts: { labels?: boole
   const order = [...parts].sort((a, c) => (a.family === 'S' ? -1 : 0) - (c.family === 'S' ? -1 : 0));
   for (const p of order) {
     const kind = isMain(p) ? 'plate' : p.family === 'C' || p.family === 'T' ? 'spacer' : '';
-    out.push(`<path${kind ? ` class="${kind}"` : ''} d="${pathD(outl.get(p)!, f.X, f.Y)}" fill="${p.family === 'C' || p.family === 'T' ? 'none' : '#fff'}" fill-opacity="${dense ? 0.25 : 0.9}" stroke="#000" stroke-width="${p.family === 'C' || p.family === 'T' ? 0.9 : dense ? 0.45 : 0.8}"${p.family === 'C' || p.family === 'T' || p.family === 'S' ? ' stroke-dasharray="4 2"' : ''}/>`);
+    const spacer = p.family === 'C' || p.family === 'T';
+    // Dense stacks used to use white fill at opacity 0, so plates vanished. Grey fill
+    // (and the gallery labels) keeps every plate visible even when they overlap.
+    const fill = spacer ? 'none' : dense ? '#b7b7b7' : '#f2f2f2';
+    const opac = spacer ? 1 : dense ? 0.72 : 0.95;
+    out.push(`<path${kind ? ` class="${kind}"` : ''} d="${pathD(outl.get(p)!, f.X, f.Y)}" fill="${fill}" fill-opacity="${opac}" stroke="#000" stroke-width="${spacer ? 0.9 : dense ? 0.55 : 0.8}"${spacer || p.family === 'S' ? ' stroke-dasharray="4 2"' : ''}/>`);
   }
   // dimensions: overall width under, overall height on the right, base height on the left
   const g: string[] = [];
@@ -933,11 +938,14 @@ function pourSection(m: Model): string {
 }
 
 function plateGallery(m: Model, names: Map<string, string>): string {
-  const cards = m.sliced.plates.map((pl) => {
+  const cards = m.sliced.plates.map((pl, i) => {
     const empty = !pl.parts.length;
     const shape = pl.parts.map((p) => p.shape[0]);
     const label = names.get(pl.def.key) ?? pl.def.key;
-    return `<figure class="plate-card" data-plate-key="${esc(pl.def.key)}" data-empty="${empty ? '1' : '0'}"><div class="plate-card-art">${empty ? '<svg class="thumb empty-plate" width="76" height="42" viewBox="0 0 76 42"><rect x="1" y="1" width="74" height="40" fill="none" stroke="#888" stroke-dasharray="4 3"/><text x="38" y="24" text-anchor="middle" font-size="10" fill="#555">empty</text></svg>' : thumb(shape, 120, 70)}</div><figcaption><b>${esc(label)}</b> <small>${esc(pl.def.key)}${empty ? ' · no cut' : ''}</small></figcaption></figure>`;
+    const art = empty
+      ? '<svg class="thumb empty-plate" width="76" height="42" viewBox="0 0 76 42"><rect x="1" y="1" width="74" height="40" fill="#eee" stroke="#555" stroke-dasharray="4 3"/><text x="38" y="24" text-anchor="middle" font-size="10" fill="#222">empty</text></svg>'
+      : thumb(shape, 120, 70);
+    return `<figure class="plate-card" data-plate-key="${esc(pl.def.key)}" data-empty="${empty ? '1' : '0'}"><div class="plate-card-n">${i + 1}</div><div class="plate-card-art">${art}</div><figcaption><b>${esc(label)}</b> <small>${esc(pl.def.key)}${empty ? ' · no cut' : ''}</small></figcaption></figure>`;
   });
   return `<p class="note">One card per model plate, including empty or zero-area layers. Count must match the cover legend and <span class="mono">manifest.json</span>.</p><div class="plate-gallery" data-plate-count="${m.sliced.plates.length}">${cards.join('')}</div>`;
 }
@@ -1107,6 +1115,8 @@ ${errors ? `<p class="warn">The design has ${plural(errors, 'check error')}: fix
   body.hide-spacers .spacer { display: none; }
   .plate-gallery { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
   .plate-card { margin: 0; width: 140px; border: 1px solid #999; padding: 6px; break-inside: avoid; }
+  .plate-card-n { font-weight: 800; font-size: 12px; margin-bottom: 2px; }
+  .plate-card-art { background: #f3f3f3; min-height: 44px; display: flex; align-items: center; justify-content: center; padding: 4px; }
   .plate-card figcaption { font-size: 11px; margin-top: 4px; }
   .plate-card figcaption small { display: block; color: #444; }
   .plate-legend { font-size: 15px; }

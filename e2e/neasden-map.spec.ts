@@ -14,7 +14,7 @@ test('neasden map design builds a carved top with plates', async ({ page }) => {
   await expect(page.locator('.status-bar')).toContainText(/Fetching|building/i, { timeout: 15_000 });
   await expect(page.locator('.status-bar')).toContainText(/ready/i, { timeout: 120_000 });
 
-  const partsText = await page.locator('.status-bar-field').first().textContent();
+  const partsText = await page.locator('.status-bar-field').filter({ hasText: /parts/ }).first().textContent();
   const parts = Number(partsText?.match(/(\d+)\s+parts/)?.[1] ?? 0);
   expect(parts).toBeGreaterThan(4);
 

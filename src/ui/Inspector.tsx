@@ -118,8 +118,14 @@ export default function Inspector() {
       <div className="stats">
         <div className="stat">
           <div className="k">Plates</div>
-          <div className="v">
-            {b.plateCount} <small>{b.partCount !== b.plateCount ? `${b.partCount} parts` : ''}</small>
+          <div className="v" data-in-app-plates={model.sliced.plates.length}>
+            {model.sliced.plates.length}{' '}
+            <small>
+              {b.partCount !== model.sliced.plates.length ? `${b.partCount} parts` : ''}
+              {b.plateCount !== model.sliced.plates.length
+                ? `${b.partCount !== model.sliced.plates.length ? ' · ' : ''}${b.plateCount} cut`
+                : ''}
+            </small>
           </div>
         </div>
         <div className="stat">

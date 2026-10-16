@@ -31,15 +31,22 @@ import {
 } from './buildPackIntegrity';
 
 let exportBusy = false;
+let exportCooldown = false;
+let exportCooldownTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Ignore a second Export ZIP / Build pack click while the first is still writing. */
+/** Ignore a nested or double-clicked Export ZIP / Build pack while one is writing. */
 export function withExportLock<T>(fn: () => T): { ok: true; value: T } | { ok: false } {
-  if (exportBusy) return { ok: false };
+  if (exportBusy || exportCooldown) return { ok: false };
   exportBusy = true;
   try {
     return { ok: true, value: fn() };
   } finally {
     exportBusy = false;
+    exportCooldown = true;
+    clearTimeout(exportCooldownTimer);
+    exportCooldownTimer = setTimeout(() => {
+      exportCooldown = false;
+    }, 400);
   }
 }
 

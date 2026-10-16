@@ -139,7 +139,7 @@ describe('build pack integrity', { timeout: 120_000 }, () => {
     expect(a).not.toBe(b);
   });
 
-  it('ignores a nested export while one is already running', () => {
+  it('ignores a nested export while one is already running', async () => {
     let inner: { ok: true; value: number } | { ok: false } | null = null;
     const outer = withExportLock(() => {
       inner = withExportLock(() => 2);
@@ -147,6 +147,8 @@ describe('build pack integrity', { timeout: 120_000 }, () => {
     });
     expect(outer).toEqual({ ok: true, value: 1 });
     expect(inner).toEqual({ ok: false });
-    expect(withExportLock(() => 3)).toEqual({ ok: true, value: 3 });
+    expect(withExportLock(() => 3)).toEqual({ ok: false });
+    await new Promise((r) => setTimeout(r, 450));
+    expect(withExportLock(() => 4)).toEqual({ ok: true, value: 4 });
   });
 });
