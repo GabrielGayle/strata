@@ -3,6 +3,7 @@
 import type { Preset } from './project';
 import { DEFAULT_SOUND, type SoundSpec } from './sound';
 import type { RawValue } from './params';
+import { FREE_PALESTINE_ONSETS } from './chantWords';
 
 export interface SoundPreset extends Preset {
   /** A sound picture drawn into one image slot when the preset loads. */
@@ -13,7 +14,8 @@ export interface SoundPreset extends Preset {
  * FREE–PAL–ES–TINE at a march tempo (96 bpm): a quarter, two eighths, then a
  * dotted quarter. Onsets in seconds from the downbeat.
  */
-export const CHANT_ONSETS = [0, 0.625, 0.9375, 1.25];
+/** @deprecated Prefer {@link FREE_PALESTINE_ONSETS} or onsets from the Words phrase. */
+export const CHANT_ONSETS = FREE_PALESTINE_ONSETS;
 
 /** A clean stand of chime plates: flat-topped, no insert, no erosion. */
 const CHIMES: Record<string, RawValue> = {
@@ -78,7 +80,7 @@ export const SOUND_PRESETS: SoundPreset[] = [
     note: 'Four free-free steel plates, FREE–PAL–ES–TINE on G4 C5 B4 G4',
     params: {
       insShape: 'none', plateMaterial: 'steel', thickness: '3',
-      tuneMode: 'notes', tuneModel: 'free', tuneNotes: 'G4 C5 B4 G4', tuneLabels: 'FREE PAL ES TINE', tuneOrder: 'listed', tuneAllowance: '0', tuneHole: '8',
+      tuneMode: 'words', tuneModel: 'free', tuneWords: 'FREE-PAL-ES-TINE', tuneMelodyRoot: 'G4', tuneWordNotes: 'G4 C5 B4 G4', tuneOrder: 'listed', tuneAllowance: '0', tuneHole: '8',
       spacingMode: 'gapCount', plateCount: '4', plateGap: '24', plateWidth: '140',
       baseLength: '280', baseWidth: '200', baseHeight: '36', embedDepth: '0', anchorHoles: '0',
       endMargin: '40', sideMargin: '20', edgeRound: '2',
