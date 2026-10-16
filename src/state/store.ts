@@ -45,6 +45,8 @@ export interface UiState {
   /** Material picking in the 3D view: clicks put plates in the active bucket. */
   paintMode: boolean;
   activeBucket: string;
+  /** Measuring tape in the 3D view (the measurements themselves live in ui/Measure, view-only). */
+  measureMode: boolean;
   /** Placed objects panel in the 3D view, and which object it is editing. */
   objectsMode: boolean;
   objectSel: string | null;
@@ -240,6 +242,7 @@ export const useStore = create<Store>((set, get) => {
       gizmoSpace: 'world',
       paintMode: false,
       activeBucket: 'b1',
+      measureMode: false,
       objectsMode: false,
       objectSel: null,
       highlight: null,
