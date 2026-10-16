@@ -9,6 +9,12 @@ export interface SoundPreset extends Preset {
   sound?: { slot: 'side' | 'top' | 'front'; spec: SoundSpec };
 }
 
+/**
+ * FREE–PAL–ES–TINE at a march tempo (96 bpm): a quarter, two eighths, then a
+ * dotted quarter. Onsets in seconds from the downbeat.
+ */
+export const CHANT_ONSETS = [0, 0.625, 0.9375, 1.25];
+
 /** A clean stand of chime plates: flat-topped, no insert, no erosion. */
 const CHIMES: Record<string, RawValue> = {
   insShape: 'none',
@@ -66,5 +72,17 @@ export const SOUND_PRESETS: SoundPreset[] = [
       imgSmooth: '3', cutSmooth: '1.5',
     },
     sound: { slot: 'top', spec: { ...DEFAULT_SOUND, notes: 'C3 G3', wave: 'saw', glide: 7, beat: 0, seconds: 3, attack: 0.15, release: 0.5, view: 'spectrum', drawn: false, smooth: 0.01, aspect: 2.6 } },
+  },
+  {
+    name: 'Free Palestine',
+    note: 'Four free-free steel plates, FREE–PAL–ES–TINE on G4 C5 B4 G4',
+    params: {
+      insShape: 'none', plateMaterial: 'steel', thickness: '3',
+      tuneMode: 'notes', tuneModel: 'free', tuneNotes: 'G4 C5 B4 G4', tuneLabels: 'FREE PAL ES TINE', tuneOrder: 'listed', tuneAllowance: '0', tuneHole: '8',
+      spacingMode: 'gapCount', plateCount: '4', plateGap: '24', plateWidth: '140',
+      baseLength: '280', baseWidth: '200', baseHeight: '36', embedDepth: '0', anchorHoles: '0',
+      endMargin: '40', sideMargin: '20', edgeRound: '2',
+      erosionAmp: '0', crest: '0', banding: '0', slope: '0', stackHeight: '220',
+    },
   },
 ];

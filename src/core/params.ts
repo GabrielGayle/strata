@@ -399,8 +399,20 @@ export const PARAMS: ParamDef[] = [
     { value: 'notes', label: 'My notes' },
   ], {
     show: (v) => strataSource(v) && (v.sliceMode === 'parallel' || v.sliceMode === 'radial'),
-    help: 'Each plate gets a flat top at the height that makes it ring at its note when struck: the plate is a steel tine clamped in the concrete. Uses Plates › Material and Thickness.',
+    help: 'Each plate is cut to the length that rings its note. Clamped tines use the height above the concrete; free plates are hung at their nodes. Uses Plates › Material and Thickness.',
   }),
+  choice('tuneModel', 'How it rings', 'Tuning', 'cantilever', [
+    { value: 'cantilever', label: 'Clamped in the concrete' },
+    { value: 'free', label: 'Free plate, hung at the nodes' },
+  ], {
+    show: isTuned,
+    help: 'Free plates are sounding bars: length sets the note (f ∝ 1/L²), and a hole at each node of the first mode (~22% from each end) is where a rod or cord can hold them without damping the note. The face width is free, so it can carry an image.',
+  }),
+  num('tuneHole', 'Mounting hole Ø', 'Tuning', 8, 0, 40, {
+    show: (v) => isTuned(v) && v.tuneModel === 'free',
+    help: 'A hole on the centreline at each node, for a rod or cord. 0 leaves the plate solid. The tuner counts the missing width.',
+  }),
+  { id: 'tuneLabels', label: 'Plate labels', group: 'Tuning', kind: 'text', def: '', show: isTuned, help: 'Optional words etched with the note, one per plate: FREE PAL ES TINE' },
   { id: 'tuneRoot', label: 'Lowest note', group: 'Tuning', kind: 'text', def: 'C3', show: (v) => isTuned(v) && v.tuneMode !== 'notes', help: 'Like C3, F#2 or Bb4 (A4 = 440 Hz)' },
   choice('tuneScale', 'Scale', 'Tuning', 'major', SCALE_OPTIONS, { show: (v) => isTuned(v) && v.tuneMode === 'scale' }),
   choice('tuneChord', 'Chord', 'Tuning', 'major', CHORD_OPTIONS, { show: (v) => isTuned(v) && v.tuneMode === 'chord', help: 'Chord tones repeat up through the octaves, one per plate' }),

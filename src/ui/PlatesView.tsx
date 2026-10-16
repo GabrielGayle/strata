@@ -7,7 +7,8 @@ import { countArcs } from '../core/arcs';
 import type { Part } from '../core/slicer';
 import { embedOf } from '../core/slicer';
 import { asCut } from './TuningTable';
-import { playStrike } from './audio';
+import { playModes, playStrike } from './audio';
+import { heardPartials } from './TuningTable';
 
 function Thumb({ part }: { part: Part }) {
   const bb = part.bbox;
@@ -153,11 +154,24 @@ function Detail({ part }: { part: Part }) {
         </dl>
         {tune && (
           <div className="note" style={{ flex: '1 1 200px', borderLeft: '1px solid var(--line-soft)' }}>
-            Tuned to <b className="mono">{tune.name}</b> ({fmt(tune.hz, 1)} Hz): {fmt(tune.length, 1)} mm above the concrete, cut at {fmt(tune.cut, 1)} mm so it rings about{' '}
-            <span className="mono">{asCut(tune)}</span> before trimming. A prediction only: tune by ear or with a tuner.{' '}
-            <button className="btn sm" onClick={() => playStrike(tune.hz)} aria-label={`Play ${tune.name}`}>
-              ▶ Hear it
-            </button>
+            {tune.model === 'free' ? (
+              <>
+                Tuned to <b className="mono">{tune.label ?? tune.name}</b> ({fmt(tune.hz, 1)} Hz). Bar length {fmt(tune.cut, 1)} mm, ringing about <span className="mono">{asCut(tune)}</span>.
+                {tune.nodes && <> Mounting holes at {tune.nodes.map((s) => `${(s * 100).toFixed(1)}%`).join(' and ')} of the length.</>}
+                {tune.partials && <> Overtones {tune.partials.slice(1, 3).map((f) => `${fmt(f, 0)} Hz`).join(' · ')}.</>}{' '}
+                <button className="btn sm" onClick={() => playModes(heardPartials(tune, model.sounding?.find((s) => s.key === plate?.def.key), model.stale))} aria-label={`Play ${tune.label ?? tune.name}`}>
+                  ▶ Hear it
+                </button>
+              </>
+            ) : (
+              <>
+                Tuned to <b className="mono">{tune.name}</b> ({fmt(tune.hz, 1)} Hz): {fmt(tune.length, 1)} mm above the concrete, cut at {fmt(tune.cut, 1)} mm so it rings about{' '}
+                <span className="mono">{asCut(tune)}</span> before trimming. A prediction only: tune by ear or with a tuner.{' '}
+                <button className="btn sm" onClick={() => playStrike(tune.hz)} aria-label={`Play ${tune.name}`}>
+                  ▶ Hear it
+                </button>
+              </>
+            )}
           </div>
         )}
         <div style={{ flex: '1 1 260px', borderLeft: '1px solid var(--line-soft)', maxHeight: 130, overflow: 'auto' }}>
@@ -259,7 +273,7 @@ export default function PlatesView() {
                   <td className="num">
                     {fmt(p.bbox.maxX - p.bbox.minX, 0)}×{fmt(p.bbox.maxY - p.bbox.minY, 0)}
                   </td>
-                  {tuneOf && <td className="mono">{tuneOf.get(p.plateKey)?.name ?? ''}</td>}
+                  {tuneOf && <td className="mono">{tuneOf.get(p.plateKey)?.label ?? tuneOf.get(p.plateKey)?.name ?? ''}</td>}
                   <td>{c ? <span className={`dot ${c.e ? 'error' : 'warn'}`} style={{ display: 'inline-block', width: 9, height: 9, border: '1px solid var(--line)' }} /> : null}</td>
                 </tr>
               );
