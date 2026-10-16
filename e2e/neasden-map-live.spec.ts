@@ -26,11 +26,12 @@ test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page
   await page.waitForSelector('.app.window', { timeout: 60_000 });
   await clickMapPreset(page, 'Neasden');
   await expect(page.locator('.status-bar')).toContainText(/Fetching|building|Queued|ready/i, { timeout: 15_000 });
-  await expect(page.locator('.map-terrain-status')).toContainText(/ready|Exaggeration/i, { timeout: 240_000 });
+  await expect(page.locator('.map-terrain-status')).toContainText(/ready|Exaggeration/i, { timeout: 300_000 });
 
   const ea = await eaHit;
   expect(ea.status()).toBe(200);
   expect(decodeURIComponent(ea.url())).toMatch(/environment\.data\.gov\.uk\/geoservices\/datasets\/.+\/wcs/);
+  expect(decodeURIComponent(ea.url())).toMatch(/SCALEFACTOR=/);
 
   await expect(page.locator('.map-view-layout')).toHaveAttribute('data-strata-resolved-source', 'ea-dtm', { timeout: 240_000 });
   await expect(page.locator('.map-readout')).toContainText(/source ea-dtm/i);

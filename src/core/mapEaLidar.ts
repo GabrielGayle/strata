@@ -11,7 +11,7 @@ export const EA_LIDAR_DTM_CATALOG = EA_DTM_WCS_BASE;
 /** Live Environment Agency WCS 2.0.1 — LiDAR composite DSM 1 m (OGL v3). */
 export const EA_LIDAR_DSM_CATALOG = EA_DSM_WCS_BASE;
 
-export type EaGridLoader = (source: MapSource, spec: Pick<MapSpec, 'bbox'>) => Promise<Float32Grid | null>;
+export type EaGridLoader = (source: MapSource, spec: Pick<MapSpec, 'bbox'> & { resM?: number }) => Promise<Float32Grid | null>;
 
 let loaderOverride: EaGridLoader | null = null;
 
@@ -25,7 +25,7 @@ export function isEaLidarSource(source: MapSource): boolean {
 
 export async function fetchEaLidarGrid(
   source: MapSource,
-  spec: Pick<MapSpec, 'bbox' | 'cacheDir'>,
+  spec: Pick<MapSpec, 'bbox' | 'cacheDir'> & { resM?: number },
   opts: { loader?: EaGridLoader; fetchBytes?: (url: string) => Promise<Uint8Array> } = {},
 ): Promise<Float32Grid | null> {
   if (!isEaLidarSource(source)) return null;

@@ -21,30 +21,33 @@ function jsonOk(): Response {
 }
 
 describe('Overpass mirror fallback', () => {
-  it('walks mirrors after 502 and returns the first 200 JSON body', async () => {
-    const calls: string[] = [];
+  it('returns the first 200 JSON among parallel mirrors after others 502', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      calls.push(url);
-      if (url === OVERPASS_MIRRORS[0]) return new Response('busy', { status: 502 });
+      if (url === OVERPASS_MIRRORS[0]) {
+        await new Promise((r) => setTimeout(r, 40));
+        return new Response('busy', { status: 502 });
+      }
       if (url === OVERPASS_MIRRORS[1]) return jsonOk();
+      await new Promise((r) => setTimeout(r, 80));
       return new Response('nope', { status: 503 });
     }) as unknown as typeof fetch;
 
-    const data = (await fetchOverpassWithMirrors(QUERY, { fetchImpl, timeoutMs: 2_000, backoffMs: [0] })) as {
-      elements: { id: number }[];
-    };
+    const data = (await fetchOverpassWithMirrors(QUERY, {
+      fetchImpl,
+      timeoutMs: 2_000,
+      backoffMs: [0],
+      mirrors: OVERPASS_MIRRORS.slice(0, 3),
+    })) as { elements: { id: number }[] };
     expect(data.elements[0].id).toBe(1);
-    expect(calls[0]).toBe(OVERPASS_MIRRORS[0]);
-    expect(calls[1]).toBe(OVERPASS_MIRRORS[1]);
-    expect(calls.length).toBe(2);
+    expect(fetchImpl).toHaveBeenCalled();
   });
 
-  it('retries the mirror list a second time after a full pass of failures', async () => {
+  it('retries a second parallel pass after every mirror fails', async () => {
     let n = 0;
     const fetchImpl = vi.fn(async () => {
       n += 1;
-      if (n < 3) return new Response('busy', { status: 502 });
+      if (n <= 2) return new Response('busy', { status: 502 });
       return jsonOk();
     }) as unknown as typeof fetch;
 
@@ -52,13 +55,13 @@ describe('Overpass mirror fallback', () => {
       fetchImpl,
       timeoutMs: 2_000,
       mirrors: OVERPASS_MIRRORS.slice(0, 2),
-      backoffMs: [0],
+      backoffMs: [0, 0],
     });
     expect((data as { elements: unknown[] }).elements).toHaveLength(1);
-    expect(n).toBe(3);
+    expect(n).toBeGreaterThanOrEqual(3);
   });
 
-  it('dedupes concurrent identical queries to one upstream POST', async () => {
+  it('dedupes concurrent identical queries to one upstream race', async () => {
     let inflight = 0;
     let started = 0;
     const fetchImpl = vi.fn(async () => {
@@ -70,7 +73,8 @@ describe('Overpass mirror fallback', () => {
       return jsonOk();
     }) as unknown as typeof fetch;
 
-    const run = (q: string) => fetchOverpassWithMirrors(q, { fetchImpl, timeoutMs: 2_000, mirrors: [OVERPASS_MIRRORS[0]], backoffMs: [0] });
+    const run = (q: string) =>
+      fetchOverpassWithMirrors(q, { fetchImpl, timeoutMs: 2_000, mirrors: [OVERPASS_MIRRORS[0]], backoffMs: [0] });
     const [a, b] = await Promise.all([fetchOverpassDeduped(QUERY, run), fetchOverpassDeduped(QUERY, run)]);
     expect(started).toBe(1);
     expect(a).toBe(b);

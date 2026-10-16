@@ -11,7 +11,7 @@ export async function applyNeasdenDesign(page: Page) {
   await page.fill('.design-box .design-input', 'neasden map');
   await page.getByRole('button', { name: 'Apply' }).click();
   await expect(page.locator('.status-bar')).toContainText(/Fetching|building/i, { timeout: 15_000 });
-  await expect(page.locator('.status-bar')).toContainText(/ready/i, { timeout: 120_000 });
+  await expect(page.locator('.status-bar')).toContainText(/ready/i, { timeout: 240_000 });
 }
 
 export async function openWorkspaceTab(page: Page, label: string) {

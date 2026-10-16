@@ -39,16 +39,16 @@ function sleep(ms: number): Promise<void> {
 export async function defaultOverpassFetch(query: string): Promise<unknown> {
   if (typeof window !== 'undefined') {
     return fetchOverpassDeduped(query, async (q) => {
-      let last: Error | null = null;
-      for (let i = 0; i < 3; i++) {
-        if (i) await sleep(400 * 2 ** (i - 1));
+      try {
+        return await postBrowserProxy(q);
+      } catch (e) {
+        await sleep(500);
         try {
           return await postBrowserProxy(q);
-        } catch (e) {
-          last = e as Error;
+        } catch {
+          throw e;
         }
       }
-      throw last ?? new Error('Overpass proxy failed');
     });
   }
   return fetchOverpassDeduped(query, (q) => fetchOverpassWithMirrors(q));
