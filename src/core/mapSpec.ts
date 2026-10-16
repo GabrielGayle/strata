@@ -69,6 +69,8 @@ export interface MapSpec {
   sunkenFrame?: { enabled: boolean; castToleranceMm?: number; wallMm?: number };
   /** Gift / map face sizing hint for pricing (ticket 27). */
   giftSizeId?: string;
+  /** Matches `mapBuildKey` when depth grid was last built in the browser/CLI. */
+  buildKey?: string;
 }
 
 export const TERRARIUM_ATTRIBUTION = [

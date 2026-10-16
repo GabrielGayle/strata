@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../state/store';
 import { PRESETS, deserialize, serialize } from '../core/project';
+import { MAP_PRESET_CATALOG, mapPresetSpec } from '../core/mapPresets';
 import { SOUND_PRESETS } from '../core/soundPresets';
 import { soundDataUrl } from './audio';
 import { buildZip, download, openHtml } from '../core/exporters';
@@ -212,12 +213,12 @@ function AppearanceMenu() {
   );
 }
 
-export default function Toolbar({ onOpenMap }: { onOpenMap?: () => void }) {
+export default function Toolbar() {
   const project = useStore((s) => s.project);
   const past = useStore((s) => s.past.length);
   const future = useStore((s) => s.future.length);
   const saveStatus = useStore((s) => s.saveStatus);
-  const { undo, redo, setName, randomise, loadPreset, saveVariant, loadVariant, deleteVariant, toast, setUi } = useStore.getState();
+  const { undo, redo, setName, randomise, loadPreset, saveVariant, loadVariant, deleteVariant, toast, setUi, setTopMap } = useStore.getState();
   const fullModel = useFullModel();
 
   const save = () => download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}.strata.json`, serialize(project), 'application/json');
@@ -355,11 +356,39 @@ export default function Toolbar({ onOpenMap }: { onOpenMap?: () => void }) {
             </ul>
           )}
         </Menu>
-        {onOpenMap && (
-          <button className="tb" type="button" onClick={onOpenMap} title="Set map bbox and title (Nominatim search)">
-            Map
-          </button>
-        )}
+        <Menu label="Maps">
+          {(close) => (
+            <ul className="tree-view">
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUi({ tab: 'map' });
+                    close();
+                  }}
+                >
+                  <span>Open Map tab</span>
+                  <small>source, engraving, presets</small>
+                </button>
+              </li>
+              {MAP_PRESET_CATALOG.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTopMap(mapPresetSpec(p.id));
+                      setUi({ tab: 'map' });
+                      close();
+                    }}
+                  >
+                    <span>{p.label}</span>
+                    <small>{p.note}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Menu>
         <Menu label="Shuffle">
           {(close) => (
             <>

@@ -1,11 +1,56 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { createReadStream, existsSync, statSync } from 'node:fs';
+import { join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Strata's own geometry code (and the mesh loaders it uses) needs only three's
 // core: maths, geometry, shapes. Point those imports straight at three.core.js,
 // so the WebGL renderer half (three.module.js) is only fetched with the 3D views.
 // Build only: in dev the deps are pre-bundled, and two copies of three would load.
 const CORE_ONLY = /\/src\/(core|state)\/|\/three\/examples\/jsm\/(loaders\/(STL|OBJ)Loader|exporters\/STLExporter|utils\/BufferGeometryUtils)\.js$/;
+const mapFixtureRoot = join(fileURLToPath(new URL('.', import.meta.url)), 'test/fixtures/map');
+
+function attachMapFixtureMiddleware(server: { middlewares: { use: (path: string, handler: (req: any, res: any, next: () => void) => void) => void } }) {
+  server.middlewares.use('/map-fixtures', (req, res, next) => {
+    const url = req.url?.split('?')[0] ?? '';
+    const file = normalize(join(mapFixtureRoot, url.replace(/^\//, '')));
+    if (!file.startsWith(mapFixtureRoot) || !existsSync(file) || !statSync(file).isFile()) {
+      next();
+      return;
+    }
+    if (file.endsWith('.json')) res.setHeader('Content-Type', 'application/json');
+    else if (file.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+    createReadStream(file).pipe(res);
+  });
+}
+
+/** Serve offline map tiles / grids for Playwright (`/map-fixtures/...`). */
+const mapCacheClient = join(fileURLToPath(new URL('.', import.meta.url)), 'src/core/mapCache.client.ts');
+
+/** Browser bundle uses in-memory fetch only (CLI keeps on-disk `mapCache.ts`). */
+function mapCacheBrowser(): Plugin {
+  return {
+    name: 'strata-map-cache-browser',
+    enforce: 'pre',
+    resolveId(source, importer, options) {
+      if (options.ssr) return null;
+      if (source !== './mapCache' && source !== '../core/mapCache' && !source.endsWith('/mapCache')) return null;
+      if (!importer?.includes('/src/')) return null;
+      if (importer.includes('mapCache.ts') || importer.includes('mapCache.client')) return null;
+      return mapCacheClient;
+    },
+  };
+}
+
+function mapFixtures(): Plugin {
+  return {
+    name: 'strata-map-fixtures',
+    configureServer: attachMapFixtureMiddleware,
+    configurePreviewServer: attachMapFixtureMiddleware,
+  };
+}
+
 function threeCore(): Plugin {
   return {
     name: 'strata-three-core',
@@ -29,7 +74,18 @@ function vendorChunk(id: string): string | undefined {
 
 export default defineConfig({
   base: './',
-  plugins: [react(), threeCore()],
+  plugins: [react(), threeCore(), mapCacheBrowser(), mapFixtures()],
+  define: {
+    'process.env': {},
+  },
+  resolve: {
+    alias: {
+      buffer: 'buffer/',
+    },
+  },
+  optimizeDeps: {
+    include: ['buffer'],
+  },
   build: {
     chunkSizeWarningLimit: 2000,
     rollupOptions: {

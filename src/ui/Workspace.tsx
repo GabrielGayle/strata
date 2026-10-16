@@ -17,6 +17,7 @@ const LOAD: Record<Tab, () => Promise<{ default: ComponentType }>> = {
   mould: () => import('./MouldView'),
   unfold: () => import('./UnfoldView'),
   image: () => import('./ImageView'),
+  map: () => import('./MapView'),
   shadow: () => import('./ShadowView'),
   graph: () => import('./GraphView'),
   nodes: () => import('./NodesView'),
