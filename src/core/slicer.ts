@@ -15,6 +15,7 @@ import {
   shapeArea,
   shapeBBox,
   shapePerimeter,
+  signedArea,
   union,
   unionShapes,
   simplifyShape,
@@ -106,6 +107,8 @@ export interface SliceResult {
   /** Target note per plate (aligned with `plates`), when Tuning is on. */
   tuning: (PlateTune | null)[] | null;
   brace: BraceResult | null;
+  /** The plates where Round all corners moved an edge the furthest, most first (empty when it is off). */
+  roundSpots?: RoundSpot[];
 }
 
 export interface BraceResult {
@@ -938,26 +941,87 @@ function seatTrim(seats: Seat[], floor: number): Shape {
 const SMOOTH_TOL = 0.03;
 
 /**
+ * A chain of round offsets, tidied between steps. Each offset leaves near-duplicate points
+ * where its arcs meet, sometimes doubling back by a few microns; offset again, such a
+ * fold turns into a needle-thin slit as deep as the radius. Simplifying in between drops them.
+ */
+function morph(shape: Shape, deltas: number[]): Shape {
+  let s = simplifyShape(shape, SMOOTH_TOL / 2);
+  for (const d of deltas) s = simplifyShape(offset(s, d, 'round', SMOOTH_TOL), SMOOTH_TOL / 2);
+  return s;
+}
+
+/**
  * Round the image-driven cut region itself (closing + opening of radius r),
  * then cut it out. Only the cut's own edges change (step edges, recess floors,
  * pixel stair-steps); the plate's outer edges are never touched.
  */
 function smoothImageCuts(plate: Shape, cut: Shape, r: number): Shape {
   if (!(r > 0.05)) return difference(plate, cut);
-  const rounded = offset(offset(offset(unionShapes(cut), r, 'round', SMOOTH_TOL), -2 * r, 'round', SMOOTH_TOL), r, 'round', SMOOTH_TOL);
+  const rounded = morph(unionShapes(cut), [r, -2 * r, r]);
   return simplifyShape(difference(plate, rounded), SMOOTH_TOL / 2);
 }
 
 /**
- * Round every corner of the material (closing + opening of radius r). Where two
- * rounded bumps meet, the opening leaves a needle-thin inside cusp; a final
- * 0.3 mm closing blunts it so no gap is narrower than the kerf.
+ * Round the corners of the material: inside corners (valleys) by a closing of radius rIn,
+ * then outside corners (peaks) by an opening of radius rOut. Where two rounded bumps meet,
+ * the opening leaves a needle-thin inside cusp; a final 0.3 mm closing blunts it so no gap
+ * is narrower than the kerf.
  */
-export function roundAll(shape: Shape, r: number): Shape {
-  if (!(r > 0.05) || !shape.length) return shape;
-  const opened = offset(offset(offset(simplifyShape(shape, SMOOTH_TOL / 2), r, 'round', SMOOTH_TOL), -2 * r, 'round', SMOOTH_TOL), r, 'round', SMOOTH_TOL);
-  const c = Math.min(0.3, r / 2);
-  return simplifyShape(offset(offset(opened, c, 'round', SMOOTH_TOL), -c, 'round', SMOOTH_TOL), SMOOTH_TOL / 2);
+export function roundAll(shape: Shape, rOut: number, rIn = rOut): Shape {
+  const o = rOut > 0.05 ? rOut : 0, i = rIn > 0.05 ? rIn : 0;
+  if (!(o || i) || !shape.length) return shape;
+  const c = Math.min(0.3, Math.max(o, i) / 2);
+  return morph(shape, [i, -i - o, o, c, -c].filter((d) => Math.abs(d) > 1e-9));
+}
+
+/** Where rounding moved a plate's edge the furthest, for the warning and the zoomed preview. */
+export interface RoundSpot {
+  key: string;
+  label: string;
+  /** The plate before and after rounding, in plate coordinates. */
+  before: Shape;
+  after: Shape;
+  at: Vec2;
+  /** How far the edge moved there, mm. */
+  move: number;
+}
+
+/** The furthest any edge point moved between `before` and `after`, and where (points `skip` rejects aside). */
+export function roundingMove(before: Shape, after: Shape, skip: (p: Vec2) => boolean = () => false): { move: number; at: Vec2 } {
+  let move = 0;
+  let at: Vec2 = [0, 0];
+  for (const [changed, other] of [[difference(before, after), after], [difference(after, before), before]] as const) {
+    for (const ex of changed) {
+      if (Math.abs(signedArea(ex.outer)) < 0.2) continue;
+      const bb = bboxOf([ex.outer]);
+      const pad = Math.hypot(bb.maxX - bb.minX, bb.maxY - bb.minY);
+      // only the other shape's edges near this piece can be the nearest
+      const edges: [Vec2, Vec2][] = [];
+      for (const oex of other)
+        for (const path of [oex.outer, ...oex.holes])
+          for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+            const a = path[j], b = path[i];
+            if (Math.max(a[0], b[0]) < bb.minX - pad || Math.min(a[0], b[0]) > bb.maxX + pad || Math.max(a[1], b[1]) < bb.minY - pad || Math.min(a[1], b[1]) > bb.maxY + pad) continue;
+            edges.push([a, b]);
+          }
+      for (const p of ex.outer) {
+        if (skip(p)) continue;
+        let best = Infinity;
+        for (const [a, b] of edges) {
+          const dx = b[0] - a[0], dy = b[1] - a[1];
+          const l2 = dx * dx + dy * dy;
+          const t = l2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+          best = Math.min(best, Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy));
+        }
+        if (Number.isFinite(best) && best > move) {
+          move = best;
+          at = [p[0], p[1]];
+        }
+      }
+    }
+  }
+  return { move, at };
 }
 
 function distToBoundary(p: Vec2, ex: ExPoly): number {
@@ -1019,6 +1083,8 @@ export function partLabel(v: Values, family: Family, index: number, count: numbe
 export function slice(input: SliceInput): SliceResult {
   const { v, hf } = input;
   const warnings: string[] = [];
+  const round: { spots: RoundSpot[] } = { spots: [] };
+  const roundSplits: string[] = [];
   // design-side work (outlines, image cuts) happens where each plate was designed;
   // fit-side work (cavities, slots, tenons) where it has been moved to
   const homeDefs = plateDefs(v);
@@ -1223,7 +1289,19 @@ export function slice(input: SliceInput): SliceResult {
     if (carveCut.length) shape = v.cutSmooth > 0.05 ? simplifyShape(difference(shape, carveCut), SMOOTH_TOL / 2) : difference(shape, carveCut);
     if (seats) shape = difference(shape, seatTrim(seats.plates[di], seats.floor));
     // all-edges rounding happens before the functional cuts below, so they stay crisp
-    shape = roundAll(shape, v.edgeRound);
+    if (v.edgeRound > 0.05 || v.edgeRoundIn > 0.05) {
+      const before = shape;
+      shape = roundAll(shape, v.edgeRound, v.edgeRoundIn);
+      // the plate's own end corners always round off the most; the close-up looks along the edge between them
+      const bb = shapeBBox(before);
+      const endGap = Math.max(v.edgeRound, v.edgeRoundIn) + 3;
+      let { move, at } = roundingMove(before, shape, (q) => q[0] < bb.minX + endGap || q[0] > bb.maxX - endGap);
+      if (move < 0.05) ({ move, at } = roundingMove(before, shape));
+      const pieces = (sh: Shape) => sh.filter((ex) => !(ex.depth ?? 0) && Math.abs(signedArea(ex.outer)) > 0.5).length;
+      const label = partLabel(v, def.family, def.index, def.count);
+      if (pieces(shape) > pieces(before)) roundSplits.push(label);
+      if (move > 0.05) round.spots.push({ key: def.key, label, before, after: shape, at, move });
+    }
 
     // 5. anchor holes in the embedded tab (any that would run into a rod hole are left out)
     const rodsHere = rods && def.home ? rodsThrough(rods, def.plane) : rods;
@@ -1408,5 +1486,10 @@ export function slice(input: SliceInput): SliceResult {
   const brace: BraceResult | null = rods || spacers ? { rods, spacers, hardware: rods ? rodHardware(rods) : [], issues: braceIssues } : braceIssues.length ? { rods: null, spacers: null, hardware: [], issues: braceIssues } : null;
 
   placeLooseParts(allParts, input.moves, new Set(defs.map((d) => d.key)));
-  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin, support, tuning, brace };
+  // rounding three times further than its radius (sharper than a 30° point) means detail is being flattened, not just corners eased
+  const rMax = Math.max(v.edgeRound, v.edgeRoundIn);
+  const spots = round.spots.sort((a, b) => b.move - a.move).slice(0, 6);
+  if (spots.length && spots[0].move > Math.max(2, rMax * 3)) warnings.push(`Round all corners flattens detail: the edge of ${spots[0].label} moves ${spots[0].move.toFixed(1)} mm. Lower the radius, or set Inside corners lower.`);
+  if (roundSplits.length) warnings.push(`Round all corners cuts through a narrow neck and splits ${roundSplits.slice(0, 4).join(', ')}${roundSplits.length > 4 ? ` and ${roundSplits.length - 4} more` : ''} into pieces.`);
+  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin, support, tuning, brace, roundSpots: spots };
 }

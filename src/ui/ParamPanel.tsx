@@ -6,6 +6,7 @@ import { useStore } from '../state/store';
 import { useModel } from './model';
 import PourEditor from './PourEditor';
 import { changedByGroup, resetGroupPatch } from '../core/paramDiff';
+import RoundPreview, { ROUND_PREVIEW_IDS } from './RoundPreview';
 
 function fmtVal(x: number, step = 1): string {
   if (!Number.isFinite(x)) return '–';
@@ -50,6 +51,21 @@ const NumberParam = memo(function NumberParam({
   useEffect(() => {
     if (focus) row.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [focus]);
+  // the rounding sliders open a close-up while they are being adjusted, and a moment after
+  const previews = ROUND_PREVIEW_IDS.has(def.id);
+  const [peek, setPeek] = useState(false);
+  const [keep, setKeep] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holding = useRef(false);
+  const poke = () => {
+    if (!previews) return;
+    setPeek(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      if (!holding.current) setPeek(false);
+    }, 3000);
+  };
+  useEffect(() => () => void (hideTimer.current && clearTimeout(hideTimer.current)), []);
   const step = def.step ?? 1;
   // literals are stored at Master size 1, so what you type is what you see at the current size
   const store = (shown: number) => setParam(def.id, String(+(shown / factor).toFixed(6)));
@@ -131,7 +147,19 @@ const NumberParam = memo(function NumberParam({
               step={step}
               value={value}
               disabled={locked}
-              onChange={(e) => (factor !== 1 ? store(Number(e.target.value)) : setParam(def.id, e.target.value))}
+              onPointerDown={() => {
+                holding.current = true;
+                poke();
+              }}
+              onPointerUp={() => {
+                holding.current = false;
+                poke();
+              }}
+              onChange={(e) => {
+                poke();
+                if (factor !== 1) store(Number(e.target.value));
+                else setParam(def.id, e.target.value);
+              }}
               aria-label={def.label}
             />
             <input
@@ -141,6 +169,7 @@ const NumberParam = memo(function NumberParam({
                 editing.current = true;
                 setText(fmtVal(value, step));
                 e.target.select();
+                poke();
               }}
               onChange={(e) => setText(e.target.value)}
               onBlur={(e) => commitText(e.target.value)}
@@ -153,6 +182,7 @@ const NumberParam = memo(function NumberParam({
                   if (factor !== 1) store(nv);
                   else setParam(def.id, String(+nv.toFixed(6)));
                   setText(fmtVal(nv, step));
+                  poke();
                 }
               }}
               aria-label={`${def.label} value`}
@@ -163,6 +193,16 @@ const NumberParam = memo(function NumberParam({
       </div>
       {error && <div className="perr">{error}</div>}
       {!error && clamped && <div className="perr">Clamped to {def.min}…{def.max}</div>}
+      {previews && (peek || keep) && (
+        <RoundPreview
+          keep={keep}
+          setKeep={setKeep}
+          onClose={() => {
+            setKeep(false);
+            setPeek(false);
+          }}
+        />
+      )}
     </div>
   );
 });

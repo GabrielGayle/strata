@@ -262,6 +262,10 @@ export const PARAMS: ParamDef[] = [
     rand: true,
     help: 'Rounds every corner of every plate, image cuts included. The insert cavity, anchor holes and slots stay crisp so parts still fit.',
   }),
+  num('edgeRoundIn', 'Inside corners', 'Edges', 'edgeRound', 0, 50, {
+    step: 0.25,
+    help: 'Radius for the inside corners (valleys, notches, the foot of each step). Follows Round all corners until you set it; 0 keeps them crisp and only rounds the peaks.',
+  }),
 
   // Insert
   { id: 'insertOn', label: 'Insert on', group: 'Insert', kind: 'toggle', def: true },
@@ -528,7 +532,7 @@ export const GROUP_SWITCHES: Partial<Record<(typeof GROUPS)[number], GroupSwitch
   Support: { id: 'supportOn', forces: { supportMode: 'off' } },
   Bracing: { id: 'bracingOn', forces: { rodsOn: false, spacerMode: 'off' } },
   Strata: { id: 'strataOn', forces: { erosionAmp: '0', banding: '0', crest: '0', slope: '0' } },
-  Edges: { id: 'edgesOn', forces: { edgeFlow: '0', edgeRound: '0' } },
+  Edges: { id: 'edgesOn', forces: { edgeFlow: '0', edgeRound: '0', edgeRoundIn: '0' } },
   Insert: { id: 'insertOn', forces: { insShape: 'none' } },
   Image: { id: 'imageOn', forces: { imgSideMode: 'off', imgTopMode: 'off', imgFrontMode: 'off', etchMode: 'off', topOutline: 'off', imgFit: 'off' } },
   Tuning: { id: 'tuneOn', forces: { tuneMode: 'off' } },
