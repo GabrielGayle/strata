@@ -209,13 +209,16 @@ export function createFrontPipeline() {
       const im = toIndexedMesh(form.geometry);
       return { form, mesh: im, volume: meshVolume(im) };
     };
-    const insert = stage('Insert form', [...pick(v, formKeys('ins')), assets.insMesh], () => mkForm('ins', assets.insMesh));
+    const mapTop = isMapDepth(project.images.top?.depth) && project.images.top?.map;
+    const mapDepth = mapTop ? project.images.top!.depth : undefined;
+    // Vermilion’s default fin insert is a 360 mm dark curve; it is not map terrain.
+    const insert = stage('Insert form', [...pick(v, formKeys('ins')), assets.insMesh, !!mapTop], () =>
+      mapTop ? null : mkForm('ins', assets.insMesh),
+    );
     const source = stage('Source form', [...pick(v, formKeys('src')), v.stackSource, assets.srcMesh], () =>
       v.stackSource === 'form' || v.unfoldTarget === 'source' ? mkForm('src', assets.srcMesh) : null,
     );
     const opts = () => ({ contrast: v.imgContrast, smooth: v.imgSmooth, blur: blurSpec(v), invert: v.imgInvert, rotate: Number(v.imgRotate) });
-    const mapTop = isMapDepth(project.images.top?.depth) && project.images.top?.map;
-    const mapDepth = mapTop ? project.images.top!.depth : undefined;
     const processFace = (img: Gray | null, isMap: boolean) => {
       if (!img) return null;
       if (isMap) return img;

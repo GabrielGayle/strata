@@ -91,11 +91,14 @@ describe('live-scale EA relief must reach plate tops', () => {
     p.images.top = bundle.asset;
     const gray = mapDepthToGray(bundle.depth);
     const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: gray, insMesh: null, srcMesh: null });
+    expect(m.insert).toBeNull();
     const expected = mapTrueRangePlateMm(bundle.depth, m.v, factor);
+    expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(depthRelief)} m relief`);
+    expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(expected)} mm stack`);
     const actual = plateTopHeightRangeMm(m.sliced.plates);
     const hfSpan = (m.hf?.max ?? 0) - (m.hf?.min ?? 0);
 
-    // 45 m ×11 on 800 mm / ~3.3 km → ~120 mm. A 32 mm band is the old leak.
+    // True (max − min) × factor × plan scale, not p98−p2 → plateCount×thickness (45 m → 120 mm).
     expect(factor).toBeGreaterThanOrEqual(8);
     expect(depthRelief).toBeGreaterThan(raw.max - raw.min - 5);
     expect(metric.max - metric.min).toBeGreaterThan((raw.max - raw.min) * 0.7);

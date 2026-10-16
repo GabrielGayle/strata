@@ -12,6 +12,7 @@ import { baseGeometry } from '../core/base';
 import { shapeBBox } from '../core/geom2d';
 import { makeConcreteMaterial, METALS, PLY, type Band } from './materials';
 import { lookOf, MAIN, type Appearance } from '../core/appearance';
+import { isMapDepth } from '../core/mapPlateHeight';
 import { useStore } from '../state/store';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { SunStudy3D } from './SunStudy';
@@ -127,9 +128,10 @@ function Base({ model, xray }: { model: Model; xray: boolean }) {
 function Insert({ model }: { model: Model }) {
   const v = model.v;
   const ins = model.insert;
+  const mapTop = useStore((s) => isMapDepth(s.project.images.top?.depth) && !!s.project.images.top?.map);
   const mat = useMemo(() => makeConcreteMaterial(), []);
   useEffect(() => () => mat.dispose(), [mat]);
-  if (!ins) return null;
+  if (mapTop || !ins) return null;
   if (v.insMaterial === 'void')
     return (
       <mesh geometry={ins.form.geometry} userData={{ measure: 'insert' }}>

@@ -19,7 +19,7 @@ It must **bypass** every photo/image step:
 - the image height-range cap (`imgRange`)
 - water flatten when water mode is **raw** (only `flat`, or `bathy` fallback, may flatten water)
 
-`mapGridToDepth` stores true min/max elevation. `buildMapHeightField` samples those metres (windowed only by user near/far) and sets plate heights. Auto exaggeration may still use a robust relief estimate to pick the **factor**; the factor then multiplies **true** `(max − min)` metres.
+`mapGridToDepth` stores true min/max elevation. `buildMapHeightField` samples those metres (windowed only by user near/far) and sets plate heights. Auto exaggeration may still use a robust (p98−p2) estimate to pick the **factor**; the Map readout and plate maths both use **true** `(max − min)` metres (`mapOrtho.reliefM`). A map top face does not keep the default insert (Vermilion fin).
 
 The Map tab hillshade can look correct while 3D plates stay a ~32 mm band at `stackHeight` ± `erosionAmp` (live Neasden: 232–264 mm). That means the pipeline still used `buildHeightField` and never called `buildMapHeightField`.
 

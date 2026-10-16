@@ -5,7 +5,7 @@ import { cachedTileFetch } from './mapCache';
 import { reprojectResample } from './mapProject';
 import { mapGridToDepth } from './mapToDepth';
 import { applyLayerBudget, computeLayerBreaks, type LayerBudgetMode } from './mapLayerBudget';
-import { resolveExaggerationFactor } from './mapExaggeration';
+import { formatExaggerationStackReadout, resolveExaggerationFactor } from './mapExaggeration';
 import { simplifyMetricGrid } from './mapSimplify';
 import { fetchCop30Grid, type Cop30GridLoader } from './mapCopernicus';
 import { fetchEaLidarGrid, isEaLidarSource, type EaGridLoader } from './mapEaLidar';
@@ -212,7 +212,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     }
   }
   const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
-  const { factor, readout } = resolveExaggerationFactor(
+  const { factor } = resolveExaggerationFactor(
     { exaggeration: spec.exaggeration },
     metricForExaggeration,
     stack,
@@ -226,6 +226,13 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   });
   metric = simplified.grid;
   const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384, bbox: spec.bbox });
+  const ortho = depth.mapOrtho;
+  const readout = formatExaggerationStackReadout(
+    factor,
+    ortho?.reliefM ?? 0,
+    ortho?.widthM ?? 1,
+    stack.masterWidthMm,
+  );
   let engraveArt: MapSpec['engraveArt'];
   if (spec.engrave?.enabled) {
     try {

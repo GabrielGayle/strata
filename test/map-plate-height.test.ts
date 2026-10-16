@@ -75,6 +75,8 @@ describe('map elevation → plate heights (invariant)', () => {
     };
     const gray = mapDepthToGray(depth);
     const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: gray, insMesh: null, srcMesh: null });
+    expect(m.insert).toBeNull();
+    expect(m.sliced.plates.every((plate) => plate.cavity.length === 0)).toBe(true);
     const expected = mapTrueRangePlateMm(depth, m.v, ex);
     const scale = mapScaleMmPerM(depth.mapOrtho!.widthM, 600);
     expect(expected).toBeCloseTo(mapReliefToPlateRangeMm(zMax - zMin, ex, scale), 5);
@@ -114,5 +116,11 @@ describe('map elevation → plate heights (invariant)', () => {
     const n = Math.min(gray.data.length, photo.data.length);
     for (let i = 0; i < n; i++) maxDiff = Math.max(maxDiff, Math.abs(gray.data[i] - photo.data[i]));
     expect(maxDiff).toBeGreaterThan(0.05);
+  });
+
+  it('keeps the default insert when the top face is not a map', () => {
+    const p = newProject();
+    const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null });
+    expect(m.insert).not.toBeNull();
   });
 });

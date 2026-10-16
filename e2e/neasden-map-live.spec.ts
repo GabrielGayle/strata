@@ -30,7 +30,7 @@ test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page
   await assertPlateHeightMatchesRelief(page, 0.35);
   const rangeMm = Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm'));
   expect(rangeMm).toBeGreaterThan(70);
-  // #85 live 3D caption was "plate height 232–264 mm" (strata). Map metres → ~4–120 mm.
+  // #85 live 3D caption was "plate height 232–264 mm" (strata). True relief (~55 m) ×11 → ~4–150 mm.
   await openWorkspaceTab(page, '3D');
   await expect(page.getByTestId('plate-height-range')).toBeVisible();
   await expect(page.getByTestId('plate-height-range')).not.toContainText(/232\s*[–-]\s*264/);

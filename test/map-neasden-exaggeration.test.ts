@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { computeAutoExaggeration, reliefMetres } from '../src/core/mapExaggeration';
+import {
+  computeAutoExaggeration,
+  exaggerationReadout,
+  formatExaggerationStackReadout,
+  reliefMetres,
+  resolveExaggerationFactor,
+  trueReliefMetres,
+} from '../src/core/mapExaggeration';
+import { mapReliefToPlateRangeMm, mapScaleMmPerM } from '../src/core/mapPlateHeight';
 import { buildMapBundle } from '../src/core/mapPipeline';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { mapNoticesMatching } from '../src/core/mapNotices';
@@ -39,6 +47,10 @@ function neasdenRampGrid(minZ: number, maxZ: number): Float32Grid {
 }
 
 describe('Neasden auto exaggeration', () => {
+  it('stack readout uses true relief × factor × plan scale (not plateCount × thickness)', () => {
+    expect(formatExaggerationStackReadout(11, 55.3, 3300, 800)).toBe('×11 · 55 m relief → 147 mm stack on 800 mm');
+  });
+
   it('plan stack-height formula lands near ×18–21 for A3 (420 mm) with 30×3 mm plates', () => {
     const factor = computeAutoExaggeration({
       reliefM: 35,
@@ -114,8 +126,56 @@ describe('Neasden auto exaggeration', () => {
     expect(factor).toBeLessThanOrEqual(12);
     expect(bundle.asset.map?.exaggeration).toBe('auto');
     expect(bundle.asset.map?.exaggerationReadout).toMatch(/×1[0-2]/);
-    expect(bundle.asset.map?.exaggerationReadout).toMatch(/4[0-9] m relief/);
-    expect(bundle.asset.map?.exaggerationReadout).toMatch(/120 mm stack on 800 mm/);
+    const ortho = bundle.depth.mapOrtho!;
+    const expectedMm = mapReliefToPlateRangeMm(ortho.reliefM, factor, mapScaleMmPerM(ortho.widthM, VERMILION.masterWidthMm));
+    expect(bundle.asset.map?.exaggerationReadout).toBe(
+      formatExaggerationStackReadout(factor, ortho.reliefM, ortho.widthM, VERMILION.masterWidthMm),
+    );
+    expect(bundle.asset.map?.exaggerationReadout).toBe(
+      `${exaggerationReadout(factor)} · ${Math.round(ortho.reliefM)} m relief → ${Math.round(expectedMm)} mm stack on 800 mm`,
+    );
+  });
+
+  it('readout uses true min/max relief (same as plate maths), not p98−p2 or plateCount×thickness', async () => {
+    const ea = neasdenRampGrid(20, 66.9);
+    ea.data[0] = 18.8;
+    ea.data[ea.data.length - 1] = 74.1; // true 55.3 m; p98−p2 stays ~45 m
+    expect(reliefMetres(ea)).toBeGreaterThan(40);
+    expect(reliefMetres(ea)).toBeLessThan(50);
+    expect(trueReliefMetres(ea)).toBeCloseTo(55.3, 5);
+    const pre = resolveExaggerationFactor({ exaggeration: 'auto' }, ea, VERMILION);
+    expect(pre.readout).toContain('55 m relief');
+    expect(pre.readout).not.toMatch(/120 mm stack/);
+
+    const bundle = await buildMapBundle(
+      defaultMapSpec({
+        bbox: NEASDEN_BBOX,
+        source: 'ea-dtm',
+        exaggeration: 'auto',
+        water: 'raw',
+        engrave: { enabled: false, features: [] },
+      }),
+      {
+        eaLoader: async () => ea,
+        allowOverpassNetwork: false,
+        fetch: async () => {
+          throw new Error('terrarium must not run when EA succeeds');
+        },
+        stack: VERMILION,
+      },
+    );
+    const factor = bundle.asset.map?.exaggerationFactor ?? 0;
+    expect(factor).toBeGreaterThanOrEqual(10);
+    expect(factor).toBeLessThanOrEqual(12);
+    const ortho = bundle.depth.mapOrtho!;
+    expect(ortho.reliefM).toBeGreaterThan(50);
+    const expectedMm = mapReliefToPlateRangeMm(ortho.reliefM, factor, mapScaleMmPerM(ortho.widthM, VERMILION.masterWidthMm));
+    expect(bundle.asset.map?.exaggerationReadout).toBe(
+      formatExaggerationStackReadout(factor, ortho.reliefM, ortho.widthM, VERMILION.masterWidthMm),
+    );
+    expect(bundle.asset.map?.exaggerationReadout).not.toMatch(/120 mm stack/);
+    expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(ortho.reliefM)} m relief`);
+    expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(expectedMm)} mm stack on 800 mm`);
   });
 
   it('9 m Terrarium-scale relief on the full Neasden width clamps Vermilion 40 auto to ×50', () => {
