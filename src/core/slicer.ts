@@ -97,8 +97,12 @@ export interface FrontWindow {
   v1: number;
 }
 
-/** Span of plate top edges above the concrete line (mm). */
-export function plateTopHeightRangeMm(plates: PlateInfo[]): number {
+/**
+ * Lowest and highest outline vertices above the concrete (y > 0.5 mm).
+ * This is the terrain span actually cut into the plates — not each plate’s
+ * bounding-box top, which ignores valleys on the same slice.
+ */
+export function plateOutlineYRangeMm(plates: PlateInfo[]): { lo: number; hi: number } | null {
   let lo = Infinity;
   let hi = -Infinity;
   for (const pl of plates) {
@@ -114,7 +118,13 @@ export function plateTopHeightRangeMm(plates: PlateInfo[]): number {
       }
     }
   }
-  return Number.isFinite(hi) && Number.isFinite(lo) ? hi - lo : 0;
+  return Number.isFinite(hi) && Number.isFinite(lo) ? { lo, hi } : null;
+}
+
+/** Span of plate top edges above the concrete line (mm). */
+export function plateTopHeightRangeMm(plates: PlateInfo[]): number {
+  const r = plateOutlineYRangeMm(plates);
+  return r ? r.hi - r.lo : 0;
 }
 
 export interface SliceResult {

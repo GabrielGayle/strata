@@ -7,7 +7,7 @@ import type { Float32Grid } from '../src/core/mapGrid';
 import { createPipeline } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
 import { mapDepthToGray, mapTrueRangePlateMm } from '../src/core/mapPlateHeight';
-import { plateTopHeightRangeMm } from '../src/core/slicer';
+import { plateOutlineYRangeMm, plateTopHeightRangeMm } from '../src/core/slicer';
 
 /** Live EA Neasden-like DEM: valley ~35 m, peak 86 m, dip 18.8 m. */
 function liveLikeNeasdenGrid(): Float32Grid {
@@ -97,6 +97,11 @@ describe('live-scale EA relief must reach plate tops', () => {
     expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(expected)} mm stack`);
     const actual = plateTopHeightRangeMm(m.sliced.plates);
     const hfSpan = (m.hf?.max ?? 0) - (m.hf?.min ?? 0);
+    const outline = plateOutlineYRangeMm(m.sliced.plates)!;
+    const bboxTops = m.sliced.parts.filter((p) => p.family === 'P').map((p) => p.bbox.maxY);
+    // Bounding-box tops (old “plate height 45–150”) ignore valleys on the same plate.
+    expect(outline.lo).toBeLessThanOrEqual(Math.min(...bboxTops) + 1e-6);
+    expect(actual).toBeCloseTo(outline.hi - outline.lo, 5);
 
     // True (max − min) × factor × plan scale, not p98−p2 → plateCount×thickness (45 m → 120 mm).
     expect(factor).toBeGreaterThanOrEqual(8);

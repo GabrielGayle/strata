@@ -10,7 +10,7 @@ import {
   mapScaleMmPerM,
   mapTrueRangePlateMm,
 } from '../src/core/mapPlateHeight';
-import { plateTopHeightRangeMm } from '../src/core/slicer';
+import { plateOutlineYRangeMm, plateTopHeightRangeMm } from '../src/core/slicer';
 import { depthToGray } from '../src/core/depth';
 import { evaluateParams } from '../src/core/params';
 import { NEASDEN_FAST_BBOX } from './map-fixtures';
@@ -81,6 +81,9 @@ describe('map elevation → plate heights (invariant)', () => {
     const scale = mapScaleMmPerM(depth.mapOrtho!.widthM, 600);
     expect(expected).toBeCloseTo(mapReliefToPlateRangeMm(zMax - zMin, ex, scale), 5);
     const range = plateTopHeightRangeMm(m.sliced.plates);
+    const outline = plateOutlineYRangeMm(m.sliced.plates);
+    expect(outline).toBeTruthy();
+    expect(range).toBeCloseTo(outline!.hi - outline!.lo, 5);
     expect(range).toBeGreaterThan(expected * 0.75);
     expect(range).toBeLessThan(expected * 1.25);
     expect(range).toBeGreaterThan(80);

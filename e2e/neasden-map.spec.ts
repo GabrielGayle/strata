@@ -9,10 +9,11 @@ import {
   assertPlateHeightMatchesRelief,
   setThemePreset,
   waitForViewportRelief,
+  waitForThemeMode,
+  waitForPlatesView,
 } from './map-helpers';
 
 test('neasden map plates follow real elevation × exaggeration (fixture)', async ({ page }) => {
-  test.setTimeout(240_000);
   await openApp(page);
   await pickNeasdenPreset(page);
 
@@ -33,26 +34,23 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
 });
 
 test('neasden 3D and Plates screenshots in light and dark', async ({ page }) => {
-  test.setTimeout(240_000);
   await openApp(page);
   await pickNeasdenPreset(page);
-  await openWorkspaceTab(page, '3D');
   await waitForViewportRelief(page);
 
   const shotDir = join(process.cwd(), 'docs/screenshots/map-p0');
   await mkdir(shotDir, { recursive: true });
 
-  for (const { theme, prefix } of [
-    { theme: 'Paper', prefix: 'light' },
-    { theme: 'Ink', prefix: 'dark' },
+  for (const { theme, prefix, mode } of [
+    { theme: 'Paper', prefix: 'light', mode: 'light' as const },
+    { theme: 'Ink', prefix: 'dark', mode: 'dark' as const },
   ]) {
     await setThemePreset(page, theme);
-    await page.waitForTimeout(500);
+    await waitForThemeMode(page, mode);
     await openWorkspaceTab(page, '3D');
-    await page.waitForTimeout(800);
+    await expect(page.locator('.main canvas').first()).toBeVisible();
     await page.locator('.main').screenshot({ path: join(shotDir, `${prefix}-3d.png`) });
-    await openWorkspaceTab(page, 'Plates');
-    await page.waitForTimeout(400);
+    await waitForPlatesView(page);
     await page.locator('.main').screenshot({ path: join(shotDir, `${prefix}-plates.png`) });
   }
 });

@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 
-const MAP_READY_MS = 240_000;
+const MAP_READY_MS = process.env.LIVE_MAP === '1' || process.env.LIVE_MAP_SCREENSHOTS === '1' ? 300_000 : 90_000;
 
 /** First-visit Help tour (1.5 s) covers the chrome and steals toolbar clicks. */
 export async function dismissTour(page: Page) {
@@ -32,15 +32,19 @@ export async function openApp(page: Page) {
 }
 
 export async function waitForMapReady(page: Page) {
-  // Do not match leftover "Map terrain ready" via a loose "terrain" regex.
-  await expect(page.locator('.status-bar')).toContainText(/Fetching|building|Queued|Map terrain ready/i, {
-    timeout: 20_000,
-  });
-  await expect(page.locator('.status-bar')).toContainText(/Map terrain ready/i, { timeout: MAP_READY_MS });
   await expect
-    .poll(async () => Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm')), {
-      timeout: 60_000,
-    })
+    .poll(
+      async () => {
+        const status = (await page.locator('.status-bar').textContent()) ?? '';
+        if (/error|failed/i.test(status) && !/Map terrain ready/i.test(status)) {
+          throw new Error(status.trim() || 'map terrain error');
+        }
+        const range = Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm'));
+        const expected = Number(await page.locator('.app.window').getAttribute('data-strata-map-expected-height-mm'));
+        return /Map terrain ready/i.test(status) && range > 0 && expected > 0 ? range : 0;
+      },
+      { timeout: MAP_READY_MS, intervals: [150, 300, 600, 1000] },
+    )
     .toBeGreaterThan(0);
 }
 
@@ -135,11 +139,11 @@ export async function waitForViewportRelief(page: Page) {
   await openWorkspaceTab(page, '3D');
   await expect
     .poll(async () => Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm')), {
-      timeout: 60_000,
+      timeout: MAP_READY_MS,
     })
     .toBeGreaterThan(40);
   const canvas = page.locator('.main canvas').first();
-  await expect(canvas).toBeVisible({ timeout: 30_000 });
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
   await expect
     .poll(
       async () => {
@@ -153,12 +157,23 @@ export async function waitForViewportRelief(page: Page) {
         }
         return keys.size;
       },
-      { timeout: 90_000 },
+      { timeout: 30_000, intervals: [200, 400, 800] },
     )
     .toBeGreaterThanOrEqual(3);
+}
+
+export async function waitForThemeMode(page: Page, mode: 'light' | 'dark') {
+  await expect(page.locator('html')).toHaveAttribute('data-theme', mode, { timeout: 10_000 });
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+}
+
+export async function waitForPlatesView(page: Page) {
+  await openWorkspaceTab(page, 'Plates');
+  await expect(page.locator('.tbl.interactive')).toBeVisible({ timeout: 20_000 });
 }
 
 export async function setThemePreset(page: Page, name: string) {
   await page.getByRole('button', { name: 'Appearance ▾' }).click();
   await page.getByRole('button', { name, exact: true }).click();
+  await page.keyboard.press('Escape');
 }
