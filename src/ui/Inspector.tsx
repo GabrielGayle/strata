@@ -1,8 +1,18 @@
 import { Fragment, useState } from 'react';
 import { useStore } from '../state/store';
 import { useFullModel, useModel, fmt, fmtInt } from './model';
-import { buildZip, download, modelStl, openHtml, partDxf, partFiles, pourPlanText, sheetFiles } from '../core/exporters';
-import { buildPackHtml } from '../core/buildPack';
+import {
+  buildPackHtmlChecked,
+  buildZip,
+  download,
+  modelStl,
+  openHtml,
+  partDxf,
+  partFiles,
+  pourPlanText,
+  sheetFiles,
+  BuildPackIntegrityError,
+} from '../core/exporters';
 import { cutListCsv, hardwareCsv, MATERIAL_NAME } from '../core/bom';
 import { serialize } from '../core/project';
 import { zipSync } from 'fflate';
@@ -204,14 +214,30 @@ export default function Inspector() {
           <button
             className="btn default"
             onClick={() => {
-              const m = fullModel();
-              download(`${base}-fabrication.zip`, buildZip(m, project), 'application/zip');
-              toast('Fabrication ZIP exported');
+              try {
+                const m = fullModel();
+                download(`${base}-fabrication.zip`, buildZip(m, project), 'application/zip');
+                toast('Fabrication ZIP exported');
+              } catch (e) {
+                const msg = e instanceof BuildPackIntegrityError ? `Fabrication zip integrity: ${e.message}` : (e as Error).message;
+                toast(msg);
+              }
             }}
           >
             Everything (ZIP)
           </button>
-          <button className="btn" onClick={() => openHtml(buildPackHtml(project, fullModel(), { rates: loadRates() }))} title="Printable plate layout, assembly order, rods and spacers, glue-up and pour plan">
+          <button
+            className="btn"
+            onClick={() => {
+              try {
+                openHtml(buildPackHtmlChecked(project, fullModel(), { rates: loadRates() }));
+              } catch (e) {
+                const msg = e instanceof BuildPackIntegrityError ? `Build pack integrity: ${e.message}` : (e as Error).message;
+                toast(msg);
+              }
+            }}
+            title="Printable plate layout, assembly order, rods and spacers, glue-up and pour plan"
+          >
             Build pack
           </button>
           <button className="btn" onClick={plateZip}>

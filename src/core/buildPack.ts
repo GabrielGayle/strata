@@ -495,7 +495,30 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
       const w = path.map(([a, c]) => planeToWorld(p.plane, a, c));
       return clip ? aboveGround(w) : w;
     }).filter((r) => r.length > 2);
-    if (!rings.length) continue;
+    if (!rings.length) {
+      // Plates fully below the ground clip still need a path (embedded tabs); project the raw outline.
+      if (isMain(p)) {
+        const worldRings = p.shape
+          .flatMap((ex2) => [ex2.outer, ...ex2.holes])
+          .map((path) => path.map(([a, c]) => planeToWorld(p.plane, a, c)))
+          .filter((r) => r.length > 2);
+        if (worldRings.length) {
+          const flatPts = worldRings[0];
+          const d = flatPts.reduce((s, q) => s + depth(q), 0) / flatPts.length;
+          const pts = worldRings.map((r) => r.map(scr));
+          items.push({
+            d,
+            pts,
+            fill: shade(look.color, lit(nr) * 0.9),
+            stroke: shade(look.color, 1.6),
+            sw: 0.6,
+            plate: true,
+          });
+          all.push(...pts[0]);
+        }
+      }
+      continue;
+    }
     const flatPts = rings[0];
     const d = flatPts.reduce((s, q) => s + depth(q), 0) / flatPts.length;
     const pts = rings.map((r) => r.map(scr));
@@ -542,19 +565,23 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   }
   const triTol = { tol: 0.6, minPts: 3 };
   const platePrec = { prec: 2 };
-  const emit = (list: Item[], pathOpts: PathDOpts, plateLayer: boolean) => {
+  const emit = (list: Item[], pathOpts: PathDOpts) => {
     for (let i = 0; i < list.length; i++) {
       const it = list[i];
       let d = it.pts.map((r) => pathD(r, f.X, f.Y, true, pathOpts)).join('');
       if (it.tri) {
         while (list[i + 1]?.tri && list[i + 1].fill === it.fill) d += pathD(list[++i].pts[0], f.X, f.Y, true, pathOpts);
       }
-      if (d) out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"${it.tri ? '' : ' fill-rule="evenodd"'}${plateLayer ? ' class="plate"' : ''}/>`);
+      if (d) {
+        out.push(
+          `<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"${it.tri ? '' : ' fill-rule="evenodd"'}${it.plate ? ' class="plate"' : ''}/>`,
+        );
+      }
     }
   };
   // insert and other meshes first; plates on top so thin rows stay visible through the cast-in shape
-  emit(tris, triTol, false);
-  emit(plates, platePrec, true);
+  emit(tris, triTol);
+  emit(plates, platePrec);
   return `<svg class="drawing angled" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="${esc(title)}">${out.join('')}</svg>`;
 }
 
