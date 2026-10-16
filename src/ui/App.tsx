@@ -14,6 +14,7 @@ import WorkspaceArea, { WorkspaceBar } from './Workspace';
 import DropOverlay from './DropOverlay';
 import HelpLayer, { HelpButton } from './Help';
 import DesignBox from './DesignBox';
+import MapWindow from './MapWindow';
 import { designShortcutFromKey } from './designShortcut';
 
 
@@ -156,6 +157,7 @@ export default function App() {
     [front, local, project, assets],
   );
   const [designOpen, setDesignOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
 
@@ -171,7 +173,7 @@ export default function App() {
             </span>
           </div>
         </div>
-        <Toolbar />
+        <Toolbar onOpenMap={() => setMapOpen(true)} />
         <aside className="left window">
           <ParamPanel />
         </aside>
@@ -207,6 +209,7 @@ export default function App() {
         <DropOverlay />
         <HelpLayer />
         {designOpen && <DesignBox onClose={() => setDesignOpen(false)} />}
+        {mapOpen && <MapWindow onClose={() => setMapOpen(false)} />}
       </div>
     </ModelContext.Provider>
     </FullModelContext.Provider>

@@ -64,6 +64,15 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 | **Nominal resolution** | 1 m where published |
 | **Strata status** | Auto-pick selects `ea-dtm` in England; fetch **falls back to terrarium** with a warning until ticket T6 (EA adapter + proxy) ships. |
 
+## Nominatim (map UI geocoding) — ticket T8
+
+| Field | Value |
+|---|---|
+| **API** | [Nominatim search](https://nominatim.openstreetmap.org/) (`https://nominatim.openstreetmap.org/search`) |
+| **User-Agent** | `StrataMap/0.1` (see `STRATA_NOMINATIM_UA` in `src/core/mapNominatim.ts`) |
+| **Rate limit** | Client throttled to **1 request per second** (`searchNominatim`) |
+| **Licence** | ODbL — same attribution requirements as OSM engraving; place search results set `MapSpec.bbox` only (no bulk DB storage). |
+
 ## Copernicus GLO-30 — `cop30`
 
 | Field | Value |

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { isLiteral } from '../core/expr';
 import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
 import { applyPreset, applyVariant, deserialize, newProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
+import type { MapSpec } from '../core/mapSpec';
 import type { Composition, Surface } from '../core/compose';
 import type { PourLayer } from '../core/mould';
 import { isIdentity, type PartMove } from '../core/moves';
@@ -98,6 +99,8 @@ interface Store {
   setOrigin: (origin: WorldOrigin | undefined, key?: string) => void;
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
+  /** Attach or update MapSpec on the top face (map window / design parser). */
+  setTopMap: (map: MapSpec) => void;
   /** Change how a depth image is shaped; slider drags merge into one undo step. `dataUrl` refreshes its picture. */
   setDepthSettings: (slot: 'top' | 'front' | 'side', patch: Partial<DepthSettings>, dataUrl?: string) => void;
   replaceProject: (p: Project) => void;
@@ -320,6 +323,15 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       if (kind === 'image') commit({ ...p, images: { ...p.images, [slot]: asset ?? undefined } }, `img:${slot}:${performance.now()}`);
       else commit({ ...p, meshes: { ...p.meshes, [slot]: asset ?? undefined } }, `mesh:${slot}:${performance.now()}`);
+    },
+    setTopMap: (map) => {
+      const p = get().project;
+      const dataUrl =
+        p.images.top?.dataUrl ??
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const top: ImageAsset = { name: map.title?.trim() || 'Map terrain', dataUrl, map };
+      const params = String(p.params.imgTopMode ?? 'off') === 'off' ? { ...p.params, imgTopMode: 'carve' } : p.params;
+      commit({ ...p, params, images: { ...p.images, top } }, `map:${performance.now()}`);
     },
     setDepthSettings: (slot, patch, dataUrl) => {
       const p = get().project;

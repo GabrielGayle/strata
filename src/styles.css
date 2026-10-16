@@ -2964,3 +2964,54 @@ kbd {
 .nd-cut .nd-port.out {
   display: none;
 }
+
+/* Map window (T8) — 98.css window on overlay */
+.map-window-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+.map-window {
+  width: min(420px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+}
+.map-window-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.map-window-note {
+  font-size: 11px;
+  margin: 0;
+}
+.map-search-row {
+  display: flex;
+  gap: 6px;
+}
+.map-search-row input {
+  flex: 1;
+}
+.map-bbox-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.map-hit-list {
+  margin: 0;
+  padding-left: 1.2em;
+  font-size: 12px;
+}
+.map-window-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.map-window-status {
+  font-size: 11px;
+  margin: 0;
+}
