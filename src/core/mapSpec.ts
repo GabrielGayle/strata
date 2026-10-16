@@ -67,6 +67,8 @@ export interface MapSpec {
   buildingClampM?: number;
   /** Sunken concrete-frame surround (ticket 28). */
   sunkenFrame?: { enabled: boolean; castToleranceMm?: number; wallMm?: number };
+  /** Gift / map face sizing hint for pricing (ticket 27). */
+  giftSizeId?: string;
 }
 
 export const TERRARIUM_ATTRIBUTION = [
