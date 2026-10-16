@@ -379,16 +379,15 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       <directionalLight position={[-900, 500, -600]} intensity={v.sunOn ? 0.18 : 0.45} />
       {L.grid && (
         <ViewportGrid
-          args={[20000, 20000]}
+          args={[Math.max(bounds.size * 6, 1200), Math.max(bounds.size * 6, 1200)]}
           cellSize={10}
           sectionSize={100}
           cellColor={gridA}
           sectionColor={gridB}
           cellThickness={0.6}
           sectionThickness={1}
-          fadeDistance={bounds.size * 12}
+          fadeDistance={Math.max(bounds.size * 4, 800)}
           fadeStrength={0.85}
-          infiniteGrid
           position={[0, gridY, 0]}
         />
       )}
