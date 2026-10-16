@@ -23,7 +23,9 @@
 // cliff than on Vermilion, so neither cut length nor order value separates
 // them. True part area does: Waffle 1.56 m², Vermilion 2.79 m², Image cliff
 // 3.50 m². The factor below is fitted to those quotes and leaves the 9-probe
-// order (0.22 m², qty 1) inside ±£0.70 per part.
+// order (0.22 m², qty 1) inside ±£0.70 per part. The curve is held past the
+// largest quoted preset (~3.5 m²). Left to run on, it deepens faster than a
+// scaled-up Vermilion grows, and the estimate stalls from about 1.5:1 to 2:1.
 //
 // The quoted DXFs were not in this tree (no /calibration directory on any
 // branch), so cut length per part could not be checked against those files.
@@ -69,11 +71,18 @@ export const CHOPCHOP_MINIMUM = 55;
 export const ORDER_AREA_SCALE_M2 = 6.12;
 export const ORDER_AREA_EXP = 1.39;
 
+/**
+ * Largest order the factor was fitted on (Image cliff, about 3.5 m²).
+ * Bigger orders keep this factor instead of a deeper one.
+ */
+export const ORDER_AREA_CAP_M2 = 3.51;
+
 /** 1 on an empty or tiny order. Area is true part area, mm². */
 export function orderSizeFactor(areaMm2: number): number {
   const areaM2 = areaMm2 / 1e6;
   if (!(areaM2 > 0)) return 1;
-  return 1 / (1 + (areaM2 / ORDER_AREA_SCALE_M2) ** ORDER_AREA_EXP);
+  const used = Math.min(areaM2, ORDER_AREA_CAP_M2);
+  return 1 / (1 + (used / ORDER_AREA_SCALE_M2) ** ORDER_AREA_EXP);
 }
 
 /** Date of the quotes this file was fitted to. */
