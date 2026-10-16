@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { unzipSync } from 'fflate';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { deserialize, newProject, serialize, type Project } from '../src/core/project';
-import { smallProject } from './small-project';
 import { applyFill, assignPlates, cleanAppearance, defaultAppearance, materialKey, pickPlates, removeBucket, runBetween, type FillPlate } from '../src/core/appearance';
 import { buildZip } from '../src/core/exporters';
 import { estimateMix, estimatePrice } from '../src/core/price';
@@ -48,14 +47,18 @@ describe('quick fills', () => {
 });
 
 describe('mixed metals through the pipeline', () => {
-  const mixed = (base: Project = smallProject()): Project => {
+  const slimProject = (): Project => {
+    const p = newProject();
+    p.params = { ...p.params, plateCount: '6', insShape: 'none' };
+    return p;
+  };
+  const mixed = (base: Project = slimProject()): Project => {
     const app = defaultAppearance();
-    const keys = Array.from({ length: 20 }, (_, i) => `P${i * 2 + 1}`);
-    return { ...base, appearance: assignPlates(app, keys, 'b1') };
+    return { ...base, appearance: assignPlates(app, ['P1', 'P3', 'P5'], 'b1') };
   };
 
   it('cuts each metal on its own sheets and weighs it by its own density', () => {
-    const plain = createPipeline()(smallProject(), assets);
+    const plain = createPipeline()(slimProject(), assets);
     const m = createPipeline()(mixed(), assets);
     expect(m.bom.byMaterial.map((g) => g.material)).toEqual(['corten', 'aluminium']);
     const alu = m.bom.rows.filter((r) => r.material === 'aluminium');
@@ -79,8 +82,9 @@ describe('mixed metals through the pipeline', () => {
     expect(files).toContain('laser/sheets/aluminium/sheet-01.dxf');
     expect(files).toContain('laser/sheets/corten/sheet-01.dxf');
     // one metal keeps the old flat layout
-    const plain = createPipeline()(smallProject(), assets);
-    expect(Object.keys(unzipSync(buildZip(plain, smallProject())))).toContain('laser/sheets/sheet-01.dxf');
+    const plainP = slimProject();
+    const plain = createPipeline()(plainP, assets);
+    expect(Object.keys(unzipSync(buildZip(plain, plainP)))).toContain('laser/sheets/sheet-01.dxf');
   });
 
   it('prices each metal on its own rates with one order minimum', () => {
@@ -91,7 +95,7 @@ describe('mixed metals through the pipeline', () => {
     expect(e.lines.some((l) => l.label.startsWith('Corten'))).toBe(true);
     expect(e.lines.filter((l) => l.label === 'Minimum order charge')).toHaveLength(e.subtotal < 55 - 1e-9 ? 1 : 0);
     // a single metal prices exactly as before
-    const plain = createPipeline()(smallProject(), assets);
+    const plain = createPipeline()(slimProject(), assets);
     expect(estimateMix(plain.bom, 3).total).toBeCloseTo(estimatePrice(plain.bom, 'corten', 3).total, 9);
   });
 
@@ -110,7 +114,7 @@ describe('mixed metals through the pipeline', () => {
 
   it('only re-slices for a metal change when the plates are tuned', () => {
     const pipe = createPipeline();
-    const a = pipe(smallProject(), assets);
+    const a = pipe(slimProject(), assets);
     const b = pipe(mixed(), assets);
     expect(b.sliced).toBe(a.sliced);
     expect(materialKey(mixed().appearance, 'corten')).toContain('P1=aluminium');

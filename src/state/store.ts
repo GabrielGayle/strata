@@ -9,7 +9,9 @@ import { isIdentity, type PartMove } from '../core/moves';
 import { mulberry32 } from '../core/rng';
 import { keepPlatesInPlace } from '../core/remap';
 import type { Appearance } from '../core/appearance';
-import type { DepthSettings } from '../core/depth';
+import type { DepthSettingKey, DepthSettings } from '../core/depth';
+import { markDepthSettingOverrides, mergeDepthAfterRebuild, resetDepthSettingsToAuto } from '../core/depthOverrides';
+import { markUserParamOverrides } from '../core/projectOverrides';
 import type { ShadowSpec } from '../core/shadow';
 import type { CutObject } from '../core/objects';
 import type { ShelfSpec } from '../core/shelf';
@@ -18,7 +20,6 @@ import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme'
 import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
 import { applyProjectPatch, type ProjectPatch } from '../core/design';
 import { projectWithTopMapSpec } from '../core/mapTopAsset';
-import { markDepthSettingOverrides, mergeDepthAfterRebuild } from '../core/depthOverrides';
 import { wordsParamPatch } from '../core/chantWords';
 import { speechParamPatch } from '../core/speechTuning';
 
@@ -114,6 +115,8 @@ interface Store {
   setTopMap: (map: MapSpec) => void;
   /** Change how a depth image is shaped; slider drags merge into one undo step. `dataUrl` refreshes its picture. */
   setDepthSettings: (slot: 'top' | 'front' | 'side', patch: Partial<DepthSettings>, dataUrl?: string) => void;
+  /** Clear per-field depth overrides and restore auto near/far (and related auto fields). */
+  resetDepthToAuto: (slot: 'top' | 'front' | 'side', keys?: DepthSettingKey[]) => void;
   replaceProject: (p: Project) => void;
   /** Store the composer's blocks and the rendered surface images in one undo step. */
   applyComposition: (comp: Composition, images: Partial<Record<Surface, ImageAsset | null>>, patch: Record<string, RawValue>) => void;
@@ -221,8 +224,12 @@ export const useStore = create<Store>((set, get) => {
     setMapTerrain: (patch) => set({ mapTerrain: { ...get().mapTerrain, ...patch } }),
     finishMapTerrainBuild: (asset) => {
       const p = get().project;
-      if (!p.images.top?.map) return;
-      const top = asset.depth ? { ...asset, depth: mergeDepthAfterRebuild(p.images.top.depth, asset.depth) } : asset;
+      const prev = p.images.top;
+      if (!prev?.map) return;
+      let top = asset;
+      if (prev.depth && asset.depth) {
+        top = { ...asset, depth: mergeDepthAfterRebuild(prev.depth, asset.depth) };
+      }
       commit({ ...p, images: { ...p.images, top } }, `map-build:${performance.now()}`);
       set({ mapTerrain: { phase: 'ready', message: 'Map terrain ready', error: undefined } });
     },
@@ -281,6 +288,7 @@ export const useStore = create<Store>((set, get) => {
     setParam: (id, value) => {
       const p = get().project;
       if (p.params[id] === value) return;
+      const userParamOverrides = markUserParamOverrides(p.userParamOverrides, [id]);
       const params = { ...p.params, [id]: value };
       if (
         id === 'tuneWords' ||
@@ -302,11 +310,12 @@ export const useStore = create<Store>((set, get) => {
           );
         }
       }
-      commitParams({ ...p, params }, `param:${id}`);
+      commitParams({ ...p, params, userParamOverrides }, `param:${id}`);
     },
     setParams: (patch, label = 'params') => {
       const p = get().project;
-      commitParams({ ...p, params: { ...p.params, ...patch } }, `${label}:${performance.now()}`);
+      const userParamOverrides = markUserParamOverrides(p.userParamOverrides, Object.keys(patch));
+      commitParams({ ...p, params: { ...p.params, ...patch }, userParamOverrides }, `${label}:${performance.now()}`);
     },
     applyDesignPatch: (patch, label = 'design') => {
       const p = get().project;
@@ -348,7 +357,7 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       const next = projectWithTopMapSpec(p, map);
       commit(next, `map:${performance.now()}`);
-      set({ mapTerrain: { phase: 'idle', message: 'Queued terrain build…' } });
+      set({ mapTerrain: { phase: 'working', message: 'Queued terrain build…' } });
     },
     setDepthSettings: (slot, patch, dataUrl) => {
       const p = get().project;
@@ -358,6 +367,13 @@ export const useStore = create<Store>((set, get) => {
       const settingsOverrides = hasPatch ? markDepthSettingOverrides(a.depth.settingsOverrides, patch) : a.depth.settingsOverrides;
       const depth = hasPatch ? { ...a.depth, settings: { ...a.depth.settings, ...patch }, settingsOverrides } : a.depth;
       commit({ ...p, images: { ...p.images, [slot]: { ...a, depth, ...(dataUrl ? { dataUrl } : {}) } } }, `depth:${slot}`);
+    },
+    resetDepthToAuto: (slot, keys) => {
+      const p = get().project;
+      const a = p.images[slot];
+      if (!a?.depth) return;
+      const depth = resetDepthSettingsToAuto(a.depth, keys);
+      commit({ ...p, images: { ...p.images, [slot]: { ...a, depth } } }, `depth-auto:${slot}`);
     },
     replaceProject: (np) => commit(np, `replace:${performance.now()}`),
     applyComposition: (comp, imgs, patch) => {

@@ -14,13 +14,6 @@ function b64FromU16(words: Uint16Array): string {
   return btoa(s);
 }
 
-function percentile(vals: number[], p: number): number {
-  if (!vals.length) return NaN;
-  const sorted = [...vals].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
-  return sorted[idx];
-}
-
 export interface MapDepthMeta {
   /** Ground width covered by the grid (metres). */
   widthM: number;
@@ -37,14 +30,20 @@ export interface MapToDepthOptions {
 }
 
 /**
- * Convert metric elevation to DepthData: depth = zTop − elevation (high ground = smaller depth = darker).
+ * Convert metric elevation to DepthData.
+ * Uses true min/max (not p2/p98). Encoded metres = (zMax − z) × exaggeration.
+ * Linear spacing, flatten off — map faces must not go through the photo pipeline.
  */
 export function mapGridToDepth(grid: Float32Grid, opts: MapToDepthOptions = {}): { depth: DepthData; meta: MapDepthMeta } {
   const { widthM, heightM } = gridMetricWidthHeight(grid);
-  const finite: number[] = [];
-  for (const v of grid.data) if (Number.isFinite(v)) finite.push(v);
-  if (!finite.length) throw new Error('Map grid has no elevation samples');
-  const zTop = percentile(finite, 98);
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  for (const v of grid.data) {
+    if (!Number.isFinite(v)) continue;
+    if (v < zMin) zMin = v;
+    if (v > zMax) zMax = v;
+  }
+  if (!(zMax >= zMin) || !Number.isFinite(zMin)) throw new Error('Map grid has no elevation samples');
   const ex = opts.exaggeration != null && opts.exaggeration > 0 ? opts.exaggeration : 1;
   const n = grid.w * grid.h;
   const depths = new Float32Array(n);
@@ -56,14 +55,15 @@ export function mapGridToDepth(grid: Float32Grid, opts: MapToDepthOptions = {}):
       depths[i] = NaN;
       continue;
     }
-    const d = Math.max(1e-3, (zTop - z) * ex + 1e-3);
+    // q=0 is "no depth" in decodeDepthBuffers, so keep a tiny floor.
+    const d = Math.max(1e-3, (zMax - z) * ex + 1e-3);
     depths[i] = d;
     if (d < minD) minD = d;
     if (d > maxD) maxD = d;
   }
   if (!(maxD > minD)) {
-    minD = 0;
-    maxD = 1;
+    minD = 1e-3;
+    maxD = 1e-3 + Math.max(1e-3, (zMax - zMin) * ex);
   }
   const nearM = minD;
   const farM = maxD;
@@ -78,24 +78,24 @@ export function mapGridToDepth(grid: Float32Grid, opts: MapToDepthOptions = {}):
     const q = 1 + Math.round(((d - minD) / (span || 1)) * 65534);
     words[i] = Math.min(65535, Math.max(1, q));
   }
-  const settings: DepthSettings = {
-    ...defaultDepthSettings({ nearM, farM }, false),
-    resolution: opts.resolution ?? 384,
-    matte: false,
+  const reliefM = Math.max(0, zMax - zMin);
+  const mapOrtho: MapOrthoMeta = {
+    source: 'map',
+    widthM,
+    heightM,
+    reliefM,
+    zMinM: zMin,
+    zMaxM: zMax,
+    bboxKm: `${(widthM / 1000).toFixed(2)} × ${(heightM / 1000).toFixed(2)} km`,
   };
-  let mapOrtho: MapOrthoMeta | undefined;
-  if (opts.bbox) {
-    let zMin = finite[0];
-    for (const z of finite) if (z < zMin) zMin = z;
-    const reliefM = Math.max(0, zTop - zMin);
-    mapOrtho = {
-      source: 'map',
-      widthM,
-      heightM,
-      reliefM,
-      bboxKm: `${(widthM / 1000).toFixed(2)} × ${(heightM / 1000).toFixed(2)} km`,
-    };
-  }
+  const settings: DepthSettings = {
+    ...defaultDepthSettings({ nearM, farM, mapOrtho }, false),
+    spacing: 'linear',
+    flatten: 0,
+    curve: 1,
+    matte: false,
+    resolution: opts.resolution ?? 384,
+  };
   const depth: DepthData = {
     w: grid.w,
     h: grid.h,
@@ -105,11 +105,11 @@ export function mapGridToDepth(grid: Float32Grid, opts: MapToDepthOptions = {}):
     farM,
     data: b64FromU16(words),
     settings,
-    ...(mapOrtho ? { mapOrtho } : {}),
+    mapOrtho,
   };
   return {
     depth,
-    meta: { widthM, heightM, zTopM: zTop, exaggeration: ex },
+    meta: { widthM, heightM, zTopM: zMax, exaggeration: ex },
   };
 }
 

@@ -53,6 +53,35 @@ describe('keep user map settings on preset re-click and source change', () => {
     expect(keepUserMapSettings(undefined, mapPresetSpec('neasden')).exaggeration).toBe('auto');
   });
 
+  it('Maps/Neasden re-apply keeps source, water, model, engrave, and dedication', () => {
+    const prev = defaultMapSpec({
+      bbox: BBOX,
+      source: 'ea-dtm',
+      model: 'dsm',
+      water: 'raw',
+      layerBudget: 'equal',
+      resM: 12,
+      exaggeration: 21,
+      engrave: { enabled: false, features: ['title'], preset: 'survey' },
+      commemorativeText: 'for Sam',
+      editionNumber: 7,
+      buildingClampM: 18,
+    });
+    const next = mapPresetSpecKeepingUser('neasden', prev);
+    expect(next.source).toBe('ea-dtm');
+    expect(next.model).toBe('dsm');
+    expect(next.water).toBe('raw');
+    expect(next.layerBudget).toBe('equal');
+    expect(next.resM).toBe(12);
+    expect(next.engrave).toEqual({ enabled: false, features: ['title'], preset: 'survey' });
+    expect(next.commemorativeText).toBe('for Sam');
+    expect(next.editionNumber).toBe(7);
+    expect(next.buildingClampM).toBe(18);
+    expect(next.bbox).toEqual(mapPresetSpec('neasden').bbox);
+    expect(next.title).toBe('Neasden');
+    expect(next.buildKey).toBeUndefined();
+  });
+
   it('source change via patch keeps user exaggeration / frame / size', () => {
     const prev = defaultMapSpec({
       bbox: BBOX,

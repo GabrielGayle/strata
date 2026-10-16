@@ -8,6 +8,8 @@ import type { Model } from '../core/pipeline';
 import Scene, { modelBounds } from './Scene';
 import { gizmoIsBusy, moveTarget, useGizmoClearance } from './PlateGizmo';
 import { useModel, fmt } from './model';
+import { isMapDepth } from '../core/mapPlateHeight';
+import { plateOutlineYRangeMm } from '../core/slicer';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
 import { SunBar } from './SunStudy';
@@ -127,6 +129,8 @@ export default function Viewport() {
   const heights = model.sliced.parts.map((p) => p.bbox.maxY);
   const hMin = heights.length ? Math.min(...heights) : 0;
   const hMax = heights.length ? Math.max(...heights) : 0;
+  const mapFace = useStore((s) => isMapDepth(s.project.images.top?.depth) && !!s.project.images.top?.map);
+  const terrainY = mapFace ? plateOutlineYRangeMm(model.sliced.plates) : null;
   return (
     <>
       <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
@@ -187,8 +191,19 @@ export default function Viewport() {
         <span>
           {model.sliced.plates.length} {v.sliceMode === 'flat' ? 'layers' : 'plates'} × {fmt(v.thickness, 1)} mm {v.sliceMode === 'flat' ? 'face to face' : v.sliceMode !== 'radial' ? `@ ${fmt(v.pitch, 2)} pitch` : 'radial'}
         </span>
-        <span data-testid="plate-height-range">
-          {v.sliceMode === 'flat' ? `stack height ${fmt(model.sliced.plates.length * v.thickness, 0)} mm` : `plate height ${fmt(hMin, 0)}–${fmt(hMax, 0)} mm`}
+        <span
+          data-testid="plate-height-range"
+          title={
+            terrainY
+              ? 'Lowest to highest terrain on the cut outlines, above the concrete. A plate’s bounding-box top can sit higher than a valley on the same plate.'
+              : undefined
+          }
+        >
+          {v.sliceMode === 'flat'
+            ? `stack height ${fmt(model.sliced.plates.length * v.thickness, 0)} mm`
+            : terrainY
+              ? `terrain ${fmt(terrainY.lo, 0)}–${fmt(terrainY.hi, 0)} mm`
+              : `plate height ${fmt(hMin, 0)}–${fmt(hMax, 0)} mm`}
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
       </div>

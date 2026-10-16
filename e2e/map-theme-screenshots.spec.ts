@@ -1,15 +1,14 @@
 import { test } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { applyNeasdenDesign, openWorkspaceTab, setThemePreset, waitForViewportRelief } from './map-helpers';
+import { openApp, openWorkspaceTab, pickNeasdenPreset, setThemePreset, waitForViewportRelief } from './map-helpers';
 
 const shotDir = join(process.cwd(), 'docs/screenshots/map');
 
 test('capture map UI screenshots in light and dark themes', async ({ page }) => {
-  test.setTimeout(420_000);
-  await page.goto('/');
-  await page.waitForSelector('.app.window', { timeout: 60_000 });
-  await applyNeasdenDesign(page);
+  test.setTimeout(240_000);
+  await openApp(page);
+  await pickNeasdenPreset(page);
   await mkdir(shotDir, { recursive: true });
   await openWorkspaceTab(page, '3D');
   await waitForViewportRelief(page);

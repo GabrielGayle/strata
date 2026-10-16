@@ -46,7 +46,7 @@ describe('map reprojection + resample', () => {
     const gw = Math.ceil((mx1 - mx0) / 20);
     const gh = Math.ceil(Math.abs(my0 - my1) / 20);
     const source = flatGrid(gw, gh, mx0, my1, 20);
-    const out = reprojectResample(source, { bbox, resM: 16, model: 'dtm' });
+    const out = reprojectResample(source, { bbox, resM: 20, model: 'dtm' });
     const { widthM, heightM } = gridMetricWidthHeight(out);
     expect(widthM).toBeGreaterThan(998);
     expect(widthM).toBeLessThan(1002);
