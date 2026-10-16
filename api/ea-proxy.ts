@@ -2,7 +2,7 @@
  * Vercel serverless EA CORS proxy (ticket T6). Live on Vercel — whitelists only
  * `environment.data.gov.uk` hosts over HTTPS.
  */
-import { buildEaUpstreamHeaders, fetchEaUpstream, parseAllowedEaProxyTarget } from '../src/server/eaCorsProxy';
+import { buildEaUpstreamHeaders, fetchEaUpstream, parseAllowedEaProxyTarget } from './_lib/eaCorsProxy.js';
 
 type VercelReq = {
   method?: string;
