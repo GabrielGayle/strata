@@ -1,6 +1,6 @@
-# image-cliff
-modelPlateCount=24
+inAppPlateCount=24
 manifestPlateCount=24
+plateDxfCount=24
 zipFileCount=198
 
 build-pack.html

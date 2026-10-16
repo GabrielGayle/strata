@@ -1089,6 +1089,12 @@ ${errors ? `<p class="warn">The design has ${plural(errors, 'check error')}: fix
   .toc { font-size: 15px; columns: 2; } .toc a { color: #000; text-decoration: none; }
   section { padding-top: 6px; }
   section + section { break-before: page; page-break-before: always; margin-top: 40px; border-top: 1px dashed #bbb; padding-top: 24px; }
+  /* Sticky print bar sits over the first gallery row unless sections clear it. */
+  @media screen {
+    section, .cover { scroll-margin-top: 56px; }
+    section { padding-top: 56px; }
+    section + section { padding-top: 56px; }
+  }
   figure { margin: 6px 0 10px; } figure.full { text-align: center; } figcaption { font-size: 12px; margin-top: 4px; }
   svg.drawing { display: block; max-width: 100%; height: auto; margin: 0 auto; font-family: inherit; }
   svg.angled { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

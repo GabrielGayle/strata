@@ -1,6 +1,6 @@
-# neasden-map
-modelPlateCount=12
+inAppPlateCount=12
 manifestPlateCount=12
+plateDxfCount=12
 zipFileCount=64
 
 build-pack.html

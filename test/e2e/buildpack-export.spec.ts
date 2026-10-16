@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 const shotDir = join(root, 'docs/screenshots/pack-p0');
 const cliffProject = readFileSync(join(root, 'examples/image-cliff.strata.json'), 'utf8');
 const neasdenProject = readFileSync(join(root, 'test/fixtures/projects/neasden-buildpack.strata.json'), 'utf8');
+const spacersProject = readFileSync(join(root, 'test/fixtures/projects/rods-spacers.strata.json'), 'utf8');
 
 async function injectProject(page: import('@playwright/test').Page, projectJson: string) {
   await page.addInitScript((json) => {
@@ -71,7 +72,7 @@ async function waitForModel(page: import('@playwright/test').Page) {
 async function openPlatesTab(page: import('@playwright/test').Page) {
   await dismissTour(page);
   await page.getByRole('tab', { name: /^Plates/ }).first().click();
-  await expect(page.locator('.tbl.interactive, .cards, .empty')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.tbl.interactive tbody tr, .cards .card').first()).toBeVisible({ timeout: 60_000 });
 }
 
 async function screenshotPackListing(page: import('@playwright/test').Page, listing: string, filename: string) {
@@ -90,11 +91,21 @@ async function screenshotHtmlPack(page: import('@playwright/test').Page, html: s
   await expect(page.locator('.plate-gallery')).toHaveAttribute('data-plate-count', String(expected));
   expect(await page.locator('.plate-card').count()).toBe(expected);
   await page.locator('.plate-legend').screenshot({ path: join(shotDir, `${prefix}-legend.png`) });
+  await page.locator('.cover').screenshot({ path: join(shotDir, `${prefix}-cover.png`) });
+  await page.locator('.bar').evaluate((el) => {
+    (el as HTMLElement).style.visibility = 'hidden';
+  });
   await page.locator('#gallery').screenshot({ path: join(shotDir, `${prefix}-gallery.png`) });
-  await page.screenshot({ path: join(shotDir, `${prefix}-cover.png`), fullPage: false });
+  await page.locator('.bar').evaluate((el) => {
+    (el as HTMLElement).style.visibility = '';
+  });
+  if (await page.locator('#layout').count()) {
+    await page.locator('#layout').screenshot({ path: join(shotDir, `${prefix}-layout.png`) });
+  }
   await page.locator('#show-spacers').uncheck();
   await expect(page.locator('body')).toHaveClass(/hide-spacers/);
-  await page.screenshot({ path: join(shotDir, `${prefix}-spacers-off.png`), fullPage: false });
+  const spacerTarget = (await page.locator('#layout').count()) ? page.locator('#layout') : page.locator('body');
+  await spacerTarget.screenshot({ path: join(shotDir, `${prefix}-spacers-off.png`) });
   await page.locator('#show-spacers').check();
 }
 
@@ -195,6 +206,24 @@ test('browser-only paths: toolbar ZIP, inspector ZIP, and Build pack popup', asy
   await expect(popup.locator('.plate-card')).toHaveCount(inApp);
   await popup.locator('#gallery').screenshot({ path: join(shotDir, 'build-pack-popup-gallery.png') });
   await popup.close();
+});
+
+test('html pack spacer toggle hides dashed C/T paths', async ({ page }) => {
+  await injectProject(page, spacersProject);
+  await page.goto('/');
+  await waitForModel(page);
+  const inApp = await inspectorPlateCount(page);
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 180_000 }),
+    page.getByRole('button', { name: 'Export ZIP' }).click(),
+  ]);
+  const buf = readFileSync((await download.path())!);
+  const { html, manifestPlateCount, plateDxf } = unzipListing(buf, inApp);
+  expect(manifestPlateCount).toBe(inApp);
+  expect(plateDxf).toBe(inApp);
+  expect(html).toContain('class="spacer"');
+  await screenshotHtmlPack(page, html, 'spacers-html', inApp);
+  expect(html).toContain('id="show-spacers"');
 });
 
 test('browser export: Neasden map job', async ({ page }) => {
