@@ -30,10 +30,7 @@ export async function fetchCop30Grid(
   opts: { loader?: Cop30GridLoader; fetchBytes?: (url: string) => Promise<Uint8Array> } = {},
 ): Promise<Float32Grid | null> {
   const run = opts.loader ?? loaderOverride;
-  if (run) {
-    const g = await run(spec);
-    if (g) return g;
-  }
+  if (run) return run(spec);
   const url = cop30TileUrl(spec.bbox);
   const fetchBytes = opts.fetchBytes ?? (async (u) => cachedMapBytes(spec.cacheDir, 'cog', u, defaultFetch));
   try {

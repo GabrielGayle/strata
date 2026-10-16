@@ -54,13 +54,19 @@ export interface DepthSettings {
   flatNegative?: boolean;
 }
 
+export type DepthSettingKey = keyof DepthSettings;
+export type DepthSettingsOverrides = Partial<Record<DepthSettingKey, true>>;
+
 /** Metric depth as sent by the service: uint16 per pixel, 0 = no depth, 1..65535 linear over minM..maxM. */
 /** Orthographic map terrain metadata (ticket T17) — exact ground metres, no pinhole back-projection. */
 export interface MapOrthoMeta {
   source: 'map';
   widthM: number;
   heightM: number;
+  /** True max−min elevation in metres (not a percentile window). */
   reliefM: number;
+  zMinM?: number;
+  zMaxM?: number;
   bboxKm: string;
 }
 
@@ -81,6 +87,8 @@ export interface DepthData {
   /** EXIF focal length in pixels on the source photo, when known. */
   exifFocalLengthPx?: number;
   settings: DepthSettings;
+  /** Fields the user set manually; automatic rebuilds must not overwrite them. */
+  settingsOverrides?: DepthSettingsOverrides;
   mapOrtho?: MapOrthoMeta;
 }
 
@@ -94,8 +102,18 @@ export interface DepthResult {
   depth?: Omit<DepthData, 'settings'>;
 }
 
-export function defaultDepthSettings(d: Pick<DepthData, 'nearM' | 'farM'>, invert = false): DepthSettings {
-  return { near: d.nearM, far: d.farM, spacing: 'perspective', curve: 1, flatten: 0, matte: true, resolution: 256, invert };
+export function defaultDepthSettings(d: Pick<DepthData, 'nearM' | 'farM' | 'mapOrtho'>, invert = false): DepthSettings {
+  const map = d.mapOrtho?.source === 'map';
+  return {
+    near: d.nearM,
+    far: d.farM,
+    spacing: map ? 'linear' : 'perspective',
+    curve: 1,
+    flatten: 0,
+    matte: !map,
+    resolution: map ? 384 : 256,
+    invert,
+  };
 }
 
 function parseDepthData(raw: unknown): Omit<DepthData, 'settings'> | undefined {
@@ -221,7 +239,10 @@ export function sampleDepthMetres(d: Pick<DepthData, 'w' | 'h' | 'minM' | 'maxM'
 }
 
 export function decodeDepthBuffers(d: Pick<DepthData, 'w' | 'h' | 'minM' | 'maxM' | 'data' | 'mask'>) {
-  const key = `${d.w}x${d.h}:${d.data.length}:${d.data.slice(0, 48)}${d.data.slice(-48)}:${d.mask?.length ?? 0}:${d.mask?.slice(0, 48) ?? ''}${d.mask?.slice(-48) ?? ''}`;
+  // minM/maxM must be in the key: map exaggeration rescales the metre window but the
+  // uint16 payload is the same (q is (zMax−z)/relief). Reusing ×11 metres with a ×21
+  // window lifts valleys (live: terrain 136–282 mm vs a 278 mm stack).
+  const key = `${d.w}x${d.h}:${d.minM}:${d.maxM}:${d.data.length}:${d.data.slice(0, 48)}${d.data.slice(-48)}:${d.mask?.length ?? 0}:${d.mask?.slice(0, 48) ?? ''}${d.mask?.slice(-48) ?? ''}`;
   let hit = decoded.get(key);
   if (!hit) {
     const bytes = b64Bytes(d.data);

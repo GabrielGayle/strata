@@ -9,6 +9,7 @@ import { mergeGeometries } from '../core/geometry3d';
 import type { Assets } from '../core/pipeline';
 import type { ImageAsset, MeshAsset, Project } from '../core/project';
 import { depthToGray, type DepthData } from '../core/depth';
+import { mapDepthToGray } from '../core/mapPlateHeight';
 
 const imgCache = new Map<string, Gray>();
 const meshCache = new Map<string, THREE.BufferGeometry>();
@@ -68,7 +69,7 @@ export function useAssets(project: Project): Assets {
         if (a?.depth) {
           if (!depthCache.has(a.depth)) {
             try {
-              depthCache.set(a.depth, depthToGray(a.depth));
+              depthCache.set(a.depth, a.map ? mapDepthToGray(a.depth) : depthToGray(a.depth));
             } catch {
               return null;
             }
