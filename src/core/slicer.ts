@@ -594,6 +594,68 @@ export function topAt(shape: Shape, u: number): number | null {
   return best === -Infinity ? null : best;
 }
 
+/**
+ * Round a carved floor (heights g on a grid of spacing d) like a ball of radius r rolled
+ * over it: first from below (shoulders and step edges), then from above (pit bottoms and
+ * the foot of each wall). The ball shrinks to fit any tower or slot narrower than 2r, so
+ * a busy picture keeps every feature, just rounded, instead of narrow ones being flattened
+ * into lumps or filled over. Each end is either a wall (an uncut stretch of plate, kept
+ * crisp at its rim) or open (the plate's own end: the floor simply carries on).
+ */
+export function roundFloor(g: number[], d: number, r: number, wallA: boolean, wallB: boolean): number[] {
+  const k = Math.ceil(r / d) + 2;
+  const pad = (wall: boolean, edge: number) => new Array<number>(k).fill(wall ? Infinity : edge);
+  const f = [...pad(wallA, g[0]), ...g, ...pad(wallB, g[g.length - 1])];
+  const closed = rollBall(rollBall(f, d, r).map((x) => -x), d, r).map((x) => -x);
+  return closed.slice(k, k + g.length);
+}
+
+/**
+ * Grey-scale opening of f by a half-disc whose radius at each centre is r, cut down to half
+ * the width of the feature there (the stretch around it within r/2 of its height or higher).
+ * Never raises f, never drops below the lowest value within reach.
+ */
+function rollBall(f: number[], d: number, r: number): number[] {
+  const n = f.length;
+  const out = f.map((x) => (Number.isFinite(x) ? -Infinity : x));
+  const tol = r / 2;
+  const reach = Math.ceil((2 * r) / d);
+  const size = f.map((fc, c) => {
+    if (fc === -Infinity) return 0;
+    if (fc === Infinity) return r; // a wall (solid up to the sky) is as wide as it needs to be
+    let a = c, b = c;
+    while (a > 0 && c - a < reach && f[a - 1] >= fc - tol) a--;
+    while (b < n - 1 && b - c < reach && f[b + 1] >= fc - tol) b++;
+    return Math.min(r, ((b - a) * d) / 2);
+  });
+  for (let c = 0; c < n; c++) {
+    if (f[c] === -Infinity) continue;
+    // the ball shrinks for any narrow feature within its reach, so one feature is rounded by one size
+    let rho = size[c];
+    const k0 = Math.floor(rho / d);
+    for (let j = Math.max(0, c - k0); j <= Math.min(n - 1, c + k0); j++) if (f[j] !== -Infinity && size[j] < rho) rho = size[j];
+    const kc = Math.floor(rho / d + 1e-9);
+    let y = Infinity;
+    for (let j = Math.max(0, c - kc); j <= Math.min(n - 1, c + kc); j++) {
+      const t = (j - c) * d;
+      y = Math.min(y, f[j] - Math.sqrt(Math.max(0, rho * rho - t * t)));
+    }
+    if (!Number.isFinite(y)) continue;
+    for (let j = Math.max(0, c - kc); j <= Math.min(n - 1, c + kc); j++) {
+      if (!Number.isFinite(f[j])) continue;
+      const t = (j - c) * d;
+      const h = y + Math.sqrt(Math.max(0, rho * rho - t * t));
+      if (h > out[j]) out[j] = h;
+    }
+  }
+  // a point no ball could reach (squeezed against a wall) carries on its neighbour's curve
+  const free = (j: number) => Number.isFinite(f[j]) && out[j] !== -Infinity;
+  for (let j = 1; j < n; j++) if (out[j] === -Infinity && free(j - 1)) out[j] = Math.min(f[j], out[j - 1]);
+  for (let j = n - 2; j >= 0; j--) if (out[j] === -Infinity && free(j + 1)) out[j] = Math.min(f[j], out[j + 1]);
+  for (let j = 0; j < n; j++) if (out[j] === -Infinity) out[j] = f[j];
+  return out;
+}
+
 function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopWindow, datum: number): Shape {
   const step = Math.min(1, v.sampleStep);
   const n = Math.max(2, Math.ceil((def.u1 - def.u0) / step));
@@ -620,7 +682,10 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
   }
   // drop runs narrower than the minimum feature (slivers of material or of cut). Stepped
   // profiles clean up every terrace; smooth ones only where the cut starts and stops.
-  const minRun = Math.max(1, Math.ceil(Math.max(v.minFeature, 0.5) / step));
+  // rounding keeps every feature it is given, so with cut smoothing on the narrowest ones go first
+  // (up to twice the minimum feature): rounded down to a needle they would be too thin to cut
+  const minW = Math.max(v.minFeature, 0.5, Math.min(2 * v.minFeature, 2 * v.cutSmooth));
+  const minRun = Math.max(1, Math.ceil(minW / step));
   // at a plate's own end the image fades into its background (anti-aliasing, blur), which would leave a
   // thin shoulder standing there: carry the level a little way in out to the end
   for (let k = 0; k < lv.length; k++) {
@@ -648,6 +713,29 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
       a = b + 1;
     }
   }
+  // a smooth (unstepped) impression picks up every speck of grain in the picture; with cut
+  // smoothing on, low-pass it along the plate first so the rounding draws one flowing curve.
+  // Only inside each cut stretch, so where the cut starts and stops does not move.
+  if (steps === 0 && v.cutSmooth > 0.05) {
+    const h = Math.round(v.cutSmooth / 2 / step);
+    for (let a = 0; a < lv.length && h >= 1; a++) {
+      if (!(on[a] && lv[a] > 0)) continue;
+      let b = a;
+      while (b + 1 < lv.length && on[b + 1] && lv[b + 1] > 0) b++;
+      for (let pass = 0; pass < 2; pass++) {
+        const src = lv.slice(a, b + 1);
+        for (let q = 0; q < src.length; q++) {
+          let sum = 0, cnt = 0;
+          for (let j = Math.max(0, q - h); j <= Math.min(src.length - 1, q + h); j++) {
+            sum += src[j];
+            cnt++;
+          }
+          lv[a + q] = sum / cnt;
+        }
+      }
+      a = b;
+    }
+  }
   // flat: every step is a level terrace below the lowest top inside the image; follow: offset from the local top
   const depthAt = (k: number) => {
     if (lv[k] <= 0) return 0;
@@ -655,6 +743,7 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
     return Math.max(0, Math.min(d, tops[k] - 5));
   };
   const ceiling = Math.max(...tops) + 50;
+  const r = v.cutSmooth;
   const polys: Path[] = [];
   let k = 0;
   while (k < lv.length) {
@@ -668,6 +757,27 @@ function topCarve(def: PlateDef, outline: Shape, v: Values, img: Gray, win: TopW
     // a run that reaches the plate's end (e.g. trimmed to a silhouette) carries on past it
     const ua = k0 > 0 && on[k0 - 1] ? (us[k0 - 1] + us[k0]) / 2 : us[k0] - step - 1;
     const ub = k1 < lv.length - 1 && on[k1 + 1] ? (us[k1] + us[k1 + 1]) / 2 : us[k1] + step + 1;
+    if (r > 0.05) {
+      // rounded: rebuild the floor on a fine grid and roll a ball over it (see roundFloor)
+      const d = step / 2;
+      const m = Math.max(2, Math.ceil((ub - ua) / d));
+      const gu: number[] = [];
+      const g: number[] = [];
+      let q = k0;
+      for (let j = 0; j <= m; j++) {
+        const u = ua + ((ub - ua) * j) / m;
+        while (q < k1 && u > (us[q] + us[q + 1]) / 2) q++;
+        const lin = q < k1 && u > us[q] ? tops[q] + ((tops[q + 1] - tops[q]) * (u - us[q])) / (us[q + 1] - us[q]) : q > k0 && u < us[q] ? tops[q] + ((tops[q - 1] - tops[q]) * (us[q] - u)) / (us[q] - us[q - 1]) : tops[q];
+        gu.push(u);
+        g.push(v.topFloor === 'follow' ? Math.max(5, lin - depthAt(q)) : tops[q] - depthAt(q));
+      }
+      // an uncut neighbour is a wall; the plate's own end is open
+      const out = roundFloor(g, d, r, k0 > 0 && on[k0 - 1], k1 < lv.length - 1 && on[k1 + 1]);
+      const lower: Path = gu.map((u, j) => [u, Math.min(ceiling, out[j])]);
+      polys.push([...lower, [ub, ceiling], [ua, ceiling]]);
+      k++;
+      continue;
+    }
     const ta = topAt(outline, ua) ?? tops[k0];
     const tb = topAt(outline, ub) ?? tops[k1];
     const lower: Path = [[ua, ta - depthAt(k0)]];
@@ -1062,6 +1172,7 @@ export function slice(input: SliceInput): SliceResult {
     // image-driven cuts go first so their edges can be smoothed on their own
     const cuts: Shape[] = [];
     const imageCuts: Shape[] = [];
+    let carveCut: Shape = [];
 
     // 3. insert cavity, per plate, in 2D
     if (insertOn) {
@@ -1105,9 +1216,11 @@ export function slice(input: SliceInput): SliceResult {
       if (cut.length) imageCuts.push(cut);
     } else if (topWin && input.top) {
       const carve = topCarve(homeDefs[di], outlines[di], v, topField!, topWin, Number.isFinite(topDatum) ? topDatum : 0);
-      if (carve.length) imageCuts.push(carve);
+      if (carve.length) carveCut = carve;
     }
     if (imageCuts.length) shape = smoothImageCuts(shape, imageCuts.flat(), v.cutSmooth);
+    // the top impression rounds its own floor (topCarve), so it is only cut out here
+    if (carveCut.length) shape = v.cutSmooth > 0.05 ? simplifyShape(difference(shape, carveCut), SMOOTH_TOL / 2) : difference(shape, carveCut);
     if (seats) shape = difference(shape, seatTrim(seats.plates[di], seats.floor));
     // all-edges rounding happens before the functional cuts below, so they stay crisp
     shape = roundAll(shape, v.edgeRound);
