@@ -2225,6 +2225,97 @@ canvas.thumb {
   justify-content: flex-end;
   margin-top: 4px;
 }
+/* measuring tape */
+.movepanel .mp-live {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+}
+.movepanel .mp-live .clash {
+  color: var(--accent);
+  font-weight: 700;
+}
+.measurepanel .mp-info a {
+  color: inherit;
+}
+.ms-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1px solid var(--panel);
+}
+.ms-snapwrap {
+  position: relative;
+}
+.ms-snap {
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--accent);
+  background: transparent;
+  box-sizing: border-box;
+}
+.ms-snap.ms-vertex {
+  background: var(--accent);
+}
+.ms-snap.ms-midpoint {
+  transform: rotate(45deg);
+}
+.ms-snap.ms-edge {
+  border-radius: 50%;
+}
+.ms-snap.ms-face,
+.ms-snap.ms-free {
+  border-radius: 50%;
+  width: 7px;
+  height: 7px;
+  border-width: 1px;
+}
+.ms-hint {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.ms-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.3;
+  padding: 2px 6px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--accent);
+  cursor: pointer;
+}
+.ms-label b {
+  font-size: 12px;
+}
+.ms-label span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.ms-label:hover {
+  background: var(--ink);
+  color: var(--panel);
+  text-decoration: line-through;
+}
+/* markers sit right under the cursor: clicks must reach the canvas beneath */
+.ms-nohit,
+.ms-nohit * {
+  pointer-events: none !important;
+}
 
 /* ---------- changed-only filter ---------- */
 .changed-only {
