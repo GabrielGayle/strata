@@ -15,23 +15,38 @@ import { depthToGray } from '../src/core/depth';
 import { evaluateParams } from '../src/core/params';
 import { NEASDEN_FAST_BBOX } from './map-fixtures';
 
+function gridMinMax(grid: { data: Float32Array }): { zMin: number; zMax: number } {
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  for (const z of grid.data) {
+    if (!Number.isFinite(z)) continue;
+    zMin = Math.min(zMin, z);
+    zMax = Math.max(zMax, z);
+  }
+  return { zMin, zMax };
+}
+
 describe('map elevation → plate heights (invariant)', () => {
   it('uses true min/max, not p98, and linear settings', () => {
     const grid = syntheticConeGrid(32, 20, 18);
+    const { zMin, zMax } = gridMinMax(grid);
     const { depth, meta } = mapGridToDepth(grid, { exaggeration: 4 });
-    expect(depth.mapOrtho?.zMinM).toBeCloseTo(0, 5);
-    expect(depth.mapOrtho?.zMaxM).toBeCloseTo(18, 5);
-    expect(depth.mapOrtho?.reliefM).toBeCloseTo(18, 5);
-    expect(meta.zTopM).toBeCloseTo(18, 5);
+    expect(depth.mapOrtho?.zMinM).toBeCloseTo(zMin, 5);
+    expect(depth.mapOrtho?.zMaxM).toBeCloseTo(zMax, 5);
+    expect(depth.mapOrtho?.reliefM).toBeCloseTo(zMax - zMin, 5);
+    expect(meta.zTopM).toBeCloseTo(zMax, 5);
+    expect(zMax).toBeLessThan(18);
+    expect(zMax).toBeGreaterThan(16);
     expect(depth.settings.spacing).toBe('linear');
     expect(depth.settings.flatten).toBe(0);
     expect(depth.settings.matte).toBe(false);
   });
 
   it('plate height range matches relief_m × exaggeration × plan scale (mm)', () => {
-    const reliefM = 18;
+    const coneH = 18;
     const ex = 5;
-    const grid = syntheticConeGrid(48, 24, reliefM);
+    const grid = syntheticConeGrid(48, 24, coneH);
+    const { zMin, zMax } = gridMinMax(grid);
     const { depth } = mapGridToDepth(grid, { exaggeration: ex, bbox: NEASDEN_FAST_BBOX });
     const p = newProject();
     p.params = {
@@ -62,7 +77,7 @@ describe('map elevation → plate heights (invariant)', () => {
     const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: gray, insMesh: null, srcMesh: null });
     const expected = mapTrueRangePlateMm(depth, m.v, ex);
     const scale = mapScaleMmPerM(depth.mapOrtho!.widthM, 600);
-    expect(expected).toBeCloseTo(mapReliefToPlateRangeMm(reliefM, ex, scale), 5);
+    expect(expected).toBeCloseTo(mapReliefToPlateRangeMm(zMax - zMin, ex, scale), 5);
     const range = plateTopHeightRangeMm(m.sliced.plates);
     expect(range).toBeGreaterThan(expected * 0.75);
     expect(range).toBeLessThan(expected * 1.25);
@@ -85,6 +100,9 @@ describe('map elevation → plate heights (invariant)', () => {
     expect(hf.max - hf.min).toBeGreaterThan(50);
     const gray = mapDepthToGray(depth);
     const photo = depthToGray(depth);
-    expect(gray.data[0]).not.toBe(photo.data[0]);
+    let maxDiff = 0;
+    const n = Math.min(gray.data.length, photo.data.length);
+    for (let i = 0; i < n; i++) maxDiff = Math.max(maxDiff, Math.abs(gray.data[i] - photo.data[i]));
+    expect(maxDiff).toBeGreaterThan(0.05);
   });
 });
