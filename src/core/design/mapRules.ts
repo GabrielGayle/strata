@@ -1,9 +1,4 @@
-import {
-  NEASDEN_MAP_BBOX,
-  WELSH_HARP_WATER_BBOX,
-  neasdenMapSpec,
-  unionMapBbox,
-} from '../mapPresets';
+import { mapPresetSpec } from '../mapPresets';
 import type { DesignRule } from './rules';
 import { allMatches } from './rules';
 
@@ -19,7 +14,7 @@ export function registerMapParserRules(registry: DesignRule[]): void {
         (m) => ({
           start: m.index!,
           end: m.index! + m[0].length,
-          patch: { map: neasdenMapSpec() },
+          patch: { map: mapPresetSpec('neasden') },
           note: 'Neasden map preset',
         }),
         44,
@@ -33,9 +28,7 @@ export function registerMapParserRules(registry: DesignRule[]): void {
       allMatches(text, /\binclude\s+(?:the\s+)?welsh\s+harp\b/gi, (m) => ({
         start: m.index!,
         end: m.index! + m[0].length,
-        patch: {
-          map: { bbox: unionMapBbox(NEASDEN_MAP_BBOX, WELSH_HARP_WATER_BBOX), title: 'Neasden & Welsh Harp' },
-        },
+        patch: { map: mapPresetSpec('neasden-welsh-harp') },
         note: 'expand bbox for Welsh Harp reservoir',
       }), 43),
   });

@@ -10,6 +10,9 @@ import { hydrate, useStore } from './state/store';
 import { activeLayout, useWorkspaces } from './state/workspaces';
 import { visibleTabs } from './core/workspace';
 import { preloadView } from './ui/Workspace';
+import { installE2eMapTileFixtures } from './core/mapBrowserTiles';
+
+installE2eMapTileFixtures();
 
 // apply the saved window appearance before the first paint
 applyTheme(loadTheme());

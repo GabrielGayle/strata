@@ -14,8 +14,8 @@ import WorkspaceArea, { WorkspaceBar } from './Workspace';
 import DropOverlay from './DropOverlay';
 import HelpLayer, { HelpButton } from './Help';
 import DesignBox from './DesignBox';
-import MapWindow from './MapWindow';
 import { designShortcutFromKey } from './designShortcut';
+import { useMapTerrainBuild } from './useMapTerrainBuild';
 
 
 export default function App() {
@@ -25,6 +25,7 @@ export default function App() {
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const assets = useAssets(project);
+  useMapTerrainBuild();
   const layout = useWorkspaces(activeLayout);
   const reveal = useWorkspaces((s) => s.reveal);
   const front = useMemo(() => createFrontPipeline(), []);
@@ -157,7 +158,7 @@ export default function App() {
     [front, local, project, assets],
   );
   const [designOpen, setDesignOpen] = useState(false);
-  const [mapOpen, setMapOpen] = useState(false);
+  const mapTerrain = useStore((s) => s.mapTerrain);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
 
@@ -173,7 +174,7 @@ export default function App() {
             </span>
           </div>
         </div>
-        <Toolbar onOpenMap={() => setMapOpen(true)} />
+        <Toolbar />
         <aside className="left window">
           <ParamPanel />
         </aside>
@@ -195,6 +196,15 @@ export default function App() {
           <p className="status-bar-field">
             last edit rebuilt {work.current.stages} stage{work.current.stages === 1 ? '' : 's'} in {fmt(work.current.ms, 0)} ms{model.stale ? ' · updating checks…' : ''}
           </p>
+          {mapTerrain.phase !== 'idle' && (
+            <p
+              className="status-bar-field"
+              style={{ color: mapTerrain.phase === 'error' ? 'var(--err)' : mapTerrain.phase === 'working' ? 'var(--accent)' : undefined }}
+              title={mapTerrain.error ?? undefined}
+            >
+              {mapTerrain.message}{mapTerrain.error ? `: ${mapTerrain.error}` : ''}
+            </p>
+          )}
           <p className="status-bar-field">mm</p>
           <HelpButton />
         </footer>
@@ -209,7 +219,6 @@ export default function App() {
         <DropOverlay />
         <HelpLayer />
         {designOpen && <DesignBox onClose={() => setDesignOpen(false)} />}
-        {mapOpen && <MapWindow onClose={() => setMapOpen(false)} />}
       </div>
     </ModelContext.Provider>
     </FullModelContext.Provider>

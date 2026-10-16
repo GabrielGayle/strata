@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { COPERNICUS_DEM30_BASE, loadBuiltinCop30Fixture } from '../src/core/mapCopernicus';
+import { COPERNICUS_DEM30_BASE } from '../src/core/mapCopernicus';
+import { loadBuiltinCop30Fixture } from '../src/core/mapCopernicus.fixtures';
 import { buildMapBundle } from '../src/core/mapPipeline';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
@@ -23,7 +24,11 @@ describe('map Copernicus GLO-30 (T5)', () => {
         layerBudget: 'equal',
         resM: 32,
       }),
-      { fetch: fixtureTileFetcher, stack: { plateCount: 4, thicknessMm: 3, masterWidthMm: 120, layerBudget: 'equal' } },
+      {
+        fetch: fixtureTileFetcher,
+        cop30Loader: async () => loadBuiltinCop30Fixture(),
+        stack: { plateCount: 4, thicknessMm: 3, masterWidthMm: 120, layerBudget: 'equal' },
+      },
     );
     expect(bundle.asset.map?.resolvedSource).toBe('cop30');
     expect(bundle.asset.map?.sourceWarnings?.some((w) => /falling back to terrarium/i.test(w))).toBeFalsy();

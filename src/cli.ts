@@ -15,6 +15,7 @@ import { applyAutoDimensionPatch, previewAutoDimension, type DepthFace } from '.
 import { applyProjectPatch, formatPatchDiff, masterSizePatch, parseDesign } from './core/design';
 import { serialize, deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
 import { buildMapBundle, MapSourceNotImplementedError, mapSpecFromCli } from './core/mapPipeline';
+import { mapPresetSpec, parseMapPresetId } from './core/mapPresets';
 import { renderVenueMockup } from './core/mapRender';
 import { parseBbox, parseEngraveFlag, parseExaggeration, parseLayerBudget, parseMapSource, type MapSpec } from './core/mapSpec';
 import { mapStackFromProject } from './core/mapPipeline';
@@ -82,7 +83,7 @@ const USAGE = `Usage:
                  [--map-source auto|scot-dtm|wales-dtm|ni-dtm|ea-dtm|ea-dsm|cop30|terrarium]
                  [--map-res <metres>] [--exaggeration auto|<n>] [--layer-budget equal|quantile|jenks]
                  [--engrave on|off|roads,water,...]
-                 [--map-cache <dir>] [--render <out.png>]
+                 [--map-cache <dir>] [--map-preset <id>] [--render <out.png>]
   npm run cli -- say <project.json> "<instruction>"
   npm run cli -- <project.json> say [--apply] "<instruction>"
   npm run cli -- params
@@ -122,6 +123,7 @@ interface Args {
   render?: string;
   autoDimension: DepthFace[];
   reliefExaggeration: number;
+  mapPreset?: string;
   map?: {
     title?: string;
     bbox?: string;
@@ -223,6 +225,8 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--auto-dimension=')) parseAutoDimension(a.slice(17), args.autoDimension);
     else if (a === '--relief-exaggeration') args.reliefExaggeration = Number(take(argv, ++i, a));
     else if (a.startsWith('--relief-exaggeration=')) args.reliefExaggeration = Number(a.slice(22));
+    else if (a === '--map-preset') args.mapPreset = take(argv, ++i, a);
+    else if (a.startsWith('--map-preset=')) args.mapPreset = a.slice(13);
     else if (a === '--map') args.map!.title = take(argv, ++i, a);
     else if (a.startsWith('--map=')) args.map!.title = a.slice(6);
     else if (a === '--bbox') args.map!.bbox = take(argv, ++i, a);
@@ -254,8 +258,9 @@ function parseArgs(argv: string[]): Args {
     else throw new Error(`unknown argument '${a}'`);
   }
   if (!args.out) throw new Error(`missing --out <dir>\n\n${USAGE}`);
-  if (args.map?.bbox == null && args.map?.title) throw new Error('--map requires --bbox west,south,east,north');
-  if (args.map?.bbox != null && !args.map.title) args.map.title = 'Map terrain';
+  if (args.mapPreset) parseMapPresetId(args.mapPreset);
+  if (args.map?.bbox == null && args.map?.title && !args.mapPreset) throw new Error('--map requires --bbox west,south,east,north');
+  if ((args.map?.bbox != null || args.mapPreset) && args.map && !args.map.title && !args.mapPreset) args.map.title = 'Map terrain';
   return args;
 }
 
@@ -514,28 +519,29 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
       report(issues, io);
       return 1;
     }
-    if (args.map?.bbox) {
+    if (args.mapPreset || args.map?.bbox) {
       try {
-        const bbox = parseBbox(args.map.bbox);
+        const preset = args.mapPreset ? mapPresetSpec(args.mapPreset) : null;
+        const bbox = args.map?.bbox ? parseBbox(args.map.bbox) : preset!.bbox;
         const spec = mapSpecFromCli({
-          title: args.map.title,
+          title: args.map?.title ?? preset?.title,
           bbox,
-          source: args.map.source,
-          resM: args.map.resM > 0 ? args.map.resM : 8,
-          exaggeration: args.map.exaggeration,
-          engrave: args.map.engrave,
-          cacheDir: args.map.cacheDir,
-          layerBudget: args.map.layerBudget,
-          editionNumber: args.map.editionNumber,
-          archetypeCard: args.map.archetypeCard,
-          commemorativeText: args.map.commemorativeText,
+          source: args.map?.source ?? preset?.source ?? 'auto',
+          resM: args.map && args.map.resM > 0 ? args.map.resM : preset?.resM ?? 8,
+          exaggeration: args.map?.exaggeration ?? preset?.exaggeration ?? 'auto',
+          engrave: args.map?.engrave ?? preset?.engrave ?? { enabled: true, features: ['roads', 'water', 'title'] },
+          cacheDir: args.map?.cacheDir ?? preset?.cacheDir,
+          layerBudget: args.map?.layerBudget ?? preset?.layerBudget,
+          editionNumber: args.map?.editionNumber ?? preset?.editionNumber,
+          archetypeCard: args.map?.archetypeCard ?? preset?.archetypeCard,
+          commemorativeText: args.map?.commemorativeText ?? preset?.commemorativeText,
         });
         const bundle = await buildMapBundle(spec, {
-          stack: mapStackFromProject(project, args.map.layerBudget),
+          stack: mapStackFromProject(project, args.map?.layerBudget ?? preset?.layerBudget),
           allowOverpassNetwork: true,
         });
         project.images.top = bundle.asset;
-        if (args.map.title) project.name = args.map.title;
+        if (args.map?.title) project.name = args.map.title;
         if (args.render) {
           writeFileSync(args.render, renderVenueMockup({ elevation: bundle.elevation, depth: bundle.depth, title: spec.title }));
         }

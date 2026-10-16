@@ -27,6 +27,7 @@ import { buildMapEngraveArt } from './mapEngraveBuild';
 import { serializeMapEngraveArt } from './mapOsmEngrave';
 import type { OverpassFetcher } from './mapOverpass';
 import type { MapSource } from './mapSpec';
+import { mapBuildKey } from './mapBuildKey';
 import type { DepthData } from './depth';
 import type { ImageAsset, Project } from './project';
 import type { RawValue } from './params';
@@ -229,6 +230,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   }
   const stored: MapSpec = {
     ...spec,
+    buildKey: mapBuildKey(spec),
     crs: metric.crs,
     fetchedAt: new Date().toISOString(),
     layerBudget: budgetMode,

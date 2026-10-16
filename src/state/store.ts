@@ -17,10 +17,17 @@ import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
 import { applyProjectPatch, type ProjectPatch } from '../core/design';
+import { projectWithTopMapSpec } from '../core/mapTopAsset';
 import { wordsParamPatch } from '../core/chantWords';
 import { speechParamPatch } from '../core/speechTuning';
 
-export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'shadow' | 'graph' | 'nodes' | 'compare';
+export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'map' | 'shadow' | 'graph' | 'nodes' | 'compare';
+
+export interface MapTerrainUi {
+  phase: 'idle' | 'working' | 'ready' | 'error';
+  message: string;
+  error?: string;
+}
 export type Snap = 'iso' | 'front' | 'side' | 'top';
 
 export interface UiState {
@@ -79,6 +86,9 @@ interface Store {
   future: Project[];
   /** Whether the browser autosave has caught up with the latest change. */
   saveStatus: SaveStatus;
+  mapTerrain: MapTerrainUi;
+  setMapTerrain: (patch: Partial<MapTerrainUi>) => void;
+  finishMapTerrainBuild: (asset: ImageAsset) => void;
   ui: UiState;
   setParam: (id: string, value: RawValue) => void;
   setParams: (patch: Record<string, RawValue>, label?: string) => void;
@@ -206,6 +216,14 @@ export const useStore = create<Store>((set, get) => {
     past: [],
     future: [],
     saveStatus: 'saved',
+    mapTerrain: { phase: 'idle', message: '' },
+    setMapTerrain: (patch) => set({ mapTerrain: { ...get().mapTerrain, ...patch } }),
+    finishMapTerrainBuild: (asset) => {
+      const p = get().project;
+      if (!p.images.top?.map) return;
+      commit({ ...p, images: { ...p.images, top: asset } }, `map-build:${performance.now()}`);
+      set({ mapTerrain: { phase: 'ready', message: 'Map terrain ready', error: undefined } });
+    },
     newSetup: (mode) => {
       const { project, setups } = get();
       const id = `s${Date.now().toString(36)}`;
@@ -326,12 +344,9 @@ export const useStore = create<Store>((set, get) => {
     },
     setTopMap: (map) => {
       const p = get().project;
-      const dataUrl =
-        p.images.top?.dataUrl ??
-        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-      const top: ImageAsset = { name: map.title?.trim() || 'Map terrain', dataUrl, map };
-      const params = String(p.params.imgTopMode ?? 'off') === 'off' ? { ...p.params, imgTopMode: 'carve' } : p.params;
-      commit({ ...p, params, images: { ...p.images, top } }, `map:${performance.now()}`);
+      const next = projectWithTopMapSpec(p, map);
+      commit(next, `map:${performance.now()}`);
+      set({ mapTerrain: { phase: 'idle', message: 'Queued terrain build…' } });
     },
     setDepthSettings: (slot, patch, dataUrl) => {
       const p = get().project;
