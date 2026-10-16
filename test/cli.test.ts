@@ -408,14 +408,15 @@ describe.sequential('cli map', () => {
     expect(io.err).toMatch(/invalid bbox/i);
   });
 
-  it('accepts cop30 but reports not yet implemented', async () => {
+  it('accepts cop30 and falls back to terrarium with a warning on MapSpec', async () => {
     const dir = scratch();
     const project = join(dir, 'p.json');
     writeFileSync(project, JSON.stringify(MAP_CLI_LIGHT_PROJECT));
     const out = join(dir, 'out');
     const io = capture();
-    expect(await main(mapCop30CliArgs(project, out, NEASDEN_FAST_BBOX, join(dir, 'map-cache')), io)).toBe(1);
-    expect(io.err).toMatch(/not yet implemented/i);
+    expect(await main(mapCop30CliArgs(project, out, NEASDEN_FAST_BBOX, join(dir, 'map-cache')), io)).toBe(0);
+    const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
+    expect(back.images.top?.map?.sourceWarnings?.some((line) => /falling back to terrarium/i.test(line))).toBe(true);
   }, 20_000);
 
   it('defaults engraving on when --engrave is omitted', () => {

@@ -79,7 +79,7 @@ const USAGE = `Usage:
                  [--image side=path.jpg] [--auto-dimension side=top,front] [--relief-exaggeration <n>]
                  [--rates rates.json]
                  [--map <title>] [--bbox west,south,east,north]
-                 [--map-source auto|ea-dtm|ea-dsm|cop30|terrarium]
+                 [--map-source auto|scot-dtm|wales-dtm|ni-dtm|ea-dtm|ea-dsm|cop30|terrarium]
                  [--map-res <metres>] [--exaggeration auto|<n>] [--layer-budget equal|quantile|jenks]
                  [--engrave on|off|roads,water,...]
                  [--map-cache <dir>] [--render <out.png>]
@@ -97,8 +97,9 @@ ratio sizes keep the current long edge. Only the outline changes (thickness and 
 --image replaces the side, front or top picture. --rates overrides price-estimate rates.
 --auto-dimension sets plate proportions from metric depth on each face (repeat or comma list:
 side, front, top). Needs depth data on that image. --relief-exaggeration scales relief (default 1).
---map with --bbox fetches open terrain (terrarium in this release) into the top face DepthData.
-Non-terrarium sources are accepted but exit with a not-yet-implemented message. --engrave is stored
+--map with --bbox fetches open terrain into the top face DepthData (auto picks UK LiDAR where catalogued).
+Regional LiDAR adapters use offline fixtures in tests; production COG/WMS reads are stubbed until later tickets.
+Unimplemented explicit sources fall back to terrarium with a warning. --engrave is stored
 on the MapSpec (default on); engraving is a no-op until a later release.
 say parses plain-language design instructions (same rules as the in-app Type a design box),
 prints the parameter diff and any unrecognised phrases. --apply writes the updated project JSON to stdout.

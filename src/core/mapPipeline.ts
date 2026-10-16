@@ -7,6 +7,10 @@ import { mapGridToDepth } from './mapToDepth';
 import { applyLayerBudget, computeLayerBreaks, type LayerBudgetMode } from './mapLayerBudget';
 import { resolveExaggerationFactor } from './mapExaggeration';
 import { simplifyMetricGrid } from './mapSimplify';
+import { fetchRegionalLidarGrid, isRegionalLidarSource, type RegionalGridLoader } from './mapRegionalLidar';
+import { pickAutoMapSource, pickExplicitSource } from './mapSourcePick';
+import { sourceMeta } from './mapSourceRegistry';
+import type { MapSource } from './mapSpec';
 import type { DepthData } from './depth';
 import type { ImageAsset, Project } from './project';
 import type { RawValue } from './params';
@@ -15,15 +19,27 @@ const PLACEHOLDER_TOP = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABC
 
 export class MapSourceNotImplementedError extends Error {
   constructor(source: string) {
-    super(`Map source '${source}' is not yet implemented in this release (terrarium only for now).`);
+    super(`Map source '${source}' is not yet implemented in this release.`);
     this.name = 'MapSourceNotImplementedError';
   }
 }
 
-/** Wave 1: auto and terrarium → terrarium tiles; other names are accepted at parse time but fail here. */
-export function resolveMapSource(source: MapSpec['source']): 'terrarium' {
-  if (source === 'terrarium' || source === 'auto') return 'terrarium';
-  throw new MapSourceNotImplementedError(source);
+const STUB_SOURCES = new Set<MapSource>(['ea-dtm', 'ea-dsm', 'cop30']);
+
+export interface ResolvedMapSource {
+  requested: MapSource;
+  effective: MapSource;
+  warnings: string[];
+}
+
+export function resolveMapSource(spec: Pick<MapSpec, 'source' | 'bbox'>): ResolvedMapSource {
+  const requested = spec.source;
+  if (requested === 'auto') {
+    const pick = pickAutoMapSource(spec.bbox);
+    return { requested, effective: pick.source, warnings: [...pick.warnings] };
+  }
+  const pick = pickExplicitSource(requested);
+  return { requested, effective: pick.source, warnings: pick.warnings };
 }
 
 export interface MapStackContext {
@@ -38,6 +54,7 @@ export interface BuildMapImageOptions {
   cacheDir?: string;
   fetch?: TileFetcher;
   stack?: MapStackContext;
+  regionalLoader?: RegionalGridLoader;
 }
 
 export interface MapBuildResult {
@@ -47,18 +64,53 @@ export interface MapBuildResult {
   depth: DepthData;
 }
 
+async function fetchElevationGrid(
+  spec: MapSpec,
+  effective: MapSource,
+  warnings: string[],
+  opts: BuildMapImageOptions,
+): Promise<Awaited<ReturnType<typeof fetchTerrariumGrid>>> {
+  const fetch: TileFetcher = async (url) => {
+    const inner = opts.fetch ?? getTileFetcher();
+    return cachedTileFetch(spec.cacheDir ?? opts.cacheDir, url, inner);
+  };
+
+  if (effective === 'terrarium') {
+    return fetchTerrariumGrid(spec, { fetch });
+  }
+
+  if (isRegionalLidarSource(effective)) {
+    const grid = await fetchRegionalLidarGrid(effective, spec, opts.regionalLoader);
+    if (grid) return grid;
+    warnings.push(
+      `${effective} LiDAR not available for this bbox (no tile coverage or adapter offline); falling back to terrarium (~30 m).`,
+    );
+    return fetchTerrariumGrid(spec, { fetch });
+  }
+
+  if (STUB_SOURCES.has(effective)) {
+    warnings.push(`${effective} adapter not shipped yet; falling back to terrarium (~30 m).`);
+    return fetchTerrariumGrid(spec, { fetch });
+  }
+
+  throw new MapSourceNotImplementedError(effective);
+}
+
+function mergeAttribution(spec: MapSpec, effective: MapSource): string[] {
+  if (spec.attribution.length) return spec.attribution;
+  if (effective === 'terrarium') return [...TERRARIUM_ATTRIBUTION];
+  const meta = sourceMeta(effective);
+  return meta.attribution.length ? [...meta.attribution] : [`Elevation source: ${meta.portalUrl}`];
+}
+
 export async function buildMapTopAsset(spec: MapSpec, opts: BuildMapImageOptions = {}): Promise<ImageAsset> {
   return (await buildMapBundle(spec, opts)).asset;
 }
 
 export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions = {}): Promise<MapBuildResult> {
-  const resolved = resolveMapSource(spec.source);
-  if (resolved !== 'terrarium') throw new MapSourceNotImplementedError(spec.source);
-  const fetch: TileFetcher = async (url) => {
-    const inner = opts.fetch ?? getTileFetcher();
-    return cachedTileFetch(spec.cacheDir ?? opts.cacheDir, url, inner);
-  };
-  const elev = await fetchTerrariumGrid(spec, { fetch });
+  const resolved = resolveMapSource(spec);
+  const warnings = [...resolved.warnings];
+  const elev = await fetchElevationGrid(spec, resolved.effective, warnings, opts);
   let metric = reprojectResample(elev, spec);
   const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
   const budgetMode = spec.layerBudget ?? stack.layerBudget ?? 'jenks';
@@ -75,13 +127,15 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     ...spec,
     crs: metric.crs,
     fetchedAt: new Date().toISOString(),
-    attribution: spec.attribution.length ? spec.attribution : [...TERRARIUM_ATTRIBUTION],
+    attribution: mergeAttribution(spec, resolved.effective),
     layerBudget: budgetMode,
     layerBreaksM: budget.breaksM,
     exaggerationFactor: factor,
     exaggerationReadout: readout,
     exaggeration: spec.exaggeration === 'auto' ? 'auto' : factor,
     simplifyLostFeatures: simplified.lostFeatures,
+    resolvedSource: resolved.effective,
+    sourceWarnings: warnings.length ? warnings : undefined,
   };
   const asset: ImageAsset = {
     name: spec.title?.trim() || 'Map terrain',
@@ -95,7 +149,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
 export function mapSpecFromCli(parts: {
   title?: string;
   bbox: MapSpec['bbox'];
-  source: MapSpec['source'];
+  source: MapSource;
   resM: number;
   exaggeration: MapSpec['exaggeration'];
   engrave: MapSpec['engrave'];

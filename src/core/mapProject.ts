@@ -96,9 +96,13 @@ export function reprojectResample(
       const cx = bounds.west + (col + 0.5) * pixelW;
       const cy = bounds.south + (row + 0.5) * pixelH;
       if (!useMax) {
-        const [lon, lat] = proj4(crs, 'EPSG:4326', [cx, cy]) as [number, number];
-        const [mx, my] = proj4('EPSG:4326', 'EPSG:3857', [lon, lat]) as [number, number];
-        data[row * w + col] = sampleSource(source, mx, my);
+        if (source.crs === crs) {
+          data[row * w + col] = gridSampleBilinear(source, cx, cy);
+        } else {
+          const [lon, lat] = proj4(crs, 'EPSG:4326', [cx, cy]) as [number, number];
+          const [mx, my] = proj4('EPSG:4326', 'EPSG:3857', [lon, lat]) as [number, number];
+          data[row * w + col] = sampleSource(source, mx, my);
+        }
         continue;
       }
       let best = -Infinity;
@@ -109,9 +113,14 @@ export function reprojectResample(
         [cx - halfW, cy + halfH],
       ];
       for (const [px, py] of corners) {
-        const [lon, lat] = proj4(crs, 'EPSG:4326', [px, py]) as [number, number];
-        const [mx, my] = proj4('EPSG:4326', 'EPSG:3857', [lon, lat]) as [number, number];
-        const v = sampleSource(source, mx, my);
+        const v =
+          source.crs === crs
+            ? gridSampleBilinear(source, px, py)
+            : (() => {
+                const [lon, lat] = proj4(crs, 'EPSG:4326', [px, py]) as [number, number];
+                const [mx, my] = proj4('EPSG:4326', 'EPSG:3857', [lon, lat]) as [number, number];
+                return sampleSource(source, mx, my);
+              })();
         if (Number.isFinite(v) && v > best) best = v;
       }
       data[row * w + col] = Number.isFinite(best) ? best : NaN;
