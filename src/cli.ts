@@ -10,6 +10,12 @@ import { depthToGray } from './core/depth';
 import { createPipeline, type Assets } from './core/pipeline';
 import { defaultRaw, PARAMS, PARAM_MAP, type EvalResult, type ParamKind, type RawValue } from './core/params';
 import { DEFAULT_RATES, type PriceRates } from './core/price';
+import {
+  MASTER_SIZE_CLI_CANONICAL,
+  masterSizePresetPatch,
+  parseMasterOrientation,
+  resolveMasterSizeCli,
+} from './core/masterPresets';
 import { deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
 
 export interface CliIssue {
@@ -65,14 +71,20 @@ export function presetCatalog(): PresetInfo[] {
   return PRESETS.map((p) => ({ id: p.name, name: p.name, note: p.note, small: !!p.small, params: p.params }));
 }
 
+const SIZE_HELP = MASTER_SIZE_CLI_CANONICAL.join(', ');
+
 const USAGE = `Usage:
-  npm run cli -- <project.json> --out <dir> [--preset <name>] [--image side=path.jpg] [--rates rates.json]
+  npm run cli -- <project.json> --out <dir> [--preset <name>] [--size <id>] [--orientation portrait|landscape]
+                 [--image side=path.jpg] [--rates rates.json]
   npm run cli -- params
   npm run cli -- presets
 
 Writes the fabrication bundle (part and sheet DXFs, moulds, model.stl, cutlist.csv,
 price-estimate.txt, price-estimate.json, build-pack.html, project.strata.json) into <dir>.
 A project may set "preset"; parameters in the file override the preset. --preset does the same.
+--size sets the base outline from a master size preset (${SIZE_HELP}); fixed sizes use real mm,
+ratio sizes keep the current long edge. Only the outline changes (thickness and plate count stay).
+--orientation is portrait (default) or landscape. Applied after the project file and --preset.
 --image replaces the side, front or top picture. --rates overrides price-estimate rates.
 Unknown parameters and formula errors exit 1 and write nothing. Clamped values are warnings.
 `;
@@ -86,6 +98,8 @@ interface Args {
   preset?: string;
   images: Partial<Record<Slot, string>>;
   rates?: string;
+  size?: string;
+  orientation?: string;
 }
 
 function take(argv: string[], i: number, flag: string): string {
@@ -122,6 +136,10 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--rates=')) args.rates = a.slice(8);
     else if (a === '--image') parseImage(take(argv, ++i, a), args.images);
     else if (a.startsWith('--image=')) parseImage(a.slice(8), args.images);
+    else if (a === '--size') args.size = take(argv, ++i, a);
+    else if (a.startsWith('--size=')) args.size = a.slice(7);
+    else if (a === '--orientation') args.orientation = take(argv, ++i, a);
+    else if (a.startsWith('--orientation=')) args.orientation = a.slice(14);
     else if (a === '--help' || a === '-h') return { cmd: 'help', images: {} };
     else throw new Error(`unknown argument '${a}'`);
   }
@@ -166,6 +184,17 @@ export function loadProject(text: string, opts: { preset?: string } = {}): { pro
   project.params = params;
   if ((raw.name == null || raw.name === '') && presetName && PRESETS.some((p) => p.name === presetName)) project.name = presetName;
   return { project, issues };
+}
+
+/** Apply --size / --orientation after the project file and preset are merged. */
+export function applyMasterSizeCli(
+  project: Project,
+  size: string,
+  orientation?: string,
+): void {
+  const presetId = resolveMasterSizeCli(size);
+  const ori = orientation == null ? 'portrait' : parseMasterOrientation(orientation);
+  project.params = { ...project.params, ...masterSizePresetPatch(project.params, presetId, ori) };
 }
 
 function evalIssues(ev: EvalResult): CliIssue[] {
@@ -306,6 +335,17 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
   try {
     const text = readFileSync(args.project!, 'utf8');
     const { project, issues } = loadProject(text, { preset: args.preset });
+    if (args.size) {
+      try {
+        applyMasterSizeCli(project, args.size, args.orientation);
+      } catch (e) {
+        io.stderr(`error: ${(e as Error).message}\n`);
+        return 1;
+      }
+    } else if (args.orientation) {
+      io.stderr('error: --orientation requires --size\n');
+      return 1;
+    }
     let rates = DEFAULT_RATES;
     if (args.rates) rates = readRates(readFileSync(args.rates, 'utf8'));
     if (issues.some((i) => i.level === 'error')) {

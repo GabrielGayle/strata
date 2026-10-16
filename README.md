@@ -92,14 +92,18 @@ npm run cli -- examples/image-cliff.strata.json --out out/
 
 ```bash
 npm run cli -- project.strata.json --out out/ --preset "Image cliff" --image side=side.png --rates rates.json
+npm run cli -- project.strata.json --out out/ --size a4 --orientation portrait
 npm run cli -- params      # parameter catalogue (id, type, default, range, choices, group, help)
 npm run cli -- presets     # preset catalogue
 ```
 
 A project file may include `"preset": "Image cliff"`. Preset values are applied first; parameters in
-the file override them. `--preset` selects a preset the same way. `--image side=path.jpg` (also
-`front` and `top`) replaces that picture. `--rates rates.json` overrides the price-estimate rates;
-the built-in defaults stay as they are.
+the file override them. `--preset` selects a preset the same way. `--size` picks a master outline
+preset (`iphone-17`, `a3`–`a6`, `16:9`, `4:3`, `1:1`, `3:2`): fixed sizes set the base footprint
+in mm; ratio sizes keep the project’s current long edge. Only the outline changes—plate thickness and
+count are left alone. `--orientation` is `portrait` (default) or `landscape`. Size is applied after
+the file and `--preset`. `--image side=path.jpg` (also `front` and `top`) replaces that picture.
+`--rates rates.json` overrides the price-estimate rates; the built-in defaults stay as they are.
 
 Unknown parameters, unknown choices and formula errors are printed and the command exits with status 1
 without writing files. Values outside their range are clamped, reported as warnings, and the export
