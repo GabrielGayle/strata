@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cachedMapBytes } from '../src/core/mapCache';
 import { browserMapCacheGet, browserMapCacheSet, clearInMemoryMapCache, useInMemoryMapCache } from '../src/core/mapCacheBrowser';
-import { searchNominatim, setNominatimFetcher } from '../src/core/mapNominatim';
+import { setNominatimFetcher } from '../src/core/mapNominatim';
+import { searchNominatimCached } from '../src/core/mapNominatimCli';
 
 describe('map cache (T7)', () => {
   let dir = '';
@@ -32,8 +33,8 @@ describe('map cache (T7)', () => {
       calls += 1;
       return [{ display_name: 'Test', lat: '51.5', lon: '-0.2', boundingbox: ['51', '52', '-0.3', '-0.1'] }];
     });
-    await searchNominatim('neasden', { cacheDir: dir });
-    await searchNominatim('neasden', { cacheDir: dir });
+    await searchNominatimCached('neasden', dir);
+    await searchNominatimCached('neasden', dir);
     expect(calls).toBe(1);
   });
 
