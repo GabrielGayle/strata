@@ -122,6 +122,26 @@ export function playModes(partials: number[], seconds = 2.2) {
  * Plates in order, each entering on the chant rhythm (quarter, eighth, eighth,
  * dotted quarter when there are four). Decays overlap, the way a call does.
  */
+/** Several plate fundamentals struck together (speech-like vowel cluster). */
+export function playCluster(hzs: number[], seconds = 1.6) {
+  const rate = 22050;
+  const n = Math.round(seconds * rate);
+  const data = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / rate;
+    const attack = Math.min(1, t / 0.004);
+    let s = 0;
+    for (const hz of hzs) {
+      if (hz > 20 && hz < rate / 2) s += Math.sin(2 * Math.PI * hz * t) * Math.exp(-t * 2.2);
+    }
+    data[i] = attack * s;
+  }
+  let peak = 0;
+  for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(data[i]));
+  if (peak > 0) for (let i = 0; i < n; i++) data[i] /= peak;
+  playAudio({ rate, data }, 0.42);
+}
+
 export function playChant(partials: number[][], onsets: number[] = CHANT_ONSETS) {
   const rate = 22050;
   const tail = 2.4;

@@ -16,6 +16,7 @@
 import type { Values } from './params';
 import { tuneBar, beamModes } from './beam';
 import { wordsLabels, wordsPlateMidis } from './chantWords';
+import { speechLabels, speechPlateMidis } from './speechTuning';
 
 /** Young's modulus (Pa) and density (kg/m³) of the plate materials. */
 export const MATERIALS: Record<string, { E: number; rho: number; label: string }> = {
@@ -154,7 +155,10 @@ export function tuningActive(v: Values): boolean {
 export function plateNotes(v: Values, count: number): number[] {
   if (count <= 0) return [];
   let notes: number[];
-  if (v.tuneMode === 'words') {
+  if (v.tuneMode === 'speech') {
+    notes = speechPlateMidis(v, count);
+    if (!notes.length) return [];
+  } else if (v.tuneMode === 'words') {
     notes = wordsPlateMidis(v);
     if (!notes.length) return [];
     if (count > notes.length) notes = Array.from({ length: count }, (_, i) => notes[i % notes.length]);
@@ -169,7 +173,7 @@ export function plateNotes(v: Values, count: number): number[] {
     const set = v.tuneMode === 'chord' ? CHORDS[v.tuneChord] ?? CHORDS.major : SCALES[v.tuneScale] ?? SCALES.major;
     notes = climb(root, set.steps, count);
   }
-  return arrange(notes, v.tuneMode === 'words' ? 'listed' : v.tuneOrder);
+  return arrange(notes, v.tuneMode === 'words' || v.tuneMode === 'speech' ? 'listed' : v.tuneOrder);
 }
 
 export interface PlateTune {
@@ -212,7 +216,8 @@ export function tunePlates(v: Values, count: number, materials?: string[], width
   if (!notes.length) return null;
   const allow = 1 + Math.max(0, v.tuneAllowance) / 100;
   const free = v.tuneModel === 'free';
-  const labels = v.tuneMode === 'words' ? wordsLabels(v) : splitLabels(v.tuneLabels);
+  const labels =
+    v.tuneMode === 'speech' ? speechLabels(v) : v.tuneMode === 'words' ? wordsLabels(v) : splitLabels(v.tuneLabels);
   return notes.map((midi, i) => {
     const material = materials?.[i] ?? String(v.plateMaterial);
     const name = midiName(midi);
