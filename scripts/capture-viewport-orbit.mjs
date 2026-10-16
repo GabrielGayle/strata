@@ -63,14 +63,27 @@ async function show3dTab(page) {
   else await page.keyboard.press('1');
 }
 
-async function waitMapReady(page) {
+async function waitMapReady(page, readoutNeedle) {
+  await page
+    .waitForFunction(
+      () =>
+        !!document.querySelector('.map-terrain-working') ||
+        /Fetching|building|Queued/i.test(document.querySelector('.map-terrain-status')?.textContent ?? '') ||
+        /Fetching|building/i.test(document.querySelector('.status-bar')?.textContent ?? ''),
+      { timeout: 20000 },
+    )
+    .catch(() => {});
   await page.waitForFunction(
-    () => {
+    (needle) => {
+      if (document.querySelector('.map-terrain-working')) return false;
+      const st = document.querySelector('.map-terrain-status')?.textContent ?? '';
       const bar = document.querySelector('.status-bar')?.textContent ?? '';
-      const working = document.querySelector('.map-terrain-working');
-      if (working) return false;
-      return /ready/i.test(bar) || /(\d+)\s+parts/.test(bar);
+      if (/Fetching|building|Queued/i.test(st) && !/ready/i.test(st)) return false;
+      if (/Fetching|building/i.test(bar) && !/ready/i.test(bar)) return false;
+      if (needle && !st.includes(needle)) return false;
+      return /Map terrain ready|Exaggeration/i.test(st);
     },
+    readoutNeedle ?? '',
     { timeout: 240000 },
   );
 }
@@ -88,15 +101,23 @@ async function setupPage(page, presetId) {
     await page.waitForSelector('.map-view', { timeout: 60000 });
     console.log('map: Neasden preset');
     await page.locator('.map-view').getByRole('button', { name: 'Neasden', exact: true }).click();
-    await waitMapReady(page);
+    await waitMapReady(page, 'Exaggeration');
     console.log('map: set ×18 + sunken frame');
     await page.getByLabel('Vertical exaggeration').selectOption('18');
+    await waitMapReady(page, '×18');
     await page.locator('label').filter({ hasText: 'Sunken concrete frame' }).locator('input[type=checkbox]').check({ force: true });
-    await waitMapReady(page);
+    await waitMapReady(page, '×18');
     console.log('map: back to 3D');
     await show3dTab(page);
     await waitForViewportCanvas(page);
     await expectStatusReady(page, 180000);
+    await page.waitForFunction(
+      () => {
+        const t = document.querySelector('.overlay.bl.info')?.textContent ?? '';
+        return t.includes('plates') && !t.includes('800 × 300');
+      },
+      { timeout: 180000 },
+    );
     await page.waitForTimeout(2500);
     return;
   }
