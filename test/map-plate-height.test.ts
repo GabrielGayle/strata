@@ -121,6 +121,64 @@ describe('map elevation → plate heights (invariant)', () => {
     expect(maxDiff).toBeGreaterThan(0.05);
   });
 
+  it('caption span at ×21 matches the readout with and without a sunken frame', () => {
+    const grid = syntheticConeGrid(48, 24, 18);
+
+    const run = (ex: number, frame: boolean) => {
+      const { depth } = mapGridToDepth(grid, { exaggeration: ex, bbox: NEASDEN_FAST_BBOX });
+      const p = newProject();
+      p.params = {
+        ...p.params,
+        baseLength: '600',
+        baseWidth: '600',
+        plateCount: '16',
+        thickness: '3',
+        stackHeight: '200',
+        erosionAmp: '0',
+        crest: '0',
+        slope: '0',
+        insShape: 'none',
+        imgTopMode: 'carve',
+      };
+      p.images.top = {
+        name: 'Map',
+        dataUrl: 'data:image/png;base64,xx',
+        map: defaultMapSpec({
+          bbox: NEASDEN_FAST_BBOX,
+          title: 'Cone',
+          exaggeration: ex,
+          ...(frame ? { sunkenFrame: { enabled: true, wallMm: 12 } } : {}),
+        }),
+        depth,
+      };
+      const gray = mapDepthToGray(depth);
+      const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: gray, insMesh: null, srcMesh: null });
+      const expected = mapTrueRangePlateMm(depth, m.v, ex);
+      const outline = plateOutlineYRangeMm(m.sliced.plates);
+      return { expected, outline, hf: m.hf };
+    };
+
+    // Warm the decode cache at ×11 so a stale key (payload without minM/maxM) would
+    // reuse those metres under a ×21 window — the live 136–282 mm / 278 mm stack bug.
+    run(11, false);
+
+    for (const frame of [false, true]) {
+      const r = run(21, frame);
+      expect(r.outline, `frame=${frame}`).toBeTruthy();
+      expect(r.outline!.lo, `frame=${frame} valley floor`).toBeLessThan(15);
+      expect(r.outline!.lo, `frame=${frame}`).toBeGreaterThan(0.5);
+      const span = r.outline!.hi - r.outline!.lo;
+      expect(span, `frame=${frame} caption span`).toBeGreaterThan(r.expected * 0.75);
+      expect(span, `frame=${frame} caption span`).toBeLessThan(r.expected * 1.25);
+      expect(r.hf!.min, `frame=${frame}`).toBeLessThan(15);
+    }
+
+    const off = run(21, false);
+    const on = run(21, true);
+    expect(on.outline!.lo).toBeCloseTo(off.outline!.lo, 0);
+    expect(on.outline!.hi - on.outline!.lo).toBeCloseTo(off.outline!.hi - off.outline!.lo, 0);
+  });
+
   it('keeps the default insert when the top face is not a map', () => {
     const p = newProject();
     const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null });

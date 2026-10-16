@@ -239,7 +239,10 @@ export function sampleDepthMetres(d: Pick<DepthData, 'w' | 'h' | 'minM' | 'maxM'
 }
 
 export function decodeDepthBuffers(d: Pick<DepthData, 'w' | 'h' | 'minM' | 'maxM' | 'data' | 'mask'>) {
-  const key = `${d.w}x${d.h}:${d.data.length}:${d.data.slice(0, 48)}${d.data.slice(-48)}:${d.mask?.length ?? 0}:${d.mask?.slice(0, 48) ?? ''}${d.mask?.slice(-48) ?? ''}`;
+  // minM/maxM must be in the key: map exaggeration rescales the metre window but the
+  // uint16 payload is the same (q is (zMax−z)/relief). Reusing ×11 metres with a ×21
+  // window lifts valleys (live: terrain 136–282 mm vs a 278 mm stack).
+  const key = `${d.w}x${d.h}:${d.minM}:${d.maxM}:${d.data.length}:${d.data.slice(0, 48)}${d.data.slice(-48)}:${d.mask?.length ?? 0}:${d.mask?.slice(0, 48) ?? ''}${d.mask?.slice(-48) ?? ''}`;
   let hit = decoded.get(key);
   if (!hit) {
     const bytes = b64Bytes(d.data);
