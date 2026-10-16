@@ -28,7 +28,18 @@ export interface BuildMapImageOptions {
   exaggeration?: number;
 }
 
+export interface MapBuildResult {
+  asset: ImageAsset;
+  elevation: Awaited<ReturnType<typeof fetchTerrariumGrid>>;
+  metric: Awaited<ReturnType<typeof reprojectResample>>;
+  depth: DepthData;
+}
+
 export async function buildMapTopAsset(spec: MapSpec, opts: BuildMapImageOptions = {}): Promise<ImageAsset> {
+  return (await buildMapBundle(spec, opts)).asset;
+}
+
+export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions = {}): Promise<MapBuildResult> {
   const resolved = resolveMapSource(spec.source);
   if (resolved !== 'terrarium') throw new MapSourceNotImplementedError(spec.source);
   const fetch: TileFetcher = async (url) => {
@@ -45,12 +56,13 @@ export async function buildMapTopAsset(spec: MapSpec, opts: BuildMapImageOptions
     fetchedAt: new Date().toISOString(),
     attribution: spec.attribution.length ? spec.attribution : [...TERRARIUM_ATTRIBUTION],
   };
-  return {
+  const asset: ImageAsset = {
     name: spec.title?.trim() || 'Map terrain',
     dataUrl: PLACEHOLDER_TOP,
     map: stored,
     depth,
   };
+  return { asset, elevation: elev, metric, depth };
 }
 
 export function mapSpecFromCli(parts: {
