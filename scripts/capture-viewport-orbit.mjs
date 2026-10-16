@@ -90,8 +90,7 @@ async function setupPage(page, presetId) {
     await page.locator('.map-view').getByRole('button', { name: 'Neasden', exact: true }).click();
     await waitMapReady(page);
     console.log('map: set ×18 + sunken frame');
-    const ex = page.locator('.map-section').filter({ hasText: 'Vertical exaggeration' }).locator('select');
-    await ex.selectOption('18');
+    await page.getByLabel('Vertical exaggeration').selectOption('18');
     await page.locator('label').filter({ hasText: 'Sunken concrete frame' }).locator('input[type=checkbox]').check({ force: true });
     await waitMapReady(page);
     console.log('map: back to 3D');
