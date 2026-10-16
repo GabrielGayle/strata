@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { defaultDepthSettings, depthFromPhoto, depthToGray, parseDepthResponse, wakeDepth, type DepthData } from '../src/core/depth';
+import { defaultDepthSettings, depthFromPhoto, depthToGray, parseDepthResponse, sampleDepthMetres, wakeDepth, type DepthData } from '../src/core/depth';
+import {
+  applyFlatCliPatch,
+  autoFlatLevel,
+  fillFlatDefaults,
+  flattenBackgroundToPlate,
+  limitHeightSteps,
+  parseFlatLevelFlag,
+  percentileMetres,
+  plateauMetres,
+  resolveFlatLevel,
+} from '../src/core/depthFlat';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
 
@@ -110,3 +121,113 @@ describe('depth shaping', () => {
     expect(g.data.every((v) => v >= 0 && v <= 1)).toBe(true);
   });
 });
+
+describe('background to plate flat', () => {
+  it('does not change a legacy depth map until the user engages the feature', () => {
+    expect(near(depthToGray(map()))).toEqual([0, 0.667, 1, 1]);
+  });
+
+  it('flattens everything at or beyond the level to one plate', () => {
+    const g = depthToGray(map({ spacing: 'linear', flatLevel: 2, flatLevelOverride: true, flatLevelMode: 'auto' }));
+    // linear: 1 m → 0, 2 m and 4 m share the 2 m plate, missing stays white
+    expect(near(g)).toEqual([0, 0.333, 0.333, 1]);
+  });
+
+  it('edge ease blends into the flat region', () => {
+    const hard = near(depthToGray(map({ spacing: 'linear', flatLevel: 3, flatLevelOverride: true, flatLevelMode: 'auto', edgeEase: 0 })));
+    const ease = near(depthToGray(map({ spacing: 'linear', flatLevel: 3, flatLevelOverride: true, flatLevelMode: 'auto', edgeEase: 0.5 })));
+    expect(hard).not.toEqual(ease);
+    // 2 m sits in the falloff: pulled toward the plate, so the grey moves toward the far plate
+    expect(ease[1]).toBeGreaterThan(hard[1]);
+  });
+
+  it('flatten-negative floors dips below the plate', () => {
+    const height = new Float32Array([1, 0.2, 0]);
+    const keep = new Float32Array([1, 1, 0]);
+    const metres = new Float32Array([1, 1.2, 0]);
+    flattenBackgroundToPlate(height, keep, metres, 2, { ...defaultDepthSettings(RAW), flatNegative: true, flatLevelMode: 'auto' }, { near: 1, far: 4, persp: false });
+    expect(height[1]).toBeGreaterThanOrEqual(heightOfLinear(2, 1, 4) - 1e-6);
+  });
+
+  it('step limit caps adjacent height changes', () => {
+    const out = limitHeightSteps(new Float32Array([0, 1, 0, 1]), 4, 1, 0.25);
+    for (let i = 1; i < out.length; i++) expect(Math.abs(out[i] - out[i - 1])).toBeLessThanOrEqual(0.25 + 1e-6);
+  });
+
+  it('map faces bypass image flattening', () => {
+    const patched = map({ spacing: 'linear', flatLevel: 1.2, flatLevelOverride: true, flatLevelMode: 'auto', edgeEase: 1, stepLimit: 0.05, flatNegative: true });
+    const asMap: DepthData = {
+      ...patched,
+      mapOrtho: { source: 'map', widthM: 10, heightM: 8, reliefM: 4, bboxKm: '0.01 × 0.01 km' },
+    };
+    expect(near(depthToGray(asMap))).toEqual(near(depthToGray(map({ spacing: 'linear' }))));
+  });
+
+  it('never clobbers user-set flat values when filling defaults', () => {
+    const user = {
+      ...defaultDepthSettings(RAW),
+      flatLevel: 3.25,
+      flatLevelMode: 'percentile' as const,
+      flatLevelOverride: true,
+      flatPercentile: 72,
+      edgeEase: 0.4,
+      stepLimit: 0.1,
+      flatNegative: true,
+    };
+    const filled = fillFlatDefaults(user);
+    expect(filled.flatLevel).toBe(3.25);
+    expect(filled.flatLevelMode).toBe('percentile');
+    expect(filled.flatLevelOverride).toBe(true);
+    expect(filled.flatPercentile).toBe(72);
+    expect(filled.edgeEase).toBe(0.4);
+    expect(filled.stepLimit).toBe(0.1);
+    expect(filled.flatNegative).toBe(true);
+    expect(fillFlatDefaults(defaultDepthSettings(RAW)).flatLevelOverride).toBe(false);
+  });
+
+  it('override wins over auto / plateau / percentile rebuilds', () => {
+    const metres = new Float32Array([1, 1, 1, 8, 8, 8, 8, 8]);
+    const d = { minM: 1, maxM: 8, farM: 8 };
+    const locked = resolveFlatLevel(metres, d, { ...defaultDepthSettings({ nearM: 1, farM: 8 }), flatLevel: 2.5, flatLevelOverride: true, flatLevelMode: 'plateau' });
+    expect(locked.levelM).toBe(2.5);
+    expect(locked.overridden).toBe(true);
+    const auto = resolveFlatLevel(metres, d, { ...defaultDepthSettings({ nearM: 1, farM: 8 }), flatLevelMode: 'auto' });
+    expect(auto.overridden).toBe(false);
+    expect(auto.levelM).not.toBe(2.5);
+  });
+
+  it('plateau and percentile pick a far background level', () => {
+    const vals = [1, 1, 1, 2, 7.5, 7.6, 7.7, 7.8, 7.9, 8, 8, 8, 8, 8];
+    const plat = plateauMetres(vals, 1, 8);
+    const perc = percentileMetres(vals, 80);
+    expect(plat).toBeGreaterThan(5);
+    expect(perc).toBeGreaterThan(7);
+    expect(autoFlatLevel(vals, 1, 8, 8)).toBeGreaterThan(5);
+  });
+
+  it('eyedropper samples metres at a click', () => {
+    expect(sampleDepthMetres(map(), 0, 0)).toBeCloseTo(1, 2);
+    expect(sampleDepthMetres(map(), 0.4, 0)).toBeCloseTo(2, 2);
+    expect(sampleDepthMetres(map(), 1, 0)).toBeNull();
+  });
+
+  it('CLI patch sets the override flag for a metre value and Reset-to-auto clears it', () => {
+    const base = defaultDepthSettings(RAW);
+    const locked = applyFlatCliPatch(base, { flatLevel: 3.1, edgeEase: 0.2, stepLimit: 0.05, flatNegative: true });
+    expect(locked.flatLevel).toBe(3.1);
+    expect(locked.flatLevelOverride).toBe(true);
+    expect(locked.edgeEase).toBe(0.2);
+    expect(locked.stepLimit).toBe(0.05);
+    expect(locked.flatNegative).toBe(true);
+    const reset = applyFlatCliPatch(locked, { flatLevel: 'auto' });
+    expect(reset.flatLevelOverride).toBe(false);
+    expect(reset.flatLevelMode).toBe('auto');
+    expect(reset.flatLevel).toBe(3.1);
+    expect(parseFlatLevelFlag('plateau')).toBe('plateau');
+    expect(parseFlatLevelFlag('4.5')).toBe(4.5);
+  });
+});
+
+function heightOfLinear(m: number, near: number, far: number) {
+  return Math.min(1, Math.max(0, (far - m) / (far - near)));
+}

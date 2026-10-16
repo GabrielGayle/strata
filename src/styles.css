@@ -1226,6 +1226,37 @@ canvas.thumb {
 .depth-ctl .pm-row .mono {
   width: 52px;
 }
+/* Background to plate flat: 98.css fieldset, param-panel tokens so it stays readable in every theme */
+.flat-plate-ctl {
+  margin: 6px 0 2px;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--line-soft);
+  color: var(--param-fg);
+  background: var(--param-bg);
+}
+.flat-plate-ctl legend {
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--param-heading);
+}
+.flat-plate-ctl .note {
+  color: var(--param-muted);
+}
+.flat-plate-ctl .pm-row > span:first-child {
+  width: 88px;
+  color: var(--param-muted);
+}
+.flat-plate-ctl .pm-row .mono {
+  width: 56px;
+  color: var(--param-fg);
+}
+.flat-plate-ctl .flat-plate-check {
+  color: var(--param-fg);
+  font-size: 12px;
+}
 
 /* composer */
 .pm.cm {

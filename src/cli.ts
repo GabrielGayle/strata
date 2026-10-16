@@ -7,6 +7,7 @@ import { buildZip } from './core/exporters';
 import { decodeImage, setNodeImageDecoder } from './core/image';
 import { decodeImageNode } from './core/imageNode';
 import { depthToGray } from './core/depth';
+import { applyFlatCliPatch, isMapDepthFace, parse01Flag, parseBoolFlag, parseFlatLevelFlag, type FlatCliPatch } from './core/depthFlat';
 import { createPipeline, type Assets } from './core/pipeline';
 import { defaultRaw, PARAMS, PARAM_MAP, type EvalResult, type ParamKind, type RawValue } from './core/params';
 import { DEFAULT_RATES, type PriceRates } from './core/price';
@@ -78,7 +79,8 @@ const SIZE_HELP = MASTER_SIZE_CLI_CANONICAL.join(', ');
 const USAGE = `Usage:
   npm run cli -- <project.json> --out <dir> [--preset <name>] [--size <id>] [--orientation portrait|landscape]
                  [--image side=path.jpg] [--auto-dimension side=top,front] [--relief-exaggeration <n>]
-                 [--rates rates.json]
+                 [--flat-level auto|plateau|percentile|<metres>] [--edge-ease <0..1>] [--step-limit <0..1>]
+                 [--flat-negative] [--rates rates.json]
                  [--map <title>] [--bbox west,south,east,north]
                  [--map-source auto|scot-dtm|wales-dtm|ni-dtm|ea-dtm|ea-dsm|cop30|terrarium]
                  [--map-res <metres>] [--exaggeration auto|<n>] [--layer-budget equal|quantile|jenks]
@@ -98,6 +100,9 @@ ratio sizes keep the current long edge. Only the outline changes (thickness and 
 --image replaces the side, front or top picture. --rates overrides price-estimate rates.
 --auto-dimension sets plate proportions from metric depth on each face (repeat or comma list:
 side, front, top). Needs depth data on that image. --relief-exaggeration scales relief (default 1).
+--flat-level / --edge-ease / --step-limit / --flat-negative shape IMAGE depth maps only (never map
+faces): flatten everything at or beyond a background level onto a plate, with optional edge falloff
+and a max step between adjacent plates. Map faces stay real metres × exaggeration.
 --map with --bbox fetches open terrain into the top face DepthData (auto picks UK LiDAR where catalogued).
 Regional LiDAR adapters use offline fixtures in tests; production COG/WMS reads are stubbed until later tickets.
 Unimplemented explicit sources fall back to terrarium with a warning. --engrave is stored
@@ -123,6 +128,7 @@ interface Args {
   render?: string;
   autoDimension: DepthFace[];
   reliefExaggeration: number;
+  flat?: FlatCliPatch;
   mapPreset?: string;
   map?: {
     title?: string;
@@ -225,6 +231,14 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--auto-dimension=')) parseAutoDimension(a.slice(17), args.autoDimension);
     else if (a === '--relief-exaggeration') args.reliefExaggeration = Number(take(argv, ++i, a));
     else if (a.startsWith('--relief-exaggeration=')) args.reliefExaggeration = Number(a.slice(22));
+    else if (a === '--flat-level') (args.flat ??= {}).flatLevel = parseFlatLevelFlag(take(argv, ++i, a));
+    else if (a.startsWith('--flat-level=')) (args.flat ??= {}).flatLevel = parseFlatLevelFlag(a.slice(13));
+    else if (a === '--edge-ease') (args.flat ??= {}).edgeEase = parse01Flag(take(argv, ++i, a), '--edge-ease');
+    else if (a.startsWith('--edge-ease=')) (args.flat ??= {}).edgeEase = parse01Flag(a.slice(12), '--edge-ease');
+    else if (a === '--step-limit') (args.flat ??= {}).stepLimit = parse01Flag(take(argv, ++i, a), '--step-limit');
+    else if (a.startsWith('--step-limit=')) (args.flat ??= {}).stepLimit = parse01Flag(a.slice(13), '--step-limit');
+    else if (a === '--flat-negative') (args.flat ??= {}).flatNegative = true;
+    else if (a.startsWith('--flat-negative=')) (args.flat ??= {}).flatNegative = parseBoolFlag(a.slice(16), '--flat-negative');
     else if (a === '--map-preset') args.mapPreset = take(argv, ++i, a);
     else if (a.startsWith('--map-preset=')) args.mapPreset = a.slice(13);
     else if (a === '--map') args.map!.title = take(argv, ++i, a);
@@ -323,6 +337,28 @@ export function applyAutoDimensionCli(project: Project, faces: DepthFace[], reli
     params = applyAutoDimensionPatch(params, preview);
   }
   project.params = params;
+  return issues;
+}
+
+/** Patch IMAGE depth faces only. Map faces keep real metres × exaggeration. */
+export function applyFlatLevelCli(project: Project, patch: FlatCliPatch): CliIssue[] {
+  const issues: CliIssue[] = [];
+  let applied = 0;
+  for (const slot of ['side', 'front', 'top'] as const) {
+    const asset = project.images[slot];
+    if (!asset?.depth) continue;
+    if (isMapDepthFace(asset.depth) || asset.map) {
+      issues.push({ level: 'warning', message: `flat-level skipped on ${slot}: map faces use real metres × exaggeration` });
+      continue;
+    }
+    try {
+      asset.depth = { ...asset.depth, settings: applyFlatCliPatch(asset.depth.settings, patch) };
+      applied++;
+    } catch (e) {
+      issues.push({ level: 'error', message: (e as Error).message });
+    }
+  }
+  if (!applied) issues.push({ level: 'warning', message: 'flat-level: no image depth-map faces to apply' });
   return issues;
 }
 
@@ -513,6 +549,7 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
     if (args.autoDimension.length) {
       issues.push(...applyAutoDimensionCli(project, args.autoDimension, args.reliefExaggeration));
     }
+    if (args.flat) issues.push(...applyFlatLevelCli(project, args.flat));
     let rates = DEFAULT_RATES;
     if (args.rates) rates = readRates(readFileSync(args.rates, 'utf8'));
     if (issues.some((i) => i.level === 'error')) {

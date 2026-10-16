@@ -2,7 +2,8 @@
 // is kept on the image, so these re-shape it live without asking the service again.
 import { useEffect, useRef } from 'react';
 import { useStore } from '../state/store';
-import { DEPTH_RESOLUTIONS, defaultDepthSettings, depthToGray, type DepthData, type DepthSettings } from '../core/depth';
+import { DEPTH_RESOLUTIONS, decodeDepthBuffers, defaultDepthSettings, depthToGray, type DepthData, type DepthSettings } from '../core/depth';
+import { FLAT_LEVEL_MODES, fillFlatDefaults, isFlatLevelMode, isMapDepthFace, resolveFlatLevel, type FlatLevelMode } from '../core/depthFlat';
 import { grayDataUrl } from './surfaces';
 
 type Slot = 'top' | 'front' | 'side';
@@ -100,6 +101,99 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
           Auto
         </button>
       </div>
+      <FlatPlateControls depth={depth} set={set} />
     </div>
+  );
+}
+
+function FlatPlateControls({ depth, set }: { depth: DepthData; set: (patch: Partial<DepthSettings>) => void }) {
+  if (isMapDepthFace(depth)) return null;
+  const s = fillFlatDefaults(depth.settings);
+  const mode: FlatLevelMode = isFlatLevelMode(s.flatLevelMode) ? s.flatLevelMode : 'auto';
+  const { metres } = decodeDepthBuffers(depth);
+  const resolved = resolveFlatLevel(metres, depth, s);
+  const engage = (patch: Partial<DepthSettings>) => set({ flatLevelMode: mode, ...patch });
+  return (
+    <fieldset className="flat-plate-ctl" data-testid="flat-plate" data-override={s.flatLevelOverride ? '1' : '0'}>
+      <legend>Background to plate flat</legend>
+      <div className="note">Everything at or beyond this level becomes one flat plate. Map faces skip this and stay in real metres.</div>
+      <div className="field-row pm-row">
+        <span>Mode</span>
+        <span className="seg pm-seg" role="group" aria-label="Flat level mode">
+          {FLAT_LEVEL_MODES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              className={`btn sm ${mode === m ? 'on' : ''}`}
+              onClick={() => set({ flatLevelMode: m, flatLevelOverride: m === 'eyedropper' ? s.flatLevelOverride === true : false })}
+              title={
+                m === 'auto'
+                  ? 'Pick a background plateau or far percentile'
+                  : m === 'plateau'
+                    ? 'Largest far-distance plateau in the depth map'
+                    : m === 'percentile'
+                      ? 'A percentile of the depth samples'
+                      : 'Click the depth preview to pick a level'
+              }
+            >
+              {m === 'auto' ? 'Auto' : m === 'plateau' ? 'Plateau' : m === 'percentile' ? 'Percentile' : 'Eyedropper'}
+            </button>
+          ))}
+        </span>
+      </div>
+      <MetreSlider
+        label="Flat level"
+        value={resolved.levelM}
+        lo={depth.minM}
+        hi={depth.maxM}
+        onChange={(m) => engage({ flatLevel: m, flatLevelOverride: true })}
+        title="Depth in metres: everything at or beyond this is flattened to a plate"
+      />
+      {mode === 'percentile' && (
+        <Num
+          label="Percentile"
+          value={s.flatPercentile ?? 85}
+          min={50}
+          max={99}
+          step={1}
+          show={`${Math.round(s.flatPercentile ?? 85)}`}
+          onChange={(v) => engage({ flatPercentile: v, flatLevelMode: 'percentile', flatLevelOverride: false })}
+          title="Farther than this percentile of the depth map becomes the plate"
+        />
+      )}
+      <Num
+        label="Edge ease"
+        value={s.edgeEase ?? 0}
+        min={0}
+        max={1}
+        step={0.02}
+        show={s.edgeEase ? `${Math.round((s.edgeEase ?? 0) * 100)}%` : 'off'}
+        onChange={(v) => engage({ edgeEase: v })}
+        title="Smooth falloff into the flat region, as a fraction of the near–far span"
+      />
+      <Num
+        label="Step limit"
+        value={s.stepLimit ?? 0}
+        min={0}
+        max={0.25}
+        step={0.005}
+        show={s.stepLimit ? (s.stepLimit ?? 0).toFixed(2) : 'off'}
+        onChange={(v) => engage({ stepLimit: v })}
+        title="Max height change between adjacent plates (0 = no limit)"
+      />
+      <label className="field-row pm-row" title="Also raise any dips below the plate so nothing sits under the background">
+        <span>Negative</span>
+        <input type="checkbox" checked={s.flatNegative === true} onChange={(e) => engage({ flatNegative: e.target.checked })} aria-label="Flatten the negative side" />
+        <span className="flat-plate-check">Flatten the negative side</span>
+      </label>
+      {mode === 'eyedropper' && <div className="note">Click the depth preview to pick a level.</div>}
+      {s.flatLevelOverride && (
+        <div className="btnrow" style={{ padding: 0 }}>
+          <button type="button" className="btn sm" onClick={() => set({ flatLevelMode: 'auto', flatLevelOverride: false })} title="Clear the locked level and go back to Auto">
+            Reset to auto
+          </button>
+        </div>
+      )}
+    </fieldset>
   );
 }
