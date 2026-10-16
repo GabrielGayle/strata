@@ -1211,6 +1211,8 @@ canvas.thumb {
   gap: 6px;
   padding: 8px 12px 4px;
   border-top: 1px solid var(--line-soft);
+  min-width: 0;
+  max-width: 100%;
 }
 .depth-ctl .note {
   padding: 0 0 2px;
@@ -1221,6 +1223,75 @@ canvas.thumb {
 }
 .depth-ctl .pm-row .mono {
   width: 52px;
+}
+.img-face-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  min-width: 0;
+}
+.img-face-grid > .window.box {
+  min-width: 0;
+  max-width: 100%;
+}
+/* Background to plate flat: 98.css fieldset, param-panel tokens so it stays readable in every theme */
+.flat-plate-ctl {
+  margin: 6px 0 2px;
+  padding: 4px 6px 6px;
+  border: 1px solid var(--line-soft);
+  color: var(--param-fg);
+  background: var(--param-bg);
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+.flat-plate-ctl legend {
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--param-heading);
+  max-width: 100%;
+}
+.flat-plate-ctl .note {
+  color: var(--param-muted);
+}
+.flat-plate-ctl .pm-row {
+  min-width: 0;
+  gap: 4px;
+}
+.flat-plate-ctl .pm-row > * + * {
+  margin-left: 0;
+}
+.flat-plate-ctl .pm-row > span:first-child {
+  width: 64px;
+  color: var(--param-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flat-plate-ctl .pm-row .mono {
+  width: 48px;
+  flex: none;
+  color: var(--param-fg);
+}
+.flat-plate-ctl .pm-row input[type='range'] {
+  min-width: 0;
+  flex: 1;
+  width: 0;
+}
+.flat-plate-ctl .pm-seg {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.flat-plate-ctl .flat-plate-check {
+  color: var(--param-fg);
+  font-size: 12px;
+  white-space: normal;
 }
 
 /* composer */
