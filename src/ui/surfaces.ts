@@ -44,6 +44,22 @@ export async function readImage(maxSide = 640): Promise<{ name: string; dataUrl:
   });
 }
 
+/** Pick any number of images at once. */
+export async function readImages(maxSide = 640): Promise<{ name: string; dataUrl: string }[]> {
+  return new Promise((resolve) => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*';
+    inp.multiple = true;
+    inp.onchange = async () => {
+      const files = [...(inp.files ?? [])];
+      const read = await Promise.all(files.map((f) => readImageFile(f, maxSide)));
+      resolve(read.filter((x): x is { name: string; dataUrl: string } => !!x));
+    };
+    inp.click();
+  });
+}
+
 /** An image file as a project image: downscaled, PNG when it has transparency, else JPEG (null if it is not an image). */
 export function readImageFile(f: File, maxSide = 640): Promise<{ name: string; dataUrl: string } | null> {
   return new Promise((resolve) => {

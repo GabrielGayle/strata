@@ -59,9 +59,11 @@ export default function NodeView({
     return () => ro.disconnect();
   }, []);
 
-  const rows = Math.max(2, Math.floor((size.h - 16) / 150));
-  const pos = (b: Block) => b.node ?? autoPos(comp, b, rows);
   const outX = Math.max(NODE_W * 2 + 80, size.w - OUT_W - 16);
+  // as many columns as fit left of the outputs; extra nodes go further down the board
+  const cols = Math.max(1, Math.floor((outX - 30) / (NODE_W + 48)));
+  const rows = Math.max(2, Math.floor((size.h - 16) / 150), Math.ceil(comp.blocks.filter((b) => !b.node).length / cols));
+  const pos = (b: Block) => b.node ?? autoPos(comp, b, rows);
   const targets: (Surface | 'tray')[] = [...SURFACES, 'tray'];
   const outH = Math.max(120, (size.h - 16 * 5) / 4);
   const outY = (t: Surface | 'tray') => 16 + targets.indexOf(t) * (outH + 16);
