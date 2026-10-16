@@ -12,7 +12,8 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "e2e:live": "LIVE_MAP=1 playwright test -c playwright.live.config.ts",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "screenshots:contrast": "node scripts/capture-contrast-screenshots.mjs"
   },
   "dependencies": {
     "@react-three/drei": "10.7",

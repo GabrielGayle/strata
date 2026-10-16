@@ -1,6 +1,8 @@
 // Window appearance: palettes generated from a few seeds (hue, saturation,
 // light/dark, accent) and applied as CSS custom properties on :root.
 
+import { chromeThemeTokens, fieldThemeTokens, paramPanelThemeTokens } from './fieldContrast';
+
 export interface ThemeSeed {
   id: string;
   name: string;
@@ -53,8 +55,10 @@ export function themeTokens(t: ThemeSeed): Record<string, string> {
   const { hue: h, sat: s, accent } = t;
   const etch = t.etch ?? (t.mode === 'light' ? '#2f5f9e' : '#79a7e6');
   const accentInk = luminance(accent) > 0.45 ? '#141414' : '#ffffff';
+  const paired = { ...chromeThemeTokens(), ...paramPanelThemeTokens(), ...fieldThemeTokens() };
   if (t.mode === 'light') {
     return {
+      ...paired,
       '--bg': hsl(h, s * 0.7, 0.91),
       '--panel': hsl(h, s * 0.65, 0.966),
       '--panel-2': hsl(h, s * 0.7, 0.932),
@@ -76,6 +80,7 @@ export function themeTokens(t: ThemeSeed): Record<string, string> {
     };
   }
   return {
+    ...paired,
     '--bg': hsl(h, s * 0.6, 0.075),
     '--panel': hsl(h, s * 0.55, 0.105),
     '--panel-2': hsl(h, s * 0.55, 0.135),

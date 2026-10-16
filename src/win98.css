@@ -265,11 +265,12 @@ input.search,
 input.name-input,
 select.sel,
 textarea {
-  background-color: #fff;
+  background-color: var(--field-bg);
   border: none;
   border-radius: 0;
   box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
-  color: #222;
+  color: var(--field-fg);
+  color-scheme: light;
   outline: none;
 }
 .numbox:focus,
@@ -285,16 +286,16 @@ select.sel:focus {
   box-shadow: inset -1px -1px #fff, inset 1px 1px #c0281f, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
 }
 .name-input {
-  background-color: #fff;
+  background-color: var(--field-bg);
   border-right: none;
   height: 21px;
   padding: 3px 4px;
 }
 .name-input:focus {
-  background-color: #fff;
+  background-color: var(--field-bg);
 }
 .search {
-  background-color: #fff;
+  background-color: var(--field-bg);
   border-bottom: none;
   margin: 4px 6px;
   width: calc(100% - 12px);
