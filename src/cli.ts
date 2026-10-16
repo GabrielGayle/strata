@@ -11,6 +11,7 @@ import { createPipeline, type Assets } from './core/pipeline';
 import { defaultRaw, PARAMS, PARAM_MAP, type EvalResult, type ParamKind, type RawValue } from './core/params';
 import { DEFAULT_RATES, type PriceRates } from './core/price';
 import { MASTER_SIZE_CLI_CANONICAL } from './core/masterPresets';
+import { applyAutoDimensionPatch, previewAutoDimension, type DepthFace } from './core/autoDimension';
 import { applyProjectPatch, formatPatchDiff, masterSizePatch, parseDesign } from './core/design';
 import { serialize, deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
 
@@ -71,7 +72,8 @@ const SIZE_HELP = MASTER_SIZE_CLI_CANONICAL.join(', ');
 
 const USAGE = `Usage:
   npm run cli -- <project.json> --out <dir> [--preset <name>] [--size <id>] [--orientation portrait|landscape]
-                 [--image side=path.jpg] [--rates rates.json]
+                 [--image side=path.jpg] [--auto-dimension side=top,front] [--relief-exaggeration <n>]
+                 [--rates rates.json]
   npm run cli -- say <project.json> "<instruction>"
   npm run cli -- <project.json> say [--apply] "<instruction>"
   npm run cli -- params
@@ -84,6 +86,8 @@ A project may set "preset"; parameters in the file override the preset. --preset
 ratio sizes keep the current long edge. Only the outline changes (thickness and plate count stay).
 --orientation is portrait (default) or landscape. Applied after the project file and --preset.
 --image replaces the side, front or top picture. --rates overrides price-estimate rates.
+--auto-dimension sets plate proportions from metric depth on each face (repeat or comma list:
+side, front, top). Needs depth data on that image. --relief-exaggeration scales relief (default 1).
 say parses plain-language design instructions (same rules as the in-app Type a design box),
 prints the parameter diff and any unrecognised phrases. --apply writes the updated project JSON to stdout.
 Unknown parameters and formula errors exit 1 and write nothing. Clamped values are warnings.
@@ -102,12 +106,29 @@ interface Args {
   orientation?: string;
   sayText?: string;
   sayApply?: boolean;
+  autoDimension: DepthFace[];
+  reliefExaggeration: number;
+}
+
+function emptyExportArgs(): Pick<Args, 'images' | 'autoDimension' | 'reliefExaggeration'> {
+  return { images: {}, autoDimension: [], reliefExaggeration: 1 };
 }
 
 function take(argv: string[], i: number, flag: string): string {
   const v = argv[i];
   if (v == null || v.startsWith('--')) throw new Error(`missing value for ${flag}`);
   return v;
+}
+
+const FACES = new Set<DepthFace>(['side', 'front', 'top']);
+
+function parseAutoDimension(spec: string, faces: DepthFace[]) {
+  for (const part of spec.split(',').map((s) => s.trim()).filter(Boolean)) {
+    const eq = part.indexOf('=');
+    const face = (eq > 0 ? part.slice(0, eq) : part) as DepthFace;
+    if (!FACES.has(face)) throw new Error(`--auto-dimension: unknown face '${face}' (use side, front or top)`);
+    if (!faces.includes(face)) faces.push(face);
+  }
 }
 
 function parseImage(spec: string, images: Args['images']) {
@@ -134,18 +155,18 @@ function parseSay(argv: string[]): Args {
   }
   const sayText = textParts.join(' ').trim();
   if (!sayText) throw new Error(`missing instruction text\n\n${USAGE}`);
-  return { cmd: 'say', project, sayText, sayApply, images: {} };
+  return { cmd: 'say', project, sayText, sayApply, ...emptyExportArgs() };
 }
 
 function parseArgs(argv: string[]): Args {
   if (argv.length === 0) throw new Error(`missing project file\n\n${USAGE}`);
-  if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') return { cmd: 'help', images: {} };
+  if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') return { cmd: 'help', ...emptyExportArgs() };
   if (argv[0] === 'params' || argv[0] === 'presets') {
     if (argv.length > 1) throw new Error(`unexpected argument '${argv[1]}'`);
-    return { cmd: argv[0], images: {} };
+    return { cmd: argv[0], ...emptyExportArgs() };
   }
   if (argv[0] === 'say' || (argv.length >= 2 && argv[1] === 'say')) return parseSay(argv);
-  const args: Args = { cmd: 'export', project: argv[0], images: {} };
+  const args: Args = { cmd: 'export', project: argv[0], ...emptyExportArgs() };
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--out') args.out = take(argv, ++i, a);
@@ -160,7 +181,11 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--size=')) args.size = a.slice(7);
     else if (a === '--orientation') args.orientation = take(argv, ++i, a);
     else if (a.startsWith('--orientation=')) args.orientation = a.slice(14);
-    else if (a === '--help' || a === '-h') return { cmd: 'help', images: {} };
+    else if (a === '--auto-dimension') parseAutoDimension(take(argv, ++i, a), args.autoDimension);
+    else if (a.startsWith('--auto-dimension=')) parseAutoDimension(a.slice(17), args.autoDimension);
+    else if (a === '--relief-exaggeration') args.reliefExaggeration = Number(take(argv, ++i, a));
+    else if (a.startsWith('--relief-exaggeration=')) args.reliefExaggeration = Number(a.slice(22));
+    else if (a === '--help' || a === '-h') return { cmd: 'help', ...emptyExportArgs() };
     else throw new Error(`unknown argument '${a}'`);
   }
   if (!args.out) throw new Error(`missing --out <dir>\n\n${USAGE}`);
@@ -204,6 +229,26 @@ export function loadProject(text: string, opts: { preset?: string } = {}): { pro
   project.params = params;
   if ((raw.name == null || raw.name === '') && presetName && PRESETS.some((p) => p.name === presetName)) project.name = presetName;
   return { project, issues };
+}
+
+/** Apply --auto-dimension for each face that has metric depth on the project image. */
+export function applyAutoDimensionCli(project: Project, faces: DepthFace[], reliefExaggeration = 1): CliIssue[] {
+  const issues: CliIssue[] = [];
+  let params = project.params;
+  for (const face of faces) {
+    const asset = project.images[face];
+    const preview = previewAutoDimension(face, asset?.depth, params, { reliefExaggeration });
+    if (!preview.ok) {
+      issues.push({ level: 'warning', message: `auto-dimension ${face}: ${preview.reason ?? 'failed'}` });
+      continue;
+    }
+    for (const id of preview.clamped) {
+      issues.push({ level: 'warning', message: `auto-dimension ${face}: ${id} was clamped` });
+    }
+    params = applyAutoDimensionPatch(params, preview);
+  }
+  project.params = params;
+  return issues;
 }
 
 /** Apply --size / --orientation after the project file and preset are merged. */
@@ -390,6 +435,9 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
     } else if (args.orientation) {
       io.stderr('error: --orientation requires --size\n');
       return 1;
+    }
+    if (args.autoDimension.length) {
+      issues.push(...applyAutoDimensionCli(project, args.autoDimension, args.reliefExaggeration));
     }
     let rates = DEFAULT_RATES;
     if (args.rates) rates = readRates(readFileSync(args.rates, 'utf8'));
