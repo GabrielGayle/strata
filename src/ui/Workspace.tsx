@@ -19,6 +19,7 @@ const LOAD: Record<Tab, () => Promise<{ default: ComponentType }>> = {
   image: () => import('./ImageView'),
   shadow: () => import('./ShadowView'),
   graph: () => import('./GraphView'),
+  nodes: () => import('./NodesView'),
   compare: () => import('./CompareView'),
 };
 const VIEWS = Object.fromEntries(Object.entries(LOAD).map(([t, load]) => [t, lazy(load)])) as Record<Tab, LazyExoticComponent<ComponentType>>;

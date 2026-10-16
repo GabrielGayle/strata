@@ -38,31 +38,41 @@ export async function readImage(maxSide = 640): Promise<{ name: string; dataUrl:
     inp.onchange = () => {
       const f = inp.files?.[0];
       if (!f) return resolve(null);
-      // downscale big photos before storing them in the project file
-      const url = URL.createObjectURL(f);
-      const img = new Image();
-      img.onload = () => {
-        const k = Math.min(1, maxSide / Math.max(img.width, img.height));
-        const cv = document.createElement('canvas');
-        cv.width = Math.round(img.width * k);
-        cv.height = Math.round(img.height * k);
-        const ctx = cv.getContext('2d')!;
-        ctx.drawImage(img, 0, 0, cv.width, cv.height);
-        URL.revokeObjectURL(url);
-        // cut-out PNGs keep their transparency (the plates can follow the shape); everything else is stored as a compact JPEG
-        const px = ctx.getImageData(0, 0, cv.width, cv.height).data;
-        let clear = false;
-        for (let i = 3; i < px.length && !clear; i += 4) clear = px[i] < 250;
-        if (clear) return resolve({ name: f.name, dataUrl: cv.toDataURL('image/png') });
-        ctx.globalCompositeOperation = 'destination-over';
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, cv.width, cv.height);
-        resolve({ name: f.name, dataUrl: cv.toDataURL('image/jpeg', 0.9) });
-      };
-      img.onerror = () => resolve(null);
-      img.src = url;
+      readImageFile(f, maxSide).then(resolve);
     };
     inp.click();
+  });
+}
+
+/** An image file as a project image: downscaled, PNG when it has transparency, else JPEG (null if it is not an image). */
+export function readImageFile(f: File, maxSide = 640): Promise<{ name: string; dataUrl: string } | null> {
+  return new Promise((resolve) => {
+    // downscale big photos before storing them in the project file
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * k);
+      cv.height = Math.round(img.height * k);
+      const ctx = cv.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      // cut-out PNGs keep their transparency (the plates can follow the shape); everything else is stored as a compact JPEG
+      const px = ctx.getImageData(0, 0, cv.width, cv.height).data;
+      let clear = false;
+      for (let i = 3; i < px.length && !clear; i += 4) clear = px[i] < 250;
+      if (clear) return resolve({ name: f.name, dataUrl: cv.toDataURL('image/png') });
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      resolve({ name: f.name, dataUrl: cv.toDataURL('image/jpeg', 0.9) });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    img.src = url;
   });
 }
 

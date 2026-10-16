@@ -1,12 +1,13 @@
 import { Fragment, useState } from 'react';
 import { useStore } from '../state/store';
 import { useFullModel, useModel, fmt, fmtInt } from './model';
-import { buildZip, download, modelStl, partDxf, partFiles, pourPlanText, sheetFiles } from '../core/exporters';
+import { buildZip, download, modelStl, openHtml, partDxf, partFiles, pourPlanText, sheetFiles } from '../core/exporters';
+import { buildPackHtml } from '../core/buildPack';
 import { cutListCsv, hardwareCsv, MATERIAL_NAME } from '../core/bom';
 import { serialize } from '../core/project';
 import { zipSync } from 'fflate';
 import type { Issue } from '../core/checks';
-import { PriceEstimate } from './PriceEstimate';
+import { PriceEstimate, loadRates } from './PriceEstimate';
 
 function Section({ title, count, children, open: initial = true }: { title: string; count?: React.ReactNode; children: React.ReactNode; open?: boolean }) {
   const [open, setOpen] = useState(initial);
@@ -209,6 +210,9 @@ export default function Inspector() {
             }}
           >
             Everything (ZIP)
+          </button>
+          <button className="btn" onClick={() => openHtml(buildPackHtml(project, fullModel(), { rates: loadRates() }))} title="Printable plate layout, assembly order, rods and spacers, glue-up and pour plan">
+            Build pack
           </button>
           <button className="btn" onClick={plateZip}>
             Plate DXFs ({model.sliced.parts.length})

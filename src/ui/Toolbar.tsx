@@ -3,11 +3,13 @@ import { useStore } from '../state/store';
 import { PRESETS, deserialize, serialize } from '../core/project';
 import { SOUND_PRESETS } from '../core/soundPresets';
 import { soundDataUrl } from './audio';
-import { buildZip, download } from '../core/exporters';
+import { buildZip, download, openHtml } from '../core/exporters';
+import { buildPackHtml } from '../core/buildPack';
 import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
 import { loadRates } from './PriceEstimate';
 import { randomTheme, themeTokens, THEME_PRESETS, type ThemeSeed } from './theme';
+import { ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -63,9 +65,10 @@ function pickFile(accept: string): Promise<File | null> {
   });
 }
 
-export async function importMeshInto(slot: 'ins' | 'src') {
+/** Load an STL / OBJ as the insert or the source form; picks a file when none is given (e.g. dropped). */
+export async function importMeshInto(slot: 'ins' | 'src', dropped?: File) {
   const st = useStore.getState();
-  const file = await pickFile('.stl,.obj,.step,.stp');
+  const file = dropped ?? (await pickFile('.stl,.obj,.step,.stp'));
   if (!file) return;
   const ext = file.name.split('.').pop()!.toLowerCase();
   if (ext === 'step' || ext === 'stp') {
@@ -83,6 +86,18 @@ export async function importMeshInto(slot: 'ins' | 'src') {
     st.toast(`Imported ${file.name}: ${(bb.max.x - bb.min.x).toFixed(0)} × ${(bb.max.y - bb.min.y).toFixed(0)} × ${(bb.max.z - bb.min.z).toFixed(0)} mm`);
   } catch (e) {
     st.toast(`Could not read ${file.name}: ${(e as Error).message}`);
+  }
+}
+
+/** Replace the working copy with a saved .strata.json (undo brings the old one back). */
+export async function openProjectFile(f: File) {
+  const { replaceProject, toast } = useStore.getState();
+  try {
+    replaceProject(deserialize(await f.text()));
+    unlinkActive();
+    toast(`Opened ${f.name}`);
+  } catch (e) {
+    toast(`Could not open: ${(e as Error).message}`);
   }
 }
 
@@ -202,19 +217,13 @@ export default function Toolbar() {
   const past = useStore((s) => s.past.length);
   const future = useStore((s) => s.future.length);
   const saveStatus = useStore((s) => s.saveStatus);
-  const { undo, redo, setName, randomise, loadPreset, saveVariant, loadVariant, deleteVariant, replaceProject, toast, setUi } = useStore.getState();
+  const { undo, redo, setName, randomise, loadPreset, saveVariant, loadVariant, deleteVariant, toast, setUi } = useStore.getState();
   const fullModel = useFullModel();
 
   const save = () => download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}.strata.json`, serialize(project), 'application/json');
   const open = async () => {
     const f = await pickFile('.json');
-    if (!f) return;
-    try {
-      replaceProject(deserialize(await f.text()));
-      toast(`Opened ${f.name}`);
-    } catch (e) {
-      toast(`Could not open: ${(e as Error).message}`);
-    }
+    if (f) openProjectFile(f);
   };
   const exportZip = () => {
     try {
@@ -224,6 +233,14 @@ export default function Toolbar() {
       toast(`Exported ${model.sliced.parts.length} plate DXFs, ${model.nested.sheets.length} sheets, ${model.moulds.parts.length} mould parts`);
     } catch (e) {
       toast(`Export failed: ${(e as Error).message}`);
+    }
+  };
+
+  const buildPack = () => {
+    try {
+      openHtml(buildPackHtml(project, fullModel(), { rates: loadRates() }));
+    } catch (e) {
+      toast(`Build pack failed: ${(e as Error).message}`);
     }
   };
 
@@ -354,12 +371,14 @@ export default function Toolbar() {
         </Menu>
       </div>
       <div className="group">
+        <ProjectsButton />
         <button className="tb" onClick={open}>
           Open
         </button>
         <button className="tb" onClick={save} title="Save project JSON (parameters + images)">
           Save
         </button>
+        <ShareButton />
         <Menu label="Import">
           {(close) => (
             <>
@@ -380,9 +399,13 @@ export default function Toolbar() {
         <AppearanceMenu />
       </div>
       <div className="spacer" />
+      <button className="tb" onClick={buildPack} title="One printable page for the workshop wall: numbered plate layout, assembly order, rods and spacers, glue-up and pour plan">
+        Build pack
+      </button>
       <button className="tb default" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">
         Export ZIP
       </button>
+      <SharedLinkPrompt />
     </header>
   );
 }
