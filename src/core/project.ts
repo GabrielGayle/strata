@@ -7,6 +7,7 @@ import { cleanMoves, type PartMoves } from './moves';
 import type { SoundSpec } from './sound';
 import { cleanAppearance, type Appearance } from './appearance';
 import type { DepthData } from './depth';
+import { cleanMapSpec, type MapSpec } from './mapSpec';
 import { cleanShadow, type ShadowSpec } from './shadow';
 import { cleanObjects, type CutObject } from './objects';
 import { cleanShelf, type ShelfSpec } from './shelf';
@@ -23,6 +24,8 @@ export interface ImageAsset {
   sound?: SoundSpec;
   /** Set when the image came from "Depth from photo": the metric depth, and how it is turned into grey. */
   depth?: DepthData;
+  /** Set when the image is terrain from the Map function (re-openable spec). */
+  map?: MapSpec;
 }
 
 export interface MeshAsset {
@@ -245,7 +248,8 @@ function readVariants(raw: any): Variant[] {
     const images: Project['images'] = {};
     for (const [slot, a] of Object.entries(v.images)) {
       const asset = a === SAME_IMAGE ? own[slot] : a;
-      if (asset) images[slot as keyof Project['images']] = asset as ImageAsset;
+      const cleaned = cleanImageAsset(asset);
+      if (cleaned) images[slot as keyof Project['images']] = cleaned;
     }
     return { ...v, images, composition: v.composition?.kind === 'composition' ? v.composition : undefined };
   });
@@ -268,6 +272,30 @@ export function applyVariant(p: Project, v: Variant): Project {
   };
 }
 
+function cleanImageAsset(raw: unknown): ImageAsset | undefined {
+  const o = (raw ?? null) as Record<string, unknown> | null;
+  if (!o || typeof o.name !== 'string' || typeof o.dataUrl !== 'string') return undefined;
+  const asset: ImageAsset = { name: o.name, dataUrl: o.dataUrl };
+  if (o.pattern && typeof o.pattern === 'object') asset.pattern = o.pattern as ImageAsset['pattern'];
+  if (o.composed === true) asset.composed = true;
+  if (o.sound && typeof o.sound === 'object') asset.sound = o.sound as ImageAsset['sound'];
+  if (o.depth && typeof o.depth === 'object') asset.depth = o.depth as DepthData;
+  const map = cleanMapSpec(o.map);
+  if (map) asset.map = map;
+  return asset;
+}
+
+function readImages(raw: unknown): Project['images'] {
+  if (!raw || typeof raw !== 'object') return {};
+  const src = raw as Record<string, unknown>;
+  const out: Project['images'] = {};
+  for (const slot of ['side', 'front', 'top'] as const) {
+    const a = cleanImageAsset(src[slot]);
+    if (a) out[slot] = a;
+  }
+  return out;
+}
+
 export function deserialize(text: string): Project {
   const raw = JSON.parse(text);
   if (!raw || raw.format !== 'strata-project') throw new Error('Not a Strata project file');
@@ -280,7 +308,7 @@ export function deserialize(text: string): Project {
     params,
     locks: raw.locks ?? {},
     pour: Array.isArray(raw.pour) ? raw.pour : base.pour,
-    images: raw.images ?? {},
+    images: readImages(raw.images),
     meshes: raw.meshes ?? {},
     variants: readVariants(raw),
     composition: raw.composition?.kind === 'composition' ? raw.composition : undefined,
