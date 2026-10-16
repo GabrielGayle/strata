@@ -10,7 +10,7 @@ import { applyMasterSizeCli, loadProject, main, parseCliArgs, type CliIo } from 
 import { MAP_RENDER_HEIGHT, MAP_RENDER_WIDTH } from '../src/core/mapRender';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
 import { fixtureTileFetcher } from './map-cli-fixtures';
-import { NEASDEN_BBOX } from './map-fixtures';
+import { NEASDEN_BBOX, NEASDEN_FAST_BBOX } from './map-fixtures';
 import { evaluateParams } from '../src/core/params';
 import { buildZip } from '../src/core/exporters';
 import { createPipeline, type Assets } from '../src/core/pipeline';
@@ -307,6 +307,38 @@ describe('cli images', () => {
   });
 });
 
+/** Minimal stack for fast map CLI cases (cop30 fallback, etc.). */
+const MAP_CLI_LIGHT_PROJECT = {
+  format: 'strata-project',
+  version: 1,
+  params: { plateCount: '4', imgTopMode: 'carve', topDepth: '24' },
+};
+
+function mapCop30CliArgs(project: string, out: string, bbox: [number, number, number, number], cache: string): string[] {
+  const [w, s, e, n] = bbox;
+  return [
+    project,
+    '--out',
+    out,
+    '--map',
+    'T',
+    '--bbox',
+    `${w},${s},${e},${n}`,
+    '--map-source',
+    'cop30',
+    '--map-res',
+    '32',
+    '--exaggeration',
+    '1',
+    '--layer-budget',
+    'equal',
+    '--engrave',
+    'off',
+    '--map-cache',
+    cache,
+  ];
+}
+
 // Module-level tile fetcher override is shared; run map CLI cases sequentially.
 describe.sequential('cli map', () => {
   beforeEach(() => setMapTileFetcher(fixtureTileFetcher));
@@ -379,34 +411,13 @@ describe.sequential('cli map', () => {
   it('accepts cop30 and falls back to terrarium with a warning on MapSpec', async () => {
     const dir = scratch();
     const project = join(dir, 'p.json');
-    writeFileSync(project, JSON.stringify({ format: 'strata-project', version: 1 }));
+    writeFileSync(project, JSON.stringify(MAP_CLI_LIGHT_PROJECT));
     const out = join(dir, 'out');
-    const cache = join(dir, 'map-cache');
     const io = capture();
-    const [w, s, e, n] = NEASDEN_BBOX;
-    expect(
-      await main(
-        [
-          project,
-          '--out',
-          out,
-          '--map',
-          'T',
-          '--bbox',
-          `${w},${s},${e},${n}`,
-          '--map-source',
-          'cop30',
-          '--engrave',
-          'off',
-          '--map-cache',
-          cache,
-        ],
-        io,
-      ),
-    ).toBe(0);
+    expect(await main(mapCop30CliArgs(project, out, NEASDEN_FAST_BBOX, join(dir, 'map-cache')), io)).toBe(0);
     const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
     expect(back.images.top?.map?.sourceWarnings?.some((line) => /falling back to terrarium/i.test(line))).toBe(true);
-  });
+  }, 20_000);
 
   it('defaults engraving on when --engrave is omitted', () => {
     const args = parseCliArgs(['p.json', '--out', 'x', '--map', 'T', '--bbox', '0,0,1,1']);
