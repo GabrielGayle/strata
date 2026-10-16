@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { OVERPASS_MIRRORS, STRATA_OVERPASS_UA } from '../core/mapOverpassMirrors';
+import { fetchOverpassDeduped, fetchOverpassWithMirrors } from '../core/mapOverpassFetch';
 
 async function readBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -22,6 +22,14 @@ function queryFromBody(body: Buffer, contentType: string | undefined): string | 
 
 /** POST Overpass queries server-side (avoids browser CORS / forbidden User-Agent). */
 export async function handleOverpassProxyHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if ((req.method ?? 'GET').toUpperCase() === 'OPTIONS') {
+    res.statusCode = 204;
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.end();
+    return;
+  }
   if ((req.method ?? 'GET').toUpperCase() !== 'POST') {
     res.statusCode = 405;
     res.end('POST only');
@@ -34,33 +42,16 @@ export async function handleOverpassProxyHttp(req: IncomingMessage, res: ServerR
     res.end('Missing Overpass query');
     return;
   }
-  const form = `data=${encodeURIComponent(query)}`;
-  let lastErr = 'Overpass mirrors unavailable';
-  for (const endpoint of OVERPASS_MIRRORS) {
-    try {
-      const upstream = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': STRATA_OVERPASS_UA,
-        },
-        body: form,
-      });
-      if (!upstream.ok) {
-        lastErr = `${endpoint} (${upstream.status})`;
-        continue;
-      }
-      const json = await upstream.text();
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.end(json);
-      return;
-    } catch (e) {
-      lastErr = (e as Error).message;
-    }
+  try {
+    const json = await fetchOverpassDeduped(query, (q) => fetchOverpassWithMirrors(q));
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.end(JSON.stringify(json));
+  } catch (e) {
+    res.statusCode = 502;
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.end((e as Error).message);
   }
-  res.statusCode = 502;
-  res.setHeader('Content-Type', 'text/plain');
-  res.end(lastErr);
 }

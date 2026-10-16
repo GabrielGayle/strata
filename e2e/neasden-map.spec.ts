@@ -14,6 +14,9 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
 
   await assertPlateHeightMatchesRelief(page, 0.3);
   await openWorkspaceTab(page, 'Map');
+  await expect(page.locator('.map-view h2')).toBeVisible();
+  await expect(page.locator('#map-model-dtm')).toBeChecked();
+  await expect(page.locator('#map-water-bathy')).toBeChecked();
   await assertMapPreviewNonUniform(page);
 
   await mkdir(join(process.cwd(), 'docs/screenshots'), { recursive: true });

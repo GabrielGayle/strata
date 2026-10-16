@@ -8,6 +8,7 @@ import { osmToEngraveArt, serializeMapEngraveArt } from '../src/core/mapOsmEngra
 import { MAP_ENGRAVE_PRESETS, resolveEngravePreset } from '../src/core/mapEngravePresets';
 import { mapEngravePathsForPart } from '../src/core/mapEngravePlate';
 import { STRATA_OVERPASS_UA } from '../src/core/mapOverpass';
+import { mapNoticesMatching } from '../src/core/mapNotices';
 import { buildMapBundle } from '../src/core/mapPipeline';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
 import { fixtureTileFetcher } from './map-cli-fixtures';
@@ -69,6 +70,48 @@ describe('map OSM engrave (T13)', () => {
       { fetch: fixtureTileFetcher, overpass: async () => overpassFixture },
     );
     expect(bundle.asset.map?.engraveArt?.lines.length).toBeGreaterThan(0);
+    setMapTileFetcher(null);
+  });
+
+  it('does not keep stale OSM engrave art after a failed pass', async () => {
+    setMapTileFetcher(fixtureTileFetcher);
+    const ok = await buildMapBundle(
+      defaultMapSpec({ bbox: NEASDEN_BBOX, source: 'terrarium', engrave: { enabled: true, features: ['roads', 'water'] } }),
+      { fetch: fixtureTileFetcher, overpass: async () => overpassFixture },
+    );
+    expect(ok.asset.map?.engraveArt?.lines.length).toBeGreaterThan(0);
+    const failed = await buildMapBundle(
+      defaultMapSpec({ ...ok.asset.map, bbox: NEASDEN_BBOX, engrave: { enabled: true, features: ['roads', 'water'] } }),
+      {
+        fetch: fixtureTileFetcher,
+        overpass: async () => {
+          throw new Error('Overpass proxy failed (502)');
+        },
+      },
+    );
+    expect(failed.asset.map?.engraveArt).toBeUndefined();
+    expect(mapNoticesMatching(failed.asset.map?.sourceWarnings, /OSM engrave skipped/)).toBe(true);
+    setMapTileFetcher(null);
+  });
+
+  it('clears OSM engrave skipped when a later pass succeeds', async () => {
+    setMapTileFetcher(fixtureTileFetcher);
+    const failed = await buildMapBundle(
+      defaultMapSpec({ bbox: NEASDEN_BBOX, source: 'terrarium', engrave: { enabled: true, features: ['roads', 'water'] } }),
+      {
+        fetch: fixtureTileFetcher,
+        overpass: async () => {
+          throw new Error('Overpass proxy failed (502)');
+        },
+      },
+    );
+    expect(mapNoticesMatching(failed.asset.map?.sourceWarnings, /OSM engrave skipped/)).toBe(true);
+    const ok = await buildMapBundle(
+      defaultMapSpec({ ...failed.asset.map, bbox: NEASDEN_BBOX, engrave: { enabled: true, features: ['roads', 'water'] } }),
+      { fetch: fixtureTileFetcher, overpass: async () => overpassFixture },
+    );
+    expect(ok.asset.map?.engraveArt?.lines.length).toBeGreaterThan(0);
+    expect(mapNoticesMatching(ok.asset.map?.sourceWarnings, /OSM engrave skipped/)).toBe(false);
     setMapTileFetcher(null);
   });
 

@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { openApp, openWorkspaceTab, pickNeasdenPreset, setThemePreset, waitForViewportRelief } from './map-helpers';
@@ -25,7 +25,15 @@ test('capture live map UI screenshots', async ({ page }) => {
     await page.locator('.main').screenshot({ path: join(shotDir, `${prefix}-3d.png`) });
     await openWorkspaceTab(page, 'Map');
     await page.locator('.map-view-layout').waitFor({ state: 'visible' });
+    await expect(page.locator('#map-model-dtm')).toBeChecked();
+    await expect(page.locator('#map-water-bathy')).toBeChecked();
     await page.waitForTimeout(2000);
     await page.locator('.map-view-layout').screenshot({ path: join(shotDir, `${prefix}-map-preview.png`) });
+    await page.locator('.map-view fieldset', { hasText: 'Ground model' }).screenshot({
+      path: join(shotDir, `${prefix}-ground-model.png`),
+    });
+    await page.locator('.map-section', { hasText: 'Water & bathymetry' }).screenshot({
+      path: join(shotDir, `${prefix}-water.png`),
+    });
   }
 });

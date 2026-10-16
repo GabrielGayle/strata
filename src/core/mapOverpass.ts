@@ -1,6 +1,6 @@
 // Overpass API client with polite User-Agent and on-disk cache (offline tests use fixtures).
 import { cachedMapJson, readMapCacheJson, writeMapCacheJson } from './mapCache';
-import { OVERPASS_MIRRORS, STRATA_OVERPASS_UA } from './mapOverpassMirrors';
+import { fetchOverpassDeduped, fetchOverpassWithMirrors, STRATA_OVERPASS_UA } from './mapOverpassFetch';
 
 export const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 export { STRATA_OVERPASS_UA };
@@ -21,36 +21,37 @@ export function writeOverpassCache(cacheDir: string, query: string, data: unknow
   writeMapCacheJson(cacheDir, 'overpass', query, data);
 }
 
-async function postOverpass(endpoint: string, query: string, headers: Record<string, string>): Promise<unknown> {
-  const res = await fetch(endpoint, {
+async function postBrowserProxy(query: string): Promise<unknown> {
+  const res = await fetch('/api/overpass', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...headers },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `data=${encodeURIComponent(query)}`,
   });
-  if (!res.ok) throw new Error(`Overpass failed (${res.status}) at ${endpoint}`);
+  if (!res.ok) throw new Error(`Overpass proxy failed (${res.status})`);
   return res.json();
 }
 
-/** Browser: local Vite/Vercel proxy. Node CLI: mirror list with User-Agent. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Browser: local Vite/Vercel proxy (server already walks mirrors). Node CLI: mirror list. */
 export async function defaultOverpassFetch(query: string): Promise<unknown> {
   if (typeof window !== 'undefined') {
-    const res = await fetch('/api/overpass', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`,
+    return fetchOverpassDeduped(query, async (q) => {
+      let last: Error | null = null;
+      for (let i = 0; i < 3; i++) {
+        if (i) await sleep(400 * 2 ** (i - 1));
+        try {
+          return await postBrowserProxy(q);
+        } catch (e) {
+          last = e as Error;
+        }
+      }
+      throw last ?? new Error('Overpass proxy failed');
     });
-    if (!res.ok) throw new Error(`Overpass proxy failed (${res.status})`);
-    return res.json();
   }
-  let last: Error | null = null;
-  for (const endpoint of OVERPASS_MIRRORS) {
-    try {
-      return await postOverpass(endpoint, query, { 'User-Agent': STRATA_OVERPASS_UA });
-    } catch (e) {
-      last = e as Error;
-    }
-  }
-  throw last ?? new Error('Overpass unavailable');
+  return fetchOverpassDeduped(query, (q) => fetchOverpassWithMirrors(q));
 }
 
 export function overpassQueryForBbox(bbox: [number, number, number, number], features: string[] = []): string {

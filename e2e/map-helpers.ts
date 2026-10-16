@@ -37,6 +37,12 @@ export async function pickNeasdenPreset(page: Page) {
   await waitForMapReady(page);
 }
 
+/** Map tab preset row — also auto-builds. */
+export async function clickMapPreset(page: Page, label: string) {
+  await openWorkspaceTab(page, 'Map');
+  await page.locator('.map-preset-row').getByRole('button', { name: label, exact: true }).click();
+}
+
 export async function applyNeasdenDesign(page: Page) {
   // Blur the parameter filter (it steals `/` if focused) then open the design box.
   await page.locator('.app.window').click({ position: { x: 8, y: 8 } });

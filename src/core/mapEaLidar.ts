@@ -3,12 +3,13 @@ import type { Float32Grid } from './mapGrid';
 import { cachedMapBytes } from './mapCache';
 import type { MapSource, MapSpec } from './mapSpec';
 import { fetchEaBytes } from './mapEaFetch';
-import { eaWcsUrlForSpec } from './mapEaWcs';
+import { EA_DSM_WCS_BASE, EA_DTM_WCS_BASE, eaWcsUrlForSpec } from './mapEaWcs';
 import { parseFloat32Geotiff } from './mapGeotiff';
 
-/** Defra Data Services Platform — LiDAR composite DTM 1 m (OGL v3). */
-export const EA_LIDAR_DTM_CATALOG =
-  'https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m';
+/** Live Environment Agency WCS 2.0.1 — LiDAR composite DTM 1 m (OGL v3). */
+export const EA_LIDAR_DTM_CATALOG = EA_DTM_WCS_BASE;
+/** Live Environment Agency WCS 2.0.1 — LiDAR composite DSM 1 m (OGL v3). */
+export const EA_LIDAR_DSM_CATALOG = EA_DSM_WCS_BASE;
 
 export type EaGridLoader = (source: MapSource, spec: Pick<MapSpec, 'bbox'>) => Promise<Float32Grid | null>;
 

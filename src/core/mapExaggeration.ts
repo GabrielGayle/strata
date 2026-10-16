@@ -55,11 +55,17 @@ export function resolveExaggerationFactor(
   }
   const { widthM } = gridMetricWidthHeight(grid);
   const mapWidthM = Math.max(widthM, 1);
+  const reliefM = Math.max(1, reliefMetres(grid));
+  const stackHeightMm = stack.plateCount * stack.thicknessMm;
   const factor = computeAutoExaggeration({
-    reliefM: Math.max(1, reliefMetres(grid)),
-    stackHeightMm: stack.plateCount * stack.thicknessMm,
+    reliefM,
+    stackHeightMm,
     mapWidthM,
     masterWidthMm: stack.masterWidthMm,
   });
-  return { factor, readout: exaggerationReadout(factor), auto: true };
+  // ×18–21 is the A3 / 30×3 mm plan number (420 mm, ~35 m, ~3.25 km). Default
+  // Vermilion 40 is 800 mm × 40×3 mm — the same formula lands near ×11 for
+  // live EA 1 m relief on the full Neasden bbox.
+  const readout = `${exaggerationReadout(factor)} · ${Math.round(reliefM)} m relief → ${Math.round(stackHeightMm)} mm stack on ${Math.round(stack.masterWidthMm)} mm`;
+  return { factor, readout, auto: true };
 }

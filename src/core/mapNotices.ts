@@ -36,3 +36,11 @@ export function normalizeSourceNotices(raw: unknown): MapSourceNotice[] | undefi
 export function mapNoticesMatching(notices: MapSourceNotice[] | undefined, re: RegExp, severity?: 'info' | 'warn'): boolean {
   return (notices ?? []).some((n) => re.test(n.message) && (severity == null || n.severity === severity));
 }
+
+const ENGRAVE_SKIP = /OSM engrave skipped/i;
+
+/** Drop a stale engrave-skip warning when this pass produced linework (or a later pass succeeded). */
+export function noticesWithoutStaleEngraveSkip(notices: MapSourceNotice[], hasEngraveArt: boolean): MapSourceNotice[] {
+  if (!hasEngraveArt) return notices;
+  return notices.filter((n) => !ENGRAVE_SKIP.test(n.message));
+}
