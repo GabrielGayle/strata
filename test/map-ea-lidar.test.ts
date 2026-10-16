@@ -34,7 +34,7 @@ describe('map EA LiDAR (T6)', () => {
       },
     );
     expect(bundle.asset.map?.resolvedSource).toBe('ea-dtm');
-    expect(bundle.asset.map?.sourceWarnings?.some((w) => /falling back to terrarium/i.test(w))).toBeFalsy();
+    expect(bundle.asset.map?.sourceWarnings?.some((w) => /falling back to terrarium/i.test(w.message))).toBeFalsy();
     setMapTileFetcher(null);
   });
 

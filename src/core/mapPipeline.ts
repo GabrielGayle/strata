@@ -28,6 +28,7 @@ import { serializeMapEngraveArt } from './mapOsmEngrave';
 import type { OverpassFetcher } from './mapOverpass';
 import type { MapSource } from './mapSpec';
 import { mapBuildKey } from './mapBuildKey';
+import { mapInfo, mapWarn, type MapSourceNotice } from './mapNotices';
 import type { DepthData } from './depth';
 import type { ImageAsset, Project } from './project';
 import type { RawValue } from './params';
@@ -89,7 +90,7 @@ export interface MapBuildResult {
 async function fetchElevationGrid(
   spec: MapSpec,
   effective: MapSource,
-  warnings: string[],
+  notices: MapSourceNotice[],
   opts: BuildMapImageOptions,
 ): Promise<Awaited<ReturnType<typeof fetchTerrariumGrid>>> {
   const fetch: TileFetcher = async (url) => {
@@ -104,15 +105,15 @@ async function fetchElevationGrid(
   if (effective === 'cop30') {
     const grid = await fetchCop30Grid(spec, { loader: opts.cop30Loader });
     if (grid) return grid;
-    warnings.push('cop30 COG tile unavailable for this bbox; falling back to terrarium (~30 m).');
+    notices.push(mapWarn('cop30 COG tile unavailable for this bbox; falling back to terrarium (~30 m).'));
     return fetchTerrariumGrid(spec, { fetch });
   }
 
   if (isRegionalLidarSource(effective)) {
     const grid = await fetchRegionalLidarGrid(effective, spec, opts.regionalLoader);
     if (grid) return grid;
-    warnings.push(
-      `${effective} LiDAR not available for this bbox (no tile coverage or adapter offline); falling back to terrarium (~30 m).`,
+    notices.push(
+      mapWarn(`${effective} LiDAR not available for this bbox (no tile coverage or adapter offline); falling back to terrarium (~30 m).`),
     );
     return fetchTerrariumGrid(spec, { fetch });
   }
@@ -120,12 +121,12 @@ async function fetchElevationGrid(
   if (isEaLidarSource(effective)) {
     const grid = await fetchEaLidarGrid(effective, spec, { loader: opts.eaLoader });
     if (grid) return grid;
-    warnings.push(`${effective} LiDAR not available for this bbox; falling back to terrarium (~30 m).`);
+    notices.push(mapWarn(`${effective} LiDAR not available for this bbox; falling back to terrarium (~30 m).`));
     return fetchTerrariumGrid(spec, { fetch });
   }
 
   if (STUB_SOURCES.has(effective)) {
-    warnings.push(`${effective} adapter not shipped yet; falling back to terrarium (~30 m).`);
+    notices.push(mapWarn(`${effective} adapter not shipped yet; falling back to terrarium (~30 m).`));
     return fetchTerrariumGrid(spec, { fetch });
   }
 
@@ -145,17 +146,17 @@ export async function buildMapTopAsset(spec: MapSpec, opts: BuildMapImageOptions
 
 export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions = {}): Promise<MapBuildResult> {
   const resolved = resolveMapSource(spec);
-  const warnings = [...resolved.warnings];
+  const notices: MapSourceNotice[] = resolved.warnings.map(mapWarn);
   const faceW = opts.stack?.masterWidthMm ?? 520;
   const commWarn = spec.commemorativeText ? commemorativeFitWarning(spec.commemorativeText, faceW) : null;
-  if (commWarn) warnings.push(commWarn);
+  if (commWarn) notices.push(mapWarn(commWarn));
   const fetchSource = resolveElevationSourceForModel(resolved.effective, spec.model);
-  const elev = await fetchElevationGrid(spec, fetchSource, warnings, opts);
+  const elev = await fetchElevationGrid(spec, fetchSource, notices, opts);
   const resampleSpec = { ...spec, model: spec.model === 'dtm+buildings' ? 'dtm' : spec.model };
   let metric = reprojectResample(elev, resampleSpec);
   let dtmMetric = metric;
   if (spec.model === 'dsm' && fetchSource !== resolved.effective) {
-    const dtmElev = await fetchElevationGrid(spec, resolved.effective, warnings, opts);
+    const dtmElev = await fetchElevationGrid(spec, resolved.effective, notices, opts);
     dtmMetric = reprojectResample(dtmElev, { ...spec, model: 'dtm' });
   }
   if (spec.model === 'dtm+buildings') {
@@ -170,12 +171,14 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       const fps = footprintsFromOverpass(osm as Parameters<typeof footprintsFromOverpass>[0], spec, metric.crs ?? 'EPSG:27700');
       if (fps.length) metric = applyBuildingFootprints(dtmMetric, fps);
     } catch (e) {
-      warnings.push(`OSM buildings skipped: ${(e as Error).message}`);
+      notices.push(mapWarn(`OSM buildings skipped: ${(e as Error).message}`));
     }
   }
   if (spec.model !== 'dtm') {
     metric = clampTowerRise(metric, dtmMetric, buildingClampMetres(spec));
   }
+  /** Relief for auto exaggeration uses bare terrain before water flattening (flat water shrinks p98−p2). */
+  const metricForExaggeration = metric;
   let bathyApplied = false;
   if (spec.water === 'bathy') {
     const soundings = loadWelshHarpSampleSoundings(spec.bbox);
@@ -184,7 +187,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       metric = applySoundingsToGrid(metric, soundings, surface);
       bathyApplied = true;
     } else {
-      warnings.push('No bathymetry for this bbox; falling back to flat water surface.');
+      notices.push(mapInfo('No bathymetry for this bbox; falling back to flat water surface.'));
     }
   }
   if (spec.water === 'flat' || spec.water === 'raw' || (spec.water === 'bathy' && !bathyApplied)) {
@@ -201,10 +204,11 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
         metric = applyFlatWater(metric, rings, surface);
       }
     } catch (e) {
-      warnings.push(`Water flatten skipped: ${(e as Error).message}`);
+      notices.push(mapWarn(`Water flatten skipped: ${(e as Error).message}`));
     }
   }
   const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
+  const { factor, readout } = resolveExaggerationFactor(spec, metricForExaggeration, stack);
   const budgetMode = spec.layerBudget ?? stack.layerBudget ?? 'jenks';
   const budget = computeLayerBreaks(metric, stack.plateCount, budgetMode);
   metric = applyLayerBudget(metric, budget.breaksM);
@@ -213,7 +217,6 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     pixelSizeM: Math.abs(metric.transform.pixelW),
   });
   metric = simplified.grid;
-  const { factor, readout } = resolveExaggerationFactor(spec, metric, stack);
   const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384, bbox: spec.bbox });
   let engraveArt: MapSpec['engraveArt'];
   if (spec.engrave?.enabled) {
@@ -225,7 +228,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       });
       if (art) engraveArt = serializeMapEngraveArt(art);
     } catch (e) {
-      warnings.push(`OSM engrave skipped: ${(e as Error).message}`);
+      notices.push(mapWarn(`OSM engrave skipped: ${(e as Error).message}`));
     }
   }
   const stored: MapSpec = {
@@ -240,7 +243,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     exaggeration: spec.exaggeration === 'auto' ? 'auto' : factor,
     simplifyLostFeatures: simplified.lostFeatures,
     resolvedSource: resolved.effective,
-    sourceWarnings: warnings.length ? warnings : undefined,
+    sourceWarnings: notices.length ? notices : undefined,
     ...(engraveArt ? { engraveArt } : {}),
     attribution: mergeAttribution(spec, resolved.effective).concat(
       engraveArt ? ['Map features © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), ODbL'] : [],

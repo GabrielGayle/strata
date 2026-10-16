@@ -1,8 +1,9 @@
 // Overpass API client with polite User-Agent and on-disk cache (offline tests use fixtures).
 import { cachedMapJson, readMapCacheJson, writeMapCacheJson } from './mapCache';
+import { OVERPASS_MIRRORS, STRATA_OVERPASS_UA } from './mapOverpassMirrors';
 
 export const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
-export const STRATA_OVERPASS_UA = 'StrataMap/0.1 (+https://github.com/GabrielGayle/strata; map engraving)';
+export { STRATA_OVERPASS_UA };
 
 export type OverpassFetcher = (query: string) => Promise<unknown>;
 
@@ -20,14 +21,36 @@ export function writeOverpassCache(cacheDir: string, query: string, data: unknow
   writeMapCacheJson(cacheDir, 'overpass', query, data);
 }
 
-export async function defaultOverpassFetch(query: string): Promise<unknown> {
-  const res = await fetch(OVERPASS_URL, {
+async function postOverpass(endpoint: string, query: string, headers: Record<string, string>): Promise<unknown> {
+  const res = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': STRATA_OVERPASS_UA },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...headers },
     body: `data=${encodeURIComponent(query)}`,
   });
-  if (!res.ok) throw new Error(`Overpass failed (${res.status})`);
+  if (!res.ok) throw new Error(`Overpass failed (${res.status}) at ${endpoint}`);
   return res.json();
+}
+
+/** Browser: local Vite/Vercel proxy. Node CLI: mirror list with User-Agent. */
+export async function defaultOverpassFetch(query: string): Promise<unknown> {
+  if (typeof window !== 'undefined') {
+    const res = await fetch('/api/overpass', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(query)}`,
+    });
+    if (!res.ok) throw new Error(`Overpass proxy failed (${res.status})`);
+    return res.json();
+  }
+  let last: Error | null = null;
+  for (const endpoint of OVERPASS_MIRRORS) {
+    try {
+      return await postOverpass(endpoint, query, { 'User-Agent': STRATA_OVERPASS_UA });
+    } catch (e) {
+      last = e as Error;
+    }
+  }
+  throw last ?? new Error('Overpass unavailable');
 }
 
 export function overpassQueryForBbox(bbox: [number, number, number, number], features: string[] = []): string {
