@@ -254,3 +254,39 @@ export function runBetween(order: string[], a: string, b: string): string[] {
   if (i < 0 || j < 0) return [b];
   return order.slice(Math.min(i, j), Math.max(i, j) + 1);
 }
+
+const RAINBOW_NAMES = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Violet'];
+
+/** A rainbow hue as a hex colour, t from 0 (red) to 1 (violet). Anodising takes saturated, slightly deep colours. */
+export function rainbowColor(t: number): string {
+  const h = t * 280;
+  const s = 0.72;
+  const l = 0.48;
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const c = l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(c * 255).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+/**
+ * Anodised aluminium in rainbow bands: n buckets, red to violet, each taking
+ * an equal run of the plates in order. Replaces any rainbow made before;
+ * other buckets keep their plates unless the rainbow takes them.
+ */
+export function rainbowBuckets(app: Appearance, keys: string[], n: number): Appearance {
+  n = Math.max(2, Math.min(24, Math.round(n)));
+  let next: Appearance = app;
+  for (const b of app.buckets) if (b.id.startsWith('rb')) next = removeBucket(next, b.id);
+  const buckets: Bucket[] = Array.from({ length: n }, (_, i) => ({
+    id: `rb${i + 1}`,
+    name: n === 7 ? RAINBOW_NAMES[i] : `Rainbow ${i + 1}`,
+    material: 'aluminium',
+    finish: 'anodised',
+    color: rainbowColor(n === 1 ? 0 : i / (n - 1)),
+  }));
+  const assign = { ...next.assign };
+  keys.forEach((k, i) => (assign[k] = buckets[Math.min(n - 1, Math.floor((i * n) / keys.length))].id));
+  return { ...next, buckets: [...next.buckets, ...buckets], assign };
+}

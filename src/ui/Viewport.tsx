@@ -9,6 +9,7 @@ import Scene, { modelBounds } from './Scene';
 import { gizmoIsBusy, moveTarget, useGizmoClearance } from './PlateGizmo';
 import { useModel, fmt } from './model';
 import AppearancePanel, { paintClick } from './AppearancePanel';
+import ObjectsPanel from './ObjectsPanel';
 import { SunBar } from './SunStudy';
 import { MeasurePanel, MeasureTool, useMeasure } from './Measure';
 
@@ -86,6 +87,7 @@ export default function Viewport() {
   );
   const bucketed = Object.keys(useStore((s) => s.project.appearance?.assign) ?? {}).length;
   const movedCount = Object.keys(useStore((s) => s.project.moves) ?? {}).length;
+  const objectCount = useStore((s) => s.project.objects?.length ?? 0);
   useEffect(() => {
     if (!ui.moveMode) return;
     const onKey = (e: KeyboardEvent) => {
@@ -111,7 +113,7 @@ export default function Viewport() {
       const k = e.key.toLowerCase();
       const on = useStore.getState().ui.measureMode;
       const ms = useMeasure.getState();
-      if (k === 'm') setUi({ measureMode: !on, moveMode: false, paintMode: false });
+      if (k === 'm') setUi({ measureMode: !on, moveMode: false, paintMode: false, objectsMode: false });
       else if (k === 'escape' && on) {
         if (ms.pending) ms.setPending(null);
         else setUi({ measureMode: false });
@@ -146,13 +148,16 @@ export default function Viewport() {
         </button>
       </div>
       <div className="overlay tr col">
-        <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false, measureMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
+        <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false, objectsMode: false, measureMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
           Materials{bucketed ? ` (${bucketed})` : ''}
         </button>
-        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false, measureMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
+        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false, objectsMode: false, measureMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
           Move plates{movedCount ? ` (${movedCount})` : ''}
         </button>
-        <button className={`btn sm ${ui.measureMode ? 'on' : ''}`} onClick={() => setUi({ measureMode: !ui.measureMode, moveMode: false, paintMode: false })} title="Measuring tape: point to point, edge to edge, point to edge or face (M; Esc leaves)">
+        <button className={`btn sm ${ui.objectsMode ? 'on' : ''}`} onClick={() => setUi({ objectsMode: !ui.objectsMode, paintMode: false, moveMode: false, measureMode: false })} title="Place postcards, boxes and other objects; each is cut out of the plates it passes through">
+          Objects{objectCount ? ` (${objectCount})` : ''}
+        </button>
+        <button className={`btn sm ${ui.measureMode ? 'on' : ''}`} onClick={() => setUi({ measureMode: !ui.measureMode, moveMode: false, paintMode: false, objectsMode: false })} title="Measuring tape: point to point, edge to edge, point to edge or face (M; Esc leaves)">
           Measure
         </button>
         <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
@@ -189,6 +194,7 @@ export default function Viewport() {
       </div>
       {ui.moveMode && !ui.paintMode && !ui.measureMode && <MovePanel />}
       {ui.paintMode && !ui.measureMode && <AppearancePanel />}
+      {ui.objectsMode && !ui.measureMode && <ObjectsPanel />}
       {ui.measureMode && <MeasurePanel />}
       {v.sunOn && <SunBar model={model} />}
       {v.pourView !== 'plain' && model.pour.rows.length > 0 && (

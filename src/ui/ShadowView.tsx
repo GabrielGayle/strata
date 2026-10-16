@@ -1,6 +1,6 @@
 // The shadow kitchen: pictures and the times they appear, a live view of the
 // wall through the day, and how well each frame comes out of the carved plates.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import { useAssets } from '../state/assets';
@@ -9,8 +9,10 @@ import { bestTry, fitLayouts, tryLayout, type FitTry } from '../core/shadowFit';
 import { frameMatch, renderWall, windowDays, type ShadowFrame } from '../core/shadow';
 import { clock, shiftSite, siteOf, sunTimes } from '../core/sun';
 import { SunBar } from './SunStudy';
-import VideoPicker from './VideoPicker';
 import { installCardHtml } from '../core/installCard';
+
+// only needed once a video is chosen
+const VideoPicker = lazy(() => import('./VideoPicker'));
 
 /** Read a picture file, shrunk so the longest side is at most `max` px (keeps the project small). */
 function readPicture(file: File, max = 400): Promise<string> {
@@ -357,6 +359,7 @@ export default function ShadowView() {
             </span>
           </div>
           {video && (
+            <Suspense fallback={<p className="note">Opening the video…</p>}>
             <VideoPicker
               key={video.name + video.size}
               file={video}
@@ -366,6 +369,7 @@ export default function ShadowView() {
                 setVideo(null);
               }}
             />
+            </Suspense>
           )}
           {rep && !needs && <FitPanel />}
           {!frames.length && (

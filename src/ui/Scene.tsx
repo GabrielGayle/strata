@@ -148,6 +148,60 @@ function Insert({ model }: { model: Model }) {
   return <mesh geometry={ins.form.geometry} material={mat} castShadow receiveShadow userData={{ measure: 'insert' }} />;
 }
 
+/** Objects placed among the plates: postcards read as paper, the rest as see-through cutters. */
+function PlacedObjects({ model }: { model: Model }) {
+  const sel = useStore((s) => (s.ui.objectsMode ? s.ui.objectSel : null));
+  const hl = useStore((s) => s.ui.highlight);
+  const setUi = useStore((s) => s.setUi);
+  const accent = cssVar('--accent', '#d4521c');
+  return (
+    <>
+      {model.objects.map(({ object: o, geometry }) => {
+        const shelf = o.seat !== undefined || o.id.startsWith('shelf');
+        const lit = hl === 'notches' || (hl === 'cards' && shelf) || (hl === 'objects' && !shelf);
+        const picked = o.id === sel || lit;
+        const card = o.kind === 'card';
+        return (
+          <mesh
+            key={o.id}
+            geometry={geometry}
+            userData={{ measure: o.id }}
+            castShadow={card}
+            onClick={(e) => {
+              if (!useStore.getState().ui.objectsMode) return;
+              e.stopPropagation();
+              setUi({ objectSel: o.id });
+            }}
+          >
+            <meshStandardMaterial color={card ? '#f3eee2' : '#7fb3d5'} roughness={0.85} transparent={!card} opacity={card ? 1 : 0.35} depthWrite={card} emissive={lit ? accent : '#000000'} emissiveIntensity={lit ? 0.35 : 0} />
+            <Edges color={picked ? accent : card ? '#8a8378' : '#3d6f91'} threshold={20} />
+          </mesh>
+        );
+      })}
+      <OriginMarker model={model} />
+    </>
+  );
+}
+
+/** The world origin's axes: shown while placing objects or pointing at the origin node. */
+function OriginMarker({ model }: { model: Model }) {
+  const hl = useStore((s) => s.ui.highlight);
+  const placing = useStore((s) => s.ui.objectsMode);
+  if (!placing && hl !== 'origin') return null;
+  const big = hl === 'origin';
+  const len = big ? 220 : 120;
+  return (
+    // drawn over everything, so it shows even inside the concrete
+    <group position={model.origin.p} rotation={[0, model.origin.turn, 0]}>
+      <axesHelper args={[len]} renderOrder={999} onUpdate={(a) => ((a.material as THREE.Material).depthTest = false)} />
+      <mesh renderOrder={999}>
+        <sphereGeometry args={[big ? 12 : 7, 20, 12]} />
+        <meshBasicMaterial color={cssVar('--accent', '#d4521c')} depthTest={false} />
+      </mesh>
+    </group>
+  );
+}
+
 function explodeOffset(mp: MouldPart, center: THREE.Vector2, model: Model): THREE.Vector3 {
   const bb = shapeBBox(mp.shape);
   const cx = (bb.minX + bb.maxX) / 2 - center.x;
@@ -287,6 +341,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   // re-read theme colours whenever the window appearance changes
   const theme = useStore((st) => st.ui.theme);
   const selMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: cssVar('--accent', '#d4521c'), metalness: 0.2, roughness: 0.5, emissive: new THREE.Color('#5a1a00') }), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
+  const platesLit = useStore((s) => s.ui.highlight === 'plates');
   useEffect(() => () => materials.forEach((m) => m.dispose()), [materials]);
   const gridA = useMemo(() => cssVar('--grid-a', '#cfcbc2'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const gridB = useMemo(() => cssVar('--grid-b', '#a9a49a'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -301,7 +356,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       <Grid args={[20000, 20000]} cellSize={10} sectionSize={100} cellColor={gridA} sectionColor={gridB} cellThickness={0.6} sectionThickness={1} fadeDistance={7000} fadeStrength={1.5} infiniteGrid position={[0, -0.05, 0]} />
       {v.baseOn && <Base model={model} xray={opts.xray} />}
       {model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
-        <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={!opts.onPaint && opts.selected === p.id} onSelect={opts.onSelect} onPaint={opts.onPaint} />
+        <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} />
       ))}
       {/* the plate under the gizmo, carried rigidly while it is dragged */}
       <group ref={preview} matrixAutoUpdate={false}>
@@ -314,6 +369,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       <Etches parts={model.sliced.parts} />
       <Rods model={model} />
       <Insert model={model} />
+      <PlacedObjects model={model} />
       {opts.showSource && model.source && v.stackSource === 'form' && (
         <mesh geometry={model.source.form.geometry}>
           <meshBasicMaterial color={cssVar('--info', '#2f5f9e')} wireframe transparent opacity={0.12} />

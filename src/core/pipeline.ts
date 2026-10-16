@@ -17,6 +17,10 @@ import { buildBom, type Bom } from './bom';
 import { share } from './memo';
 import { carveShadow, type ShadowReport } from './shadow';
 import type { Project } from './project';
+import { buildObjects, type ObjectBuild } from './objects';
+import { shelfCards } from './shelf';
+import { originFrame, toWorld, type Frame } from './origin';
+import { baseTop } from './slicer';
 
 export interface Assets {
   sideImg: Gray | null;
@@ -52,6 +56,10 @@ export interface Model {
   topImg: Gray | null;
   hf: HeightField | null;
   sliced: SliceResult;
+  /** Placed objects that cut the plates (postcards, boxes…). */
+  objects: ObjectBuild[];
+  /** The world origin objects and the shelf are measured from. */
+  origin: Frame;
   /** Shadow carving: the wall, carved plate grids and how well each frame comes out (null when off). */
   shadow: ShadowReport | null;
   issues: Issue[];
@@ -194,8 +202,14 @@ export function createFrontPipeline() {
     const mats = materialKey(project.appearance, String(v.plateMaterial));
     const materialFor = (key: string) => materialOf(project.appearance, key, String(v.plateMaterial));
     // tuned plates ring by their own metal, so only then does the metal change the cut
-    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : ''], () =>
-      share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg, topMask, moves: project.moves, materialFor })),
+    const shelf = stage('Postcard shelf', [project.shelf, baseTop(v)], () => shelfCards(project.shelf, baseTop(v)));
+    const origin = stage('World origin', [project.origin, v.baseLength, v.baseWidth, baseTop(v)], () => originFrame(project.origin, v));
+    const objects = stage('Objects', [project.objects, shelf, origin], () =>
+      buildObjects([...(project.objects ?? []).map((o) => toWorld(o, origin)), ...shelf.map((o) => toWorld(o, origin, true))]),
+    );
+    const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder }));
+    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects], () =>
+      share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg, topMask, moves: project.moves, materialFor, objects: cutters })),
     );
     const carved = stage('Shadow carve', [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow], () => {
       if (!v.shadowOn || !v.sunOn || v.sliceMode !== 'parallel') return null;
@@ -208,7 +222,7 @@ export function createFrontPipeline() {
     const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
     const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
     const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: carved?.sliced ?? sliced, shadow: carved?.report ?? null, unfolded, pour, stages, totalMs: performance.now() - t0 };
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: carved?.sliced ?? sliced, objects, origin, shadow: carved?.report ?? null, unfolded, pour, stages, totalMs: performance.now() - t0 };
   };
 }
 
