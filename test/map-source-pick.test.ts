@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildMapBundle, resolveMapSource } from '../src/core/mapPipeline';
 import { defaultMapSpec } from '../src/core/mapSpec';
-import { cropRegionalGridToBbox, loadBuiltinRegionalFixture } from '../src/core/mapRegionalLidar';
+import { cropRegionalGridToBbox } from '../src/core/mapRegionalLidar';
+import { loadBuiltinRegionalFixture } from '../src/core/mapRegionalLidar.fixtures';
 import { pickAutoMapSource, isHighResSource } from '../src/core/mapSourcePick';
 import { sourceMeta } from '../src/core/mapSourceRegistry';
 import { KINGSBARNS_BBOX, ROYAL_COUNTY_DOWN_BBOX, NEASDEN_BBOX } from './map-fixtures';

@@ -1,6 +1,4 @@
 // UK regional LiDAR DTM adapters (Scotland / Wales / NI). Production reads COG/WMS; tests inject fixtures.
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { Float32Grid } from './mapGrid';
 import { metricBounds } from './mapProject';
 import type { MapSource, MapSpec } from './mapSpec';
@@ -17,28 +15,6 @@ export function setRegionalGridLoader(loader: RegionalGridLoader | null): void {
 
 export function isRegionalLidarSource(source: MapSource): boolean {
   return (REGIONAL_LIDAR_SOURCES as string[]).includes(source);
-}
-
-function fixturePath(name: string): string {
-  return fileURLToPath(new URL(`../../test/fixtures/map/regional/${name}.json`, import.meta.url));
-}
-
-/** Built-in offline fixtures keyed by source (used when loader not set). */
-export function loadBuiltinRegionalFixture(source: MapSource): Float32Grid | null {
-  const file = source === 'scot-dtm' ? 'kingsbarns-scot-dtm' : source === 'ni-dtm' ? 'royal-county-down-ni-dtm' : null;
-  if (!file) return null;
-  try {
-    const raw = JSON.parse(readFileSync(fixturePath(file), 'utf8')) as {
-      w: number;
-      h: number;
-      data: number[];
-      crs: string;
-      transform: Float32Grid['transform'];
-    };
-    return { ...raw, data: new Float32Array(raw.data) };
-  } catch {
-    return null;
-  }
 }
 
 /**
