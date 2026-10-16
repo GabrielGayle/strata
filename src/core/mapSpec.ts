@@ -61,6 +61,8 @@ export interface MapSpec {
   editionNumber?: number;
   /** JSON metadata shipped as `map/archetype-card.json` in the build pack (ticket 25). */
   archetypeCard?: Record<string, unknown>;
+  /** Short dedication etched on the back plate when it fits (ticket 26). */
+  commemorativeText?: string;
 }
 
 export const TERRARIUM_ATTRIBUTION = [
@@ -178,6 +180,8 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   const engraveArt = cleanEngraveArt(o.engraveArt);
   const editionNumber = num(o.editionNumber);
   const archetypeCard = cleanArchetypeCard(o.archetypeCard);
+  const commemorativeText =
+    typeof o.commemorativeText === 'string' && o.commemorativeText.trim() ? o.commemorativeText.trim() : undefined;
   return {
     kind: 'map',
     bbox,
@@ -202,6 +206,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(engraveArt ? { engraveArt } : {}),
     ...(editionNumber != null && editionNumber >= 1 ? { editionNumber: Math.round(editionNumber) } : {}),
     ...(archetypeCard ? { archetypeCard } : {}),
+    ...(commemorativeText ? { commemorativeText } : {}),
   };
 }
 

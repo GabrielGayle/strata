@@ -19,5 +19,24 @@ export function mapBackPlateEtchPaths(part: Part, map: MapSpec): Path[] {
   const out: Path[] = [];
   out.push(...attributionEtchPaths(part, map.attribution));
   if (map.editionNumber != null) out.push(...editionEtchPaths(part, map.editionNumber));
+  if (map.commemorativeText?.trim()) {
+    const bb = part.bbox;
+    const faceW = bb.maxX - bb.minX;
+    const h = Math.max(2.5, Math.min(5, faceW / 36));
+    const text = map.commemorativeText.trim();
+    if (textWidth(text, h) <= faceW - 4) {
+      out.push(...strokeTextCentered(text, (bb.minX + bb.maxX) / 2, bb.minY + h * 2.2, h));
+    }
+  }
   return out;
+}
+
+export function commemorativeFitWarning(text: string, faceWidthMm: number): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  const h = Math.max(2.5, Math.min(5, faceWidthMm / 36));
+  if (textWidth(t, h) > faceWidthMm - 4) {
+    return `Commemorative text does not fit on back plate at ${h.toFixed(1)} mm cap height`;
+  }
+  return null;
 }

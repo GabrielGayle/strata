@@ -133,6 +133,7 @@ interface Args {
     layerBudget?: MapSpec['layerBudget'];
     editionNumber?: number;
     archetypeCard?: Record<string, unknown>;
+    commemorativeText?: string;
   };
 }
 
@@ -245,7 +246,9 @@ function parseArgs(argv: string[]): Args {
       args.map!.archetypeCard = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
     } else if (a.startsWith('--archetype-card=')) {
       args.map!.archetypeCard = JSON.parse(readFileSync(a.slice(16), 'utf8')) as Record<string, unknown>;
-    } else if (a === '--render') args.render = take(argv, ++i, a);
+    } else if (a === '--commemorative') args.map!.commemorativeText = take(argv, ++i, a);
+    else if (a.startsWith('--commemorative=')) args.map!.commemorativeText = a.slice(14);
+    else if (a === '--render') args.render = take(argv, ++i, a);
     else if (a.startsWith('--render=')) args.render = a.slice(9);
     else if (a === '--help' || a === '-h') return idleArgs('help');
     else throw new Error(`unknown argument '${a}'`);
@@ -525,6 +528,7 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
           layerBudget: args.map.layerBudget,
           editionNumber: args.map.editionNumber,
           archetypeCard: args.map.archetypeCard,
+          commemorativeText: args.map.commemorativeText,
         });
         const bundle = await buildMapBundle(spec, {
           stack: mapStackFromProject(project, args.map.layerBudget),
