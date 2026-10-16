@@ -19,7 +19,8 @@ import {
 import { deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
 import { buildMapBundle, MapSourceNotImplementedError, mapSpecFromCli } from './core/mapPipeline';
 import { renderVenueMockup } from './core/mapRender';
-import { parseBbox, parseEngraveFlag, parseExaggeration, parseMapSource, type MapSpec } from './core/mapSpec';
+import { parseBbox, parseEngraveFlag, parseExaggeration, parseLayerBudget, parseMapSource, type MapSpec } from './core/mapSpec';
+import { mapStackFromProject } from './core/mapPipeline';
 
 export interface CliIssue {
   level: 'error' | 'warning';
@@ -81,7 +82,8 @@ const USAGE = `Usage:
                  [--image side=path.jpg] [--rates rates.json]
                  [--map <title>] [--bbox west,south,east,north]
                  [--map-source auto|ea-dtm|ea-dsm|cop30|terrarium]
-                 [--map-res <metres>] [--exaggeration auto|<n>] [--engrave on|off|roads,water,...]
+                 [--map-res <metres>] [--exaggeration auto|<n>] [--layer-budget equal|quantile|jenks]
+                 [--engrave on|off|roads,water,...]
                  [--map-cache <dir>] [--render <out.png>]
   npm run cli -- params
   npm run cli -- presets
@@ -119,6 +121,7 @@ interface Args {
     exaggeration: MapSpec['exaggeration'];
     engrave: MapSpec['engrave'];
     cacheDir?: string;
+    layerBudget?: MapSpec['layerBudget'];
   };
 }
 
@@ -175,6 +178,8 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--map-res=')) args.map!.resM = Number(a.slice(10));
     else if (a === '--exaggeration') args.map!.exaggeration = parseExaggeration(take(argv, ++i, a));
     else if (a.startsWith('--exaggeration=')) args.map!.exaggeration = parseExaggeration(a.slice(15));
+    else if (a === '--layer-budget') args.map!.layerBudget = parseLayerBudget(take(argv, ++i, a));
+    else if (a.startsWith('--layer-budget=')) args.map!.layerBudget = parseLayerBudget(a.slice(15));
     else if (a === '--engrave') args.map!.engrave = parseEngraveFlag(take(argv, ++i, a), true);
     else if (a.startsWith('--engrave=')) args.map!.engrave = parseEngraveFlag(a.slice(10), true);
     else if (a === '--map-cache') args.map!.cacheDir = take(argv, ++i, a);
@@ -408,8 +413,9 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
           exaggeration: args.map.exaggeration,
           engrave: args.map.engrave,
           cacheDir: args.map.cacheDir,
+          layerBudget: args.map.layerBudget,
         });
-        const bundle = await buildMapBundle(spec);
+        const bundle = await buildMapBundle(spec, { stack: mapStackFromProject(project, args.map.layerBudget) });
         project.images.top = bundle.asset;
         if (args.map.title) project.name = args.map.title;
         if (args.render) {

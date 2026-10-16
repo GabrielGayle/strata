@@ -4,8 +4,11 @@ import { fetchTerrariumGrid, getTileFetcher, type TileFetcher } from './mapTerra
 import { cachedTileFetch } from './mapCache';
 import { reprojectResample } from './mapProject';
 import { mapGridToDepth } from './mapToDepth';
+import { applyLayerBudget, computeLayerBreaks, type LayerBudgetMode } from './mapLayerBudget';
+import { resolveExaggerationFactor } from './mapExaggeration';
 import type { DepthData } from './depth';
-import type { ImageAsset } from './project';
+import type { ImageAsset, Project } from './project';
+import type { RawValue } from './params';
 
 const PLACEHOLDER_TOP = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
@@ -22,10 +25,17 @@ export function resolveMapSource(source: MapSpec['source']): 'terrarium' {
   throw new MapSourceNotImplementedError(source);
 }
 
+export interface MapStackContext {
+  plateCount: number;
+  thicknessMm: number;
+  masterWidthMm: number;
+  layerBudget?: LayerBudgetMode;
+}
+
 export interface BuildMapImageOptions {
   cacheDir?: string;
   fetch?: TileFetcher;
-  exaggeration?: number;
+  stack?: MapStackContext;
 }
 
 export interface MapBuildResult {
@@ -47,14 +57,23 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     return cachedTileFetch(spec.cacheDir ?? opts.cacheDir, url, inner);
   };
   const elev = await fetchTerrariumGrid(spec, { fetch });
-  const metric = reprojectResample(elev, spec);
-  const ex = typeof spec.exaggeration === 'number' ? spec.exaggeration : 1;
-  const { depth } = mapGridToDepth(metric, { exaggeration: ex, resolution: 384 });
+  let metric = reprojectResample(elev, spec);
+  const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
+  const budgetMode = spec.layerBudget ?? stack.layerBudget ?? 'jenks';
+  const budget = computeLayerBreaks(metric, stack.plateCount, budgetMode);
+  metric = applyLayerBudget(metric, budget.breaksM);
+  const { factor, readout } = resolveExaggerationFactor(spec, metric, stack);
+  const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384 });
   const stored: MapSpec = {
     ...spec,
     crs: metric.crs,
     fetchedAt: new Date().toISOString(),
     attribution: spec.attribution.length ? spec.attribution : [...TERRARIUM_ATTRIBUTION],
+    layerBudget: budgetMode,
+    layerBreaksM: budget.breaksM,
+    exaggerationFactor: factor,
+    exaggerationReadout: readout,
+    exaggeration: spec.exaggeration === 'auto' ? 'auto' : factor,
   };
   const asset: ImageAsset = {
     name: spec.title?.trim() || 'Map terrain',
@@ -73,6 +92,7 @@ export function mapSpecFromCli(parts: {
   exaggeration: MapSpec['exaggeration'];
   engrave: MapSpec['engrave'];
   cacheDir?: string;
+  layerBudget?: LayerBudgetMode;
 }): MapSpec {
   return defaultMapSpec({
     bbox: parts.bbox,
@@ -82,7 +102,23 @@ export function mapSpecFromCli(parts: {
     engrave: parts.engrave,
     title: parts.title,
     cacheDir: parts.cacheDir,
+    layerBudget: parts.layerBudget,
   });
+}
+
+function numParam(raw: Record<string, RawValue>, id: string, fallback: number): number {
+  const n = Number(raw[id]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+export function mapStackFromProject(project: Project, layerBudget?: LayerBudgetMode): MapStackContext {
+  const p = project.params;
+  return {
+    plateCount: Math.round(numParam(p, 'plateCount', 12)),
+    thicknessMm: numParam(p, 'thickness', 3),
+    masterWidthMm: Math.max(numParam(p, 'baseLength', 520), numParam(p, 'baseWidth', 380)),
+    layerBudget,
+  };
 }
 
 export type { DepthData };

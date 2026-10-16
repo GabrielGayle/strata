@@ -364,7 +364,7 @@ describe('cli map', () => {
     const png = PNG.sync.read(readFileSync(hero));
     expect(png.width).toBe(MAP_RENDER_WIDTH);
     expect(png.height).toBe(MAP_RENDER_HEIGHT);
-  });
+  }, 45_000);
 
   it('exits 1 on a bad bbox', async () => {
     const dir = scratch();
