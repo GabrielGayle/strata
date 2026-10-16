@@ -147,6 +147,20 @@ export function parseBbox(text: string): MapSpec['bbox'] {
   return bbox;
 }
 
+export function parseMapSource(text: string): MapSource {
+  const s = text.trim().toLowerCase();
+  if (!SOURCES.has(s as MapSource)) throw new Error(`unknown map source '${text}'`);
+  return s as MapSource;
+}
+
+export function parseExaggeration(text: string): number | 'auto' {
+  const s = text.trim().toLowerCase();
+  if (s === 'auto') return 'auto';
+  const n = Number(text);
+  if (!Number.isFinite(n) || n <= 0) throw new Error('exaggeration must be a positive number or auto');
+  return n;
+}
+
 export function parseEngraveFlag(text: string | undefined, enabledDefault = true): EngraveSpec {
   if (text == null || text === '') return defaultEngrave(enabledDefault);
   const lower = text.toLowerCase();

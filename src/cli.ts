@@ -18,6 +18,8 @@ import {
 } from './core/masterPresets';
 import { applyAutoDimensionPatch, previewAutoDimension, type DepthFace } from './core/autoDimension';
 import { deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
+import { buildMapTopAsset, MapSourceNotImplementedError, mapSpecFromCli } from './core/mapPipeline';
+import { parseBbox, parseEngraveFlag, parseExaggeration, parseMapSource, type MapSpec } from './core/mapSpec';
 
 export interface CliIssue {
   level: 'error' | 'warning';
@@ -78,6 +80,10 @@ const USAGE = `Usage:
   npm run cli -- <project.json> --out <dir> [--preset <name>] [--size <id>] [--orientation portrait|landscape]
                  [--image side=path.jpg] [--auto-dimension side=top,front] [--relief-exaggeration <n>]
                  [--rates rates.json]
+                 [--map <title>] [--bbox west,south,east,north]
+                 [--map-source auto|ea-dtm|ea-dsm|cop30|terrarium]
+                 [--map-res <metres>] [--exaggeration auto|<n>] [--engrave on|off|roads,water,...]
+                 [--map-cache <dir>]
   npm run cli -- params
   npm run cli -- presets
 
@@ -90,6 +96,9 @@ ratio sizes keep the current long edge. Only the outline changes (thickness and 
 --image replaces the side, front or top picture. --rates overrides price-estimate rates.
 --auto-dimension sets plate proportions from metric depth on each face (repeat or comma list:
 side, front, top). Needs depth data on that image. --relief-exaggeration scales relief (default 1).
+--map with --bbox fetches open terrain (terrarium in this release) into the top face DepthData.
+Non-terrarium sources are accepted but exit with a not-yet-implemented message. --engrave is stored
+on the MapSpec (default on); engraving is a no-op until a later release.
 Unknown parameters and formula errors exit 1 and write nothing. Clamped values are warnings.
 `;
 
@@ -106,6 +115,15 @@ interface Args {
   orientation?: string;
   autoDimension: DepthFace[];
   reliefExaggeration: number;
+  map?: {
+    title?: string;
+    bbox?: string;
+    source: MapSpec['source'];
+    resM: number;
+    exaggeration: MapSpec['exaggeration'];
+    engrave: MapSpec['engrave'];
+    cacheDir?: string;
+  };
 }
 
 function take(argv: string[], i: number, flag: string): string {
@@ -137,12 +155,21 @@ function parseImage(spec: string, images: Args['images']) {
 
 function parseArgs(argv: string[]): Args {
   if (argv.length === 0) throw new Error(`missing project file\n\n${USAGE}`);
-  if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') return { cmd: 'help', images: {}, autoDimension: [], reliefExaggeration: 1 };
+  if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') {
+    return { cmd: 'help', images: {}, autoDimension: [], reliefExaggeration: 1 };
+  }
   if (argv[0] === 'params' || argv[0] === 'presets') {
     if (argv.length > 1) throw new Error(`unexpected argument '${argv[1]}'`);
     return { cmd: argv[0], images: {}, autoDimension: [], reliefExaggeration: 1 };
   }
-  const args: Args = { cmd: 'export', project: argv[0], images: {}, autoDimension: [], reliefExaggeration: 1 };
+  const args: Args = {
+    cmd: 'export',
+    project: argv[0],
+    images: {},
+    autoDimension: [],
+    reliefExaggeration: 1,
+    map: { source: 'auto', resM: 8, exaggeration: 'auto', engrave: parseEngraveFlag(undefined, true) },
+  };
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--out') args.out = take(argv, ++i, a);
@@ -161,12 +188,30 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--auto-dimension=')) parseAutoDimension(a.slice(17), args.autoDimension);
     else if (a === '--relief-exaggeration') args.reliefExaggeration = Number(take(argv, ++i, a));
     else if (a.startsWith('--relief-exaggeration=')) args.reliefExaggeration = Number(a.slice(22));
+    else if (a === '--map') args.map!.title = take(argv, ++i, a);
+    else if (a.startsWith('--map=')) args.map!.title = a.slice(6);
+    else if (a === '--bbox') args.map!.bbox = take(argv, ++i, a);
+    else if (a.startsWith('--bbox=')) args.map!.bbox = a.slice(7);
+    else if (a === '--map-source') args.map!.source = parseMapSource(take(argv, ++i, a));
+    else if (a.startsWith('--map-source=')) args.map!.source = parseMapSource(a.slice(13));
+    else if (a === '--map-res') args.map!.resM = Number(take(argv, ++i, a));
+    else if (a.startsWith('--map-res=')) args.map!.resM = Number(a.slice(10));
+    else if (a === '--exaggeration') args.map!.exaggeration = parseExaggeration(take(argv, ++i, a));
+    else if (a.startsWith('--exaggeration=')) args.map!.exaggeration = parseExaggeration(a.slice(15));
+    else if (a === '--engrave') args.map!.engrave = parseEngraveFlag(take(argv, ++i, a), true);
+    else if (a.startsWith('--engrave=')) args.map!.engrave = parseEngraveFlag(a.slice(10), true);
+    else if (a === '--map-cache') args.map!.cacheDir = take(argv, ++i, a);
+    else if (a.startsWith('--map-cache=')) args.map!.cacheDir = a.slice(12);
     else if (a === '--help' || a === '-h') return { cmd: 'help', images: {}, autoDimension: [], reliefExaggeration: 1 };
     else throw new Error(`unknown argument '${a}'`);
   }
   if (!args.out) throw new Error(`missing --out <dir>\n\n${USAGE}`);
+  if (args.map?.bbox == null && args.map?.title) throw new Error('--map requires --bbox west,south,east,north');
+  if (args.map?.bbox != null && !args.map.title) args.map.title = 'Map terrain';
   return args;
 }
+
+export { parseArgs as parseCliArgs };
 
 /** Project file plus preset / --preset. Explicit params win. Unknown ids are reported, not dropped. */
 export function loadProject(text: string, opts: { preset?: string } = {}): { project: Project; issues: CliIssue[] } {
@@ -395,6 +440,29 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
     if (issues.some((i) => i.level === 'error')) {
       report(issues, io);
       return 1;
+    }
+    if (args.map?.bbox) {
+      try {
+        const bbox = parseBbox(args.map.bbox);
+        const spec = mapSpecFromCli({
+          title: args.map.title,
+          bbox,
+          source: args.map.source,
+          resM: args.map.resM > 0 ? args.map.resM : 8,
+          exaggeration: args.map.exaggeration,
+          engrave: args.map.engrave,
+          cacheDir: args.map.cacheDir,
+        });
+        project.images.top = await buildMapTopAsset(spec);
+        if (args.map.title) project.name = args.map.title;
+      } catch (e) {
+        if (e instanceof MapSourceNotImplementedError) {
+          io.stderr(`error: ${e.message}\n`);
+          return 1;
+        }
+        io.stderr(`error: ${(e as Error).message}\n`);
+        return 1;
+      }
     }
     const assets = await loadAssets(project, args.images);
     const model = createPipeline()(project, assets);

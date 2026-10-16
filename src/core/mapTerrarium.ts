@@ -58,7 +58,7 @@ export function tileMercatorBounds(z: number, x: number, y: number): { west: num
 }
 
 /** Zoom so the long edge of the bbox is at least ~512 px at tile resolution. */
-export function pickTerrariumZoom(bbox: MapSpec['bbox'], maxZoom = 15): number {
+export function pickTerrariumZoom(bbox: MapSpec['bbox'], maxZoom = 13): number {
   const [w, s, e, n] = bbox;
   const [mx0, my0] = lonLatToMercator(w, s);
   const [mx1, my1] = lonLatToMercator(e, n);
@@ -86,7 +86,7 @@ export async function fetchTerrariumGrid(spec: Pick<MapSpec, 'bbox'>, opts: Terr
   const mw = cols * tileSize;
   const mh = rows * tileSize;
   const mosaic = new Float32Array(mw * mh).fill(NaN);
-  const fetch = opts.fetch ?? defaultTileFetcher;
+  const fetch = opts.fetch ?? getTileFetcher();
 
   for (let tx = tl.x; tx <= br.x; tx++) {
     for (let ty = tl.y; ty <= br.y; ty++) {
@@ -130,6 +130,17 @@ export async function fetchTerrariumGrid(spec: Pick<MapSpec, 'bbox'>, opts: Terr
   const originY = tileNorth + (row0 + 0.5) * pixelH;
   const transform: GridTransform = { originX, originY, pixelW, pixelH };
   return { w: cw, h: ch, data: cropped, crs: 'EPSG:3857', transform };
+}
+
+let tileFetcherOverride: TileFetcher | null = null;
+
+/** Test hook: serve terrarium tiles from fixtures without network. */
+export function setMapTileFetcher(fetcher: TileFetcher | null): void {
+  tileFetcherOverride = fetcher;
+}
+
+export function getTileFetcher(): TileFetcher {
+  return tileFetcherOverride ?? defaultTileFetcher;
 }
 
 export async function defaultTileFetcher(url: string): Promise<Uint8Array> {
