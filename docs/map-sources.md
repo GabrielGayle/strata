@@ -124,6 +124,8 @@ Strata stores the attribution line on `MapSpec.attribution` and in `MapEngraveAr
 
 **Ski (T22):** enable `ski` / `piste` / `alpine` for `piste:type` and `aerialway` ways; preset `ski` / `alpine` (fixture: `test/fixtures/map/overpass-ski.json`).
 
+**Attribution etch (T14):** `MapSpec.attribution` lines are etched on the **bottom** plate (`ETCH`) and listed in `build-pack.html` under **Map data credits**.
+
 ## Excluded in this product
 
 Google, Cesium, and Mapbox terrain products are **not** used (licence / ToS).

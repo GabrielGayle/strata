@@ -19,6 +19,7 @@ import { baseGeometry } from './base';
 import { serialize, type Project } from './project';
 import { strokeTextCentered } from './strokefont';
 import { deserializeMapEngraveArt } from './mapOsmEngrave';
+import { attributionEtchPaths } from './mapAttributionEtch';
 import { mapEngravePathsForPart, type MapEngravePlateContext } from './mapEngravePlate';
 import type { UnfoldPiece } from './unfold';
 import { materialOf } from './appearance';
@@ -58,14 +59,26 @@ function mapSeg(s: Seg, tf: (p: Vec2) => Vec2): Seg {
 
 const shiftTo = (minX: number, minY: number) => (p: Vec2): Vec2 => [p[0] - minX, p[1] - minY];
 
-export function partDxf(part: Part, v: Values, mapEngrave: Path[] = []): string {
+export function partDxf(part: Part, v: Values, mapEngrave: Path[] = [], extraEtch: Path[] = []): string {
   const w = new DxfWriter([LAYERS.CUT, LAYERS.ETCH, LAYERS.ENGRAVE]);
   const bb = part.bbox;
   const tf = shiftTo(bb.minX - v.kerf, bb.minY - v.kerf);
   emitContours(w, fitShape(part.shape, v), v, tf);
-  for (const p of [...part.etch, ...part.labelPaths]) w.path(LAYERS.ETCH.name, p.map(tf));
+  for (const p of [...part.etch, ...part.labelPaths, ...extraEtch]) w.path(LAYERS.ETCH.name, p.map(tf));
   for (const p of mapEngrave) w.path(LAYERS.ENGRAVE.name, p.map(tf));
   return w.toString();
+}
+
+function bottomPlateIndex(model: Model): number {
+  const idxs = model.sliced.parts.filter((q) => q.family === 'P').map((q) => q.index);
+  return idxs.length ? Math.min(...idxs) : -1;
+}
+
+function mapAttributionEtchForPart(part: Part, project?: Project, model?: Model): Path[] {
+  const map = project?.images.top?.map;
+  if (!map?.attribution?.length || !model) return [];
+  if (part.family !== 'P' || part.index !== bottomPlateIndex(model)) return [];
+  return attributionEtchPaths(part, map.attribution);
 }
 
 function mapEngraveForPart(part: Part, project?: Project, model?: Model): Path[] {
@@ -216,7 +229,8 @@ export function partFiles(model: Model, project?: Project): Record<string, Uint8
   const mixed = new Set(model.sliced.parts.map((p) => metal(p.plateKey))).size > 1;
   for (const p of model.sliced.parts) {
     const engrave = mapEngraveForPart(p, project, model);
-    files[`${mixed ? `${safe(metal(p.plateKey))}/` : ''}${safe(p.id)}.dxf`] = strToU8(partDxf(p, model.v, engrave));
+    const attrEtch = mapAttributionEtchForPart(p, project, model);
+    files[`${mixed ? `${safe(metal(p.plateKey))}/` : ''}${safe(p.id)}.dxf`] = strToU8(partDxf(p, model.v, engrave, attrEtch));
   }
   return files;
 }

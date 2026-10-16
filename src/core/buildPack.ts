@@ -987,6 +987,14 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
   if (rods || spacers) sections.push({ id: 'rods', title: rods ? 'Rods and spacers' : 'Spacers', body: `${rods ? rodsSection(m, names, rods, view) : ''}${spacersTable(m, view, names)}` });
   if (flat && plates.length) sections.push({ id: 'glue', title: 'Glue-up order', body: `<p class="note">Bottom to top. Glue each layer onto the one before it${v.flatGuides ? ', lined up on the outline etched into that layer' : ''}.</p>${glueUpSection(m)}` });
   if (v.baseOn) sections.push({ id: 'pour', title: 'Pour plan', body: pourSection(m) });
+  const mapAttr = project.images.top?.map?.attribution ?? [];
+  if (mapAttr.length) {
+    sections.push({
+      id: 'credits',
+      title: 'Map data credits',
+      body: `<p class="note">Licence lines for the relief map (also etched on the back plate).</p><ul>${mapAttr.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>`,
+    });
+  }
   sections.push({ id: 'parts', title: 'Cut list and bought-in parts', body: cutListSection(m, rates) });
 
   const facts: [string, string][] = [
