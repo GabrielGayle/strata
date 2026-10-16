@@ -65,6 +65,13 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 | **Catalog (DTM 1 m)** | `https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m` |
 | **Strata status** | Ticket **T6** reads EA tiles via the adapter (cached under `--map-cache`); offline tests use `test/fixtures/map/regional/neasden-ea-dtm.json`. Browser fetches may use the **EA-only** CORS proxy in `api/ea-proxy.ts` (deployed on Vercel). |
 
+## Water handling (ticket T16)
+
+| Field | Value |
+|---|---|
+| **MapSpec.water** | `flat` — OSM water polygons flattened to a single surface elevation; `bathy` — true depth when soundings exist (T24); `raw` — leave elevations unchanged |
+| **Surface level** | Median-ish land sample (`estimateWaterSurfaceM`) unless bathymetry overrides |
+
 ## Buildings / DSM (ticket T15)
 
 | Field | Value |

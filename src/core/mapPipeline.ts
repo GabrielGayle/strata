@@ -21,6 +21,7 @@ import {
 } from './mapBuildings';
 import { commemorativeFitWarning } from './mapBackPlateEtch';
 import { fetchOverpass } from './mapOverpass';
+import { applyFlatWater, estimateWaterSurfaceM, waterRingsFromOverpass } from './mapWater';
 import { buildMapEngraveArt } from './mapEngraveBuild';
 import { serializeMapEngraveArt } from './mapOsmEngrave';
 import type { OverpassFetcher } from './mapOverpass';
@@ -172,6 +173,23 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   }
   if (spec.model !== 'dtm') {
     metric = clampTowerRise(metric, dtmMetric, buildingClampMetres(spec));
+  }
+  if (spec.water === 'flat' || spec.water === 'raw') {
+    try {
+      const osm = await fetchOverpass(spec.bbox, {
+        cacheDir: spec.cacheDir ?? opts.cacheDir,
+        fetch: opts.overpass,
+        allowNetwork: opts.allowOverpassNetwork,
+        features: ['water'],
+      });
+      const rings = waterRingsFromOverpass(osm as Parameters<typeof waterRingsFromOverpass>[0], spec, metric.crs ?? 'EPSG:27700');
+      if (rings.length) {
+        const surface = estimateWaterSurfaceM(metric);
+        metric = applyFlatWater(metric, rings, surface);
+      }
+    } catch (e) {
+      warnings.push(`Water flatten skipped: ${(e as Error).message}`);
+    }
   }
   const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
   const budgetMode = spec.layerBudget ?? stack.layerBudget ?? 'jenks';
