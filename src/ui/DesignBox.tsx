@@ -75,8 +75,9 @@ export default function DesignBox({ onClose }: { onClose: () => void }) {
         </div>
         <div className="window-body design-box-body">
           <p className="design-hint">
-            Plain language edits the same parameters as the CLI <span className="mono">say</span> command.{' '}
-            <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> opens this panel.
+            Plain language edits the same parameters as the CLI <span className="mono">say</span> command. Press{' '}
+            <kbd>/</kbd> (outside text fields) or <kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd>K</kbd> to
+            open this panel from anywhere except while the cursor is in the instruction box below.
           </p>
           <textarea
             ref={inputRef}

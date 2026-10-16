@@ -14,6 +14,7 @@ import WorkspaceArea, { WorkspaceBar } from './Workspace';
 import DropOverlay from './DropOverlay';
 import HelpLayer, { HelpButton } from './Help';
 import DesignBox from './DesignBox';
+import { designShortcutFromKey } from './designShortcut';
 
 
 export default function App() {
@@ -110,6 +111,12 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
+      const design = designShortcutFromKey(e.key, e, e.target);
+      if (design === 'toggle') {
+        e.preventDefault();
+        setDesignOpen((o) => !o);
+        return;
+      }
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === 'z') {
@@ -121,9 +128,6 @@ export default function App() {
         redo();
       } else if (!mod && /^[1-8]$/.test(e.key)) {
         setUi({ tab: TABS[Number(e.key) - 1].id });
-      } else if (mod && e.shiftKey && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
-        setDesignOpen((o) => !o);
       }
     };
     window.addEventListener('keydown', onKey);

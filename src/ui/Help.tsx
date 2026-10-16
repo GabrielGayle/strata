@@ -33,7 +33,8 @@ const SHORTCUTS: { where: string; keys: [string[], string][] }[] = [
     where: 'Anywhere',
     keys: [
       [['?'], 'This sheet'],
-      [[MOD, 'Shift', 'D'], 'Type a design (plain-language parameters)'],
+      [['/'], 'Type a design (not while typing in a field)'],
+      [[MOD, 'K'], 'Type a design (from parameter fields too; not in the instruction box)'],
       [[MOD, 'Z'], 'Undo'],
       [[MOD, 'Shift', 'Z'], 'Redo'],
       [[MOD, 'Y'], 'Redo'],
