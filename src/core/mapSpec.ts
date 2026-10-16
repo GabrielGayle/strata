@@ -190,6 +190,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     typeof o.commemorativeText === 'string' && o.commemorativeText.trim() ? o.commemorativeText.trim() : undefined;
   const buildingClampM = num(o.buildingClampM);
   const sunkenFrame = cleanSunkenFrame(o.sunkenFrame);
+  const giftSizeId = typeof o.giftSizeId === 'string' && o.giftSizeId.trim() ? o.giftSizeId.trim() : undefined;
   return {
     kind: 'map',
     bbox,
@@ -217,6 +218,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(commemorativeText ? { commemorativeText } : {}),
     ...(buildingClampM != null && buildingClampM > 0 ? { buildingClampM } : {}),
     ...(sunkenFrame ? { sunkenFrame } : {}),
+    ...(giftSizeId ? { giftSizeId } : {}),
   };
 }
 
