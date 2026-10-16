@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cached, share } from '../src/core/memo';
 import { createPipeline, type Assets } from '../src/core/pipeline';
-import { newProject } from '../src/core/project';
+import { smallProject } from './small-project';
 
 const assets: Assets = { sideImg: null, frontImg: null, insMesh: null, srcMesh: null };
 
@@ -33,8 +33,10 @@ describe('cached', () => {
 describe('pipeline reuse', () => {
   it('reuses plates an edit did not change, and gives the same result as a cold run', () => {
     const compute = createPipeline();
-    const m1 = compute(newProject(), assets);
-    const p = newProject();
+    // Insert shorter than the stack so end plates stay identical when width changes.
+    const seed = { plateCount: '12', baseLength: '400', insLength: '100' };
+    const m1 = compute(smallProject(seed), assets);
+    const p = smallProject(seed);
     p.params = { ...p.params, insWidth: String(Number(m1.v.insWidth) + 4) };
     const m2 = compute(p, assets);
     const cold = createPipeline()(p, assets);

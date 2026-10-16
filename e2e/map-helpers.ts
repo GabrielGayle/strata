@@ -1,10 +1,33 @@
 import { expect, type Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 
-/** First-visit Help tour (1.5 s) covers the chrome and steals toolbar clicks. */
+/** First-visit Help tour (1.5 s) is a full-screen overlay that steals Map chrome clicks. */
+export async function skipStartupTour(page: Page) {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('strata:tour-seen', '1');
+    } catch {
+      /* private mode */
+    }
+  });
+}
+
 export async function dismissTour(page: Page) {
   const dlg = page.getByRole('dialog', { name: /Tour:/ });
-  const visible = await dlg.waitFor({ state: 'visible', timeout: 4_000 }).then(() => true).catch(() => false);
+  if (await dlg.isVisible().catch(() => false)) {
+    await dlg.getByRole('button', { name: 'Skip' }).click();
+    await dlg.waitFor({ state: 'hidden', timeout: 5_000 });
+    return;
+  }
+  const seen = await page.evaluate(() => {
+    try {
+      return localStorage.getItem('strata:tour-seen') === '1';
+    } catch {
+      return false;
+    }
+  }).catch(() => false);
+  if (seen) return;
+  const visible = await dlg.waitFor({ state: 'visible', timeout: 2_500 }).then(() => true).catch(() => false);
   if (!visible) return;
   await dlg.getByRole('button', { name: 'Skip' }).click();
   await dlg.waitFor({ state: 'hidden', timeout: 5_000 });

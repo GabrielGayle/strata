@@ -18,6 +18,7 @@ import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme'
 import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
 import { applyProjectPatch, type ProjectPatch } from '../core/design';
 import { projectWithTopMapSpec } from '../core/mapTopAsset';
+import { markDepthSettingOverrides, mergeDepthAfterRebuild } from '../core/depthOverrides';
 import { wordsParamPatch } from '../core/chantWords';
 import { speechParamPatch } from '../core/speechTuning';
 
@@ -221,7 +222,8 @@ export const useStore = create<Store>((set, get) => {
     finishMapTerrainBuild: (asset) => {
       const p = get().project;
       if (!p.images.top?.map) return;
-      commit({ ...p, images: { ...p.images, top: asset } }, `map-build:${performance.now()}`);
+      const top = asset.depth ? { ...asset, depth: mergeDepthAfterRebuild(p.images.top.depth, asset.depth) } : asset;
+      commit({ ...p, images: { ...p.images, top } }, `map-build:${performance.now()}`);
       set({ mapTerrain: { phase: 'ready', message: 'Map terrain ready', error: undefined } });
     },
     newSetup: (mode) => {
@@ -352,7 +354,9 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       const a = p.images[slot];
       if (!a?.depth) return;
-      const depth = Object.keys(patch).length ? { ...a.depth, settings: { ...a.depth.settings, ...patch } } : a.depth;
+      const hasPatch = Object.keys(patch).length > 0;
+      const settingsOverrides = hasPatch ? markDepthSettingOverrides(a.depth.settingsOverrides, patch) : a.depth.settingsOverrides;
+      const depth = hasPatch ? { ...a.depth, settings: { ...a.depth.settings, ...patch }, settingsOverrides } : a.depth;
       commit({ ...p, images: { ...p.images, [slot]: { ...a, depth, ...(dataUrl ? { dataUrl } : {}) } } }, `depth:${slot}`);
     },
     replaceProject: (np) => commit(np, `replace:${performance.now()}`),

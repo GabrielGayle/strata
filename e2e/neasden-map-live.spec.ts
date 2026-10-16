@@ -1,9 +1,14 @@
 import { test, expect } from '@playwright/test';
-import { clickMapPreset } from './map-helpers';
+import { clickMapPreset, dismissTour, skipStartupTour } from './map-helpers';
 
 test.skip(!process.env.LIVE_MAP, 'Set LIVE_MAP=1 to run live network map smoke tests');
 
 test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page }) => {
+  await skipStartupTour(page);
+  await page.goto('/');
+  await page.waitForSelector('.app.window', { timeout: 60_000 });
+  await dismissTour(page);
+
   const eaHit = page.waitForResponse(
     (r) => {
       let url = r.url();
@@ -12,23 +17,15 @@ test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page
       } catch {
         /* keep raw */
       }
-      return (
-        url.includes('/api/ea-proxy') &&
-        url.includes('environment.data.gov.uk') &&
-        url.includes('/wcs') &&
-        r.ok()
-      );
+      return url.includes('/api/ea-proxy') && url.includes('environment.data.gov.uk') && url.includes('/wcs') && r.ok();
     },
     { timeout: 180_000 },
   );
 
-  await page.goto('/');
-  await page.waitForSelector('.app.window', { timeout: 60_000 });
   await clickMapPreset(page, 'Neasden');
+  const ea = await eaHit;
   await expect(page.locator('.status-bar')).toContainText(/Fetching|building|Queued|ready/i, { timeout: 15_000 });
   await expect(page.locator('.map-terrain-status')).toContainText(/ready|Exaggeration/i, { timeout: 300_000 });
-
-  const ea = await eaHit;
   expect(ea.status()).toBe(200);
   expect(decodeURIComponent(ea.url())).toMatch(/environment\.data\.gov\.uk\/geoservices\/datasets\/.+\/wcs/);
   expect(decodeURIComponent(ea.url())).toMatch(/SCALEFACTOR=/);
@@ -37,7 +34,9 @@ test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page
   await expect(page.locator('.map-readout')).toContainText(/source ea-dtm/i);
   await expect(page.locator('.map-view')).not.toContainText(/falling back to terrarium/i);
 
-  await expect(page.locator('#map-model-dtm')).toBeChecked();
+  const dtm = page.locator('#map-model-dtm');
+  await expect(dtm).toBeChecked();
+  await expect.poll(async () => dtm.evaluate((el) => el.nextElementSibling?.getAttribute('for'))).toBe('map-model-dtm');
   await expect(page.locator('#map-water-bathy')).toBeChecked();
 
   await expect

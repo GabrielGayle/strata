@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../state/store';
 import { PRESETS, deserialize, serialize } from '../core/project';
-import { MAP_PRESET_CATALOG, mapPresetSpec } from '../core/mapPresets';
+import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
 import { SOUND_PRESETS } from '../core/soundPresets';
 import { soundDataUrl } from './audio';
 import { buildZip, download, openHtml } from '../core/exporters';
@@ -376,7 +376,8 @@ export default function Toolbar() {
                   <button
                     type="button"
                     onClick={() => {
-                      setTopMap(mapPresetSpec(p.id));
+                      const prev = useStore.getState().project.images.top?.map;
+                      setTopMap(mapPresetSpecKeepingUser(p.id, prev));
                       setUi({ tab: 'map' });
                       close();
                     }}
