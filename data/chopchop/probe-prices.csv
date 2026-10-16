@@ -1,0 +1,37 @@
+file,material,thickness,unit_price
+P01-sq50.dxf,mild steel,2,0.86
+P02-sq100.dxf,mild steel,2,2.42
+P03-sq200.dxf,mild steel,2,7.87
+P04-sq300.dxf,mild steel,2,14.60
+P05-sq100-1hole.dxf,mild steel,2,2.51
+P06-sq100-4holes.dxf,mild steel,2,2.79
+P07-sq100-16holes.dxf,mild steel,2,3.83
+P08-sq100-zigzag.dxf,mild steel,2,4.29
+P09-rect100x400.dxf,mild steel,2,8.40
+P01-sq50.dxf,mild steel,1.5,0.66
+P02-sq100.dxf,mild steel,1.5,1.76
+P03-sq200.dxf,mild steel,1.5,5.56
+P04-sq300.dxf,mild steel,1.5,13.25
+P05-sq100-1hole.dxf,mild steel,1.5,1.83
+P06-sq100-4holes.dxf,mild steel,1.5,2.06
+P07-sq100-16holes.dxf,mild steel,1.5,2.91
+P08-sq100-zigzag.dxf,mild steel,1.5,3.43
+P09-rect100x400.dxf,mild steel,1.5,5.80
+P01-sq50.dxf,mild steel,3,1.24
+P02-sq100.dxf,mild steel,3,3.04
+P03-sq200.dxf,mild steel,3,9.59
+P04-sq300.dxf,mild steel,3,17.46
+P05-sq100-1hole.dxf,mild steel,3,3.19
+P06-sq100-4holes.dxf,mild steel,3,3.64
+P07-sq100-16holes.dxf,mild steel,3,5.35
+P08-sq100-zigzag.dxf,mild steel,3,6.77
+P09-rect100x400.dxf,mild steel,3,9.53
+P01-sq50.dxf,aluminium,3,1.26
+P02-sq100.dxf,aluminium,3,3.10
+P03-sq200.dxf,aluminium,3,8.76
+P04-sq300.dxf,aluminium,3,15.52
+P05-sq100-1hole.dxf,aluminium,3,3.25
+P06-sq100-4holes.dxf,aluminium,3,3.71
+P07-sq100-16holes.dxf,aluminium,3,5.46
+P08-sq100-zigzag.dxf,aluminium,3,6.94
+P09-rect100x400.dxf,aluminium,3,9.39

@@ -40,7 +40,8 @@ describe('fabrication zip carries every feature', () => {
   it('has the pour plan, the price estimate with hardware, and the project', () => {
     expect(text('pour-plan.txt')).toMatch(/Bottom band/);
     const price = text('price-estimate.txt');
-    expect(price).toMatch(/Aluminium laser time/);
+    expect(price).toMatch(/Aluminium S-/);
+    expect(price).toMatch(/Delivery is not included/);
     expect(price).toMatch(/Threaded rod/);
     expect(price).toMatch(/Nuts and washers/);
     expect(price).toMatch(/Total/);

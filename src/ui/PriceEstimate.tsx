@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { Bom } from '../core/bom';
 import { MATERIAL_NAME } from '../core/bom';
-import { CHOPCHOP_QUOTE_URL, DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from '../core/price';
+import { CHOPCHOP_CALIBRATED } from '../core/chopchopRates';
+import { CHOPCHOP_QUOTE_URL, DEFAULT_RATES, estimateMix, usesShopRates, withHardware, type PriceRates } from '../core/price';
 import { fmt } from './model';
 
 const KEY = 'strata.priceRates';
@@ -44,14 +45,16 @@ function RateInput({ label, value, onChange, step = 0.05, unit }: { label: strin
   );
 }
 
-/** Chop Chop Laser cost estimate for the plate parts, with editable rates. */
+/** Chop Chop Laser cost estimate for the plate parts, with the shop rates still overridable. */
 export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material: string; thickness: number }) {
   const [rates, setRatesState] = useState(loadRates);
   const [editing, setEditing] = useState(false);
-  const est = useMemo(() => withHardware(estimateMix(bom, thickness, rates), bom.hardware, rates), [bom, thickness, rates]);
-  const laserNet = est.net - (est.hardware ?? 0);
+  const [includeEtch, setIncludeEtch] = useState(true);
+  const shop = usesShopRates(rates);
+  const est = useMemo(() => withHardware(estimateMix(bom, thickness, rates, { includeEtch }), bom.hardware, rates), [bom, thickness, rates, includeEtch]);
   const metals = bom.byMaterial?.filter((g) => g.partCount).map((g) => g.material) ?? [];
   const metalText = (metals.length ? metals : [material]).map((m) => MATERIAL_NAME[m] ?? m).join(' and ');
+  const etchM = bom.rows.reduce((a, r) => a + (r.etch ?? 0), 0) / 1000;
 
   const setRates = (r: PriceRates) => {
     setRatesState(r);
@@ -74,36 +77,42 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
         <div className="stat">
           <div className="k">Ex VAT</div>
           <div className="v">
-            {gbp(est.net)} <small>{fmt(est.minutes, 0)} min laser</small>
+            {gbp(est.net)} <small>{est.fitted ? 'qty 1' : `${fmt(est.minutes, 0)} min laser`}</small>
           </div>
         </div>
       </div>
+      {est.fitted && (
+        <div className="note">
+          <label htmlFor="price-etch">
+            <input id="price-etch" type="checkbox" checked={includeEtch} onChange={(e) => setIncludeEtch(e.target.checked)} /> Include etch, priced at the cut rate
+            {etchM > 0 ? ` (${fmt(etchM, 2)} m)` : ''}
+          </label>
+        </div>
+      )}
+      {est.warnings.map((w) => (
+        <div key={w} className="note warn">
+          {w}
+        </div>
+      ))}
       <dl className="kv">
-        {est.lines.map((l) => (
-          <div key={l.label} style={{ display: 'contents' }}>
+        {est.lines.map((l, i) => (
+          <div key={`${l.label}-${i}`} style={{ display: 'contents' }}>
             <dt title={l.detail}>
               {l.label} <span style={{ fontSize: 11 }}>· {l.detail}</span>
             </dt>
             <dd>{gbp(l.cost)}</dd>
           </div>
         ))}
-        {laserNet > est.subtotal + 1e-9 && (
-          <>
-            <dt>Minimum order</dt>
-            <dd>+{gbp(laserNet - est.subtotal)}</dd>
-          </>
-        )}
         <dt>VAT {fmt(rates.vat * 100, 0)}%</dt>
         <dd>{gbp(est.vat)}</dd>
       </dl>
-      {est.warnings.map((w) => (
-        <div key={w} className="note warn">
-          {w}
-        </div>
-      ))}
+      {shop && <div className="note warn">Shop rates are overriding the fitted Chop Chop prices. Reset rates to use the {CHOPCHOP_CALIBRATED} fit.</div>}
       <div className="note">
-        Estimate only, not a Chop Chop quote. They don&rsquo;t publish rates, so this uses typical UK laser rates applied to the cut list ({metalText} {fmt(thickness, 1)} mm{metals.length > 1 ? ', each metal priced as its own job' : ''}).
-        {est.hardware ? 'Bracing rods, nuts and washers are priced separately at fastener-supplier rates. ' : ''}Delivery, etching and the concrete base aren&rsquo;t included. For a real price, upload the plate DXFs to their{' '}
+        {est.fitted
+          ? `Fitted to Chop Chop quotes from ${CHOPCHOP_CALIBRATED}, qty 1, ex VAT (${metalText} ${fmt(thickness, 1)} mm${metals.length > 1 ? ', each metal on its own rate' : ''}). A qty of 10 of one part is about 8% cheaper, and the other parts on that order drop too. This estimate leaves that discount off. `
+          : `Shop rates applied to the cut list (${metalText} ${fmt(thickness, 1)} mm). `}
+        {est.hardware ? 'Bracing rods, nuts and washers are priced separately at fastener-supplier rates. ' : ''}
+        Delivery is not included. The concrete base isn&rsquo;t included. For a real price, upload the plate DXFs to their{' '}
         <a href={CHOPCHOP_QUOTE_URL} target="_blank" rel="noreferrer">
           instant quote
         </a>
@@ -121,6 +130,11 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
       </div>
       {editing && (
         <dl className="kv">
+          <div style={{ display: 'contents' }}>
+            <dt style={{ gridColumn: '1 / -1', color: 'var(--muted)', fontSize: 11 }}>
+              Sheet, laser, setup and handling replace the fitted prices with the shop model. Minimum, VAT and hardware still apply to the fit.
+            </dt>
+          </div>
           {Object.keys(DEFAULT_RATES.perKg).map((m) => (
             <RateInput key={m} label={`${MATERIAL_NAME[m] ?? m} sheet`} unit="£/kg" value={rates.perKg[m]} onChange={(x) => setRates({ ...rates, perKg: { ...rates.perKg, [m]: x } })} />
           ))}
