@@ -65,6 +65,14 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 | **Catalog (DTM 1 m)** | `https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m` |
 | **Strata status** | Ticket **T6** reads EA tiles via the adapter (cached under `--map-cache`); offline tests use `test/fixtures/map/regional/neasden-ea-dtm.json`. Browser fetches may use the **EA-only** CORS proxy in `api/ea-proxy.ts` (deployed on Vercel). |
 
+## Buildings / DSM (ticket T15)
+
+| Field | Value |
+|---|---|
+| **MapSpec.model** | `dtm` (bare ground), `dsm` (EA DSM / max-pool), `dtm+buildings` (DTM + OSM `height` / `building:levels×3`) |
+| **Tower clamp** | `buildingClampM` (default **25 m**) limits DSM−DTM rise before exaggeration |
+| **OSM** | Building ways via Overpass (`building` tag); ODbL attribution when engraved |
+
 ## Neasden preset (ticket T18)
 
 | Field | Value |

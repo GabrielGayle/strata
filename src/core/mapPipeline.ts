@@ -12,7 +12,15 @@ import { fetchEaLidarGrid, isEaLidarSource, type EaGridLoader } from './mapEaLid
 import { fetchRegionalLidarGrid, isRegionalLidarSource, type RegionalGridLoader } from './mapRegionalLidar';
 import { pickAutoMapSource, pickExplicitSource } from './mapSourcePick';
 import { sourceMeta } from './mapSourceRegistry';
+import {
+  applyBuildingFootprints,
+  buildingClampMetres,
+  clampTowerRise,
+  footprintsFromOverpass,
+  resolveElevationSourceForModel,
+} from './mapBuildings';
 import { commemorativeFitWarning } from './mapBackPlateEtch';
+import { fetchOverpass } from './mapOverpass';
 import { buildMapEngraveArt } from './mapEngraveBuild';
 import { serializeMapEngraveArt } from './mapOsmEngrave';
 import type { OverpassFetcher } from './mapOverpass';
@@ -138,8 +146,33 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   const faceW = opts.stack?.masterWidthMm ?? 520;
   const commWarn = spec.commemorativeText ? commemorativeFitWarning(spec.commemorativeText, faceW) : null;
   if (commWarn) warnings.push(commWarn);
-  const elev = await fetchElevationGrid(spec, resolved.effective, warnings, opts);
-  let metric = reprojectResample(elev, spec);
+  const fetchSource = resolveElevationSourceForModel(resolved.effective, spec.model);
+  const elev = await fetchElevationGrid(spec, fetchSource, warnings, opts);
+  const resampleSpec = { ...spec, model: spec.model === 'dtm+buildings' ? 'dtm' : spec.model };
+  let metric = reprojectResample(elev, resampleSpec);
+  let dtmMetric = metric;
+  if (spec.model === 'dsm' && fetchSource !== resolved.effective) {
+    const dtmElev = await fetchElevationGrid(spec, resolved.effective, warnings, opts);
+    dtmMetric = reprojectResample(dtmElev, { ...spec, model: 'dtm' });
+  }
+  if (spec.model === 'dtm+buildings') {
+    dtmMetric = metric;
+    try {
+      const osm = await fetchOverpass(spec.bbox, {
+        cacheDir: spec.cacheDir ?? opts.cacheDir,
+        fetch: opts.overpass,
+        allowNetwork: opts.allowOverpassNetwork,
+        features: ['buildings'],
+      });
+      const fps = footprintsFromOverpass(osm as Parameters<typeof footprintsFromOverpass>[0], spec, metric.crs ?? 'EPSG:27700');
+      if (fps.length) metric = applyBuildingFootprints(dtmMetric, fps);
+    } catch (e) {
+      warnings.push(`OSM buildings skipped: ${(e as Error).message}`);
+    }
+  }
+  if (spec.model !== 'dtm') {
+    metric = clampTowerRise(metric, dtmMetric, buildingClampMetres(spec));
+  }
   const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
   const budgetMode = spec.layerBudget ?? stack.layerBudget ?? 'jenks';
   const budget = computeLayerBreaks(metric, stack.plateCount, budgetMode);

@@ -1,0 +1,15 @@
+{
+  "elements": [
+    {
+      "type": "way",
+      "id": 100,
+      "tags": { "building": "temple", "building:levels": "12" },
+      "geometry": [
+        { "lat": 51.559, "lon": -0.258 },
+        { "lat": 51.561, "lon": -0.258 },
+        { "lat": 51.561, "lon": -0.254 },
+        { "lat": 51.559, "lon": -0.254 }
+      ]
+    }
+  ]
+}

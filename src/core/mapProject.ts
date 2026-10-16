@@ -40,6 +40,10 @@ function project(lon: number, lat: number, crs: string): [number, number] {
   return proj4('EPSG:4326', crs, [lon, lat]) as [number, number];
 }
 
+export function lonLatToMetric(lon: number, lat: number, crs: string): [number, number] {
+  return project(lon, lat, crs);
+}
+
 export function metricBounds(bbox: MapSpec['bbox'], crs: string): { west: number; south: number; east: number; north: number } {
   const [w, s, e, n] = bbox;
   const corners: [number, number][] = [[w, s], [e, s], [e, n], [w, n]];
