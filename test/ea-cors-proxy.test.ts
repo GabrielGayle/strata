@@ -46,6 +46,18 @@ describe('EA CORS proxy allowlist (T6)', () => {
     expect(picked['x-powered-by']).toBeUndefined();
   });
 
+  it('forwards range-related response headers for partial content', () => {
+    const h = new Headers({
+      'content-type': 'application/octet-stream',
+      'content-range': 'bytes 0-1023/4096',
+      'accept-ranges': 'bytes',
+      'content-length': '1024',
+    });
+    const picked = pickEaProxyResponseHeaders(h);
+    expect(picked['content-range']).toBe('bytes 0-1023/4096');
+    expect(picked['accept-ranges']).toBe('bytes');
+  });
+
   it('blocks redirects to a foreign host', async () => {
     const fetchImpl = vi.fn(async () =>
       new Response(null, {

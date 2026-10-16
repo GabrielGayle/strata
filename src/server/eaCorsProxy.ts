@@ -8,6 +8,8 @@ export const EA_PROXY_MAX_REDIRECTS = 5;
 export const EA_PROXY_RESPONSE_HEADERS = new Set([
   'content-type',
   'content-length',
+  'content-range',
+  'accept-ranges',
   'cache-control',
   'etag',
   'last-modified',

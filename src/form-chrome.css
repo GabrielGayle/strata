@@ -1,0 +1,248 @@
+/* Win98 chrome + form fields: paired fg/bg tokens, isolated from :root color-scheme: dark. */
+
+body {
+  color: var(--chrome-fg);
+}
+
+.app.window,
+.status-bar,
+.statusbar,
+.window,
+.window-body,
+fieldset,
+legend,
+.menu-pop,
+.overlay,
+.toast,
+.map-window,
+.design-box,
+.help-sheet,
+.pm,
+.video-picker,
+.round-preview,
+ul.tree-view,
+table.tbl,
+.list.sunken-panel,
+.split > .list.sunken-panel {
+  color: var(--chrome-fg);
+  color-scheme: light;
+}
+
+.theme-surface,
+.map-view,
+.nodes-view,
+.shadow-view,
+.lib-body,
+.nv-body,
+.cm-body,
+.pm-body,
+.appearance.overlay,
+.nd-node,
+.sf-row {
+  color: var(--ink);
+}
+
+/* Map tab: fieldset/legend inherit win98 chrome-fg (#222) unless reset — unreadable on dark panels */
+.map-view :is(fieldset, legend, label, h2, h3) {
+  color: var(--ink);
+}
+.map-view .map-view-note,
+.map-view .map-window-status,
+.map-view .map-readout {
+  color: var(--muted);
+}
+.map-view button:disabled {
+  color: var(--field-disabled-fg);
+  text-shadow: none;
+}
+
+/* Parameters + Inspector side panels: Win98 silver, never themed --ink/--muted on labels */
+.left.window,
+.right.window {
+  background: var(--param-bg);
+  color: var(--param-fg);
+  color-scheme: light;
+}
+
+.left.window .panel-title,
+.left.window .title-bar.panel-title {
+  color: var(--param-heading);
+}
+
+.left.window .prow .plabel {
+  color: var(--param-fg);
+}
+.left.window .prow .plabel .pid,
+.left.window .prow .unit,
+.left.window .prow .evald,
+.left.window .search,
+.left.window .changed-only,
+.left.window .note,
+.left.window .note.section-off {
+  color: var(--param-muted);
+}
+.left.window .section.off .section-head > span:first-child,
+.left.window .section.off .section-head .count {
+  color: var(--param-disabled);
+}
+
+.left.window .section-headrow {
+  background: var(--param-bg);
+}
+.left.window .section-head {
+  background: var(--param-bg);
+  color: var(--param-heading);
+}
+.left.window .section-head .count {
+  color: var(--param-muted);
+}
+.left.window .section-head:hover {
+  background: color-mix(in srgb, var(--accent) 18%, var(--param-bg));
+}
+
+.right.window .section-head,
+.right.window .section-headrow {
+  background: var(--param-bg);
+  color: var(--param-heading);
+}
+.right.window .section-head .count {
+  color: var(--param-muted);
+}
+.right.window .section-head[aria-expanded='false'] {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px;
+}
+.right.window .section-head[aria-expanded='false'] .section-collapsed-summary {
+  color: var(--param-fg);
+  flex: 1 1 100%;
+  margin-left: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  line-height: 1.25;
+  word-break: break-word;
+  text-align: left;
+}
+.right.window .note {
+  color: var(--param-muted);
+}
+.right.window .stats .k {
+  color: var(--param-muted);
+}
+.right.window .stats .v,
+.right.window .kv dt,
+.right.window .kv dd {
+  color: var(--param-fg);
+}
+
+/* All sunken text fields (98.css white inset) */
+:is(
+    input:not([type]),
+    input[type='text'],
+    input[type='search'],
+    input[type='email'],
+    input[type='url'],
+    input[type='tel'],
+    input[type='password'],
+    input[type='number'],
+    input[type='time'],
+    input[type='date'],
+    input[type='datetime-local'],
+    input[type='month'],
+    input[type='week'],
+    textarea,
+    select
+  ):not(.sf-name) {
+  color-scheme: light;
+  background-color: var(--field-bg);
+  color: var(--field-fg);
+}
+
+:is(input, textarea)::placeholder {
+  color: var(--field-placeholder);
+  opacity: 1;
+}
+
+:is(
+    input:not([type]),
+    input[type='text'],
+    input[type='search'],
+    input[type='email'],
+    input[type='url'],
+    input[type='tel'],
+    input[type='password'],
+    input[type='number'],
+    input[type='time'],
+    input[type='date'],
+    input[type='datetime-local'],
+    input[type='month'],
+    input[type='week'],
+    textarea,
+    select
+  ):disabled {
+  background-color: var(--field-disabled-bg);
+  color: var(--field-disabled-fg);
+}
+
+:is(
+    input:not([type]),
+    input[type='text'],
+    input[type='search'],
+    input[type='email'],
+    input[type='url'],
+    input[type='tel'],
+    input[type='password'],
+    input[type='number'],
+    textarea
+  ):read-only:not(.sf-name) {
+  background-color: var(--field-disabled-bg);
+  color: var(--field-readonly-fg);
+}
+
+select option {
+  background-color: var(--field-bg);
+  color: var(--field-fg);
+}
+
+ul.tree-view > li > button,
+ul.tree-view ul button:not(.btn),
+.menu-pop button.item,
+.menu-pop .tree-view button:not(.btn) {
+  color: var(--chrome-fg);
+}
+
+ul.tree-view > li > button:hover,
+ul.tree-view > li > button.on,
+ul.tree-view ul button:not(.btn):hover,
+ul.tree-view ul button:not(.btn).on {
+  color: var(--chrome-list-fg);
+  background: var(--chrome-list-bg);
+}
+
+table.tbl tbody tr.sel td,
+table.tbl tbody tr.highlighted td {
+  color: var(--chrome-list-fg);
+  background: var(--chrome-list-bg);
+}
+
+.design-box .design-hint,
+.map-window-note,
+.map-window-status,
+.design-box .note {
+  color: var(--chrome-muted);
+}
+.design-box .design-highlight,
+.design-box fieldset,
+.map-window fieldset {
+  color: var(--chrome-fg);
+}
+.design-box kbd {
+  color: var(--chrome-fg);
+  background: var(--field-bg);
+  border-color: var(--chrome-muted);
+}
+
+.status-bar-field {
+  color: var(--chrome-fg);
+}

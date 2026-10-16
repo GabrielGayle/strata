@@ -1,19 +1,27 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: 'test/e2e',
-  timeout: 360_000,
+  testDir: '.',
+  testMatch: ['e2e/**/*.spec.ts', 'test/e2e/**/*.spec.ts'],
   fullyParallel: false,
+  retries: 0,
   workers: 1,
+  reporter: 'list',
+  timeout: 360_000,
   use: {
     ...devices['Desktop Chrome'],
     baseURL: 'http://127.0.0.1:4173',
     acceptDownloads: true,
+    trace: 'on-first-retry',
   },
   webServer: {
-    command: 'npm run preview -- --host 127.0.0.1 --port 4173',
-    port: 4173,
-    reuseExistingServer: false,
-    timeout: 120_000,
+    command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173',
+    url: 'http://127.0.0.1:4173',
+    reuseExistingServer: !process.env.CI,
+    env: {
+      ...process.env,
+      VITE_E2E_MAP_FIXTURES: '1',
+    },
+    timeout: 180_000,
   },
 });

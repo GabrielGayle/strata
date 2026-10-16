@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useStore } from '../state/store';
 import { useFullModel, useModel, fmt, fmtInt } from './model';
 import {
@@ -18,16 +18,34 @@ import { serialize } from '../core/project';
 import { zipSync } from 'fflate';
 import type { Issue } from '../core/checks';
 import { PriceEstimate, loadRates } from './PriceEstimate';
+import { chopChopCollapsedSummary } from './chopChopSummary';
 
-function Section({ title, count, children, open: initial = true }: { title: string; count?: React.ReactNode; children: React.ReactNode; open?: boolean }) {
+function Section({
+  title,
+  count,
+  collapsedSummary,
+  children,
+  open: initial = true,
+}: {
+  title: string;
+  count?: React.ReactNode;
+  collapsedSummary?: string;
+  children: React.ReactNode;
+  open?: boolean;
+}) {
   const [open, setOpen] = useState(initial);
   return (
     <fieldset className="section">
       <legend>{title}</legend>
       <div className="field-row">
         <button className="section-head" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? 'Hide' : 'Show'}
-          {count !== undefined && <span className="count"> {count}</span>}
+          <span className="section-head-main">
+            {open ? 'Hide' : 'Show'}
+            {open && count !== undefined && <span className="count"> {count}</span>}
+          </span>
+          {!open && collapsedSummary && (
+            <span className="section-collapsed-summary" title={collapsedSummary}>{collapsedSummary}</span>
+          )}
         </button>
       </div>
       {open && children}
@@ -76,6 +94,10 @@ export default function Inspector() {
   const base = (project.name || 'strata').replace(/[^\w-]+/g, '_');
   const sel = model.sliced.parts.find((p) => p.id === ui.selected);
   const bevelMax = Math.max(0, ...model.sliced.plates.map((p) => p.bevel));
+  const chopSummary = useMemo(
+    () => chopChopCollapsedSummary(b, v.thickness, loadRates()),
+    [b, v.thickness],
+  );
 
   const plateZip = () => {
     const m = fullModel();
@@ -178,7 +200,7 @@ export default function Inspector() {
         </Section>
       )}
 
-      <Section title="Chop Chop price" count="estimate">
+      <Section title="Chop Chop price" count="estimate" collapsedSummary={chopSummary}>
         <PriceEstimate bom={b} material={v.plateMaterial} thickness={v.thickness} />
       </Section>
 

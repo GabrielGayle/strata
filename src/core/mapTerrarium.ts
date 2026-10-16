@@ -1,5 +1,4 @@
 // AWS Mapzen Terrarium PNG tiles → elevation grid (metres).
-import { PNG } from 'pngjs';
 import type { Float32Grid, GridTransform } from './mapGrid';
 import type { MapSpec } from './mapSpec';
 
@@ -16,15 +15,33 @@ export function decodeTerrariumMetres(r: number, g: number, b: number): number {
   return r * 256 + g + b / 256 - 32768;
 }
 
-export function decodeTerrariumPng(buf: Uint8Array): { w: number; h: number; data: Float32Array } {
-  const png = PNG.sync.read(Buffer.from(buf));
-  const n = png.width * png.height;
+function rgbaToElevGrid(w: number, h: number, rgba: Uint8ClampedArray): Float32Array {
+  const n = w * h;
   const data = new Float32Array(n);
   for (let i = 0, p = 0; i < n; i++, p += 4) {
-    const m = decodeTerrariumMetres(png.data[p], png.data[p + 1], png.data[p + 2]);
+    const m = decodeTerrariumMetres(rgba[p], rgba[p + 1], rgba[p + 2]);
     data[i] = m < -1000 || m > 9000 ? NaN : m;
   }
-  return { w: png.width, h: png.height, data };
+  return data;
+}
+
+async function decodeTerrariumPngAsync(buf: Uint8Array): Promise<{ w: number; h: number; data: Float32Array }> {
+  if (typeof createImageBitmap === 'function' && typeof document !== 'undefined') {
+    const blob = new Blob([Uint8Array.from(buf)], { type: 'image/png' });
+    const bmp = await createImageBitmap(blob);
+    const w = bmp.width;
+    const h = bmp.height;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    ctx.drawImage(bmp, 0, 0);
+    const img = ctx.getImageData(0, 0, w, h);
+    bmp.close?.();
+    return { w, h, data: rgbaToElevGrid(w, h, img.data) };
+  }
+  const { decodeTerrariumPng } = await import('./mapTerrarium.node.ts');
+  return decodeTerrariumPng(buf);
 }
 
 const R = 6378137;
@@ -91,7 +108,7 @@ export async function fetchTerrariumGrid(spec: Pick<MapSpec, 'bbox'>, opts: Terr
   for (let tx = tl.x; tx <= br.x; tx++) {
     for (let ty = tl.y; ty <= br.y; ty++) {
       const buf = await fetch(terrariumUrl(z, tx, ty));
-      const tile = decodeTerrariumPng(buf);
+      const tile = await decodeTerrariumPngAsync(buf);
       const ox = (tx - tl.x) * tileSize;
       const oy = (ty - tl.y) * tileSize;
       for (let y = 0; y < tile.h; y++) {

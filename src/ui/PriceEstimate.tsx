@@ -33,7 +33,15 @@ function RateInput({ label, value, onChange, step = 0.05, unit }: { label: strin
           value={value}
           step={step}
           min={0}
-          style={{ width: 70, textAlign: 'right', background: 'transparent', border: '1px solid var(--line)', borderRadius: 3, padding: '1px 4px' }}
+          style={{
+            width: 70,
+            textAlign: 'right',
+            background: 'var(--field-bg)',
+            color: 'var(--field-fg)',
+            border: '1px solid var(--line-soft)',
+            borderRadius: 0,
+            padding: '1px 4px',
+          }}
           onChange={(e) => {
             const x = parseFloat(e.target.value);
             if (Number.isFinite(x) && x >= 0) onChange(x);
