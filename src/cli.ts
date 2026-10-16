@@ -131,6 +131,8 @@ interface Args {
     engrave: MapSpec['engrave'];
     cacheDir?: string;
     layerBudget?: MapSpec['layerBudget'];
+    editionNumber?: number;
+    archetypeCard?: Record<string, unknown>;
   };
 }
 
@@ -236,7 +238,14 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--engrave=')) args.map!.engrave = parseEngraveFlag(a.slice(10), true);
     else if (a === '--map-cache') args.map!.cacheDir = take(argv, ++i, a);
     else if (a.startsWith('--map-cache=')) args.map!.cacheDir = a.slice(12);
-    else if (a === '--render') args.render = take(argv, ++i, a);
+    else if (a === '--map-edition') args.map!.editionNumber = Number(take(argv, ++i, a));
+    else if (a.startsWith('--map-edition=')) args.map!.editionNumber = Number(a.slice(14));
+    else if (a === '--archetype-card') {
+      const path = take(argv, ++i, a);
+      args.map!.archetypeCard = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    } else if (a.startsWith('--archetype-card=')) {
+      args.map!.archetypeCard = JSON.parse(readFileSync(a.slice(16), 'utf8')) as Record<string, unknown>;
+    } else if (a === '--render') args.render = take(argv, ++i, a);
     else if (a.startsWith('--render=')) args.render = a.slice(9);
     else if (a === '--help' || a === '-h') return idleArgs('help');
     else throw new Error(`unknown argument '${a}'`);
@@ -514,6 +523,8 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
           engrave: args.map.engrave,
           cacheDir: args.map.cacheDir,
           layerBudget: args.map.layerBudget,
+          editionNumber: args.map.editionNumber,
+          archetypeCard: args.map.archetypeCard,
         });
         const bundle = await buildMapBundle(spec, {
           stack: mapStackFromProject(project, args.map.layerBudget),
