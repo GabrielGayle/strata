@@ -9,6 +9,7 @@ import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
 import { loadRates } from './PriceEstimate';
 import { randomTheme, themeTokens, THEME_PRESETS, type ThemeSeed } from './theme';
+import { ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -90,6 +91,7 @@ export async function openProjectFile(f: File) {
   const { replaceProject, toast } = useStore.getState();
   try {
     replaceProject(deserialize(await f.text()));
+    unlinkActive();
     toast(`Opened ${f.name}`);
   } catch (e) {
     toast(`Could not open: ${(e as Error).message}`);
@@ -357,12 +359,14 @@ export default function Toolbar() {
         </Menu>
       </div>
       <div className="group">
+        <ProjectsButton />
         <button className="tb" onClick={open}>
           Open
         </button>
         <button className="tb" onClick={save} title="Save project JSON (parameters + images)">
           Save
         </button>
+        <ShareButton />
         <Menu label="Import">
           {(close) => (
             <>
@@ -389,6 +393,7 @@ export default function Toolbar() {
       <button className="tb primary" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">
         Export ZIP
       </button>
+      <SharedLinkPrompt />
     </header>
   );
 }
