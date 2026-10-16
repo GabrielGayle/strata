@@ -5,6 +5,7 @@ import { MAP_PRESET_CATALOG, mapPresetSpec } from '../core/mapPresets';
 import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/mapNominatim';
 import { MAP_SOURCE_REGISTRY } from '../core/mapSourceRegistry';
 import { useStore } from '../state/store';
+import MapPreviewPane from './MapPreviewPane';
 
 const SOURCES: MapSource[] = ['auto', 'ea-dtm', 'ea-dsm', 'scot-dtm', 'wales-dtm', 'ni-dtm', 'cop30', 'terrarium'];
 
@@ -89,8 +90,15 @@ export default function MapView() {
   const engravePreset = (existing?.engrave?.preset ?? 'city') as MapEngravePresetId;
   const engraveOn = existing?.engrave?.enabled ?? true;
 
+  const previewBbox = existing?.bbox ?? parseBboxFields(west, south, east, north) ?? undefined;
+
   return (
-    <div className="map-view">
+    <div
+      className="map-view-layout"
+      data-strata-map-engrave-count={existing?.engraveArt?.lines?.length ?? 0}
+      data-strata-resolved-source={existing?.resolvedSource ?? ''}
+    >
+      <div className="map-view">
       <header className="map-view-head">
         <h2>Map terrain</h2>
         <p className="map-view-note">Elevation, engraving and edition settings for the top face. Changes rebuild depth automatically.</p>
@@ -105,9 +113,11 @@ export default function MapView() {
         <span>{mapTerrain.message || (mapTerrain.phase === 'idle' ? 'No map on the top face yet.' : '')}</span>
         {mapTerrain.error && <p className="map-terrain-error">{mapTerrain.error}</p>}
         {existing?.sourceWarnings?.length ? (
-          <ul className="map-warnings">
-            {existing.sourceWarnings.map((w) => (
-              <li key={w}>{w}</li>
+          <ul className="map-notices">
+            {existing.sourceWarnings.map((w, i) => (
+              <li key={`${w.severity}-${i}`} className={w.severity === 'info' ? 'map-notice-info' : 'map-notice-warn'}>
+                {w.message}
+              </li>
             ))}
           </ul>
         ) : null}
@@ -319,6 +329,8 @@ export default function MapView() {
           />
         </label>
       </section>
+    </div>
+      <MapPreviewPane bbox={previewBbox} title={existing?.title ?? title} />
     </div>
   );
 }
