@@ -2644,7 +2644,6 @@ canvas.thumb {
 .design-hint {
   margin: 0;
   font-size: 11px;
-  color: var(--muted);
 }
 .design-input {
   width: 100%;
