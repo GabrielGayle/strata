@@ -63,6 +63,8 @@ export interface MapSpec {
   archetypeCard?: Record<string, unknown>;
   /** Short dedication etched on the back plate when it fits (ticket 26). */
   commemorativeText?: string;
+  /** Max DSM − DTM rise in metres before exaggeration (ticket 15, default 25). */
+  buildingClampM?: number;
 }
 
 export const TERRARIUM_ATTRIBUTION = [
@@ -182,6 +184,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   const archetypeCard = cleanArchetypeCard(o.archetypeCard);
   const commemorativeText =
     typeof o.commemorativeText === 'string' && o.commemorativeText.trim() ? o.commemorativeText.trim() : undefined;
+  const buildingClampM = num(o.buildingClampM);
   return {
     kind: 'map',
     bbox,
@@ -207,6 +210,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(editionNumber != null && editionNumber >= 1 ? { editionNumber: Math.round(editionNumber) } : {}),
     ...(archetypeCard ? { archetypeCard } : {}),
     ...(commemorativeText ? { commemorativeText } : {}),
+    ...(buildingClampM != null && buildingClampM > 0 ? { buildingClampM } : {}),
   };
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { defaultMapSpec, type MapSpec } from '../core/mapSpec';
+import { defaultMapSpec, type MapModel, type MapSpec } from '../core/mapSpec';
 import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/mapNominatim';
 import { useStore } from '../state/store';
 
@@ -26,6 +26,7 @@ export default function MapWindow({ onClose }: { onClose: () => void }) {
   const [north, setNorth] = useState(String(existing?.bbox?.[3] ?? ''));
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState<MapModel>(existing?.model ?? 'dtm');
 
   const applyBbox = useCallback(
     (bbox: MapSpec['bbox']) => {
@@ -65,6 +66,7 @@ export default function MapWindow({ onClose }: { onClose: () => void }) {
       title: title.trim() || 'Map terrain',
       bbox,
       source: existing?.source ?? 'auto',
+      model,
     });
     setTopMap(map);
     onClose();
@@ -105,6 +107,24 @@ export default function MapWindow({ onClose }: { onClose: () => void }) {
               ))}
             </ul>
           )}
+          <fieldset>
+            <legend>Ground model</legend>
+            <label>
+              <input type="radio" name="map-model" checked={model === 'dtm'} onChange={() => setModel('dtm')} /> DTM (bare ground)
+            </label>
+            <label>
+              <input type="radio" name="map-model" checked={model === 'dsm'} onChange={() => setModel('dsm')} /> DSM (with buildings)
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="map-model"
+                checked={model === 'dtm+buildings'}
+                onChange={() => setModel('dtm+buildings')}
+              />
+              DTM + OSM buildings
+            </label>
+          </fieldset>
           <fieldset>
             <legend>Bbox (WGS84)</legend>
             <div className="map-bbox-grid">
