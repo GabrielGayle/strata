@@ -21,6 +21,7 @@ import {
 } from './mapBuildings';
 import { commemorativeFitWarning } from './mapBackPlateEtch';
 import { fetchOverpass } from './mapOverpass';
+import { applySoundingsToGrid, loadWelshHarpSampleSoundings } from './mapBathymetry';
 import { applyFlatWater, estimateWaterSurfaceM, waterRingsFromOverpass } from './mapWater';
 import { buildMapEngraveArt } from './mapEngraveBuild';
 import { serializeMapEngraveArt } from './mapOsmEngrave';
@@ -174,7 +175,18 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   if (spec.model !== 'dtm') {
     metric = clampTowerRise(metric, dtmMetric, buildingClampMetres(spec));
   }
-  if (spec.water === 'flat' || spec.water === 'raw') {
+  let bathyApplied = false;
+  if (spec.water === 'bathy') {
+    const soundings = loadWelshHarpSampleSoundings(spec.bbox);
+    if (soundings.length) {
+      const surface = estimateWaterSurfaceM(metric);
+      metric = applySoundingsToGrid(metric, soundings, surface);
+      bathyApplied = true;
+    } else {
+      warnings.push('No bathymetry for this bbox; falling back to flat water surface.');
+    }
+  }
+  if (spec.water === 'flat' || spec.water === 'raw' || (spec.water === 'bathy' && !bathyApplied)) {
     try {
       const osm = await fetchOverpass(spec.bbox, {
         cacheDir: spec.cacheDir ?? opts.cacheDir,
