@@ -6,10 +6,11 @@ import { useStore, type Snap } from '../state/store';
 import { stackFrame } from '../core/heightfield';
 import type { Model } from '../core/pipeline';
 import Scene, { modelBounds } from './Scene';
-import { gizmoIsBusy, moveTarget } from './PlateGizmo';
+import { gizmoIsBusy, moveTarget, useGizmoClearance } from './PlateGizmo';
 import { useModel, fmt } from './model';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import { SunBar } from './SunStudy';
+import { MeasurePanel, MeasureTool, useMeasure } from './Measure';
 
 export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
@@ -72,16 +73,16 @@ export default function Viewport() {
   const opts = useMemo(
     () => ({
       selected: ui.selected,
-      onSelect: (id: string | null) => setUi({ selected: id }),
+      onSelect: ui.measureMode ? undefined : (id: string | null) => setUi({ selected: id }),
       showMoulds: ui.showMoulds,
       explode: ui.explode,
       xray: ui.xray,
       showIssues: ui.showIssues,
       showSource: ui.showSource,
-      moveMode: ui.moveMode && !ui.paintMode,
-      onPaint: ui.paintMode ? (key: string, shift: boolean) => paintClick(model, key, shift) : undefined,
+      moveMode: ui.moveMode && !ui.paintMode && !ui.measureMode,
+      onPaint: ui.paintMode && !ui.measureMode ? (key: string, shift: boolean) => paintClick(model, key, shift) : undefined,
     }),
-    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.moveMode, ui.paintMode, model, setUi],
+    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.moveMode, ui.paintMode, ui.measureMode, model, setUi],
   );
   const bucketed = Object.keys(useStore((s) => s.project.appearance?.assign) ?? {}).length;
   const movedCount = Object.keys(useStore((s) => s.project.moves) ?? {}).length;
@@ -102,17 +103,37 @@ export default function Viewport() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [ui.moveMode, setUi]);
+  // measuring tape: M toggles it, Esc drops a half-made measurement and then leaves, Delete removes the latest
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (e.metaKey || e.ctrlKey || e.altKey || el.closest('input, textarea, select, [contenteditable="true"]')) return;
+      const k = e.key.toLowerCase();
+      const on = useStore.getState().ui.measureMode;
+      const ms = useMeasure.getState();
+      if (k === 'm') setUi({ measureMode: !on, moveMode: false, paintMode: false });
+      else if (k === 'escape' && on) {
+        if (ms.pending) ms.setPending(null);
+        else setUi({ measureMode: false });
+      } else if ((k === 'delete' || (k === 'backspace' && on)) && ms.list.length) ms.removeLast();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [setUi]);
   const heights = model.sliced.parts.map((p) => p.bbox.maxY);
   const hMin = heights.length ? Math.min(...heights) : 0;
   const hMax = heights.length ? Math.max(...heights) : 0;
   return (
     <>
-      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
+      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
         <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={1} far={60000} position={[1500, 1100, 1800]} />
         <OrthographicCamera makeDefault={ui.ortho} near={-50000} far={50000} position={[1500, 1100, 1800]} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
         <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} />
         <Scene model={model} opts={opts} />
+        <MeasureTool active={ui.measureMode} />
       </Canvas>
       <div className="overlay tl">
         {(['iso', 'front', 'side', 'top'] as Snap[]).map((d) => (
@@ -125,11 +146,14 @@ export default function Viewport() {
         </button>
       </div>
       <div className="overlay tr col">
-        <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
+        <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false, measureMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
           Materials{bucketed ? ` (${bucketed})` : ''}
         </button>
-        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
+        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false, measureMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
           Move plates{movedCount ? ` (${movedCount})` : ''}
+        </button>
+        <button className={`btn sm ${ui.measureMode ? 'on' : ''}`} onClick={() => setUi({ measureMode: !ui.measureMode, moveMode: false, paintMode: false })} title="Measuring tape: point to point, edge to edge, point to edge or face (M; Esc leaves)">
+          Measure
         </button>
         <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
           X-ray concrete
@@ -163,8 +187,9 @@ export default function Viewport() {
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
       </div>
-      {ui.moveMode && !ui.paintMode && <MovePanel />}
-      {ui.paintMode && <AppearancePanel />}
+      {ui.moveMode && !ui.paintMode && !ui.measureMode && <MovePanel />}
+      {ui.paintMode && !ui.measureMode && <AppearancePanel />}
+      {ui.measureMode && <MeasurePanel />}
       {v.sunOn && <SunBar model={model} />}
       {v.pourView !== 'plain' && model.pour.rows.length > 0 && (
         <div className="overlay br info">
@@ -193,6 +218,7 @@ function MovePanel() {
   const count = Object.keys(moves ?? {}).length;
   const deg = m ? (2 * Math.acos(Math.min(1, Math.abs(m.q[3]))) * 180) / Math.PI : 0;
   const label = target?.label;
+  const live = useGizmoClearance((s) => s.items);
   return (
     <div className="overlay tc movepanel">
       <div className="mp-row">
@@ -222,6 +248,15 @@ function MovePanel() {
             : `${label}: where it was designed`}
         {count > 0 && ` · ${count} plate${count > 1 ? 's' : ''} moved`}
       </div>
+      {live && live.length > 0 && (
+        <div className="mp-info mp-live">
+          {live.map((c) => (
+            <span key={c.label} className={c.mm < 0 ? 'clash' : undefined}>
+              {c.label} {c.mm < 0 ? `overlaps ${fmt(-c.mm, 1)}` : fmt(c.mm, 1)} mm
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -58,6 +58,7 @@ const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selecte
   return (
     <mesh
       geometry={geo}
+      userData={{ measure: part.id }}
       castShadow
       receiveShadow
       material={selected ? selMaterial : material}
@@ -117,7 +118,7 @@ function Base({ model, xray }: { model: Model; xray: boolean }) {
   mat.opacity = xray ? 0.28 : 1;
   mat.depthWrite = !xray;
   return (
-    <mesh geometry={geo} material={mat} receiveShadow castShadow={!xray}>
+    <mesh geometry={geo} material={mat} receiveShadow castShadow={!xray} userData={{ measure: 'base' }}>
       <Edges color="#1b1b1b" threshold={15} />
     </mesh>
   );
@@ -131,20 +132,20 @@ function Insert({ model }: { model: Model }) {
   if (!ins) return null;
   if (v.insMaterial === 'void')
     return (
-      <mesh geometry={ins.form.geometry}>
+      <mesh geometry={ins.form.geometry} userData={{ measure: 'insert' }}>
         <meshBasicMaterial color={cssVar('--accent', '#d4521c')} wireframe transparent opacity={0.35} />
       </mesh>
     );
   if (v.insMaterial === 'metal') {
     const m = METALS.steel;
     return (
-      <mesh geometry={ins.form.geometry}>
+      <mesh geometry={ins.form.geometry} userData={{ measure: 'insert' }}>
         <meshStandardMaterial color={m.color} metalness={m.metalness} roughness={m.roughness} />
       </mesh>
     );
   }
   mat.setBands([{ top: 1e9, color: v.insTint }], 0);
-  return <mesh geometry={ins.form.geometry} material={mat} castShadow receiveShadow />;
+  return <mesh geometry={ins.form.geometry} material={mat} castShadow receiveShadow userData={{ measure: 'insert' }} />;
 }
 
 function explodeOffset(mp: MouldPart, center: THREE.Vector2, model: Model): THREE.Vector3 {

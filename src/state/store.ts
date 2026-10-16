@@ -42,6 +42,8 @@ export interface UiState {
   /** Material picking in the 3D view: clicks put plates in the active bucket. */
   paintMode: boolean;
   activeBucket: string;
+  /** Measuring tape in the 3D view (the measurements themselves live in ui/Measure, view-only). */
+  measureMode: boolean;
   /** Sun study: clock time of day in hours, and whether the day is playing. Not part of the undo history. */
   sunTime: number;
   sunPlaying: boolean;
@@ -227,6 +229,7 @@ export const useStore = create<Store>((set, get) => {
       gizmoSpace: 'world',
       paintMode: false,
       activeBucket: 'b1',
+      measureMode: false,
       sunTime: 12,
       sunPlaying: false,
       ...loadUi(),
