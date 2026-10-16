@@ -1,7 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { openApp, openWorkspaceTab, pickNeasdenPreset, assertMapPreviewNonUniform, assertPlateHeightMatchesRelief, setThemePreset, waitForViewportRelief } from './map-helpers';
+import {
+  openApp,
+  openWorkspaceTab,
+  pickNeasdenPreset,
+  assertMapPreviewNonUniform,
+  assertPlateHeightMatchesRelief,
+  setThemePreset,
+  waitForViewportRelief,
+} from './map-helpers';
 
 test('neasden map plates follow real elevation × exaggeration (fixture)', async ({ page }) => {
   test.setTimeout(240_000);

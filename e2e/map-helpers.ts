@@ -1,6 +1,19 @@
 import { expect, type Page } from '@playwright/test';
+import { PNG } from 'pngjs';
 
 const MAP_READY_MS = 240_000;
+
+/** First-visit Help tour (1.5 s) covers the chrome and steals toolbar clicks. */
+export async function dismissTour(page: Page) {
+  const dlg = page.getByRole('dialog', { name: /Tour:/ });
+  const visible = await dlg
+    .waitFor({ state: 'visible', timeout: 4_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!visible) return;
+  await dlg.getByRole('button', { name: 'Skip' }).click();
+  await dlg.waitFor({ state: 'hidden', timeout: 5_000 });
+}
 
 /** Fresh Playwright contexts have no tour-seen flag; the 1.5 s Composer tour steals clicks. */
 export async function openApp(page: Page) {
@@ -13,6 +26,7 @@ export async function openApp(page: Page) {
   });
   await page.goto('/');
   await page.waitForSelector('.app.window', { timeout: 60_000 });
+  await dismissTour(page);
   const skip = page.getByRole('button', { name: 'Skip' });
   if (await skip.isVisible().catch(() => false)) await skip.click();
 }
@@ -32,6 +46,7 @@ export async function waitForMapReady(page: Page) {
 
 /** Toolbar Maps ▾ → Neasden (preset auto-builds; there is no Build button). */
 export async function pickNeasdenPreset(page: Page) {
+  await dismissTour(page);
   await page.getByRole('button', { name: 'Maps ▾' }).click();
   await page.locator('.menu-pop').getByRole('button', { name: /^Neasden\b/ }).first().click();
   await waitForMapReady(page);
@@ -39,11 +54,13 @@ export async function pickNeasdenPreset(page: Page) {
 
 /** Map tab preset row — also auto-builds. */
 export async function clickMapPreset(page: Page, label: string) {
+  await dismissTour(page);
   await openWorkspaceTab(page, 'Map');
   await page.locator('.map-preset-row').getByRole('button', { name: label, exact: true }).click();
 }
 
 export async function applyNeasdenDesign(page: Page) {
+  await dismissTour(page);
   // Blur the parameter filter (it steals `/` if focused) then open the design box.
   await page.locator('.app.window').click({ position: { x: 8, y: 8 } });
   await page.keyboard.press('/');
@@ -51,6 +68,7 @@ export async function applyNeasdenDesign(page: Page) {
   await page.fill('.design-box .design-input', 'neasden map');
   await page.getByRole('button', { name: 'Apply' }).click();
   await waitForMapReady(page);
+  await dismissTour(page);
 }
 
 export async function plateHeightRangeMm(page: Page): Promise<number> {
@@ -120,7 +138,24 @@ export async function waitForViewportRelief(page: Page) {
       timeout: 60_000,
     })
     .toBeGreaterThan(40);
-  await page.locator('.main canvas').waitFor({ state: 'visible', timeout: 30_000 });
+  const canvas = page.locator('.main canvas').first();
+  await expect(canvas).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(
+      async () => {
+        const buf = await canvas.screenshot({ type: 'png' });
+        const png = PNG.sync.read(Buffer.from(buf));
+        const keys = new Set<number>();
+        for (let i = 0; i < png.data.length; i += 16) {
+          if (png.data[i + 3] < 8) continue;
+          keys.add((png.data[i] << 16) | (png.data[i + 1] << 8) | png.data[i + 2]);
+          if (keys.size >= 8) return keys.size;
+        }
+        return keys.size;
+      },
+      { timeout: 90_000 },
+    )
+    .toBeGreaterThanOrEqual(3);
 }
 
 export async function setThemePreset(page: Page, name: string) {
