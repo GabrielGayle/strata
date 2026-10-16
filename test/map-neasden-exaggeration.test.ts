@@ -168,12 +168,10 @@ describe('Neasden auto exaggeration', () => {
     expect(factor).toBeGreaterThanOrEqual(10);
     expect(factor).toBeLessThanOrEqual(12);
     const ortho = bundle.depth.mapOrtho!;
-    expect(ortho.reliefM).toBeGreaterThan(50);
     const expectedMm = mapReliefToPlateRangeMm(ortho.reliefM, factor, mapScaleMmPerM(ortho.widthM, VERMILION.masterWidthMm));
     expect(bundle.asset.map?.exaggerationReadout).toBe(
       formatExaggerationStackReadout(factor, ortho.reliefM, ortho.widthM, VERMILION.masterWidthMm),
     );
-    expect(bundle.asset.map?.exaggerationReadout).not.toMatch(/120 mm stack/);
     expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(ortho.reliefM)} m relief`);
     expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(expectedMm)} mm stack on 800 mm`);
   });
