@@ -181,8 +181,8 @@ async function main() {
     cwd: root,
     stdio: 'ignore',
     env: { ...process.env },
+    detached: true,
   });
-  preview.unref?.();
   try {
     await waitForUrl(BASE);
     const browser = await chromium.launch();
@@ -200,7 +200,7 @@ async function main() {
     console.log(`Wrote ${OUT}`);
   } finally {
     try {
-      preview.kill('SIGKILL');
+      if (preview.pid) process.kill(-preview.pid, 'SIGKILL');
     } catch {
       /* already gone */
     }

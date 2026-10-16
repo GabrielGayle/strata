@@ -3,6 +3,9 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 test('neasden map design builds a carved top with plates', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('strata:tour-seen', '1');
+  });
   await page.goto('/');
   await page.waitForSelector('.app.window', { timeout: 60_000 });
 
