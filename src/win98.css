@@ -583,3 +583,55 @@ button.card.sel {
     grid-template-rows: auto auto auto auto auto auto;
   }
 }
+
+/* Rounding close-up under the Edges sliders */
+.round-preview {
+  margin: 4px 0 6px;
+  width: fit-content;
+  max-width: 100%;
+}
+.round-preview .window-body {
+  margin: 4px;
+}
+.round-zoom {
+  display: block;
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px grey;
+  padding: 2px;
+  background: #fff;
+  max-width: 100%;
+  height: auto;
+}
+.round-note {
+  margin: 4px 0;
+  max-width: 236px;
+  font-size: 11px;
+}
+.round-note.bad {
+  color: #c00000;
+}
+.round-legend {
+  gap: 4px;
+  font-size: 11px;
+}
+.round-legend .key {
+  display: inline-block;
+  width: 14px;
+  height: 8px;
+}
+.round-legend .key.dashed {
+  border-top: 2px dashed #000080;
+  height: 0;
+}
+.round-legend .key.filled {
+  background: #9c4f24;
+}
+.round-legend input {
+  margin-left: 8px;
+}
+.round-steps {
+  gap: 6px;
+  font-size: 11px;
+}
+.round-steps button {
+  min-width: 28px;
+}
