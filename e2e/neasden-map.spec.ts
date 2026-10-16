@@ -21,6 +21,8 @@ test('neasden map design builds a carved top with plates', async ({ page }) => {
   await page.getByRole('button', { name: /Maps/ }).click();
   await page.getByRole('button', { name: 'Open Map tab' }).click();
   await expect(page.locator('.map-view h2')).toBeVisible();
+  await expect(page.locator('#map-model-dtm')).toBeChecked();
+  await expect(page.locator('#map-water-bathy')).toBeChecked();
 
   const shotDir = join(process.cwd(), 'docs/screenshots');
   await mkdir(shotDir, { recursive: true });

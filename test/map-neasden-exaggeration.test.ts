@@ -21,6 +21,19 @@ describe('Neasden auto exaggeration', () => {
     expect(factor).toBeLessThanOrEqual(21);
   });
 
+  it('default Vermilion 40 (800 mm, 40×3 mm) is ~×11 for live-scale Neasden relief, not the A3 ×18–21 number', () => {
+    // Live EA 1 m over the full Neasden bbox is ~45 m p98−p2 on ~3.25 km.
+    // Auto fills the current stack: 120 mm / (45 m × 800/3250 mm per m) ≈ ×10.8.
+    const factor = computeAutoExaggeration({
+      reliefM: 45,
+      stackHeightMm: 120,
+      mapWidthM: 3250,
+      masterWidthMm: 800,
+    });
+    expect(factor).toBeGreaterThanOrEqual(10);
+    expect(factor).toBeLessThanOrEqual(12);
+  });
+
   it('buildMapBundle auto lands near ×18–21 for Neasden EA clip (not layer-budget ×50 clamp)', async () => {
     setMapTileFetcher(fixtureTileFetcher);
     const bundle = await buildMapBundle(

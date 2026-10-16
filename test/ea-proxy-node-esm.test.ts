@@ -67,7 +67,7 @@ const EA_HANDLER_RUNNER = `import { pathToFileURL } from 'node:url';
 
 const handlerUrl = process.argv[2];
 const allowedCatalog =
-  'https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m';
+  'https://environment.data.gov.uk/geoservices/datasets/13787b9a-26a4-4775-8523-806d13af58fc/wcs';
 
 globalThis.fetch = async (input) => {
   const url = String(input);

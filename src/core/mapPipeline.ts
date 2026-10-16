@@ -28,7 +28,7 @@ import { serializeMapEngraveArt } from './mapOsmEngrave';
 import type { OverpassFetcher } from './mapOverpass';
 import type { MapSource } from './mapSpec';
 import { mapBuildKey } from './mapBuildKey';
-import { mapInfo, mapWarn, type MapSourceNotice } from './mapNotices';
+import { mapInfo, mapWarn, noticesWithoutStaleEngraveSkip, type MapSourceNotice } from './mapNotices';
 import type { DepthData } from './depth';
 import type { ImageAsset, Project } from './project';
 import type { RawValue } from './params';
@@ -231,6 +231,8 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       notices.push(mapWarn(`OSM engrave skipped: ${(e as Error).message}`));
     }
   }
+  const hasEngraveArt = (engraveArt?.lines?.length ?? 0) > 0;
+  const filteredNotices = noticesWithoutStaleEngraveSkip(notices, hasEngraveArt);
   const stored: MapSpec = {
     ...spec,
     buildKey: mapBuildKey(spec),
@@ -243,12 +245,14 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     exaggeration: spec.exaggeration === 'auto' ? 'auto' : factor,
     simplifyLostFeatures: simplified.lostFeatures,
     resolvedSource: resolved.effective,
-    sourceWarnings: notices.length ? notices : undefined,
-    ...(engraveArt ? { engraveArt } : {}),
+    sourceWarnings: filteredNotices.length ? filteredNotices : undefined,
     attribution: mergeAttribution(spec, resolved.effective).concat(
-      engraveArt ? ['Map features © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), ODbL'] : [],
+      hasEngraveArt ? ['Map features © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), ODbL'] : [],
     ),
   };
+  if (engraveArt && hasEngraveArt) stored.engraveArt = engraveArt;
+  else delete stored.engraveArt;
+  if (!filteredNotices.length) delete stored.sourceWarnings;
   const asset: ImageAsset = {
     name: spec.title?.trim() || 'Map terrain',
     dataUrl: PLACEHOLDER_TOP,

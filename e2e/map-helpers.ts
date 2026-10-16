@@ -1,5 +1,10 @@
 import { expect, type Page } from '@playwright/test';
 
+export async function clickMapPreset(page: Page, label: string) {
+  await openWorkspaceTab(page, 'Map');
+  await page.locator('.map-preset-row').getByRole('button', { name: label, exact: true }).click();
+}
+
 export async function applyNeasdenDesign(page: Page) {
   await page.keyboard.press('/');
   await page.waitForSelector('.design-box .design-input');

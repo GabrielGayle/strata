@@ -3163,6 +3163,14 @@ kbd {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
+.map-section .field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.map-section input[type='radio'] {
+  flex: none;
+}
 .map-preset-row {
   display: flex;
   flex-wrap: wrap;

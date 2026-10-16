@@ -4,10 +4,50 @@ import { MAP_ENGRAVE_PRESETS, type MapEngravePresetId } from '../core/mapEngrave
 import { MAP_PRESET_CATALOG, mapPresetSpec } from '../core/mapPresets';
 import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/mapNominatim';
 import { MAP_SOURCE_REGISTRY } from '../core/mapSourceRegistry';
+import { noticesWithoutStaleEngraveSkip } from '../core/mapNotices';
 import { useStore } from '../state/store';
 import MapPreviewPane from './MapPreviewPane';
 
 const SOURCES: MapSource[] = ['auto', 'ea-dtm', 'ea-dsm', 'scot-dtm', 'wales-dtm', 'ni-dtm', 'cop30', 'terrarium'];
+
+function radioId(name: string, value: string): string {
+  return `${name}-${value.replace(/[^a-z0-9]+/gi, '-')}`;
+}
+
+function MapRadioGroup<T extends string>({
+  name,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  name: string;
+  value: T;
+  options: { id: T; label: string }[];
+  disabled?: boolean;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <>
+      {options.map((o) => {
+        const id = radioId(name, o.id);
+        return (
+          <div className="field-row" key={o.id}>
+            <input
+              id={id}
+              type="radio"
+              name={name}
+              checked={value === o.id}
+              disabled={disabled}
+              onChange={() => onChange(o.id)}
+            />
+            <label htmlFor={id}>{o.label}</label>
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
 function parseBboxFields(w: string, s: string, e: string, n: string): MapSpec['bbox'] | null {
   const west = Number(w);
@@ -91,11 +131,13 @@ export default function MapView() {
   const engraveOn = existing?.engrave?.enabled ?? true;
 
   const previewBbox = existing?.bbox ?? parseBboxFields(west, south, east, north) ?? undefined;
+  const engraveCount = existing?.engraveArt?.lines?.length ?? 0;
+  const notices = noticesWithoutStaleEngraveSkip(existing?.sourceWarnings ?? [], engraveCount > 0);
 
   return (
     <div
       className="map-view-layout"
-      data-strata-map-engrave-count={existing?.engraveArt?.lines?.length ?? 0}
+      data-strata-map-engrave-count={engraveCount}
       data-strata-resolved-source={existing?.resolvedSource ?? ''}
     >
       <div className="map-view">
@@ -112,9 +154,9 @@ export default function MapView() {
         {mapTerrain.phase === 'working' && <span className="map-terrain-spinner" aria-hidden />}
         <span>{mapTerrain.message || (mapTerrain.phase === 'idle' ? 'No map on the top face yet.' : '')}</span>
         {mapTerrain.error && <p className="map-terrain-error">{mapTerrain.error}</p>}
-        {existing?.sourceWarnings?.length ? (
+        {notices.length ? (
           <ul className="map-notices">
-            {existing.sourceWarnings.map((w, i) => (
+            {notices.map((w, i) => (
               <li key={`${w.severity}-${i}`} className={w.severity === 'info' ? 'map-notice-info' : 'map-notice-warn'}>
                 {w.message}
               </li>
@@ -173,18 +215,17 @@ export default function MapView() {
         </label>
         <fieldset>
           <legend>Ground model (DTM / DSM / buildings)</legend>
-          {(['dtm', 'dsm', 'dtm+buildings'] as MapModel[]).map((m) => (
-            <label key={m}>
-              <input
-                type="radio"
-                name="map-model"
-                checked={model === m}
-                onChange={() => commit({ model: m })}
-                disabled={!existing}
-              />
-              {m === 'dtm' ? 'DTM (bare ground)' : m === 'dsm' ? 'DSM (with buildings)' : 'DTM + OSM buildings'}
-            </label>
-          ))}
+          <MapRadioGroup
+            name="map-model"
+            value={model}
+            disabled={!existing}
+            onChange={(m) => commit({ model: m })}
+            options={[
+              { id: 'dtm' as MapModel, label: 'DTM (bare ground)' },
+              { id: 'dsm' as MapModel, label: 'DSM (with buildings)' },
+              { id: 'dtm+buildings' as MapModel, label: 'DTM + OSM buildings' },
+            ]}
+          />
         </fieldset>
         <fieldset>
           <legend>Bbox (WGS84)</legend>
@@ -277,18 +318,17 @@ export default function MapView() {
 
       <section className="map-section">
         <h3>Water &amp; bathymetry</h3>
-        {(['bathy', 'flat', 'raw'] as MapWater[]).map((w) => (
-          <label key={w}>
-            <input
-              type="radio"
-              name="map-water"
-              checked={water === w}
-              disabled={!existing}
-              onChange={() => commit({ water: w })}
-            />
-            {w === 'bathy' ? 'Bathymetry where available' : w === 'flat' ? 'Flat water surface' : 'Raw (no flatten)'}
-          </label>
-        ))}
+        <MapRadioGroup
+          name="map-water"
+          value={water}
+          disabled={!existing}
+          onChange={(w) => commit({ water: w })}
+          options={[
+            { id: 'bathy' as MapWater, label: 'Bathymetry where available' },
+            { id: 'flat' as MapWater, label: 'Flat water surface' },
+            { id: 'raw' as MapWater, label: 'Raw (no flatten)' },
+          ]}
+        />
       </section>
 
       <section className="map-section">
