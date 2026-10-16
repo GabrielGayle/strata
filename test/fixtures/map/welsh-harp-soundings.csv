@@ -1,0 +1,6 @@
+# Welsh Harp sample soundings (synthetic acceptance fixture, metres BNG / AMSL bed)
+# Not from an external dataset — for offline tests only.
+520100,185650,42.0
+520150,185700,39.5
+520200,185750,38.0
+520250,185800,40.2
