@@ -137,6 +137,27 @@ export default function ImageView() {
     setParams(patch, 'img');
     setUi({ collapsed: { ...ui.collapsed, Image: false } });
   };
+  // "Fit face to image": the option for each surface, null where it can't apply
+  const fitFor = (slot: Slot): { id: string; on: string; title: string } | null => {
+    if (v.sliceMode === 'radial') return null;
+    if (slot === 'top') return { id: 'imgFit', on: 'width', title: "Keeps the base length and sets its width so the top has this image's proportions" };
+    if (slot === 'front') return v.sliceMode === 'parallel' ? { id: 'imgFrontFit', on: 'width', title: "Keeps the plate height and sets the base width so the front face has this image's proportions" } : null;
+    return v.stackSource === 'strata'
+      ? { id: 'imgSideFit', on: 'length', title: "Keeps the base width and sets its length (and the plate count, at the same gap) so the side image isn't stretched" }
+      : null;
+  };
+  const toggleFit = (slot: Slot) => {
+    const f = fitFor(slot)!;
+    if (v[f.id] !== 'off') return setParams({ [f.id]: 'off' }, 'Fit face to image off');
+    const patch: Record<string, string> = { [f.id]: f.on };
+    // when the stack run changes, keep the plate thickness and gap so the plate count follows the new length
+    const runChanges = slot === 'side' && v.imgSideMode !== 'silhouette';
+    if (runChanges && v.spacingMode === 'fit') {
+      patch.spacingMode = 'gap';
+      patch.plateGap = String(Math.max(0.5, Math.round((v.pitch - v.thickness) * 2) / 2));
+    }
+    setParams(patch, 'Fit face to image');
+  };
   const topRes = v.sliceMode === 'radial' ? null : v.pitch;
   // kept in the store so the view survives switching tabs
   const tilt = ui.reliefTilt;
@@ -256,16 +277,22 @@ export default function ImageView() {
                   <button className="btn" onClick={() => setUi({ tab: '3d', snap: { dir: s.snap, n: Date.now() } })}>
                     View {s.snap}
                   </button>
-                  {s.slot === 'top' && asset && v.sliceMode !== 'radial' && (
+                  {asset && fitFor(s.slot) && (
                     <button
-                      className={`btn ${v.imgFit !== 'off' ? 'on' : ''}`}
-                      title="Size the plate footprint (and base) to this image's proportions so it fills the top"
-                      onClick={() => setParams({ imgFit: v.imgFit === 'off' ? 'width' : 'off' }, 'fit')}
+                      className={`btn ${v[fitFor(s.slot)!.id] !== 'off' ? 'on' : ''}`}
+                      title={fitFor(s.slot)!.title}
+                      onClick={() => toggleFit(s.slot)}
                     >
-                      Fit stack to image
+                      Fit face to image
                     </button>
                   )}
                 </div>
+                {asset && fitFor(s.slot) && v[fitFor(s.slot)!.id] !== 'off' && (
+                  <div className="note" style={{ paddingTop: 0 }}>
+                    Fitted: base {fmt(v.baseLength, 0)} × {fmt(v.baseWidth, 0)} mm, plates {fmt(v.stackHeight, 0)} mm high, {v.plateCount} plates
+                    {s.slot === 'side' && v.imgSideMode === 'silhouette' ? `, outline ${fmt(v.imgRange, 0)} mm tall` : ''}. Options under Parameters › Image.
+                  </div>
+                )}
               </div>
             );
           })}

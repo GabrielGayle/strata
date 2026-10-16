@@ -342,11 +342,24 @@ export const PARAMS: ParamDef[] = [
     show: (v) => v.imgTopMode !== 'off' && v.topOutline !== 'off',
     help: 'Pulls the plate ends in from the silhouette edge (positive) or spreads them out past it (negative)',
   }),
-  choice('imgFit', 'Fit stack to image', 'Image', 'off', [
+  choice('imgFit', 'Fit top to image', 'Image', 'off', [
     { value: 'off', label: 'Off' },
     { value: 'width', label: 'Keep length, set width from image' },
     { value: 'length', label: 'Keep width, set length from image' },
   ], { show: (v) => v.imgTopMode !== 'off' && v.sliceMode !== 'radial', help: 'Sizes the plate footprint (and base) to the top image proportions so the image fills the top' }),
+  choice('imgFrontFit', 'Fit front face to image', 'Image', 'off', [
+    { value: 'off', label: 'Off' },
+    { value: 'width', label: 'Keep plate height, set width from image' },
+    { value: 'height', label: 'Keep width, set plate height from image' },
+  ], { show: (v) => v.sliceMode === 'parallel' && v.imgFrontMode !== 'off', help: 'Sizes the plate face (and base) to the front image proportions so the image fills the front face inside its frame' }),
+  choice('imgSideFit', 'Fit side to image', 'Image', 'off', [
+    { value: 'off', label: 'Off' },
+    { value: 'length', label: 'Keep width, set length (and plate count) from image' },
+    { value: 'width', label: 'Keep length, set width from image' },
+  ], {
+    show: (v) => strataSource(v) && v.imgSideMode !== 'off' && v.sliceMode !== 'radial',
+    help: 'Image as height: sizes the base so the side image covers it without stretching (image left to right runs along the stack). Traced silhouette: sets the image height range so the outline keeps its proportions across the plate.',
+  }),
   num('cutSmooth', 'Cut edge smoothing', 'Image', 0, 0, 25, {
     step: 0.25,
     show: (v) => v.imgTopMode !== 'off' || (v.sliceMode === 'parallel' && v.imgFrontMode !== 'off'),
@@ -530,7 +543,7 @@ export const GROUP_SWITCHES: Partial<Record<(typeof GROUPS)[number], GroupSwitch
   Strata: { id: 'strataOn', forces: { erosionAmp: '0', banding: '0', crest: '0', slope: '0' } },
   Edges: { id: 'edgesOn', forces: { edgeFlow: '0', edgeRound: '0' } },
   Insert: { id: 'insertOn', forces: { insShape: 'none' } },
-  Image: { id: 'imageOn', forces: { imgSideMode: 'off', imgTopMode: 'off', imgFrontMode: 'off', etchMode: 'off', topOutline: 'off', imgFit: 'off' } },
+  Image: { id: 'imageOn', forces: { imgSideMode: 'off', imgTopMode: 'off', imgFrontMode: 'off', etchMode: 'off', topOutline: 'off', imgFit: 'off', imgFrontFit: 'off', imgSideFit: 'off' } },
   Tuning: { id: 'tuneOn', forces: { tuneMode: 'off' } },
   Mould: { id: 'mouldOn' },
   Sun: { id: 'sunOn' },
@@ -575,7 +588,7 @@ export function defaultRaw(): Record<string, RawValue> {
 
 export interface EvalResult {
   values: Values;
-  /** Parameters currently driven by "Fit stack to image", with the expression used. */
+  /** Parameters currently driven by a "Fit face to image" option or a fixed plate gap, with the expression used. */
   overrides: Record<string, string>;
   errors: Record<string, string>;
   clamped: Record<string, boolean>;
@@ -607,6 +620,8 @@ export function flagsFor(raw: Record<string, RawValue>, extra: Record<string, nu
     isRadial: get('sliceMode') === 'radial' ? 1 : 0,
     isWaffle: get('sliceMode') === 'waffle' ? 1 : 0,
     imgAspect: 1,
+    frontAspect: 1,
+    sideAspect: 1,
     ...extra,
   };
 }
@@ -635,19 +650,42 @@ export function scaleFactorFor(id: string, raw: Record<string, RawValue>): numbe
 }
 
 /**
- * Expressions that replace a parameter while "Fit stack to image" is on. The
- * footprint is sized so (plate width - 2 margins) / (stack run - 2 margins)
- * equals the top image's on-surface aspect (imgAspect).
+ * Expressions that replace a parameter while one of the "Fit face to image"
+ * options is on. Each sizes the parameters its face shows so the face has its
+ * image's proportions, keeping everything else:
+ * - top: (plate width - 2 margins) / (stack run - 2 margins) = imgAspect
+ * - front: (plate width - 2 frames) / (plate height - 2 frames) = frontAspect
+ * - side (image as height): stack run / across run = sideAspect (the image
+ *   covers the whole base, left to right along the stack); traced silhouette
+ *   sets the image height range from the across run instead.
+ * Later faces win where two fits drive the same side.
  */
 export function fitOverrides(raw: Record<string, RawValue>): Record<string, string> {
-  const fit = String(raw.imgFit ?? 'off');
-  const top = String(raw.imgTopMode ?? 'off');
-  if (fit === 'off' || top === 'off' || String(raw.sliceMode ?? 'parallel') === 'radial') return {};
-  const alongWidth = String(raw.sliceAxis ?? 'length') === 'width';
+  const get = (id: string) => String(raw[id] ?? PARAM_MAP[id].def);
+  const mode = get('sliceMode');
+  if (mode === 'radial') return {};
+  const alongWidth = get('sliceAxis') === 'width';
   const run = alongWidth ? 'baseWidth' : 'baseLength'; // base side the plates stack along
   const across = alongWidth ? 'baseLength' : 'baseWidth';
-  if (fit === 'width') return { [across]: `imgAspect * (${run} - 2*endMargin - 2*topMargin) + 2*topMargin + 2*sideMargin` };
-  return { [run]: `(${across} - 2*sideMargin - 2*topMargin) / imgAspect + 2*topMargin + 2*endMargin` };
+  const out: Record<string, string> = {};
+  const top = get('imgFit');
+  if (top !== 'off' && get('imgTopMode') !== 'off') {
+    if (top === 'width') out[across] = `imgAspect * (${run} - 2*endMargin - 2*topMargin) + 2*topMargin + 2*sideMargin`;
+    else out[run] = `(${across} - 2*sideMargin - 2*topMargin) / imgAspect + 2*topMargin + 2*endMargin`;
+  }
+  const front = get('imgFrontFit');
+  if (front !== 'off' && mode === 'parallel' && get('imgFrontMode') !== 'off') {
+    if (front === 'width') out[across] = 'frontAspect * (stackHeight - 2*frontMargin) + 2*frontMargin + 2*sideMargin';
+    else out.stackHeight = `(${across} - 2*sideMargin - 2*frontMargin) / frontAspect + 2*frontMargin`;
+  }
+  const side = get('imgSideFit');
+  const sideMode = get('imgSideMode');
+  if (side !== 'off' && sideMode !== 'off' && get('stackSource') === 'strata') {
+    if (sideMode === 'silhouette') out.imgRange = `${across} / sideAspect`;
+    else if (side === 'length') out[run] = `sideAspect * ${across}`;
+    else out[across] = `${run} / sideAspect`;
+  }
+  return out;
 }
 
 /**
@@ -668,7 +706,7 @@ export function overrideSource(id: string): 'spacing' | 'image' {
   return id === 'pitch' || id === 'plateCount' ? 'spacing' : 'image';
 }
 
-export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'imgAspect'];
+export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'imgAspect', 'frontAspect', 'sideAspect'];
 
 /** Evaluate the whole parameter graph in dependency order. */
 export function evaluateParams(rawArg: Record<string, RawValue>, extra: Record<string, number> = {}): EvalResult {

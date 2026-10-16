@@ -168,7 +168,7 @@ export function createFrontPipeline() {
     const t0 = performance.now();
     const { stage, stages } = stager(cache, 'full');
 
-    // the top image's on-surface aspect (width across the plates / length along the stack), for "Fit stack to image"
+    // the top image's on-surface aspect (width across the plates / length along the stack), for "Fit face to image"
     const imgAspect = (() => {
       const g = assets.topImg;
       if (!g) return 1;
@@ -176,7 +176,15 @@ export function createFrontPipeline() {
       const swap = (q('imgRotate') + q('topRotate')) % 2 === 1;
       return swap ? g.h / g.w : g.w / g.h;
     })();
-    const ev = stage('Parameters', [project.params, imgAspect], () => evaluateParams(project.params, { imgAspect }));
+    // front and side faces, for their "Fit face to image" options (Image rotate turns both)
+    const faceAspect = (g: Gray | null) => {
+      if (!g) return 1;
+      const swap = (((Math.round(Number(project.params.imgRotate ?? 0) / 90) % 2) + 2) % 2) === 1;
+      return swap ? g.h / g.w : g.w / g.h;
+    };
+    const frontAspect = faceAspect(assets.frontImg);
+    const sideAspect = faceAspect(assets.sideImg);
+    const ev = stage('Parameters', [project.params, imgAspect, frontAspect, sideAspect], () => evaluateParams(project.params, { imgAspect, frontAspect, sideAspect }));
     const v = ev.values;
 
     const mkForm = (prefix: 'ins' | 'src', mesh: THREE.BufferGeometry | null): FormBuild | null => {

@@ -33,7 +33,7 @@ const NumberParam = memo(function NumberParam({
   focus: boolean;
   /** Master size multiplier on this literal; shown values are scaled, stored ones are not. */
   factor: number;
-  /** Expression imposed by "Fit stack to image" or a fixed plate gap (read-only while active). */
+  /** Expression imposed by "Fit face to image" or a fixed plate gap (read-only while active). */
   override?: string;
 }) {
   const setParam = useStore((s) => s.setParam);
@@ -65,7 +65,7 @@ const NumberParam = memo(function NumberParam({
   };
   if (override) {
     const bySpacing = overrideSource(def.id) === 'spacing';
-    const by = bySpacing ? 'Plates › Spacing' : 'Image › Fit stack to image';
+    const by = bySpacing ? 'Plates › Spacing' : 'Image › Fit face to image';
     return (
       <div className={`prow field-row-stacked ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
         <div className="field-row">
