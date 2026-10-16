@@ -36,7 +36,7 @@ describe('top-surface impression', () => {
     });
     expect(risers.length).toBeGreaterThanOrEqual(2);
     expect(m.issues.filter((i) => i.severity === 'error')).toEqual([]);
-    expect(partDxf(mid, m.v)).toContain('POLYLINE');
+    expect(partDxf(mid, m.v)).toContain('LWPOLYLINE');
   });
 
   it('smooths only the cut edges, never the outer plate edges', () => {

@@ -9,6 +9,7 @@ import { zipSync } from 'fflate';
 import type { Issue } from '../core/checks';
 import { PriceEstimate, loadRates } from './PriceEstimate';
 import { chopChopCollapsedSummary } from './chopChopSummary';
+import { formatFragment } from '../core/fragments';
 
 function Section({
   title,
@@ -105,10 +106,10 @@ export default function Inspector() {
         {model.stale && <span className="pill stale">updating</span>}
       </div>
       <div className="stats">
-        <div className="stat">
+        <div className="stat" data-testid="inspector-plates">
           <div className="k">Plates</div>
           <div className="v">
-            {b.plateCount} <small>{b.partCount !== b.plateCount ? `${b.partCount} parts` : ''}</small>
+            {b.plateCount} <small>{b.partCount} parts</small>
           </div>
         </div>
         <div className="stat">
@@ -143,8 +144,14 @@ export default function Inspector() {
         </div>
       </div>
 
+      {(model.sliced.fragments ?? []).length > 0 && (
+        <div className="note" data-testid="fragment-notice" style={{ margin: '8px 10px 0' }}>
+          {(model.sliced.fragments ?? []).map((e) => formatFragment(e)).join(' ')}
+        </div>
+      )}
+
       <Section title="Fit checks" count={<span style={{ color: errors.length ? 'var(--err)' : 'var(--ok)' }}>{errors.length} err · {warns.length} warn</span>}>
-        <IssueList issues={[...errors, ...warns]} />
+        <IssueList issues={[...errors, ...warns, ...infos.filter((i) => i.type === 'fragment')]} />
         <div className="note">
           Edges: 0 non-90° — every part is a 2D outline extruded straight.
           {bevelMax > 0.01 && ` Largest bevel avoided: ${fmt(bevelMax, 2)} mm (cavities use the ${v.cavityMode} section + ${fmt(v.clearance, 1)} mm clearance).`}
@@ -209,6 +216,12 @@ export default function Inspector() {
             <dd>{sel.shape[0].holes.length}</dd>
             <dt>Anchored</dt>
             <dd>{sel.anchored ? 'yes' : 'NO'}</dd>
+            {sel.plateId && sel.plateId !== sel.id && (
+              <>
+                <dt>Plate</dt>
+                <dd>part of {sel.plateId}</dd>
+              </>
+            )}
           </dl>
           <div className="btnrow">
             <button className="btn sm" onClick={() => download(`${sel.id}.dxf`, partDxf(sel, v), 'application/dxf')}>
@@ -237,7 +250,7 @@ export default function Inspector() {
             Build pack
           </button>
           <button className="btn" onClick={plateZip}>
-            Plate DXFs ({model.sliced.parts.length})
+            Plate DXFs ({b.plateCount} plates · {model.sliced.parts.length} parts)
           </button>
           <button className="btn" onClick={sheetZip}>
             Nested sheets ({b.sheets})
@@ -256,8 +269,8 @@ export default function Inspector() {
           </button>
         </div>
         <div className="note">
-          DXF R12, mm. Layers CUT (red), ETCH (blue: part numbers + image lines), BEND. Curves are fitted as true arcs within {fmt(v.arcTolerance, 3)} mm; kerf {fmt(v.kerf, 2)} mm
-          compensated. {b.byMaterial.filter((g) => g.partCount).map((g) => `${MATERIAL_NAME[g.material] ?? g.material} (${g.partCount})`).join(' + ') || MATERIAL_NAME[v.plateMaterial]} {fmt(v.thickness, 1)} mm.
+          DXF 2000, mm. Outlines are LWPOLYLINE; round holes are CIRCLE. Nested sheets are cut-only (sheet-NN-cut.dxf: CUT layer, no sheet border). Etch/engrave is a sidecar (sheet-NN-etch.dxf). Kerf {fmt(v.kerf, 2)} mm
+          compensated, arcs within {fmt(v.arcTolerance, 3)} mm. {b.byMaterial.filter((g) => g.partCount).map((g) => `${MATERIAL_NAME[g.material] ?? g.material} (${g.partCount})`).join(' + ') || MATERIAL_NAME[v.plateMaterial]} {fmt(v.thickness, 1)} mm.
           {b.byMaterial.filter((g) => g.partCount).length > 1 && ' Mixed metals: the ZIP puts each metal’s parts and sheets in its own folder, and every sheet carries one metal.'}
         </div>
       </Section>

@@ -1,5 +1,5 @@
-// Reads the DXF text back the way a CAD program does (POLYLINE bulges, LINE,
-// ARC) and checks the result against the true part outlines. This is what
+// Reads the DXF text back the way a CAD program does (LWPOLYLINE bulges, CIRCLE,
+// LINE, ARC) and checks the result against the true part outlines. This is what
 // Illustrator / LightBurn will draw, so it must match within the arc tolerance.
 import { describe, expect, it } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
@@ -61,6 +61,33 @@ function readDxf(text: string): Contour[] {
   while (i < P.length && !(P[i][0] === 0 && P[i][1] === 'ENDSEC')) {
     const type = P[i][1];
     const { f, next } = fields(i);
+    if (type === 'LWPOLYLINE') {
+      const closed = (parseInt(f[70] ?? '0', 10) & 1) === 1;
+      const verts: { p: Vec2; b: number }[] = [];
+      let k = i + 1;
+      let x = 0, y = 0, bulge = 0, have = false;
+      const flush = () => {
+        if (have) verts.push({ p: [x, y], b: bulge });
+        bulge = 0;
+        have = false;
+      };
+      while (k < P.length && P[k][0] !== 0) {
+        if (P[k][0] === 10) {
+          flush();
+          x = +P[k][1];
+          have = true;
+        } else if (P[k][0] === 20) y = +P[k][1];
+        else if (P[k][0] === 42) bulge = +P[k][1];
+        k++;
+      }
+      flush();
+      const pts: Vec2[] = [];
+      const n = closed ? verts.length : Math.max(0, verts.length - 1);
+      for (let j = 0; j < n; j++) pts.push(...bulgeSeg(verts[j].p, verts[(j + 1) % verts.length].p, verts[j].b));
+      out.push({ layer: f[8], pts });
+      i = k;
+      continue;
+    }
     if (type === 'POLYLINE') {
       const closed = (parseInt(f[70] ?? '0', 10) & 1) === 1;
       const verts: { p: Vec2; b: number }[] = [];
@@ -78,6 +105,7 @@ function readDxf(text: string): Contour[] {
       i = fields(k).next;
       continue;
     }
+    if (type === 'CIRCLE') out.push({ layer: f[8], pts: arcPoints([+f[10], +f[20]], +f[40], 0, Math.PI * 2) });
     if (type === 'LINE') out.push({ layer: f[8], pts: [[+f[10], +f[20]], [+f[11], +f[21]]] });
     if (type === 'ARC') {
       const a0 = (+f[50] * Math.PI) / 180;

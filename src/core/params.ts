@@ -565,6 +565,17 @@ export const PARAMS: ParamDef[] = [
   num('kerf', 'Kerf', 'Fabrication', 0.15, 0, 3, { step: 0.01, help: 'Laser beam width; outlines are offset by half', noScale: true }),
   num('arcTolerance', 'Arc fit tolerance', 'Fabrication', 0.05, 0.005, 2, { step: 0.005, noScale: true }),
   num('minFeature', 'Min feature', 'Fabrication', 2, 0, 50, { step: 0.1, help: 'Narrowest web of material the laser can leave', noScale: true }),
+  num('minFragment', 'Min fragment', 'Fabrication', 'max(2 * thickness, 4 * kerf)', 0, 200, {
+    step: 0.1,
+    noScale: true,
+    help: 'Pieces shorter than this in their smallest span are fragments: merged into a touching parent or dropped. Default is twice the sheet thickness, and at least 4× the kerf.',
+  }),
+  choice('fragmentMode', 'Small fragments', 'Fabrication', 'auto', [
+    { value: 'auto', label: 'Merge if touching, else drop' },
+    { value: 'merge', label: 'Merge into parent' },
+    { value: 'drop', label: 'Drop' },
+    { value: 'keep', label: 'Keep as parts' },
+  ], { help: 'What to do with sub-minimum or unsupported fragments. Auto merges a sliver into its plate when they touch, otherwise drops it.' }),
   num('minPartSize', 'Min part size', 'Fabrication', 15, 0, 500, { noScale: true }),
   num('sheetW', 'Sheet length', 'Fabrication', 2500, 100, 6000, { noScale: true }),
   num('sheetH', 'Sheet width', 'Fabrication', 1250, 100, 3000, { noScale: true }),
@@ -572,7 +583,7 @@ export const PARAMS: ParamDef[] = [
   num('labelHeight', 'Label height', 'Fabrication', 6, 2, 50, { step: 0.5, noScale: true }),
   { id: 'partPrefix', label: 'Part prefix', group: 'Fabrication', kind: 'text', def: 'S' },
   choice('dxfMode', 'DXF entities', 'Fabrication', 'polyline', [
-    { value: 'polyline', label: 'Closed polylines with arcs' },
+    { value: 'polyline', label: 'LWPOLYLINE (CIRCLE for round holes)' },
     { value: 'lines', label: 'Separate LINE + ARC' },
   ]),
 ];

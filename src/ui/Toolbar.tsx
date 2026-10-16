@@ -231,7 +231,7 @@ export default function Toolbar() {
       const model = fullModel();
       const zip = buildZip(model, project, loadRates());
       download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}-fabrication.zip`, zip, 'application/zip');
-      toast(`Exported ${model.sliced.parts.length} plate DXFs, ${model.nested.sheets.length} sheets, ${model.moulds.parts.length} mould parts`);
+      toast(`Exported ${model.bom.plateCount} plates (${model.sliced.parts.length} parts), ${model.nested.sheets.length} cut sheets, ${model.moulds.parts.length} mould parts`);
     } catch (e) {
       toast(`Export failed: ${(e as Error).message}`);
     }

@@ -1,11 +1,13 @@
-// Minimal, widely compatible DXF (R12 / AC1009) writer: closed POLYLINEs with
-// arc bulges, or plain LINE + ARC entities. No splines, ever.
-import type { Path } from './geom2d';
+// DXF 2000 (AC1015) writer: closed LWPOLYLINEs with arc bulges, CIRCLE for
+// round holes, or plain LINE + ARC entities. No splines, ever.
+import type { Path, Vec2 } from './geom2d';
 import type { Seg } from './arcs';
 
 export interface Layer {
   name: string;
   color: number; // ACI
+  /** False = non-plotting (REFERENCE geometry that must not be cut). */
+  plot?: boolean;
 }
 
 export const LAYERS = {
@@ -15,6 +17,8 @@ export const LAYERS = {
   ENGRAVE: { name: 'ENGRAVE', color: 4 },
   BEND: { name: 'BEND', color: 3 },
   SHEET: { name: 'SHEET', color: 8 },
+  /** Sheet border and other non-cut guides. */
+  REFERENCE: { name: 'REFERENCE', color: 8, plot: false },
   NOTE: { name: 'NOTE', color: 2 },
 };
 
@@ -42,23 +46,25 @@ export class DxfWriter {
     if (y > this.maxY) this.maxY = y;
   }
 
-  /** A closed or open polyline built from fitted segments (arcs become bulges). */
+  /** Closed or open LWPOLYLINE; arcs become bulges (group 42). */
   polyline(layer: string, segs: Seg[], closed: boolean) {
+    this.lwpolyline(layer, segs, closed);
+  }
+
+  lwpolyline(layer: string, segs: Seg[], closed: boolean) {
     if (!segs.length) return;
-    const e: string[] = ['0', 'POLYLINE', '8', layer, '66', '1', '10', '0', '20', '0', '30', '0', '70', closed ? '1' : '0'];
     const verts = closed ? segs : [...segs, { kind: 'line', a: segs[segs.length - 1].b, b: segs[segs.length - 1].b } as Seg];
+    const e: string[] = ['0', 'LWPOLYLINE', '8', layer, '90', String(verts.length), '70', closed ? '1' : '0'];
     for (const s of verts) {
       const bulge = s.kind === 'arc' ? Math.tan(s.sweep / 4) : 0;
-      e.push('0', 'VERTEX', '8', layer, '10', f(s.a[0]), '20', f(s.a[1]), '30', '0');
+      e.push('10', f(s.a[0]), '20', f(s.a[1]));
       if (bulge !== 0) e.push('42', f(bulge));
       this.ext(s.a[0], s.a[1]);
       if (s.kind === 'arc') {
-        // include arc extremes in the extents roughly
         this.ext(s.c[0] - s.r, s.c[1] - s.r);
         this.ext(s.c[0] + s.r, s.c[1] + s.r);
       }
     }
-    e.push('0', 'SEQEND', '8', layer);
     this.ents.push(e.join('\n'));
   }
 
@@ -101,7 +107,7 @@ export class DxfWriter {
     const ext = Number.isFinite(this.minX) ? [this.minX, this.minY, this.maxX, this.maxY] : [0, 0, 0, 0];
     const out: string[] = [];
     out.push('0', 'SECTION', '2', 'HEADER');
-    out.push('9', '$ACADVER', '1', 'AC1009');
+    out.push('9', '$ACADVER', '1', 'AC1015');
     out.push('9', '$INSUNITS', '70', '4');
     out.push('9', '$MEASUREMENT', '70', '1');
     out.push('9', '$EXTMIN', '10', f(ext[0]), '20', f(ext[1]), '30', '0');
@@ -113,7 +119,11 @@ export class DxfWriter {
     out.push('0', 'ENDTAB');
     out.push('0', 'TABLE', '2', 'LAYER', '70', String(this.layers.length + 1));
     out.push('0', 'LAYER', '2', '0', '70', '0', '62', '7', '6', 'CONTINUOUS');
-    for (const l of this.layers) out.push('0', 'LAYER', '2', l.name, '70', '0', '62', String(l.color), '6', 'CONTINUOUS');
+    for (const l of this.layers) {
+      const row = ['0', 'LAYER', '2', l.name, '70', '0', '62', String(l.color), '6', 'CONTINUOUS'];
+      if (l.plot === false) row.push('290', '0');
+      out.push(...row);
+    }
     out.push('0', 'ENDTAB');
     out.push('0', 'ENDSEC');
     out.push('0', 'SECTION', '2', 'BLOCKS', '0', 'ENDSEC');
@@ -122,4 +132,142 @@ export class DxfWriter {
     const body = this.ents.join('\n');
     return `${head}\n${body ? body + '\n' : ''}0\nENDSEC\n0\nEOF\n`;
   }
+}
+
+export function dxfPairs(text: string): [number, string][] {
+  const l = text.split(/\r?\n/);
+  const out: [number, string][] = [];
+  for (let i = 0; i + 1 < l.length; i += 2) out.push([parseInt(l[i].trim(), 10), l[i + 1].trim()]);
+  return out;
+}
+
+export interface DxfEntityRef {
+  type: string;
+  layer: string;
+}
+
+/** Entity types in the ENTITIES section (VERTEX/SEQEND are skipped). */
+export function listDxfEntities(text: string): DxfEntityRef[] {
+  const P = dxfPairs(text);
+  let i = P.findIndex(([c, v], k) => c === 2 && v === 'ENTITIES' && P[k - 1]?.[1] === 'SECTION');
+  if (i < 0) return [];
+  i++;
+  const out: DxfEntityRef[] = [];
+  while (i < P.length && !(P[i][0] === 0 && P[i][1] === 'ENDSEC')) {
+    if (P[i][0] !== 0) {
+      i++;
+      continue;
+    }
+    const type = P[i][1];
+    if (type === 'VERTEX' || type === 'SEQEND') {
+      i++;
+      continue;
+    }
+    let layer = '0';
+    let k = i + 1;
+    while (k < P.length && P[k][0] !== 0) {
+      if (P[k][0] === 8) layer = P[k][1];
+      k++;
+    }
+    out.push({ type, layer });
+    i = k;
+  }
+  return out;
+}
+
+export function dxfEntitySummary(text: string): { types: Record<string, number>; layers: Record<string, Record<string, number>> } {
+  const types: Record<string, number> = {};
+  const layers: Record<string, Record<string, number>> = {};
+  for (const e of listDxfEntities(text)) {
+    types[e.type] = (types[e.type] ?? 0) + 1;
+    layers[e.layer] ??= {};
+    layers[e.layer][e.type] = (layers[e.layer][e.type] ?? 0) + 1;
+  }
+  return { types, layers };
+}
+
+function bulgeLength(p1: Vec2, p2: Vec2, b: number): number {
+  const chord = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+  if (Math.abs(b) < 1e-12) return chord;
+  const th = 4 * Math.atan(b);
+  const r = chord / 2 / Math.sin(th / 2);
+  return Math.abs(r * th);
+}
+
+/** Total length of CUT-layer geometry (LWPOLYLINE, CIRCLE, LINE, ARC, POLYLINE). */
+export function dxfCutLength(text: string): number {
+  const P = dxfPairs(text);
+  let i = P.findIndex(([c, v], k) => c === 2 && v === 'ENTITIES' && P[k - 1]?.[1] === 'SECTION');
+  if (i < 0) return 0;
+  i++;
+  let len = 0;
+  const fields = (start: number) => {
+    const f: Record<number, string> = {};
+    let k = start + 1;
+    while (k < P.length && P[k][0] !== 0) {
+      f[P[k][0]] = P[k][1];
+      k++;
+    }
+    return { f, next: k };
+  };
+  while (i < P.length && !(P[i][0] === 0 && P[i][1] === 'ENDSEC')) {
+    const type = P[i][1];
+    const { f, next } = fields(i);
+    const layer = f[8] ?? '0';
+    if (layer !== 'CUT') {
+      i = next;
+      continue;
+    }
+    if (type === 'CIRCLE') len += 2 * Math.PI * (+f[40]);
+    else if (type === 'LINE') len += Math.hypot(+f[11] - +f[10], +f[21] - +f[20]);
+    else if (type === 'ARC') {
+      const r = +f[40];
+      let a0 = +f[50];
+      let a1 = +f[51];
+      while (a1 <= a0) a1 += 360;
+      len += r * ((a1 - a0) * Math.PI) / 180;
+    } else if (type === 'LWPOLYLINE') {
+      const closed = (parseInt(f[70] ?? '0', 10) & 1) === 1;
+      const verts: { p: Vec2; b: number }[] = [];
+      let k = i + 1;
+      let bulge = 0;
+      let x = 0;
+      let y = 0;
+      let have = false;
+      const flush = () => {
+        if (have) verts.push({ p: [x, y], b: bulge });
+        bulge = 0;
+        have = false;
+      };
+      while (k < P.length && P[k][0] !== 0) {
+        if (P[k][0] === 10) {
+          flush();
+          x = +P[k][1];
+          have = true;
+        } else if (P[k][0] === 20) y = +P[k][1];
+        else if (P[k][0] === 42) bulge = +P[k][1];
+        k++;
+      }
+      flush();
+      const n = closed ? verts.length : verts.length - 1;
+      for (let j = 0; j < n; j++) len += bulgeLength(verts[j].p, verts[(j + 1) % verts.length].p, verts[j].b);
+      i = k;
+      continue;
+    } else if (type === 'POLYLINE') {
+      const closed = (parseInt(f[70] ?? '0', 10) & 1) === 1;
+      const verts: { p: Vec2; b: number }[] = [];
+      let k = next;
+      while (P[k][1] === 'VERTEX') {
+        const vf = fields(k);
+        verts.push({ p: [+vf.f[10], +vf.f[20]], b: +(vf.f[42] ?? 0) });
+        k = vf.next;
+      }
+      const n = closed ? verts.length : verts.length - 1;
+      for (let j = 0; j < n; j++) len += bulgeLength(verts[j].p, verts[(j + 1) % verts.length].p, verts[j].b);
+      i = fields(k).next;
+      continue;
+    }
+    i = next;
+  }
+  return len;
 }

@@ -189,7 +189,9 @@ export default function App() {
           <Inspector />
         </aside>
         <footer className="statusbar status-bar">
-          <p className="status-bar-field">{model.sliced.parts.length} parts</p>
+          <p className="status-bar-field" data-testid="status-counts">
+            {model.bom.plateCount} plates · {model.sliced.parts.length} parts
+          </p>
           <p className="status-bar-field">{model.bom.sheets} sheet{model.bom.sheets === 1 ? '' : 's'}</p>
           <p className="status-bar-field" style={{ color: errors ? 'var(--err)' : 'var(--ok)' }}>{errors} errors</p>
           <p className="status-bar-field" style={{ color: warns ? 'var(--warn)' : undefined }}>{warns} warnings</p>

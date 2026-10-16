@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../state/store';
 import { useFullModel, useModel, fmt } from './model';
-import { download, fitShape, mouldPartDxf, sheetDxf, sheetFiles } from '../core/exporters';
+import { download, fitShape, mouldPartDxf, sheetDxf, sheetEtchDxf, sheetFiles } from '../core/exporters';
 import { shapeD, pathD, segsD } from './svg';
 import type { Shape, Path } from '../core/geom2d';
 import type { NestResult } from '../core/nest';
@@ -116,9 +116,25 @@ export default function NestView() {
                 Sheet {i + 1}{s.material ? ` · ${MATERIAL_NAME[s.material] ?? s.material}` : ''} · {s.placements.length} parts · {fmt((s.used / (nest.sheetW * nest.sheetH)) * 100, 0)}%
               </span>
               {which === 'metal' && (
-                <button className="btn sm" onClick={() => download(`sheet-${i + 1}.dxf`, sheetDxf(fullModel(), i), 'application/dxf')}>
-                  DXF
-                </button>
+                <span className="seg">
+                  <button className="btn sm" onClick={() => download(`sheet-${String(i + 1).padStart(2, '0')}-cut.dxf`, sheetDxf(fullModel(), i), 'application/dxf')}>
+                    Cut DXF
+                  </button>
+                  {s.placements.some((pl) => {
+                    const p = model.sliced.parts.find((q) => q.id === pl.id);
+                    return !!(p && (p.etch.length || p.labelPaths.length));
+                  }) && (
+                    <button
+                      className="btn sm"
+                      onClick={() => {
+                        const etch = sheetEtchDxf(fullModel(), i);
+                        if (etch) download(`sheet-${String(i + 1).padStart(2, '0')}-etch.dxf`, etch, 'application/dxf');
+                      }}
+                    >
+                      Etch DXF
+                    </button>
+                  )}
+                </span>
               )}
             </div>
             <SheetSvg nest={nest} index={i} items={items} selected={ui.selected} onSelect={(id) => setUi({ selected: id })} color={which === 'metal' ? 'var(--svg-fill)' : '#e2c9a0'} />
@@ -126,8 +142,8 @@ export default function NestView() {
         ))}
         {!nest.sheets.length && <div className="empty">Nothing to nest.</div>}
         <div className="note">
-          Shown exactly as written to the DXF (kerf-compensated lines and arcs). Skyline bottom-left nesting of part bounding boxes with {fmt(which === 'metal' ? v.partSpacing : Math.max(v.partSpacing, 8), 0)} mm spacing; parts may rotate 90°. Sheet DXFs carry each part's number on
-          the ETCH layer and the sheet outline on SHEET.
+          Shown exactly as written to the cut DXF (kerf-compensated LWPOLYLINE, CIRCLE for round holes). Skyline bottom-left nesting of part bounding boxes with {fmt(which === 'metal' ? v.partSpacing : Math.max(v.partSpacing, 8), 0)} mm spacing; parts may rotate 90°. Nested sheet-NN-cut.dxf
+          files are CUT-only: no sheet border (that would be priced as a cut) and no etch. Etch/engrave lives in sheet-NN-etch.dxf.
         </div>
       </div>
     </div>

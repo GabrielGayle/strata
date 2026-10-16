@@ -245,7 +245,9 @@ export default function PlatesView() {
     <div className="split">
       <div className="list sunken-panel">
         <div className="title-bar panel-title">
-          <span>{parts.length} parts</span>
+          <span data-testid="plates-list-count">
+            {model.bom.plateCount} plates · {parts.length} parts
+          </span>
           <span className="seg">
             <button className={`btn sm ${mode === 'detail' ? 'on' : ''}`} onClick={() => setMode('detail')}>
               Detail
@@ -269,7 +271,10 @@ export default function PlatesView() {
               const c = issueCount.get(p.id);
               return (
                 <tr key={p.id} className={`click ${p.id === part?.id ? 'sel highlighted' : ''}`} onClick={() => setUi({ selected: p.id })}>
-                  <td className="mono">{p.id}</td>
+                  <td className="mono">
+                    {p.id}
+                    {p.plateId && p.plateId !== p.id ? <small style={{ display: 'block', color: 'var(--muted)' }}>part of {p.plateId}</small> : null}
+                  </td>
                   <td className="num">
                     {fmt(p.bbox.maxX - p.bbox.minX, 0)}×{fmt(p.bbox.maxY - p.bbox.minY, 0)}
                   </td>

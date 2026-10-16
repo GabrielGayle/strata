@@ -75,7 +75,7 @@ describe('flat stack (face to face) with an image stamp', () => {
     expect(m.issues.filter((i) => i.severity === 'error')).toEqual([]);
     expect(m.sliced.parts.every((q) => q.anchored)).toBe(true);
     expect(m.nested.unplaced).toEqual([]);
-    expect(partDxf(m.sliced.parts[m.sliced.parts.length - 1], m.v)).toContain('POLYLINE');
+    expect(partDxf(m.sliced.parts[m.sliced.parts.length - 1], m.v)).toContain('LWPOLYLINE');
     expect(m.moulds.parts.some((p) => p.kind === 'jig')).toBe(false);
   });
 

@@ -93,9 +93,11 @@ describe('cli export', () => {
     expect(onDisk).toContain('price-estimate.txt');
     expect(onDisk).toContain('price-estimate.json');
     expect(onDisk).toContain('build-pack.html');
+    expect(onDisk).toContain('manifest.json');
     expect(onDisk).toContain('project.strata.json');
     const dxf = readFileSync(join(out, onDisk.find((n) => n.startsWith('laser/parts/') && n.endsWith('.dxf'))!), 'utf8');
-    expect(dxf).toContain('AC1009');
+    expect(dxf).toContain('AC1015');
+    expect(dxf).toContain('LWPOLYLINE');
     expect(dxf).toContain('EOF');
 
     const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
@@ -246,7 +248,7 @@ describe('cli validation', () => {
     const io = capture();
     expect(await main([project, '--out', out], io)).toBe(0);
     expect(io.err).toMatch(/warning: baseLength was clamped to 3000 \(range 20\.\.3000\)/);
-    expect(walk(out)).toContain('laser/sheets/sheet-01.dxf');
+    expect(walk(out)).toContain('laser/sheets/sheet-01-cut.dxf');
     const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
     expect(back.params.baseLength).toBe('9000');
   });

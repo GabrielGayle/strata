@@ -185,7 +185,7 @@ export default function Viewport() {
           base {fmt(v.baseLength, 0)} × {fmt(v.baseWidth, 0)} × {fmt(v.baseHeight, 0)} mm
         </span>
         <span>
-          {model.sliced.plates.length} {v.sliceMode === 'flat' ? 'layers' : 'plates'} × {fmt(v.thickness, 1)} mm {v.sliceMode === 'flat' ? 'face to face' : v.sliceMode !== 'radial' ? `@ ${fmt(v.pitch, 2)} pitch` : 'radial'}
+          {model.bom.plateCount} {v.sliceMode === 'flat' ? 'layers' : 'plates'} · {model.sliced.parts.length} parts × {fmt(v.thickness, 1)} mm {v.sliceMode === 'flat' ? 'face to face' : v.sliceMode !== 'radial' ? `@ ${fmt(v.pitch, 2)} pitch` : 'radial'}
         </span>
         <span data-testid="plate-height-range">
           {v.sliceMode === 'flat' ? `stack height ${fmt(model.sliced.plates.length * v.thickness, 0)} mm` : `plate height ${fmt(hMin, 0)}–${fmt(hMax, 0)} mm`}

@@ -23,6 +23,7 @@ import { mapBackPlateEtchPaths } from './mapBackPlateEtch';
 import { mapEngravePathsForPart, type MapEngravePlateContext } from './mapEngravePlate';
 import type { UnfoldPiece } from './unfold';
 import { materialOf } from './appearance';
+import { packManifest } from './counts';
 
 export interface FittedContour {
   segs: Seg[];
@@ -40,9 +41,50 @@ export function fitShape(shape: Shape, v: Values): FittedContour[] {
   return out;
 }
 
+/** A closed contour that is a circle within `tol` (round holes → CIRCLE). */
+export function segsAsCircle(segs: Seg[], tol: number): { cx: number; cy: number; r: number } | null {
+  if (segs.length < 2) return null;
+  if (segs.every((s) => s.kind === 'arc')) {
+    const a0 = segs[0];
+    if (a0.kind !== 'arc') return null;
+    const allow = Math.max(tol, a0.r * 0.02);
+    let sweep = 0;
+    for (const s of segs) {
+      if (s.kind !== 'arc') return null;
+      if (Math.abs(s.r - a0.r) > allow) return null;
+      if (Math.hypot(s.c[0] - a0.c[0], s.c[1] - a0.c[1]) > allow) return null;
+      sweep += s.sweep;
+    }
+    if (Math.abs(Math.abs(sweep) - Math.PI * 2) > 0.35) return null;
+    return { cx: a0.c[0], cy: a0.c[1], r: a0.r };
+  }
+  const pts = segs.map((s) => s.a);
+  pts.push(segs[segs.length - 1].b);
+  let sx = 0, sy = 0;
+  for (const p of pts) {
+    sx += p[0];
+    sy += p[1];
+  }
+  const cx = sx / pts.length, cy = sy / pts.length;
+  const rs = pts.map((p) => Math.hypot(p[0] - cx, p[1] - cy));
+  const r = rs.reduce((a, b) => a + b, 0) / rs.length;
+  if (r < 0.2) return null;
+  const allow = Math.max(tol, r * 0.02);
+  if (rs.some((x) => Math.abs(x - r) > allow)) return null;
+  return { cx, cy, r };
+}
+
 function emitContours(w: DxfWriter, contours: FittedContour[], v: Values, tf: (p: Vec2) => Vec2) {
+  const tol = Math.max(0.02, v.arcTolerance * 2);
   for (const c of contours) {
     const segs = c.segs.map((s) => mapSeg(s, tf));
+    if (c.hole) {
+      const circ = segsAsCircle(segs, tol);
+      if (circ) {
+        w.circle(LAYERS.CUT.name, circ.cx, circ.cy, circ.r);
+        continue;
+      }
+    }
     if (v.dxfMode === 'lines') w.linesAndArcs(LAYERS.CUT.name, segs);
     else w.polyline(LAYERS.CUT.name, segs, true);
   }
@@ -109,20 +151,39 @@ function rotPlace(bb: { minX: number; minY: number; maxX: number; maxY: number }
   };
 }
 
-export function sheetDxf(model: Model, sheetIndex: number): string {
-  const v = model.v;
+function sheetParts(model: Model, sheetIndex: number) {
   const sheet = model.nested.sheets[sheetIndex];
   const byId = new Map(model.sliced.parts.map((p) => [p.id, p]));
-  const w = new DxfWriter([LAYERS.CUT, LAYERS.ETCH, LAYERS.SHEET]);
-  w.path(LAYERS.SHEET.name, [[0, 0], [v.sheetW, 0], [v.sheetW, v.sheetH], [0, v.sheetH]], true);
-  for (const pl of sheet.placements) {
+  return sheet.placements.map((pl) => {
     const part = byId.get(pl.id);
-    if (!part) continue;
-    const tf = rotPlace(part.bbox, pl.x, pl.y, pl.rot);
-    emitContours(w, fitShape(part.shape, v), v, tf);
-    for (const p of [...part.etch, ...part.labelPaths]) w.path(LAYERS.ETCH.name, p.map(tf));
-  }
+    return part ? { pl, part, tf: rotPlace(part.bbox, pl.x, pl.y, pl.rot) } : null;
+  }).filter((x): x is { pl: (typeof sheet.placements)[number]; part: Part; tf: (p: Vec2) => Vec2 } => !!x);
+}
+
+/** Nested sheet, CUT only: part outlines and holes. No sheet border, no etch. Send this to the laser. */
+export function sheetCutDxf(model: Model, sheetIndex: number): string {
+  const v = model.v;
+  const w = new DxfWriter([LAYERS.CUT]);
+  for (const { part, tf } of sheetParts(model, sheetIndex)) emitContours(w, fitShape(part.shape, v), v, tf);
   return w.toString();
+}
+
+/** Nested sheet etch/engrave sidecar (part numbers and artwork). Null when the sheet has none. */
+export function sheetEtchDxf(model: Model, sheetIndex: number): string | null {
+  const w = new DxfWriter([LAYERS.ETCH, LAYERS.ENGRAVE]);
+  let n = 0;
+  for (const { part, tf } of sheetParts(model, sheetIndex)) {
+    for (const p of [...part.etch, ...part.labelPaths]) {
+      w.path(LAYERS.ETCH.name, p.map(tf));
+      n++;
+    }
+  }
+  return n ? w.toString() : null;
+}
+
+/** Cut-only nested sheet (same as `sheetCutDxf`). */
+export function sheetDxf(model: Model, sheetIndex: number): string {
+  return sheetCutDxf(model, sheetIndex);
 }
 
 export function mouldPartDxf(mp: MouldPart, v: Values): string {
@@ -216,9 +277,45 @@ export function sheetFiles(model: Model): Record<string, Uint8Array> {
   model.nested.sheets.forEach((s, i) => {
     const dir = mixed && s.material ? `${safe(s.material)}/` : '';
     counts[dir] = (counts[dir] ?? 0) + 1;
-    files[`${dir}sheet-${String(counts[dir]).padStart(2, '0')}.dxf`] = strToU8(sheetDxf(model, i));
+    const nn = String(counts[dir]).padStart(2, '0');
+    files[`${dir}sheet-${nn}-cut.dxf`] = strToU8(sheetCutDxf(model, i));
+    const etch = sheetEtchDxf(model, i);
+    if (etch) files[`${dir}sheet-${nn}-etch.dxf`] = strToU8(etch);
   });
   return files;
+}
+
+export function packReadme(model: Model): string {
+  const v = model.v;
+  const lines = [
+    'Strata fabrication pack',
+    '=======================',
+    '',
+    'laser/parts/*.dxf',
+    '  One file per laser-cut part (outlines, holes, and etch). Round holes are CIRCLE;',
+    '  other outlines are LWPOLYLINE. Layers: CUT (cut this), ETCH / ENGRAVE (optional).',
+    '',
+    'laser/sheets/sheet-NN-cut.dxf',
+    '  Nested sheet, CUT ONLY. Part outlines and holes on the CUT layer. This is the',
+    '  file to send to the laser bureau. There is no 1250×2500 sheet border — that',
+    '  rectangle is not a cut, and quoting it as one inflates the price.',
+    '',
+    'laser/sheets/sheet-NN-etch.dxf',
+    '  Optional sidecar: part numbers and artwork on ETCH / ENGRAVE. Omit this file',
+    '  if you do not want etching. Never merge it into the cut file for a cut quote.',
+    '',
+    `Sheets are ${v.sheetW} × ${v.sheetH} mm. Nested parts use ${v.partSpacing} mm spacing.`,
+    `Plate thickness ${v.thickness} mm. Kerf compensation ${v.kerf} mm (outlines offset by half).`,
+    '',
+    `This pack has ${model.bom.plateCount} plates and ${model.bom.partCount} laser-cut parts.`,
+    'Counts in header, status, schedule, laser/parts, and manifest.json must match those two numbers.',
+  ];
+  const dropped = (model.sliced.fragments ?? []).filter((e) => e.action === 'dropped' || e.action === 'merged');
+  if (dropped.length) {
+    lines.push('', 'Fragments handled:');
+    for (const ev of dropped) lines.push(`  - ${ev.action} ${ev.pieceId} (${ev.w.toFixed(2)} × ${ev.h.toFixed(2)} mm)`);
+  }
+  return lines.join('\n') + '\n';
 }
 
 /** One DXF per laser part. With mixed metals each metal gets its own folder. */
@@ -260,6 +357,8 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
     files['price-estimate.json'] = strToU8(JSON.stringify(estimate, null, 2) + '\n');
   }
   if (model.shadow && project.shadow?.frames.length) files['shadow-install-card.html'] = strToU8(installCardHtml(project, v, model.shadow));
+  files['README.txt'] = strToU8(packReadme(model));
+  files['manifest.json'] = strToU8(JSON.stringify(packManifest(model), null, 2) + '\n');
   files['build-pack.html'] = strToU8(buildPackHtml(project, model, { rates }));
   const archetype = project.images.top?.map?.archetypeCard;
   if (archetype && typeof archetype === 'object') {

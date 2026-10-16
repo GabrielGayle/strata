@@ -4,6 +4,7 @@ import { difference, offset, pointInShape, shapeArea, shapeBBox, signedArea, typ
 import { cached } from './memo';
 import type { Values } from './params';
 import type { Part, SliceResult } from './slicer';
+import { formatFragment } from './fragments';
 import { planeToWorld, type V3 } from './section';
 import { baseChamfers, planClearance } from './base';
 
@@ -12,7 +13,7 @@ export type Severity = 'error' | 'warn' | 'info';
 export interface Issue {
   partId: string | null;
   plateKey?: string;
-  type: 'thin' | 'gap' | 'small' | 'collision' | 'island' | 'unanchored' | 'hole' | 'sheet' | 'bevel' | 'label' | 'general';
+  type: 'thin' | 'gap' | 'small' | 'collision' | 'island' | 'unanchored' | 'hole' | 'sheet' | 'bevel' | 'label' | 'fragment' | 'general';
   severity: Severity;
   message: string;
   at?: Vec2;
@@ -198,6 +199,15 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
       issues.push({ partId: b.plateKey ? byKey.get(b.plateKey) ?? null : null, plateKey: b.plateKey, type: 'general', severity: b.severity, message: b.message, at: b.at });
   }
   for (const w of sliced.warnings) issues.push({ partId: null, type: 'general', severity: 'warn', message: w });
+  for (const ev of sliced.fragments ?? []) {
+    issues.push({
+      partId: ev.action === 'kept' ? ev.pieceId : ev.parentId ?? ev.plateId,
+      plateKey: ev.plateKey,
+      type: 'fragment',
+      severity: 'info',
+      message: formatFragment(ev),
+    });
+  }
   return issues;
 }
 
