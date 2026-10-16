@@ -52,7 +52,7 @@ describe('map commemorative text (T26)', () => {
       }),
       { fetch: fixtureTileFetcher, stack: { plateCount: 4, thicknessMm: 3, masterWidthMm: 80, layerBudget: 'equal' } },
     );
-    expect(bundle.asset.map?.sourceWarnings?.some((w) => /commemorative/i.test(w))).toBe(true);
+    expect(bundle.asset.map?.sourceWarnings?.some((w) => /commemorative/i.test(w.message))).toBe(true);
     setMapTileFetcher(null);
   });
 });

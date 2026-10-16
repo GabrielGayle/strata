@@ -54,6 +54,9 @@ export interface DepthSettings {
   flatNegative?: boolean;
 }
 
+export type DepthSettingKey = keyof DepthSettings;
+export type DepthSettingsOverrides = Partial<Record<DepthSettingKey, true>>;
+
 /** Metric depth as sent by the service: uint16 per pixel, 0 = no depth, 1..65535 linear over minM..maxM. */
 /** Orthographic map terrain metadata (ticket T17) — exact ground metres, no pinhole back-projection. */
 export interface MapOrthoMeta {
@@ -81,6 +84,8 @@ export interface DepthData {
   /** EXIF focal length in pixels on the source photo, when known. */
   exifFocalLengthPx?: number;
   settings: DepthSettings;
+  /** Which depth fields the user locked; rebuilds must not clobber these. */
+  settingsOverrides?: DepthSettingsOverrides;
   mapOrtho?: MapOrthoMeta;
 }
 

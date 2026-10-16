@@ -1,5 +1,6 @@
 // Map input: open elevation and engraving spec stored on an ImageAsset (like pattern / sound / depth).
 import type { SerializedMapEngraveArt } from './mapOsmEngrave';
+import { normalizeSourceNotices, type MapSourceNotice } from './mapNotices';
 export type MapSource =
   | 'auto'
   | 'scot-dtm'
@@ -54,7 +55,7 @@ export interface MapSpec {
   /** Source actually used after auto-pick / fallbacks. */
   resolvedSource?: MapSource;
   /** Non-fatal fetch / resolution warnings for the UI or CLI. */
-  sourceWarnings?: string[];
+  sourceWarnings?: MapSourceNotice[];
   /** OSM vector engrave linework in depth-image pixel space (ticket 13). */
   engraveArt?: SerializedMapEngraveArt;
   /** Limited-edition number etched on the back plate (ticket 25). */
@@ -182,9 +183,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   const simplifyLostFeatures = num(o.simplifyLostFeatures);
   const resolvedSource =
     typeof o.resolvedSource === 'string' && SOURCES.has(o.resolvedSource as MapSource) ? (o.resolvedSource as MapSource) : undefined;
-  const sourceWarnings = Array.isArray(o.sourceWarnings)
-    ? o.sourceWarnings.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
-    : undefined;
+  const sourceWarnings = normalizeSourceNotices(o.sourceWarnings);
   const engraveArt = cleanEngraveArt(o.engraveArt);
   const editionNumber = num(o.editionNumber);
   const archetypeCard = cleanArchetypeCard(o.archetypeCard);

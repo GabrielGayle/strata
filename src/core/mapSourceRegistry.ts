@@ -1,3 +1,4 @@
+import { EA_DSM_WCS_BASE, EA_DTM_WCS_BASE } from './mapEaWcs';
 import type { MapSource } from './mapSpec';
 
 export interface MapSourceMeta {
@@ -58,7 +59,7 @@ export const MAP_SOURCE_REGISTRY: Record<MapSource, MapSourceMeta> = {
     id: 'ea-dtm',
     resolutionM: 1,
     portalUrl: 'https://environment.data.gov.uk/',
-    serviceUrl: 'https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m',
+    serviceUrl: EA_DTM_WCS_BASE,
     licence: 'Open Government Licence v3.0 (Defra / Environment Agency)',
     attribution: ['LiDAR DTM © Environment Agency — Defra Data Services Platform'],
   },
@@ -66,7 +67,7 @@ export const MAP_SOURCE_REGISTRY: Record<MapSource, MapSourceMeta> = {
     id: 'ea-dsm',
     resolutionM: 1,
     portalUrl: 'https://environment.data.gov.uk/',
-    serviceUrl: 'https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDSM1m',
+    serviceUrl: EA_DSM_WCS_BASE,
     licence: 'Open Government Licence v3.0',
     attribution: ['LiDAR DSM © Environment Agency — Defra Data Services Platform'],
   },

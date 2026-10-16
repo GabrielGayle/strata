@@ -109,21 +109,27 @@ export default function MapWindow({ onClose }: { onClose: () => void }) {
           )}
           <fieldset>
             <legend>Ground model</legend>
-            <label>
-              <input type="radio" name="map-model" checked={model === 'dtm'} onChange={() => setModel('dtm')} /> DTM (bare ground)
-            </label>
-            <label>
-              <input type="radio" name="map-model" checked={model === 'dsm'} onChange={() => setModel('dsm')} /> DSM (with buildings)
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="map-model"
-                checked={model === 'dtm+buildings'}
-                onChange={() => setModel('dtm+buildings')}
-              />
-              DTM + OSM buildings
-            </label>
+            {(
+              [
+                ['dtm', 'DTM (bare ground)'],
+                ['dsm', 'DSM (with buildings)'],
+                ['dtm+buildings', 'DTM + OSM buildings'],
+              ] as const
+            ).map(([id, label]) => {
+              const inputId = `map-window-model-${id.replace(/[^a-z0-9]+/gi, '-')}`;
+              return (
+                <div className="field-row" key={id}>
+                  <input
+                    id={inputId}
+                    type="radio"
+                    name="map-window-model"
+                    checked={model === id}
+                    onChange={() => setModel(id)}
+                  />
+                  <label htmlFor={inputId}>{label}</label>
+                </div>
+              );
+            })}
           </fieldset>
           <fieldset>
             <legend>Bbox (WGS84)</legend>

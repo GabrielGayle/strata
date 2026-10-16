@@ -4,7 +4,7 @@ import { editionEtchPaths } from '../src/core/mapBackPlateEtch';
 import { buildZip } from '../src/core/exporters';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { createPipeline, type Assets } from '../src/core/pipeline';
-import { newProject } from '../src/core/project';
+import { smallProject } from './small-project';
 import type { Part } from '../src/core/slicer';
 
 const assets: Assets = { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null };
@@ -34,7 +34,7 @@ describe('map edition + archetype card (T25)', () => {
   });
 
   it('ships archetype-card.json in the build zip', () => {
-    const p = newProject();
+    const p = smallProject();
     p.images.top = {
       name: 'Map',
       dataUrl: 'data:image/png;base64,AA',
