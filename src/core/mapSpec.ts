@@ -2,6 +2,7 @@
 export type MapSource = 'auto' | 'ea-dtm' | 'ea-dsm' | 'cop30' | 'terrarium';
 export type MapModel = 'dtm' | 'dsm' | 'dtm+buildings';
 export type MapWater = 'flat' | 'bathy' | 'raw';
+export type LayerBudgetMode = 'equal' | 'quantile' | 'jenks';
 
 export interface EngraveSpec {
   /** Gabriel 16 Oct 2026: engraving on by default; no-op in the pipeline until OSM engrave lands. */
@@ -31,6 +32,14 @@ export interface MapSpec {
   attribution: string[];
   /** CLI / browser cache directory override. */
   cacheDir?: string;
+  /** How elevation plateaus are chosen per plate (default jenks). */
+  layerBudget?: LayerBudgetMode;
+  /** Resolved vertical exaggeration factor when auto was requested. */
+  exaggerationFactor?: number;
+  /** Human readout, e.g. "×21". */
+  exaggerationReadout?: string;
+  /** Elevation breaks (metres) used for the layer budget. */
+  layerBreaksM?: number[];
 }
 
 export const TERRARIUM_ATTRIBUTION = [
@@ -85,6 +94,7 @@ function bboxOf(raw: unknown): MapSpec['bbox'] | null {
 const SOURCES = new Set<MapSource>(['auto', 'ea-dtm', 'ea-dsm', 'cop30', 'terrarium']);
 const MODELS = new Set<MapModel>(['dtm', 'dsm', 'dtm+buildings']);
 const WATERS = new Set<MapWater>(['flat', 'bathy', 'raw']);
+const BUDGETS = new Set<LayerBudgetMode>(['equal', 'quantile', 'jenks']);
 
 function cleanEngrave(raw: unknown): EngraveSpec {
   const o = (raw ?? null) as Record<string, unknown> | null;
@@ -122,6 +132,13 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   const crs = typeof o.crs === 'string' && o.crs.trim() ? o.crs.trim() : undefined;
   const fetchedAt = typeof o.fetchedAt === 'string' ? o.fetchedAt : undefined;
   const cacheDir = typeof o.cacheDir === 'string' && o.cacheDir.trim() ? o.cacheDir.trim() : undefined;
+  const layerBudget =
+    typeof o.layerBudget === 'string' && BUDGETS.has(o.layerBudget as LayerBudgetMode) ? (o.layerBudget as LayerBudgetMode) : undefined;
+  const exaggerationFactor = num(o.exaggerationFactor);
+  const exaggerationReadout = typeof o.exaggerationReadout === 'string' ? o.exaggerationReadout : undefined;
+  const layerBreaksM = Array.isArray(o.layerBreaksM)
+    ? o.layerBreaksM.map((x) => Number(x)).filter((x) => Number.isFinite(x))
+    : undefined;
   return {
     kind: 'map',
     bbox,
@@ -136,7 +153,17 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(fetchedAt ? { fetchedAt } : {}),
     attribution: attribution.length ? attribution : [...TERRARIUM_ATTRIBUTION],
     ...(cacheDir ? { cacheDir } : {}),
+    ...(layerBudget ? { layerBudget } : {}),
+    ...(exaggerationFactor != null && exaggerationFactor > 0 ? { exaggerationFactor } : {}),
+    ...(exaggerationReadout ? { exaggerationReadout } : {}),
+    ...(layerBreaksM?.length ? { layerBreaksM } : {}),
   };
+}
+
+export function parseLayerBudget(text: string): LayerBudgetMode {
+  const s = text.trim().toLowerCase();
+  if (!BUDGETS.has(s as LayerBudgetMode)) throw new Error(`unknown layer budget '${text}' (equal, quantile, jenks)`);
+  return s as LayerBudgetMode;
 }
 
 export function parseBbox(text: string): MapSpec['bbox'] {
