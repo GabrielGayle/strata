@@ -18,6 +18,8 @@ import { DEFAULT_RATES, estimateMix, priceText, withHardware, type PriceRates } 
 import { baseGeometry } from './base';
 import { serialize, type Project } from './project';
 import { strokeTextCentered } from './strokefont';
+import { deserializeMapEngraveArt } from './mapOsmEngrave';
+import { mapEngravePathsForPart, type MapEngravePlateContext } from './mapEngravePlate';
 import type { UnfoldPiece } from './unfold';
 import { materialOf } from './appearance';
 
@@ -56,13 +58,31 @@ function mapSeg(s: Seg, tf: (p: Vec2) => Vec2): Seg {
 
 const shiftTo = (minX: number, minY: number) => (p: Vec2): Vec2 => [p[0] - minX, p[1] - minY];
 
-export function partDxf(part: Part, v: Values): string {
-  const w = new DxfWriter([LAYERS.CUT, LAYERS.ETCH]);
+export function partDxf(part: Part, v: Values, mapEngrave: Path[] = []): string {
+  const w = new DxfWriter([LAYERS.CUT, LAYERS.ETCH, LAYERS.ENGRAVE]);
   const bb = part.bbox;
   const tf = shiftTo(bb.minX - v.kerf, bb.minY - v.kerf);
   emitContours(w, fitShape(part.shape, v), v, tf);
   for (const p of [...part.etch, ...part.labelPaths]) w.path(LAYERS.ETCH.name, p.map(tf));
+  for (const p of mapEngrave) w.path(LAYERS.ENGRAVE.name, p.map(tf));
   return w.toString();
+}
+
+function mapEngraveForPart(part: Part, project?: Project, model?: Model): Path[] {
+  const map = project?.images.top?.map;
+  if (!map?.engraveArt || !map.engrave.enabled) return [];
+  if (model) {
+    const topIdx = Math.max(...model.sliced.parts.filter((q) => q.family === 'P').map((q) => q.index), -1);
+    if (part.family !== 'P' || part.index !== topIdx) return [];
+  }
+  const art = deserializeMapEngraveArt(map.engraveArt);
+  const ctx: MapEngravePlateContext = {
+    faceW: part.bbox.maxX - part.bbox.minX,
+    faceH: part.bbox.maxY - part.bbox.minY,
+    presetId: map.engrave.preset,
+    title: map.engrave.features.includes('title') ? map.title : undefined,
+  };
+  return mapEngravePathsForPart(part, art, ctx);
 }
 
 function rotPlace(bb: { minX: number; minY: number; maxX: number; maxY: number }, x: number, y: number, rot: boolean) {
@@ -194,7 +214,10 @@ export function partFiles(model: Model, project?: Project): Record<string, Uint8
   const main = String(model.v.plateMaterial);
   const metal = (key: string) => materialOf(project?.appearance, key, main);
   const mixed = new Set(model.sliced.parts.map((p) => metal(p.plateKey))).size > 1;
-  for (const p of model.sliced.parts) files[`${mixed ? `${safe(metal(p.plateKey))}/` : ''}${safe(p.id)}.dxf`] = strToU8(partDxf(p, model.v));
+  for (const p of model.sliced.parts) {
+    const engrave = mapEngraveForPart(p, project, model);
+    files[`${mixed ? `${safe(metal(p.plateKey))}/` : ''}${safe(p.id)}.dxf`] = strToU8(partDxf(p, model.v, engrave));
+  }
   return files;
 }
 

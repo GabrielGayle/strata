@@ -1,0 +1,114 @@
+import type { Path, Vec2 } from './geom2d';
+import type { MapSpec } from './mapSpec';
+
+export type OsmEngraveKind = 'road' | 'water' | 'rail' | 'other';
+
+export interface OsmEngraveLine {
+  kind: OsmEngraveKind;
+  path: Path;
+}
+
+export interface OsmEngraveText {
+  text: string;
+  /** Normalised 0..1 on depth image (x east, y north-up as image row 0 = north). */
+  nx: number;
+  ny: number;
+}
+
+export interface MapEngraveArt {
+  imageW: number;
+  imageH: number;
+  lines: OsmEngraveLine[];
+  texts: OsmEngraveText[];
+  /** ODbL attribution string to etch / BOM. */
+  osmAttribution: string;
+}
+
+export interface SerializedMapEngraveArt {
+  imageW: number;
+  imageH: number;
+  lines: { kind: OsmEngraveKind; path: [number, number][] }[];
+  texts: OsmEngraveText[];
+  osmAttribution: string;
+}
+
+export function serializeMapEngraveArt(art: MapEngraveArt): SerializedMapEngraveArt {
+  return {
+    imageW: art.imageW,
+    imageH: art.imageH,
+    lines: art.lines.map((l) => ({ kind: l.kind, path: l.path.map(([x, y]) => [x, y]) })),
+    texts: art.texts,
+    osmAttribution: art.osmAttribution,
+  };
+}
+
+export function deserializeMapEngraveArt(raw: SerializedMapEngraveArt): MapEngraveArt {
+  return {
+    imageW: raw.imageW,
+    imageH: raw.imageH,
+    lines: raw.lines.map((l) => ({ kind: l.kind, path: l.path.map(([x, y]) => [x, y]) })),
+    texts: raw.texts,
+    osmAttribution: raw.osmAttribution,
+  };
+}
+
+interface OsmWay {
+  type: string;
+  tags?: Record<string, string>;
+  geometry?: { lat: number; lon: number }[];
+}
+
+interface OsmResponse {
+  elements?: OsmWay[];
+}
+
+function kindOf(tags: Record<string, string> | undefined): OsmEngraveKind {
+  if (!tags) return 'other';
+  if (tags.natural === 'water' || tags.waterway) return 'water';
+  if (tags.railway) return 'rail';
+  if (tags.highway) return 'road';
+  return 'other';
+}
+
+function lonLatToNorm(lon: number, lat: number, bbox: MapSpec['bbox']): Vec2 {
+  const [w, s, e, n] = bbox;
+  const nx = (lon - w) / (e - w);
+  const ny = (n - lat) / (n - s);
+  return [nx, ny];
+}
+
+/** Convert Overpass JSON with `out geom` into normalised engrave linework. */
+export function osmToEngraveArt(
+  raw: unknown,
+  bbox: MapSpec['bbox'],
+  imageW: number,
+  imageH: number,
+  features: string[],
+): MapEngraveArt {
+  const want = new Set(features.map((f) => f.toLowerCase()));
+  const allowRoads = want.has('roads') || want.has('road');
+  const allowWater = want.has('water');
+  const allowRail = want.has('rail') || want.has('roads');
+  const resp = raw as OsmResponse;
+  const lines: OsmEngraveLine[] = [];
+  for (const el of resp.elements ?? []) {
+    if (el.type !== 'way' || !el.geometry?.length) continue;
+    const kind = kindOf(el.tags);
+    if (kind === 'road' && !allowRoads) continue;
+    if (kind === 'water' && !allowWater) continue;
+    if (kind === 'rail' && !allowRail) continue;
+    if (kind === 'other') continue;
+    const path: Path = el.geometry.map((g) => {
+      const [nx, ny] = lonLatToNorm(g.lon, g.lat, bbox);
+      return [nx * imageW, ny * imageH];
+    });
+    if (path.length >= 2) lines.push({ kind, path });
+  }
+  return {
+    imageW,
+    imageH,
+    lines,
+    texts: [],
+    osmAttribution: '© OpenStreetMap contributors (ODbL)',
+  };
+}

@@ -46,7 +46,13 @@ describe('map layer budget + exaggeration', () => {
     expect(factor).toBeGreaterThanOrEqual(1);
     expect(readout).toMatch(/^×/);
 
-    const spec = defaultMapSpec({ bbox: NEASDEN_BBOX, source: 'terrarium', exaggeration: 'auto', layerBudget: 'jenks' });
+    const spec = defaultMapSpec({
+      bbox: NEASDEN_BBOX,
+      source: 'terrarium',
+      exaggeration: 'auto',
+      layerBudget: 'jenks',
+      engrave: { enabled: false, features: [] },
+    });
     const bundle = await buildMapBundle(spec, {
       fetch: fixtureTileFetcher,
       stack: { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' },
