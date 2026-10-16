@@ -3,10 +3,16 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import App from './ui/App';
 import { applyTheme, loadTheme } from './ui/theme';
-import { hydrate } from './state/store';
+import { hydrate, useStore } from './state/store';
+import { activeLayout, useWorkspaces } from './state/workspaces';
+import { visibleTabs } from './core/workspace';
+import { preloadView } from './ui/Workspace';
 
 // apply the saved window appearance before the first paint
 applyTheme(loadTheme());
+
+// start fetching the views on the first screen while the session loads
+for (const t of new Set([...visibleTabs(activeLayout(useWorkspaces.getState())), useStore.getState().ui.tab])) preloadView(t);
 
 // read the last session back from browser storage before the first render
 hydrate()

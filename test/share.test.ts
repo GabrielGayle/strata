@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { newProject, type Project } from '../src/core/project';
+import { newObject } from '../src/core/objects';
+import { DEFAULT_SHELF } from '../src/core/shelf';
 import { decodeShare, encodeShare, fromBase64Url, LONG_LINK, omittedFrom, projectFromShare, shareCodeFromHash, shareLink, shareState, toBase64Url } from '../src/core/share';
 
 const BIG = 'data:image/png;base64,' + 'A'.repeat(200_000);
@@ -90,6 +92,18 @@ describe('share links', () => {
   it('base64url round-trips every byte', () => {
     const bytes = new Uint8Array(256 * 3).map((_, i) => i % 256);
     expect([...fromBase64Url(toBase64Url(bytes))]).toEqual([...bytes]);
+  });
+
+  it('carries cut objects, the postcard shelf and the world origin', async () => {
+    const card = newObject('card', [], { y: 120 });
+    const p: Project = { ...newProject(), objects: [card], shelf: { ...DEFAULT_SHELF, layout: 'arch', radius: 300 }, origin: { ref: 'corner', x: 5, y: 0, z: -3, turn: 15 } };
+    p.variants = [{ id: 'v1', name: 'No shelf', params: {}, locks: {}, pour: p.pour, shelf: null, objects: [card], createdAt: '2026-01-01T00:00:00.000Z' }];
+    const back = projectFromShare(await decodeShare(await encodeShare(shareState(p))));
+    expect(back.objects).toEqual([card]);
+    expect(back.shelf).toEqual(p.shelf);
+    expect(back.origin).toEqual(p.origin);
+    expect(back.variants[0].shelf).toBeNull();
+    expect(back.variants[0].objects).toEqual([card]);
   });
 
   it('drops unknown parameters from a link', async () => {

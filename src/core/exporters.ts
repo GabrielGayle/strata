@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
 import { zipSync, strToU8 } from 'fflate';
 import { installCardHtml } from './installCard';
+import { buildPackHtml } from './buildPack';
 import { fitArcs, type Seg } from './arcs';
 import { DxfWriter, LAYERS } from './dxf';
 import { bboxOf, offset, type Path, type Shape, type Vec2 } from './geom2d';
@@ -218,6 +219,7 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   files['pour-plan.txt'] = strToU8(pourPlanText(model));
   if (model.bom.partCount) files['price-estimate.txt'] = strToU8(priceText(withHardware(estimateMix(model.bom, v.thickness, rates), model.bom.hardware, rates), rates));
   if (model.shadow && project.shadow?.frames.length) files['shadow-install-card.html'] = strToU8(installCardHtml(project, v, model.shadow));
+  files['build-pack.html'] = strToU8(buildPackHtml(project, model, { rates }));
   files['project.strata.json'] = strToU8(serialize(project));
   return zipSync(files, { level: 6 });
 }
@@ -230,6 +232,13 @@ export function pourPlanText(model: Model): string {
   if (Math.abs(model.pour.mismatch) > 0.01) lines.push('', `WARNING: layers total ${model.pour.total.toFixed(1)} mm, base is ${model.v.baseHeight} mm.`);
   lines.push('', ...model.moulds.notes);
   return lines.join('\n') + '\n';
+}
+
+/** Open a self-contained HTML page (the build pack, an install card) in a new tab. */
+export function openHtml(html: string) {
+  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  window.open(url, '_blank', 'noopener');
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export function download(name: string, data: string | Uint8Array, mime = 'application/octet-stream') {

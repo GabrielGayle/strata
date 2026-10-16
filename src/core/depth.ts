@@ -107,6 +107,28 @@ export async function depthFromPhoto(
   return parseDepthResponse(body);
 }
 
+// The service's container takes ~45 s to boot cold and stays up 5 min after its
+// last request (scaledown_window=300 in modal_app/worker.py).
+const WAKE_EVERY = 4 * 60_000;
+let wokeAt = -Infinity;
+
+/**
+ * Nudge the depth service awake so its cold start overlaps with picking a photo.
+ * The endpoint only answers POST /strata, but any request boots the container,
+ * so this is a plain no-cors GET (no preflight, opaque answer, a 405 is fine).
+ * At most once every few minutes; never throws, never waits.
+ */
+export function wakeDepth(url: string | undefined = DEPTH_URL, now = Date.now()): boolean {
+  if (!url || typeof fetch === 'undefined' || now - wokeAt < WAKE_EVERY) return false;
+  wokeAt = now;
+  try {
+    fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store', credentials: 'omit', keepalive: true }).catch(() => {});
+  } catch {
+    // a bad URL or a browser without fetch options: nothing to wake
+  }
+  return true;
+}
+
 /** Flip a grey PNG (near = dark → near = bright), for slots that read bright as high. */
 export async function invertDataUrl(dataUrl: string): Promise<string> {
   const img = new Image();

@@ -128,6 +128,8 @@ export interface SliceInput {
   topMask?: Gray | null;
   /** Metal each plate is cut from, by plate key (tuned plates ring by it). */
   materialFor?: (key: string) => string;
+  /** Placed objects (postcards, boxes…) cut out of every plate they pass through, each with its own clearance. */
+  objects?: { mesh: IndexedMesh; clearance: number; seat?: number; shoulder?: number }[];
 }
 
 const UP: V3 = [0, 1, 0];
@@ -783,6 +785,45 @@ function insertCavity(insert: IndexedMesh, plane: Plane, t: number, cavityMode: 
   });
 }
 
+interface Seat {
+  u0: number;
+  u1: number;
+  /** Plate top over this card (plate coordinates). */
+  top: number;
+}
+
+/** Where each plate holds a shelf card, and the lowest seat of all (null when no card asks for a seat). */
+function seatTops(objects: SliceInput['objects'], defs: PlateDef[], t: number): { plates: Seat[][]; floor: number } | null {
+  const seated = (objects ?? []).filter((o) => o.seat !== undefined);
+  if (!seated.length) return null;
+  let floor = Infinity;
+  const plates = defs.map((def) => {
+    const out: Seat[] = [];
+    for (const o of seated) {
+      const cav = insertCavity(o.mesh, def.plane, t, 'larger', o.clearance);
+      if (!cav) continue;
+      const bb = shapeBBox(cav.cavity);
+      const sh = o.shoulder ?? 5;
+      const top = bb.minY + o.seat!;
+      out.push({ u0: bb.minX - sh, u1: bb.maxX + sh, top });
+      floor = Math.min(floor, top);
+    }
+    return out;
+  });
+  return Number.isFinite(floor) ? { plates, floor } : null;
+}
+
+/**
+ * What to cut off a plate so its top steps down to its cards' seats: shoulders
+ * either side of each notch rise to that card's seat, and the rest of the plate
+ * drops to the lowest seat it holds (or the lowest of all, when it holds none).
+ */
+function seatTrim(seats: Seat[], floor: number): Shape {
+  const low = seats.length ? Math.min(...seats.map((s) => s.top)) : floor;
+  const keep = unionShapes(rect(-BIG, -BIG, BIG, low), ...seats.map((s) => rect(s.u0, -BIG, s.u1, s.top)));
+  return difference(rect(-BIG, -BIG, BIG, BIG), keep);
+}
+
 /** Chord tolerance for smoothing offsets: well inside the DXF arc tolerance, far fewer points. */
 const SMOOTH_TOL = 0.03;
 
@@ -1006,6 +1047,9 @@ export function slice(input: SliceInput): SliceResult {
   let pinsLive: boolean[] = [];
   let below: Shape = []; // material of the layer underneath, for support and guides
 
+  // shelf cards: each plate is trimmed down to just above the bottom edge of the cards it holds
+  const seats = seatTops(input.objects, defs, t);
+
   defs.forEach((def, di) => {
     let shape = outlines[di];
     const info: PlateInfo = { def, parts: [], bevel: 0, collision: 0, collisionAt: null, islands: 0, cavity: [], sweptInsert: [], tenons: tenons[di].spans.length };
@@ -1038,6 +1082,13 @@ export function slice(input: SliceInput): SliceResult {
       }
     }
 
+    // 3b. placed objects: each one's section through the plate, grown by its clearance
+    for (const o of input.objects ?? []) {
+      const cav = insertCavity(o.mesh, def.plane, t, 'larger', o.clearance);
+      // a thin object crossing at a slant leaves one slit per section; close the slivers between them into one slot
+      if (cav) cuts.push(cached(o.mesh, `close:${def.key}:${def.plane.origin.join(',')}:${def.plane.normal.join(',')}:${t}:${o.clearance}`, () => offset(offset(cav.cavity, t, 'round'), -t, 'round')));
+    }
+
     // 4. image-driven front cut-outs
     let etch: Path[] = [];
     if (front) {
@@ -1057,6 +1108,7 @@ export function slice(input: SliceInput): SliceResult {
       if (carve.length) imageCuts.push(carve);
     }
     if (imageCuts.length) shape = smoothImageCuts(shape, imageCuts.flat(), v.cutSmooth);
+    if (seats) shape = difference(shape, seatTrim(seats.plates[di], seats.floor));
     // all-edges rounding happens before the functional cuts below, so they stay crisp
     shape = roundAll(shape, v.edgeRound);
 
