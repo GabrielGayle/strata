@@ -38,6 +38,24 @@ describe('build pack', { timeout: 30_000 }, () => {
     expect(html).toContain('Bottom band');
   });
 
+  it('angled views: one on the cover, two more on their own page, in the plates\' metal on the concrete', () => {
+    const p = newProject();
+    p.appearance = { buckets: [{ id: 'b1', name: 'Bright', material: 'aluminium', finish: 'polished' }], assign: { P1: 'b1' } };
+    const { html } = pack(p);
+    const cover = html.slice(html.indexOf('<section class="cover">'), html.indexOf('<section id="layout">'));
+    expect(cover).toContain('class="drawing angled"');
+    expect(cover).toContain('From the front right');
+    expect(section(html, 'views')).toBe(true);
+    const views = html.slice(html.indexOf('<section id="views">'), html.indexOf('<section id="schedule">'));
+    expect(views.match(/class="drawing angled"/g)).toHaveLength(2);
+    // weathered Corten, polished aluminium and the concrete tint all show up as fills
+    const fills = new Set([...html.matchAll(/class="drawing angled"[\s\S]*?<\/svg>/g)].flatMap((m) => [...m[0].matchAll(/fill="(#[0-9a-f]{6})"/g)].map((f) => f[1])));
+    const red = [...fills].some((c) => parseInt(c.slice(1, 3), 16) > parseInt(c.slice(5, 7), 16) * 1.6);
+    const pale = [...fills].some((c) => parseInt(c.slice(1, 3), 16) > 0xb0 && parseInt(c.slice(5, 7), 16) > 0xb0);
+    expect(red).toBe(true);
+    expect(pale).toBe(true);
+  });
+
   it('flat stack: glue-up order bottom to top, no rods', () => {
     const { m, html } = pack(preset('Stamped stack'));
     expect(section(html, 'glue')).toBe(true);
