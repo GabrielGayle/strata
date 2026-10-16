@@ -307,7 +307,8 @@ describe('cli images', () => {
   });
 });
 
-describe('cli map', () => {
+// Module-level tile fetcher override is shared; run map CLI cases sequentially.
+describe.sequential('cli map', () => {
   beforeEach(() => setMapTileFetcher(fixtureTileFetcher));
   afterEach(() => setMapTileFetcher(null));
 
@@ -380,10 +381,28 @@ describe('cli map', () => {
     const project = join(dir, 'p.json');
     writeFileSync(project, JSON.stringify({ format: 'strata-project', version: 1 }));
     const out = join(dir, 'out');
+    const cache = join(dir, 'map-cache');
     const io = capture();
     const [w, s, e, n] = NEASDEN_BBOX;
     expect(
-      await main([project, '--out', out, '--map', 'T', '--bbox', `${w},${s},${e},${n}`, '--map-source', 'cop30'], io),
+      await main(
+        [
+          project,
+          '--out',
+          out,
+          '--map',
+          'T',
+          '--bbox',
+          `${w},${s},${e},${n}`,
+          '--map-source',
+          'cop30',
+          '--engrave',
+          'off',
+          '--map-cache',
+          cache,
+        ],
+        io,
+      ),
     ).toBe(0);
     const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
     expect(back.images.top?.map?.sourceWarnings?.some((line) => /falling back to terrarium/i.test(line))).toBe(true);
