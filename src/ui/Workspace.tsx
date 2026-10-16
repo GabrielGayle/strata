@@ -7,6 +7,7 @@ import { zoneAt, type Float, type LayoutNode, type Pane, type Zone } from '../co
 import { useStore, type Tab } from '../state/store';
 import { activeLayout, PRESETS, TABS, useWorkspaces } from '../state/workspaces';
 import { Menu } from './Toolbar';
+import { ViewportParkedContext } from './viewportKeepAlive';
 
 // Every view loads on first open (the 3D one included), so the first screen only
 // waits for the views it shows. Hovering a tab starts fetching its view early.
@@ -182,9 +183,28 @@ function DropZones({ id }: { id: string }) {
 
 function PaneBody({ p }: { p: Pane | Float }) {
   const View = VIEWS[p.active as Tab];
+  const show3d = p.active === '3d';
+  const has3d = p.tabs.includes('3d');
+  const [keep3d, setKeep3d] = useState(show3d);
+  useEffect(() => {
+    if (show3d) setKeep3d(true);
+    if (!has3d) setKeep3d(false);
+  }, [show3d, has3d]);
+  const Three = VIEWS['3d'];
   return (
     <div className="view">
-      <Suspense fallback={<div className="empty">Loading…</div>}>{View && <View />}</Suspense>
+      {keep3d && has3d && (
+        <Suspense fallback={show3d ? <div className="empty">Loading…</div> : null}>
+          <ViewportParkedContext.Provider value={!show3d}>
+            <div className={`view-layer${show3d ? '' : ' parked'}`} data-testid="viewport-3d" inert={!show3d}>
+              <Three />
+            </div>
+          </ViewportParkedContext.Provider>
+        </Suspense>
+      )}
+      {p.active !== '3d' && (
+        <Suspense fallback={<div className="empty">Loading…</div>}>{View && <View />}</Suspense>
+      )}
       <DropZones id={p.id} />
     </div>
   );

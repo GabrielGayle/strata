@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { dismissTour, seedAllTourSeenKeys } from './map-helpers';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const SHOT = join(process.cwd(), 'docs/screenshots/flat-level');
@@ -74,8 +75,8 @@ function depthProject() {
 }
 
 async function seed(page: Page) {
+  await page.addInitScript(seedAllTourSeenKeys);
   await page.addInitScript((project) => {
-    localStorage.setItem('strata:tour-seen', '1');
     localStorage.setItem('strata.project.v1', project);
     localStorage.setItem('strata.ui.v1', JSON.stringify({ tab: '3d', collapsed: { Image: false }, ortho: true }));
   }, depthProject());
@@ -181,6 +182,7 @@ test.describe('flat level', () => {
     await seed(page);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/');
+    await dismissTour(page, { waitMs: 2_000 });
     await waitReady(page);
     await chooseAppearance(page, 'Paper');
     expect(await viewportLum(page)).toBeGreaterThan(140);
@@ -235,6 +237,7 @@ test.describe('flat level', () => {
 
     await page.waitForTimeout(1800);
     await page.reload({ waitUntil: 'domcontentloaded' });
+    await dismissTour(page, { waitMs: 2_000 });
     await waitReady(page);
     await openTab(page, 'Image / Graphic');
     await expect(page.getByTestId('flat-plate')).toHaveAttribute('data-mode', 'auto', { timeout: 30_000 });
@@ -256,6 +259,7 @@ test.describe('flat level', () => {
     await seed(page);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/');
+    await dismissTour(page, { waitMs: 2_000 });
     await waitReady(page);
 
     for (const theme of [

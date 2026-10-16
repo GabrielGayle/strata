@@ -8,4 +8,5 @@ playwright-report
 coverage
 *.tsbuildinfo
 .env.local
-test-results/
+docs/screenshots/viewport/**/_video/
+docs/screenshots/viewport/**/*.webm
