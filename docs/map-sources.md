@@ -126,6 +126,8 @@ Strata stores the attribution line on `MapSpec.attribution` and in `MapEngraveAr
 
 **Attribution etch (T14):** `MapSpec.attribution` lines are etched on the **bottom** plate (`ETCH`) and listed in `build-pack.html` under **Map data credits**.
 
+**Edition + archetype card (T25):** `--map-edition N` etches `Edition N` on the back plate; `--archetype-card path.json` is copied to `map/archetype-card.json` in the fabrication bundle.
+
 ## Excluded in this product
 
 Google, Cesium, and Mapbox terrain products are **not** used (licence / ToS).

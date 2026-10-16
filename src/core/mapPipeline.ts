@@ -177,6 +177,8 @@ export function mapSpecFromCli(parts: {
   engrave: MapSpec['engrave'];
   cacheDir?: string;
   layerBudget?: LayerBudgetMode;
+  editionNumber?: number;
+  archetypeCard?: Record<string, unknown>;
 }): MapSpec {
   return defaultMapSpec({
     bbox: parts.bbox,
@@ -187,6 +189,8 @@ export function mapSpecFromCli(parts: {
     title: parts.title,
     cacheDir: parts.cacheDir,
     layerBudget: parts.layerBudget,
+    editionNumber: parts.editionNumber,
+    archetypeCard: parts.archetypeCard,
   });
 }
 

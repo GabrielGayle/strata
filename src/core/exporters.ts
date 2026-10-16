@@ -19,7 +19,7 @@ import { baseGeometry } from './base';
 import { serialize, type Project } from './project';
 import { strokeTextCentered } from './strokefont';
 import { deserializeMapEngraveArt } from './mapOsmEngrave';
-import { attributionEtchPaths } from './mapAttributionEtch';
+import { mapBackPlateEtchPaths } from './mapBackPlateEtch';
 import { mapEngravePathsForPart, type MapEngravePlateContext } from './mapEngravePlate';
 import type { UnfoldPiece } from './unfold';
 import { materialOf } from './appearance';
@@ -74,11 +74,11 @@ function bottomPlateIndex(model: Model): number {
   return idxs.length ? Math.min(...idxs) : -1;
 }
 
-function mapAttributionEtchForPart(part: Part, project?: Project, model?: Model): Path[] {
+function mapBackEtchForPart(part: Part, project?: Project, model?: Model): Path[] {
   const map = project?.images.top?.map;
-  if (!map?.attribution?.length || !model) return [];
+  if (!map || !model) return [];
   if (part.family !== 'P' || part.index !== bottomPlateIndex(model)) return [];
-  return attributionEtchPaths(part, map.attribution);
+  return mapBackPlateEtchPaths(part, map);
 }
 
 function mapEngraveForPart(part: Part, project?: Project, model?: Model): Path[] {
@@ -229,8 +229,8 @@ export function partFiles(model: Model, project?: Project): Record<string, Uint8
   const mixed = new Set(model.sliced.parts.map((p) => metal(p.plateKey))).size > 1;
   for (const p of model.sliced.parts) {
     const engrave = mapEngraveForPart(p, project, model);
-    const attrEtch = mapAttributionEtchForPart(p, project, model);
-    files[`${mixed ? `${safe(metal(p.plateKey))}/` : ''}${safe(p.id)}.dxf`] = strToU8(partDxf(p, model.v, engrave, attrEtch));
+    const backEtch = mapBackEtchForPart(p, project, model);
+    files[`${mixed ? `${safe(metal(p.plateKey))}/` : ''}${safe(p.id)}.dxf`] = strToU8(partDxf(p, model.v, engrave, backEtch));
   }
   return files;
 }
@@ -261,6 +261,10 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   }
   if (model.shadow && project.shadow?.frames.length) files['shadow-install-card.html'] = strToU8(installCardHtml(project, v, model.shadow));
   files['build-pack.html'] = strToU8(buildPackHtml(project, model, { rates }));
+  const archetype = project.images.top?.map?.archetypeCard;
+  if (archetype && typeof archetype === 'object') {
+    files['map/archetype-card.json'] = strToU8(JSON.stringify(archetype, null, 2) + '\n');
+  }
   files['project.strata.json'] = strToU8(serialize(project));
   return zipSync(files, { level: 6 });
 }

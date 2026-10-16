@@ -57,6 +57,10 @@ export interface MapSpec {
   sourceWarnings?: string[];
   /** OSM vector engrave linework in depth-image pixel space (ticket 13). */
   engraveArt?: SerializedMapEngraveArt;
+  /** Limited-edition number etched on the back plate (ticket 25). */
+  editionNumber?: number;
+  /** JSON metadata shipped as `map/archetype-card.json` in the build pack (ticket 25). */
+  archetypeCard?: Record<string, unknown>;
 }
 
 export const TERRARIUM_ATTRIBUTION = [
@@ -172,6 +176,8 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ? o.sourceWarnings.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
     : undefined;
   const engraveArt = cleanEngraveArt(o.engraveArt);
+  const editionNumber = num(o.editionNumber);
+  const archetypeCard = cleanArchetypeCard(o.archetypeCard);
   return {
     kind: 'map',
     bbox,
@@ -194,7 +200,14 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(resolvedSource ? { resolvedSource } : {}),
     ...(sourceWarnings?.length ? { sourceWarnings } : {}),
     ...(engraveArt ? { engraveArt } : {}),
+    ...(editionNumber != null && editionNumber >= 1 ? { editionNumber: Math.round(editionNumber) } : {}),
+    ...(archetypeCard ? { archetypeCard } : {}),
   };
+}
+
+function cleanArchetypeCard(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  return raw as Record<string, unknown>;
 }
 
 function cleanEngraveArt(raw: unknown): SerializedMapEngraveArt | undefined {
