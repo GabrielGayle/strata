@@ -7,6 +7,7 @@ import type { MouldResult, PourPlanRow } from './mould';
 import { embedOf } from './slicer';
 import type { HardwareRow } from './brace';
 import { bucketOf, type Appearance } from './appearance';
+import { pathLength } from './geom2d';
 
 export const DENSITY: Record<string, number> = { steel: 7850, aluminium: 2700, corten: 7850 };
 export const MATERIAL_NAME: Record<string, string> = { steel: 'Mild steel', aluminium: 'Aluminium', corten: 'Corten steel' };
@@ -16,7 +17,9 @@ export interface CutRow {
   w: number;
   h: number;
   area: number; // mm²
-  cut: number; // mm of cut path
+  cut: number; // mm of cut path (the outline, not etch)
+  /** mm of ETCH-layer lines (artwork and part numbers). Chop Chop prices these as cut. */
+  etch: number;
   pierces: number;
   mass: number; // kg
   /** Metal the part is cut from. */
@@ -82,6 +85,7 @@ export function buildBom(
       h: p.bbox.maxY - p.bbox.minY,
       area: p.area,
       cut: p.perimeter,
+      etch: [...p.etch, ...p.labelPaths].reduce((a, path) => a + pathLength(path, false), 0),
       pierces,
       mass: (p.area * p.thickness * 1e-9) * rho,
       material,
