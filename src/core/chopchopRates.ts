@@ -14,6 +14,23 @@
 //
 // Other thicknesses are a straight line through these gauges and are estimates.
 // Corten is not offered; mild steel is the floor.
+//
+// Order-size discount (same calibration). Chop Chop's unit price for every
+// part falls as the order grows: raising one part to qty 10 cut the other
+// parts on a small order by about 5–13%. The three large presets have almost
+// the same cut length (~55 m), and their pre-discount totals rank Image cliff
+// between Waffle and Vermilion while the quotes need a deeper cut on Image
+// cliff than on Vermilion, so neither cut length nor order value separates
+// them. True part area does: Waffle 1.56 m², Vermilion 2.79 m², Image cliff
+// 3.50 m². The factor below is fitted to those quotes and leaves the 9-probe
+// order (0.22 m², qty 1) inside ±£0.70 per part.
+//
+// The quoted DXFs were not in this tree (no /calibration directory on any
+// branch), so cut length per part could not be checked against those files.
+// The exporter only offsets each outline by half the 0.15 mm kerf, which
+// moves cut length by well under a percent and does not account for the
+// 15–46% qty-1 overshoot. Image cliff's quote included hatch etch; the preset
+// has no front image, so this factor is compared to that quote without hatch.
 
 export interface ChopCoeff {
   /** £ per cm² of true part area. */
@@ -43,6 +60,21 @@ export const CHOPCHOP_GAUGES: readonly ChopGauge[] = [
 
 /** £ ex VAT. Chop Chop's order minimum on 16 Oct 2026. */
 export const CHOPCHOP_MINIMUM = 55;
+
+/**
+ * Order-size factor on the qty-1 parts total:
+ *   1 / (1 + (area_m² / ORDER_AREA_SCALE_M2) ^ ORDER_AREA_EXP)
+ * Fitted 16 Oct 2026 so the quoted presets land on this curve.
+ */
+export const ORDER_AREA_SCALE_M2 = 6.12;
+export const ORDER_AREA_EXP = 1.39;
+
+/** 1 on an empty or tiny order. Area is true part area, mm². */
+export function orderSizeFactor(areaMm2: number): number {
+  const areaM2 = areaMm2 / 1e6;
+  if (!(areaM2 > 0)) return 1;
+  return 1 / (1 + (areaM2 / ORDER_AREA_SCALE_M2) ** ORDER_AREA_EXP);
+}
 
 /** Date of the quotes this file was fitted to. */
 export const CHOPCHOP_CALIBRATED = '16 Oct 2026';

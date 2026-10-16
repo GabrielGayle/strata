@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Bom, CutRow } from '../src/core/bom';
-import { CHOPCHOP_CALIBRATED, CHOPCHOP_MINIMUM, chopRates, chopUnit } from '../src/core/chopchopRates';
+import { CHOPCHOP_CALIBRATED, CHOPCHOP_MINIMUM, chopRates, chopUnit, orderSizeFactor } from '../src/core/chopchopRates';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { DEFAULT_RATES, estimateMix, estimatePrice, priceText, usesShopRates } from '../src/core/price';
 import { applyPreset, newProject, PRESETS } from '../src/core/project';
@@ -86,13 +86,14 @@ describe('Chop Chop fit, 16 Oct 2026', () => {
     expect(rectSameCut).toBeCloseTo(square, 9);
     // the quoted rectangle is longer in the cut, and only in the cut
     expect(chopUnit(40000, 1000, 1, coeff) - square).toBeCloseTo(0.2 * coeff.cut, 6);
+    const factor = orderSizeFactor(40000);
     // the zigzag's true area is 75 cm²; its bounding box is 100 cm²
     const g = geometry.get('P08-sq100-zigzag.dxf')!;
     expect(Number(g.area_mm2)).toBe(7500);
     expect(Number(g.bbox_w) * Number(g.bbox_h)).toBe(10000);
     const priced = estimatePrice(bomOf([rowFrom('P08-sq100-zigzag.dxf', 'steel')]), 'steel', 2);
-    expect(priced.lines[0].cost).toBeCloseTo(chopUnit(7500, Number(g.cut_length_mm), 1, coeff), 6);
-    expect(Math.abs(priced.lines[0].cost - chopUnit(10000, Number(g.cut_length_mm), 1, coeff))).toBeGreaterThan(0.2);
+    expect(priced.lines[0].cost).toBeCloseTo(chopUnit(7500, Number(g.cut_length_mm), 1, coeff) * orderSizeFactor(7500), 6);
+    expect(Math.abs(priced.lines[0].cost - chopUnit(10000, Number(g.cut_length_mm), 1, coeff) * factor)).toBeGreaterThan(0.2);
   });
 
   it('adds a minimum order charge under £55 and skips it once the parts clear it', () => {
@@ -121,7 +122,7 @@ describe('Chop Chop fit, 16 Oct 2026', () => {
     const etched = { ...base, etch: 1000 };
     const on = estimatePrice(bomOf([etched]), 'steel', 3);
     const off = estimatePrice(bomOf([etched]), 'steel', 3, DEFAULT_RATES, { includeEtch: false });
-    expect(on.lines[0].cost - off.lines[0].cost).toBeCloseTo(chopRates('steel', 3).coeff.cut, 6);
+    expect(on.lines[0].cost - off.lines[0].cost).toBeCloseTo(chopRates('steel', 3).coeff.cut * orderSizeFactor(base.area), 6);
     expect(on.etchM).toBeCloseTo(1, 6);
     expect(off.etchM).toBe(0);
     expect(on.warnings.some((w) => /etch/i.test(w) && /cut rate/i.test(w))).toBe(true);
@@ -163,13 +164,43 @@ describe('Chop Chop fit, 16 Oct 2026', () => {
     expect(e.lines.map((l) => l.label)).toEqual(['Material', 'Laser time', 'Setup', 'Handling']);
   });
 
-  it('says delivery is excluded and that the qty discount is left off', () => {
+  it('says delivery is excluded and that an order-size discount applies', () => {
     const text = priceText(estimatePrice(bomOf([rowFrom('P02-sq100.dxf', 'steel')]), 'steel', 3));
     expect(text).toMatch(/Delivery is not included/);
-    expect(text).toMatch(/No quantity discount is applied/);
-    expect(text).toMatch(/8%/);
+    expect(text).toMatch(/Order-size discount/);
+    expect(text).not.toMatch(/No quantity discount is applied/);
     expect(text).toMatch(/16 Oct 2026/);
     expect(text).toMatch(/Minimum order charge/);
+  });
+
+  it('keeps the 9-probe order inside £0.70 per part', () => {
+    const keys = [...new Set(quotes.map((q) => `${q.material}|${q.thickness}`))];
+    for (const key of keys) {
+      const [mat, th] = key.split('|');
+      const pack = quotes.filter((q) => q.material === mat && q.thickness === th);
+      const material = appMaterial(mat);
+      const e = estimatePrice(bomOf(pack.map((q) => rowFrom(q.file, material))), material, Number(th));
+      for (const q of pack) {
+        const id = q.file.replace(/\.dxf$/, '');
+        const cost = e.lines.find((l) => l.label === id)!.cost;
+        const err = Math.abs(cost - Number(q.unit_price));
+        expect(err, `${id} in the ${key} order: £${cost.toFixed(2)} vs £${q.unit_price}`).toBeLessThanOrEqual(0.7);
+      }
+    }
+  });
+
+  it('cuts the other parts by 5–13% when one probe is raised to qty 10', () => {
+    const pack = quotes.filter((q) => q.material === 'mild steel' && q.thickness === '3');
+    const rows = pack.map((q) => rowFrom(q.file, 'steel'));
+    const base = estimatePrice(bomOf(rows), 'steel', 3);
+    const grown = rows.flatMap((r) => (r.id.startsWith('P04') ? Array.from({ length: 10 }, (_, i) => ({ ...r, id: i ? `${r.id}-${i}` : r.id })) : [r]));
+    const big = estimatePrice(bomOf(grown), 'steel', 3);
+    const before = base.lines.find((l) => l.label.startsWith('P02'))!.cost;
+    const after = big.lines.find((l) => l.label.startsWith('P02'))!.cost;
+    const drop = 1 - after / before;
+    expect(drop).toBeGreaterThanOrEqual(0.05);
+    expect(drop).toBeLessThanOrEqual(0.13);
+    expect(big.lines.find((l) => l.label.startsWith('P09'))!.cost / base.lines.find((l) => l.label.startsWith('P09'))!.cost).toBeCloseTo(after / before, 6);
   });
 });
 
@@ -190,10 +221,14 @@ describe('preset estimates against the Chop Chop quotes', () => {
       project.params = { ...project.params, ...c.params };
       const model = createPipeline()(project, assets);
       const est = estimateMix(model.bom, model.v.thickness);
-      console.log(`${c.name}: £${est.net.toFixed(2)} ex VAT (quote £${c.quote.toFixed(2)}), etch ${est.etchM.toFixed(2)} m, ${model.bom.partCount} parts, subtotal £${est.subtotal.toFixed(2)}`);
+      const rel = (est.net - c.quote) / c.quote;
+      const areaM2 = model.bom.rows.reduce((a, r) => a + r.area, 0) / 1e6;
+      console.log(`${c.name}: £${est.net.toFixed(2)} ex VAT (quote £${c.quote.toFixed(2)}, ${(rel * 100).toFixed(2)}%), area ${areaM2.toFixed(3)} m², factor ${est.orderFactor.toFixed(4)}, etch ${est.etchM.toFixed(2)} m, ${model.bom.partCount} parts`);
       expect(est.fitted).toBe(true);
       expect(est.total).toBeCloseTo(est.net * 1.2, 6);
       expect(est.net).toBeGreaterThanOrEqual(CHOPCHOP_MINIMUM);
+      expect(Math.abs(rel), `${c.name} £${est.net.toFixed(2)} vs £${c.quote.toFixed(2)}`).toBeLessThanOrEqual(0.1);
+      if (c.name === 'Image cliff') expect(est.etchM).toBeLessThan(10);
     }
   });
 });

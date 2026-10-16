@@ -7,7 +7,7 @@
 // builds that object; this module does not depend on the CLI.
 import type { Bom, CutRow } from './bom';
 import type { HardwareRow } from './brace';
-import { CHOPCHOP_CALIBRATED, CHOPCHOP_MINIMUM, chopRates, chopUnit, type ChopRate } from './chopchopRates';
+import { CHOPCHOP_CALIBRATED, CHOPCHOP_MINIMUM, chopRates, chopUnit, orderSizeFactor, type ChopRate } from './chopchopRates';
 
 export const CHOPCHOP_URL = 'https://www.chopchoplaser.co.uk/';
 export const CHOPCHOP_QUOTE_URL = 'https://qm.tempustools.com/store/3bf51dae-32c7-4592-9ec5-17fea51a6558';
@@ -103,11 +103,18 @@ export interface PriceEstimate {
   fitted: boolean;
   /** Metres of ETCH-layer path included in the cut. */
   etchM: number;
+  /** Multiplier on the qty-1 parts total. 1 for the shop model and for a tiny order. */
+  orderFactor: number;
 }
 
 export interface EstimateOpts {
   /** Chop Chop prices ETCH-layer lines as cut. Default true. */
   includeEtch?: boolean;
+  /**
+   * True area (mm²) of the whole order, when `bom` is only one metal of a mix.
+   * The order-size factor uses this so every part sees the same discount.
+   */
+  orderAreaMm2?: number;
 }
 
 const METAL_LABEL: Record<string, string> = { steel: 'Mild steel', corten: 'Corten', aluminium: 'Aluminium' };
@@ -154,6 +161,7 @@ interface Priced {
   fitted: boolean;
   etchM: number;
   partCount: number;
+  orderFactor: number;
 }
 
 function applyMinimum(base: Priced, rates: PriceRates): PriceEstimate {
@@ -164,7 +172,19 @@ function applyMinimum(base: Priced, rates: PriceRates): PriceEstimate {
     : base.lines;
   const net = base.subtotal + charge;
   const vat = net * rates.vat;
-  return { lines, subtotal: base.subtotal, net, vat, total: net + vat, minutes: base.minutes, sheetKg: base.sheetKg, warnings: base.warnings, fitted: base.fitted, etchM: base.etchM };
+  return {
+    lines,
+    subtotal: base.subtotal,
+    net,
+    vat,
+    total: net + vat,
+    minutes: base.minutes,
+    sheetKg: base.sheetKg,
+    warnings: base.warnings,
+    fitted: base.fitted,
+    etchM: base.etchM,
+    orderFactor: base.orderFactor,
+  };
 }
 
 function rowCutMm(row: CutRow, includeEtch: boolean): number {
@@ -186,6 +206,9 @@ function estimateFitted(bom: Bom, material: string, thickness: number, rates: Pr
     if (includeEtch && etch > 0) detail.push(`${(etch / 1000).toFixed(2)} m etch at the cut rate`);
     return { label: row.id, detail: detail.join(', '), cost: chopUnit(row.area, cutMm, row.pierces, rate.coeff) };
   });
+  const areaMm2 = opts.orderAreaMm2 ?? rows.reduce((a, r) => a + r.area, 0);
+  const orderFactor = orderSizeFactor(areaMm2);
+  if (orderFactor !== 1) for (const line of lines) line.cost *= orderFactor;
   const etchMm = rows.reduce((a, r) => a + (r.etch ?? 0), 0);
   const warnings = [...rangeAndBed(material, thickness, bom)];
   if (rate.corten) warnings.unshift('Corten isn’t offered by Chop Chop. This estimate uses mild steel rates as a floor.');
@@ -195,7 +218,7 @@ function estimateFitted(bom: Bom, material: string, thickness: number, rates: Pr
   if (etchMm > 0 && !includeEtch) warnings.push(`Etch (${(etchMm / 1000).toFixed(2)} m) is left out of this estimate. Chop Chop prices etch at the cut rate.`);
   const { minutes, sheetKg } = machineOf(bom, material, thickness, rates);
   return applyMinimum(
-    { lines, subtotal: lines.reduce((a, l) => a + l.cost, 0), minutes, sheetKg, warnings, fitted: true, etchM: includeEtch ? etchMm / 1000 : 0, partCount: rows.length || bom.partCount },
+    { lines, subtotal: lines.reduce((a, l) => a + l.cost, 0), minutes, sheetKg, warnings, fitted: true, etchM: includeEtch ? etchMm / 1000 : 0, partCount: rows.length || bom.partCount, orderFactor },
     rates,
   );
 }
@@ -213,7 +236,7 @@ function estimateShop(bom: Bom, material: string, thickness: number, rates: Pric
   if (material === 'corten') warnings.push('Corten isn’t listed on Chop Chop’s site (they list mild steel). Ask whether they stock it or will cut supplied sheet.');
   warnings.push(...rangeAndBed(material, thickness, bom));
   return applyMinimum(
-    { lines, subtotal: lines.reduce((a, l) => a + l.cost, 0), minutes, sheetKg, warnings, fitted: false, etchM: 0, partCount: bom.partCount },
+    { lines, subtotal: lines.reduce((a, l) => a + l.cost, 0), minutes, sheetKg, warnings, fitted: false, etchM: 0, partCount: bom.partCount, orderFactor: 1 },
     rates,
   );
 }
@@ -231,9 +254,10 @@ export function estimateMix(bom: Bom, thickness: number, rates: PriceRates = DEF
   const groups = bom.byMaterial?.filter((g) => g.partCount) ?? [];
   const main = bom.byMaterial?.[0]?.material ?? 'steel';
   if (groups.length <= 1) return estimatePrice(bom, groups[0]?.material ?? main, thickness, rates, opts);
+  const orderAreaMm2 = opts.orderAreaMm2 ?? groups.reduce((a, g) => a + g.rows.reduce((b, r) => b + r.area, 0), 0);
   const parts = groups.map((g) => {
     const sub = { ...bom, rows: g.rows, partCount: g.partCount, cutLength: g.cutLength, pierces: g.pierces };
-    return { g, est: estimatePrice(sub, g.material, thickness, { ...rates, minimum: 0 }, opts) };
+    return { g, est: estimatePrice(sub, g.material, thickness, { ...rates, minimum: 0 }, { ...opts, orderAreaMm2 }) };
   });
   const lines: PriceLine[] = parts.flatMap(({ g, est }) =>
     est.lines.map((l) => ({ ...l, label: est.fitted ? `${metalName(g.material)} ${l.label}` : `${metalName(g.material)} ${l.label.toLowerCase()}` })),
@@ -249,6 +273,7 @@ export function estimateMix(bom: Bom, thickness: number, rates: PriceRates = DEF
       fitted: parts.every((p) => p.est.fitted),
       etchM: parts.reduce((a, p) => a + p.est.etchM, 0),
       partCount: bom.partCount,
+      orderFactor: parts[0]?.est.orderFactor ?? 1,
     },
     rates,
   );
@@ -292,9 +317,12 @@ export function priceText(est: PriceEstimate, rates: PriceRates = DEFAULT_RATES)
   if (est.warnings.length) lines.push('', ...est.warnings.map((w) => `NOTE: ${w}`));
   lines.push('');
   if (est.fitted) {
+    const off = (1 - est.orderFactor) * 100;
     lines.push(
-      `Fitted to Chop Chop Laser quotes on ${CHOPCHOP_CALIBRATED}: true part area, cut length (etch included) and pierces, at qty 1.`,
-      'Unit prices fall on larger orders (about 8% less at qty 10 of one part, and other parts on the order drop too). No quantity discount is applied.',
+      `Fitted to Chop Chop Laser quotes on ${CHOPCHOP_CALIBRATED}: true part area, cut length (etch included) and pierces.`,
+      off >= 0.05
+        ? `Order-size discount ${off.toFixed(1)}% off the qty-1 parts total, from the order’s true part area.`
+        : 'Order-size discount is negligible at this part area.',
       'Delivery is not included.',
     );
   } else {

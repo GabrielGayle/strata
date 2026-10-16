@@ -55,6 +55,8 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
   const metals = bom.byMaterial?.filter((g) => g.partCount).map((g) => g.material) ?? [];
   const metalText = (metals.length ? metals : [material]).map((m) => MATERIAL_NAME[m] ?? m).join(' and ');
   const etchM = bom.rows.reduce((a, r) => a + (r.etch ?? 0), 0) / 1000;
+  const areaM2 = bom.rows.reduce((a, r) => a + r.area, 0) / 1e6;
+  const off = (1 - est.orderFactor) * 100;
 
   const setRates = (r: PriceRates) => {
     setRatesState(r);
@@ -77,7 +79,7 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
         <div className="stat">
           <div className="k">Ex VAT</div>
           <div className="v">
-            {gbp(est.net)} <small>{est.fitted ? 'qty 1' : `${fmt(est.minutes, 0)} min laser`}</small>
+            {gbp(est.net)} <small>{est.fitted ? (off >= 0.5 ? `${fmt(off, 0)}% off` : 'small order') : `${fmt(est.minutes, 0)} min laser`}</small>
           </div>
         </div>
       </div>
@@ -109,7 +111,7 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
       {shop && <div className="note warn">Shop rates are overriding the fitted Chop Chop prices. Reset rates to use the {CHOPCHOP_CALIBRATED} fit.</div>}
       <div className="note">
         {est.fitted
-          ? `Fitted to Chop Chop quotes from ${CHOPCHOP_CALIBRATED}, qty 1, ex VAT (${metalText} ${fmt(thickness, 1)} mm${metals.length > 1 ? ', each metal on its own rate' : ''}). A qty of 10 of one part is about 8% cheaper, and the other parts on that order drop too. This estimate leaves that discount off. `
+          ? `Fitted to Chop Chop quotes from ${CHOPCHOP_CALIBRATED}, ex VAT (${metalText} ${fmt(thickness, 1)} mm${metals.length > 1 ? ', each metal on its own rate' : ''}). Qty-1 rates are scaled by the order’s true area (${fmt(areaM2, 2)} m²${off >= 0.5 ? `, ${fmt(off, 0)}% off` : ''}). `
           : `Shop rates applied to the cut list (${metalText} ${fmt(thickness, 1)} mm). `}
         {est.hardware ? 'Bracing rods, nuts and washers are priced separately at fastener-supplier rates. ' : ''}
         Delivery is not included. The concrete base isn&rsquo;t included. For a real price, upload the plate DXFs to their{' '}
