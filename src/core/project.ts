@@ -9,6 +9,7 @@ import { cleanAppearance, type Appearance } from './appearance';
 import type { DepthData } from './depth';
 import { fillFlatDefaults } from './depthFlat';
 import { cleanMapSpec, type MapSpec } from './mapSpec';
+import { cleanUserParamOverrides, type UserParamOverrides } from './projectOverrides';
 import { cleanShadow, type ShadowSpec } from './shadow';
 import { cleanObjects, type CutObject } from './objects';
 import { cleanShelf, type ShelfSpec } from './shelf';
@@ -86,6 +87,8 @@ export interface Project {
   shelf?: ShelfSpec;
   /** Where placed objects and the shelf are measured from (the middle of the floor under the base when missing). */
   origin?: WorldOrigin;
+  /** Parameter ids the user set; auto-dimension and design size patches must not overwrite them. */
+  userParamOverrides?: UserParamOverrides;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -323,5 +326,6 @@ export function deserialize(text: string): Project {
     objects: cleanObjects(raw.objects),
     shelf: cleanShelf(raw.shelf),
     origin: cleanOrigin(raw.origin),
+    userParamOverrides: cleanUserParamOverrides(raw.userParamOverrides),
   };
 }

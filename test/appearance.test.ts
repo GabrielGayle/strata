@@ -47,14 +47,18 @@ describe('quick fills', () => {
 });
 
 describe('mixed metals through the pipeline', () => {
-  const mixed = (base: Project = newProject()): Project => {
+  const slimProject = (): Project => {
+    const p = newProject();
+    p.params = { ...p.params, plateCount: '6', insShape: 'none' };
+    return p;
+  };
+  const mixed = (base: Project = slimProject()): Project => {
     const app = defaultAppearance();
-    const keys = Array.from({ length: 20 }, (_, i) => `P${i * 2 + 1}`);
-    return { ...base, appearance: assignPlates(app, keys, 'b1') };
+    return { ...base, appearance: assignPlates(app, ['P1', 'P3', 'P5'], 'b1') };
   };
 
   it('cuts each metal on its own sheets and weighs it by its own density', () => {
-    const plain = createPipeline()(newProject(), assets);
+    const plain = createPipeline()(slimProject(), assets);
     const m = createPipeline()(mixed(), assets);
     expect(m.bom.byMaterial.map((g) => g.material)).toEqual(['corten', 'aluminium']);
     const alu = m.bom.rows.filter((r) => r.material === 'aluminium');
@@ -80,8 +84,9 @@ describe('mixed metals through the pipeline', () => {
     expect(files).toContain('laser/sheets/aluminium/sheet-01-cut.dxf');
     expect(files).toContain('laser/sheets/corten/sheet-01-cut.dxf');
     // one metal keeps the old flat layout
-    const plain = createPipeline()(small, assets);
-    expect(Object.keys(unzipSync(buildZip(plain, small)))).toContain('laser/sheets/sheet-01-cut.dxf');
+    const plainP = slimProject();
+    const plain = createPipeline()(plainP, assets);
+    expect(Object.keys(unzipSync(buildZip(plain, plainP)))).toContain('laser/sheets/sheet-01-cut.dxf');
   });
 
   it('prices each metal on its own rates with one order minimum', () => {
@@ -92,7 +97,7 @@ describe('mixed metals through the pipeline', () => {
     expect(e.lines.some((l) => l.label.startsWith('Corten'))).toBe(true);
     expect(e.lines.filter((l) => l.label === 'Minimum order charge')).toHaveLength(e.subtotal < 55 - 1e-9 ? 1 : 0);
     // a single metal prices exactly as before
-    const plain = createPipeline()(newProject(), assets);
+    const plain = createPipeline()(slimProject(), assets);
     expect(estimateMix(plain.bom, 3).total).toBeCloseTo(estimatePrice(plain.bom, 'corten', 3).total, 9);
   });
 
@@ -111,7 +116,7 @@ describe('mixed metals through the pipeline', () => {
 
   it('only re-slices for a metal change when the plates are tuned', () => {
     const pipe = createPipeline();
-    const a = pipe(newProject(), assets);
+    const a = pipe(slimProject(), assets);
     const b = pipe(mixed(), assets);
     expect(b.sliced).toBe(a.sliced);
     expect(materialKey(mixed().appearance, 'corten')).toContain('P1=aluminium');

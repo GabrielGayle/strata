@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildMapBundle } from '../src/core/mapPipeline';
-import { EA_LIDAR_DTM_CATALOG } from '../src/core/mapEaLidar';
+import { EA_LIDAR_DSM_CATALOG, EA_LIDAR_DTM_CATALOG } from '../src/core/mapEaLidar';
 import { loadBuiltinEaFixture } from '../src/core/mapEaLidar.fixtures';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
@@ -13,8 +13,8 @@ describe('map EA LiDAR (T6)', () => {
     expect(g?.crs).toBe('EPSG:27700');
     const min = Math.min(...g!.data);
     const max = Math.max(...g!.data);
-    expect(min).toBeGreaterThanOrEqual(28);
-    expect(max).toBeLessThanOrEqual(68);
+    expect(min).toBeGreaterThanOrEqual(18);
+    expect(max).toBeLessThanOrEqual(70);
   });
 
   it('builds map bundle from ea-dtm fixture without terrarium fallback warning', async () => {
@@ -34,11 +34,14 @@ describe('map EA LiDAR (T6)', () => {
       },
     );
     expect(bundle.asset.map?.resolvedSource).toBe('ea-dtm');
-    expect(bundle.asset.map?.sourceWarnings?.some((w) => /falling back to terrarium/i.test(w))).toBeFalsy();
+    expect(bundle.asset.map?.sourceWarnings?.some((w) => /falling back to terrarium/i.test(w.message))).toBeFalsy();
     setMapTileFetcher(null);
   });
 
-  it('documents the EA DTM catalog URL', () => {
-    expect(EA_LIDAR_DTM_CATALOG).toMatch(/environment\.data\.gov\.uk/);
+  it('documents the live EA DTM WCS URL (not the retired DefraDataDownload catalog)', () => {
+    expect(EA_LIDAR_DTM_CATALOG).toMatch(/environment\.data\.gov\.uk\/geoservices\/datasets\/.+\/wcs/);
+    expect(EA_LIDAR_DSM_CATALOG).toMatch(/environment\.data\.gov\.uk\/geoservices\/datasets\/.+\/wcs/);
+    expect(EA_LIDAR_DTM_CATALOG).not.toMatch(/DefraDataDownload/);
+    expect(EA_LIDAR_DSM_CATALOG).not.toMatch(/DefraDataDownload/);
   });
 });

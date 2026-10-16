@@ -55,15 +55,16 @@ Offline tests: `test/fixtures/map/regional/kingsbarns-scot-dtm.json` (Kingsbarns
 
 Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 
-## England — Environment Agency (planned adapter) — `ea-dtm` / `ea-dsm`
+## England — Environment Agency — `ea-dtm` / `ea-dsm`
 
 | Field | Value |
 |---|---|
 | **Portal** | [environment.data.gov.uk](https://environment.data.gov.uk/) (Defra Data Services Platform) |
 | **Licence** | **Open Government Licence v3.0** |
 | **Nominal resolution** | 1 m where published |
-| **Catalog (DTM 1 m)** | `https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m` |
-| **Strata status** | Ticket **T6** reads EA tiles via the adapter (cached under `--map-cache`); offline tests use `test/fixtures/map/regional/neasden-ea-dtm.json`. Browser fetches may use the **EA-only** CORS proxy in `api/ea-proxy.ts` (deployed on Vercel). |
+| **WCS DTM 1 m** | `https://environment.data.gov.uk/geoservices/datasets/13787b9a-26a4-4775-8523-806d13af58fc/wcs` |
+| **WCS DSM 1 m** | `https://environment.data.gov.uk/geoservices/datasets/9ba4d5ac-d596-445a-9056-dae3ddec0178/wcs` |
+| **Strata status** | Ticket **T6** fetches WCS 2.0.1 GeoTIFF via `src/core/mapEaWcs.ts` (cached under `--map-cache`); offline tests use `test/fixtures/map/regional/neasden-ea-dtm.json`. Browser fetches go through the **EA-only** CORS proxy in `api/ea-proxy.ts` (deployed on Vercel). |
 
 ## Gift sizing / map pricing (ticket T27)
 

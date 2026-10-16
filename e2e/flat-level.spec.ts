@@ -225,20 +225,20 @@ test.describe('flat level', () => {
     await plate.getByRole('slider', { name: 'Edge ease' }).fill('0.4');
     await plate.getByRole('slider', { name: 'Step limit' }).fill('0.1');
     await plate.getByRole('checkbox', { name: 'Flatten the negative side' }).check();
-    await expect(page.getByRole('button', { name: 'Reset to auto' })).toBeVisible();
-    await page.getByRole('button', { name: 'Reset to auto' }).click();
+    await expect(plate.getByRole('button', { name: 'Reset to auto' })).toBeVisible();
+    await plate.getByRole('button', { name: 'Reset to auto' }).click();
     await expect(plate).toHaveAttribute('data-mode', 'auto');
     expect(Number(await plate.getByRole('slider', { name: 'Edge ease' }).inputValue())).toBe(0);
     expect(Number(await plate.getByRole('slider', { name: 'Step limit' }).inputValue())).toBe(0);
     await expect(plate.getByRole('checkbox', { name: 'Flatten the negative side' })).not.toBeChecked();
-    await expect(page.getByRole('button', { name: 'Reset to auto' })).toHaveCount(0);
+    await expect(plate.getByRole('button', { name: 'Reset to auto' })).toHaveCount(0);
 
     await page.waitForTimeout(1800);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitReady(page);
     await openTab(page, 'Image / Graphic');
     await expect(page.getByTestId('flat-plate')).toHaveAttribute('data-mode', 'auto', { timeout: 30_000 });
-    await expect(page.getByRole('button', { name: 'Reset to auto' })).toHaveCount(0);
+    await expect(page.getByTestId('flat-plate').getByRole('button', { name: 'Reset to auto' })).toHaveCount(0);
     await openTab(page, '3D');
     const persisted = await plateRange(page);
     expect(persisted.hi).toBeGreaterThan(before.hi * 0.85);

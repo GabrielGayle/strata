@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handleEaProxyHttp } from './src/server/eaProxyHttp';
+import { handleOverpassProxyHttp } from './src/server/overpassProxyHttp';
 
 // Strata's own geometry code (and the mesh loaders it uses) needs only three's
 // core: maths, geometry, shapes. Point those imports straight at three.core.js,
@@ -11,8 +13,30 @@ import { fileURLToPath } from 'node:url';
 const CORE_ONLY = /\/src\/(core|state)\/|\/three\/examples\/jsm\/(loaders\/(STL|OBJ)Loader|exporters\/STLExporter|utils\/BufferGeometryUtils)\.js$/;
 const mapFixtureRoot = join(fileURLToPath(new URL('.', import.meta.url)), 'test/fixtures/map');
 
-function attachMapFixtureMiddleware(server: { middlewares: { use: (path: string, handler: (req: any, res: any, next: () => void) => void) => void } }) {
-  server.middlewares.use('/map-fixtures', (req, res, next) => {
+function attachApiMiddleware(server: { middlewares: { use: Function } }) {
+  server.middlewares.use((req: import('http').IncomingMessage, res: import('http').ServerResponse, next: () => void) => {
+    const url = req.url?.split('?')[0] ?? '';
+    if (url === '/api/ea-proxy') {
+      void handleEaProxyHttp(req, res).catch((e) => {
+        res.statusCode = 500;
+        res.end((e as Error).message);
+      });
+      return;
+    }
+    if (url === '/api/overpass') {
+      void handleOverpassProxyHttp(req, res).catch((e) => {
+        res.statusCode = 500;
+        res.end((e as Error).message);
+      });
+      return;
+    }
+    next();
+  });
+}
+
+function attachMapFixtureMiddleware(server: { middlewares: { use: Function } }) {
+  attachApiMiddleware(server);
+  server.middlewares.use('/map-fixtures', (req: import('http').IncomingMessage, res: import('http').ServerResponse, next: () => void) => {
     const url = req.url?.split('?')[0] ?? '';
     const file = normalize(join(mapFixtureRoot, url.replace(/^\//, '')));
     if (!file.startsWith(mapFixtureRoot) || !existsSync(file) || !statSync(file).isFile()) {

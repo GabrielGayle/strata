@@ -31,7 +31,7 @@ describe('map Copernicus GLO-30 (T5)', () => {
       },
     );
     expect(bundle.asset.map?.resolvedSource).toBe('cop30');
-    expect(bundle.asset.map?.sourceWarnings?.some((w) => /falling back to terrarium/i.test(w))).toBeFalsy();
+    expect(bundle.asset.map?.sourceWarnings?.some((w) => /falling back to terrarium/i.test(w.message))).toBeFalsy();
     setMapTileFetcher(null);
   });
 

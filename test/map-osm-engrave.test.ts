@@ -1,21 +1,85 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LAYERS } from '../src/core/dxf';
 import { partDxf } from '../src/core/exporters';
 import { cleanMapSpec, defaultMapSpec } from '../src/core/mapSpec';
 import { osmToEngraveArt, serializeMapEngraveArt } from '../src/core/mapOsmEngrave';
 import { MAP_ENGRAVE_PRESETS, resolveEngravePreset } from '../src/core/mapEngravePresets';
 import { mapEngravePathsForPart } from '../src/core/mapEngravePlate';
-import { STRATA_OVERPASS_UA } from '../src/core/mapOverpass';
-import { buildMapEngraveArt } from '../src/core/mapEngraveBuild';
-import { mapGridToDepth, syntheticConeGrid } from '../src/core/mapToDepth';
-import { NEASDEN_BBOX } from './map-fixtures';
+import { setOverpassFetcher, STRATA_OVERPASS_UA, type OverpassFetcher } from '../src/core/mapOverpass';
+import { mapNoticesMatching } from '../src/core/mapNotices';
+import { buildMapBundle } from '../src/core/mapPipeline';
+import { resetOverpassInflight, setOverpassTestDelays } from '../src/core/mapOverpassFetch';
+import { setEaGridLoader } from '../src/core/mapEaLidar';
+import { setMapTileFetcher } from '../src/core/mapTerrarium';
+import type { Float32Grid } from '../src/core/mapGrid';
+import { NEASDEN_FAST_BBOX, NEASDEN_BBOX } from './map-fixtures';
 import type { Part } from '../src/core/slicer';
 
 const overpassFixture = JSON.parse(
   readFileSync(fileURLToPath(new URL('./fixtures/map/overpass-neasden.json', import.meta.url)), 'utf8'),
 );
+
+beforeEach(() => {
+  setMapTileFetcher(null);
+  setOverpassFetcher(null);
+  setEaGridLoader(null);
+  resetOverpassInflight();
+  setOverpassTestDelays({ backoffMs: [0, 0], timeoutMs: 1, browserRetryMs: 0 });
+});
+
+afterEach(() => {
+  setMapTileFetcher(null);
+  setOverpassFetcher(null);
+  setEaGridLoader(null);
+  resetOverpassInflight();
+  setOverpassTestDelays(null);
+});
+
+/** Tiny in-memory DTM so these tests never mosaic tiles or decode a GeoTIFF. */
+function tinyEaGrid(): Float32Grid {
+  const data = new Float32Array(64);
+  for (let i = 0; i < data.length; i++) data[i] = 40 + (i % 8);
+  return {
+    w: 8,
+    h: 8,
+    data,
+    crs: 'EPSG:27700',
+    transform: { originX: 519000, originY: 188000, pixelW: 500, pixelH: -500 },
+  };
+}
+
+function noNetworkTiles(): Promise<Uint8Array> {
+  return Promise.reject(new Error('network disabled in map-osm-engrave tests'));
+}
+
+/** Equal budget + coarse res so two sequential builds stay well under the 5 s vitest cap. */
+const FAST_SPEC = {
+  bbox: NEASDEN_FAST_BBOX,
+  source: 'ea-dtm' as const,
+  water: 'raw' as const,
+  resM: 32,
+  layerBudget: 'equal' as const,
+  engrave: { enabled: true, features: ['roads', 'water'] as string[] },
+};
+
+const FAST_STACK = { plateCount: 4, thicknessMm: 3, masterWidthMm: 120, layerBudget: 'equal' as const };
+
+function bundleOpts(overpass: OverpassFetcher) {
+  return {
+    eaLoader: async () => tinyEaGrid(),
+    overpass,
+    allowOverpassNetwork: false as const,
+    fetch: noNetworkTiles,
+    stack: FAST_STACK,
+  };
+}
+
+const okOverpass: OverpassFetcher = async () => overpassFixture;
+const failOverpass: OverpassFetcher = async () => {
+  throw new Error('Overpass proxy failed (502)');
+};
 
 describe('map OSM engrave (T13)', () => {
   it('parses fixture ways into road and water linework', () => {
@@ -61,15 +125,37 @@ describe('map OSM engrave (T13)', () => {
     expect(STRATA_OVERPASS_UA).toMatch(/StrataMap/);
   });
 
-  it('attaches engrave art when Overpass fixture is supplied', async () => {
-    const { depth } = mapGridToDepth(syntheticConeGrid(32, 24, 18));
-    const spec = defaultMapSpec({
-      bbox: NEASDEN_BBOX,
-      source: 'terrarium',
-      engrave: { enabled: true, features: ['roads', 'water'] },
-    });
-    const art = await buildMapEngraveArt(spec, depth, { overpass: async () => overpassFixture });
-    expect(art?.lines.length).toBeGreaterThan(0);
+  it('buildMapBundle attaches engrave art when Overpass fixture is supplied', async () => {
+    const bundle = await buildMapBundle(defaultMapSpec(FAST_SPEC), bundleOpts(okOverpass));
+    expect(bundle.asset.map?.engraveArt?.lines.length).toBeGreaterThan(0);
+  });
+
+  it('does not keep stale OSM engrave art after a failed pass', async () => {
+    const ok = await buildMapBundle(defaultMapSpec(FAST_SPEC), bundleOpts(okOverpass));
+    expect(ok.asset.map?.engraveArt?.lines.length).toBeGreaterThan(0);
+    const failed = await buildMapBundle(
+      defaultMapSpec({
+        ...ok.asset.map,
+        ...FAST_SPEC,
+      }),
+      bundleOpts(failOverpass),
+    );
+    expect(failed.asset.map?.engraveArt).toBeUndefined();
+    expect(mapNoticesMatching(failed.asset.map?.sourceWarnings, /OSM engrave skipped/)).toBe(true);
+  });
+
+  it('clears OSM engrave skipped when a later pass succeeds', async () => {
+    const failed = await buildMapBundle(defaultMapSpec(FAST_SPEC), bundleOpts(failOverpass));
+    expect(mapNoticesMatching(failed.asset.map?.sourceWarnings, /OSM engrave skipped/)).toBe(true);
+    const ok = await buildMapBundle(
+      defaultMapSpec({
+        ...failed.asset.map,
+        ...FAST_SPEC,
+      }),
+      bundleOpts(okOverpass),
+    );
+    expect(ok.asset.map?.engraveArt?.lines.length).toBeGreaterThan(0);
+    expect(mapNoticesMatching(ok.asset.map?.sourceWarnings, /OSM engrave skipped/)).toBe(false);
   });
 
   it('round-trips engrave art on MapSpec', () => {

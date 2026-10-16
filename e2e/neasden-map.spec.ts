@@ -1,33 +1,72 @@
 import { test, expect } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import {
+  openApp,
+  openWorkspaceTab,
+  pickNeasdenPreset,
+  assertMapPreviewNonUniform,
+  assertPlateHeightMatchesRelief,
+  setThemePreset,
+  waitForViewportRelief,
+  waitForThemeMode,
+  waitForPlatesView,
+} from './map-helpers';
 
-test('neasden map design builds a carved top with plates', async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('strata:tour-seen', '1');
-  });
-  await page.goto('/');
-  await page.waitForSelector('.app.window', { timeout: 60_000 });
-  // Blur the parameter filter so `/` is not eaten as text input.
-  await page.locator('.status-bar').click();
-  await page.keyboard.press('Control+K');
-  await page.waitForSelector('.design-box .design-input', { timeout: 15_000 });
-  await page.fill('.design-box .design-input', 'neasden map');
-  await page.getByRole('button', { name: 'Apply' }).click();
-
-  await expect(page.locator('.status-bar')).toContainText(/Fetching|building/i, { timeout: 15_000 });
-  await expect(page.locator('.status-bar')).toContainText(/ready/i, { timeout: 120_000 });
+test('neasden map plates follow real elevation × exaggeration (fixture)', async ({ page }) => {
+  await openApp(page);
+  await pickNeasdenPreset(page);
 
   const partsText = await page.locator('.status-bar-field').filter({ hasText: /parts/ }).first().textContent();
   const parts = Number(partsText?.match(/(\d+)\s+parts/)?.[1] ?? 0);
   expect(parts).toBeGreaterThan(4);
 
-  await page.getByRole('button', { name: /Maps/ }).click();
-  await page.getByRole('button', { name: 'Open Map tab' }).click();
+  await assertPlateHeightMatchesRelief(page, 0.3);
+  await openWorkspaceTab(page, 'Map');
   await expect(page.locator('.map-view h2')).toBeVisible();
+  const dtm = page.locator('#map-model-dtm');
+  await expect(dtm).toBeChecked();
+  await expect.poll(async () => dtm.evaluate((el) => el.nextElementSibling?.getAttribute('for'))).toBe('map-model-dtm');
+  await expect(page.locator('label[for="map-model-dtm"]')).toBeVisible();
+  await expect(page.locator('#map-water-bathy')).toBeChecked();
+  await assertMapPreviewNonUniform(page);
 
-  const shotDir = join(process.cwd(), 'docs/screenshots');
+  await mkdir(join(process.cwd(), 'docs/screenshots'), { recursive: true });
+  await page.screenshot({ path: join(process.cwd(), 'docs/screenshots/neasden-map-3d.png'), fullPage: false });
+  await page.locator('.map-view').screenshot({ path: join(process.cwd(), 'docs/screenshots/map-tab.png') });
+});
+
+test('re-clicking Neasden keeps user vertical exaggeration ×21', async ({ page }) => {
+  await openApp(page);
+  await pickNeasdenPreset(page);
+  await openWorkspaceTab(page, 'Map');
+  await page.getByLabel('Vertical exaggeration').selectOption('21');
+  await expect(page.getByLabel('Vertical exaggeration')).toHaveValue('21');
+  await page.getByRole('button', { name: 'Maps ▾' }).click();
+  await page.locator('.menu-pop').getByRole('button', { name: /^Neasden\b/ }).first().click();
+  await expect(page.getByLabel('Vertical exaggeration')).toHaveValue('21');
+  await page.locator('.map-preset-row').getByRole('button', { name: 'Neasden', exact: true }).click();
+  await expect(page.getByLabel('Vertical exaggeration')).toHaveValue('21');
+});
+
+test('neasden 3D and Plates screenshots in light and dark', async ({ page }) => {
+  await openApp(page);
+  await pickNeasdenPreset(page);
+  await waitForViewportRelief(page);
+
+  const shotDir = join(process.cwd(), 'docs/screenshots/map-p0');
   await mkdir(shotDir, { recursive: true });
-  await page.screenshot({ path: join(shotDir, 'neasden-map-3d.png'), fullPage: false });
-  await page.locator('.map-view').screenshot({ path: join(shotDir, 'map-tab.png') });
+
+  for (const { theme, prefix, mode } of [
+    { theme: 'Paper', prefix: 'light', mode: 'light' as const },
+    { theme: 'Ink', prefix: 'dark', mode: 'dark' as const },
+  ]) {
+    await setThemePreset(page, theme);
+    await waitForThemeMode(page, mode);
+    await openWorkspaceTab(page, '3D');
+    await expect(page.locator('.main canvas').first()).toBeVisible();
+    await page.locator('.main').screenshot({ path: join(shotDir, `${prefix}-3d.png`) });
+    await waitForPlatesView(page);
+    await page.locator('.main').screenshot({ path: join(shotDir, `${prefix}-plates.png`) });
+  }
 });

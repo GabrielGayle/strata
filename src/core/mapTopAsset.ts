@@ -12,6 +12,12 @@ export function projectWithTopMapSpec(project: Project, mapInput: MapSpec | (Par
     (mapInput as MapSpec).kind === 'map' ? (mapInput as MapSpec) : defaultMapSpec({ ...prev, ...mapInput, bbox: mapInput.bbox });
   const title = spec.title?.trim() || 'Map terrain';
   const params = String(project.params.imgTopMode ?? 'off') === 'off' ? { ...project.params, imgTopMode: 'carve' } : project.params;
-  const top: ImageAsset = { name: title, dataUrl: project.images.top?.dataUrl ?? MAP_TOP_PLACEHOLDER, map: spec };
+  const prevTop = project.images.top;
+  const top: ImageAsset = {
+    name: title,
+    dataUrl: prevTop?.dataUrl ?? MAP_TOP_PLACEHOLDER,
+    map: spec,
+    ...(prevTop?.depth ? { depth: prevTop.depth } : {}),
+  };
   return { ...project, params, images: { ...project.images, top } };
 }

@@ -2,7 +2,7 @@
 // is kept on the image, so these re-shape it live without asking the service again.
 import { useEffect, useRef } from 'react';
 import { useStore } from '../state/store';
-import { DEPTH_RESOLUTIONS, decodeDepthBuffers, defaultDepthSettings, depthToGray, type DepthData, type DepthSettings } from '../core/depth';
+import { DEPTH_RESOLUTIONS, decodeDepthBuffers, depthToGray, type DepthData, type DepthSettings } from '../core/depth';
 import {
   DEFAULT_FLAT_PERCENTILE,
   FLAT_LEVEL_MODES,
@@ -14,6 +14,7 @@ import {
   resolveFlatLevel,
   type FlatLevelMode,
 } from '../core/depthFlat';
+import { mapDepthToGray } from '../core/mapPlateHeight';
 import { grayDataUrl } from './surfaces';
 
 type Slot = 'top' | 'front' | 'side';
@@ -50,6 +51,7 @@ function Num({ label, value, min, max, step, onChange, title, show }: { label: s
 
 export default function DepthControls({ slot, depth }: { slot: Slot; depth: DepthData }) {
   const setDepthSettings = useStore((s) => s.setDepthSettings);
+  const resetDepthToAuto = useStore((s) => s.resetDepthToAuto);
   const s = depth.settings;
   // refresh the stored picture (thumbnails, composer) once the sliders settle; the pipeline reads the depth itself.
   // Only after a change made here, so undo / redo don't write a new step.
@@ -62,7 +64,8 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
     if (!pending.current) return;
     const t = setTimeout(() => {
       pending.current = false;
-      setDepthSettings(slot, {}, grayDataUrl(depthToGray(depth)));
+      const gray = depth.mapOrtho?.source === 'map' ? mapDepthToGray(depth) : depthToGray(depth);
+      setDepthSettings(slot, {}, grayDataUrl(gray));
     }, 300);
     return () => clearTimeout(t);
   }, [depth, slot, setDepthSettings]);
@@ -71,7 +74,9 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
   return (
     <div className="depth-ctl">
       <div className="note">
-        Depth map: {depth.w}×{depth.h}, {metres(lo)} to {metres(hi)}. These shape the real depth, not the grey picture.
+        {depth.mapOrtho?.source === 'map'
+          ? `Map elevation: ${depth.w}×${depth.h}, ${metres(lo)} to ${metres(hi)} (exaggerated metres). Near/far window the terrain; flatten, curve and perspective do not apply to plate heights.`
+          : `Depth map: ${depth.w}×${depth.h}, ${metres(lo)} to ${metres(hi)}. These shape the real depth, not the grey picture.`}
       </div>
       <MetreSlider label="Near" value={s.near} lo={lo} hi={hi} onChange={(m) => set({ near: Math.min(m, s.far * 0.98) })} title="Anything nearer than this is full height" />
       <MetreSlider label="Far" value={s.far} lo={lo} hi={hi} onChange={(m) => set({ far: Math.max(m, s.near * 1.02) })} title="Anything farther than this is background: white, left uncut" />
@@ -107,8 +112,13 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
         <button type="button" className={`btn sm ${s.invert ? 'on' : ''}`} onClick={() => set({ invert: !s.invert })} title="Near reads light instead of dark">
           Invert
         </button>
-        <button type="button" className="btn sm" onClick={() => set({ ...defaultDepthSettings(depth, slot === 'side'), resolution: s.resolution })} title="Back to the service's own near / far and a straight curve">
-          Auto
+        <button
+          type="button"
+          className="btn sm"
+          onClick={() => resetDepthToAuto(slot)}
+          title="Reset near, far, curve and spacing to automatic values from the depth data"
+        >
+          Reset to auto
         </button>
       </div>
       <FlatPlateControls depth={depth} set={set} />
