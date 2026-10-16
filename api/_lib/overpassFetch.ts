@@ -3,16 +3,17 @@
 export const STRATA_OVERPASS_UA = 'StrataMap/0.1 (+https://github.com/GabrielGayle/strata; map engraving)';
 
 export const OVERPASS_MIRRORS = [
+  'https://overpass.openstreetmap.fr/api/interpreter',
   'https://lz4.overpass-api.de/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass-api.de/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
 /** Per-mirror attempt timeout. Query XML also has [timeout:25]; fail over sooner. */
-export const OVERPASS_ATTEMPT_TIMEOUT_MS = 12_000;
+export const OVERPASS_ATTEMPT_TIMEOUT_MS = 8_000;
 
-const BACKOFF_MS = [0, 250, 500, 1000, 2000];
+const BACKOFF_MS = [0, 400];
 
 const inflight = new Map<string, Promise<unknown>>();
 
@@ -73,8 +74,8 @@ export async function postOverpassEndpoint(
 }
 
 /**
- * Walk the mirror list (two passes) with backoff. A 502/429/timeout on one host
- * continues to the next instead of failing the whole query.
+ * Race mirrors in parallel (two passes, short timeout + backoff). A hung host
+ * must not block the others — serial 12s walks made /api/overpass sit on 502.
  */
 export async function fetchOverpassWithMirrors(
   query: string,
@@ -83,19 +84,21 @@ export async function fetchOverpassWithMirrors(
   const mirrors = opts.mirrors ?? OVERPASS_MIRRORS;
   const backoff = opts.backoffMs ?? BACKOFF_MS;
   let last: Error | null = null;
-  let attempt = 0;
   for (let pass = 0; pass < 2; pass++) {
-    for (const endpoint of mirrors) {
-      const wait = backoff[Math.min(attempt, backoff.length - 1)] ?? 0;
-      if (wait) await sleep(wait);
-      attempt += 1;
-      try {
-        return await postOverpassEndpoint(endpoint, query, opts);
-      } catch (e) {
-        last = e as Error;
-        const status = (e as OverpassFetchError).status;
-        if (status != null && !retryableStatus(status)) continue;
-      }
+    const wait = backoff[Math.min(pass, backoff.length - 1)] ?? 0;
+    if (wait) await sleep(wait);
+    const errors: Error[] = [];
+    try {
+      return await Promise.any(
+        mirrors.map((endpoint) =>
+          postOverpassEndpoint(endpoint, query, opts).catch((e) => {
+            errors.push(e as Error);
+            throw e;
+          }),
+        ),
+      );
+    } catch {
+      last = errors.find((e) => retryableStatus((e as OverpassFetchError).status ?? 0)) ?? errors[errors.length - 1] ?? last;
     }
   }
   throw last ?? new OverpassFetchError('Overpass unavailable');
