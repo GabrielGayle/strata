@@ -26,7 +26,10 @@ describe('build pack', { timeout: 30_000 }, () => {
     expect(html).toContain('Print / Save PDF');
     expect(html).toContain('window.print()');
     expect(html).toContain('@page { size: A4');
-    for (const id of ['layout', 'elevations', 'schedule', 'assembly', 'pour', 'parts']) expect(section(html, id)).toBe(true);
+    for (const id of ['layout', 'elevations', 'schedule', 'gallery', 'assembly', 'pour', 'parts']) expect(section(html, id)).toBe(true);
+    expect(html).toContain('id="show-spacers"');
+    expect(html).toContain(`data-plate-count="${m.sliced.plates.length}"`);
+    for (const pl of m.sliced.plates) expect(html).toContain(`data-plate-key="${pl.def.key}"`);
     expect(section(html, 'rods')).toBe(false);
     expect(section(html, 'glue')).toBe(false);
     // every plate is named in the layout drawing and in the schedule

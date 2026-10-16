@@ -30,6 +30,19 @@ import {
   BuildPackIntegrityError,
 } from './buildPackIntegrity';
 
+let exportBusy = false;
+
+/** Ignore a second Export ZIP / Build pack click while the first is still writing. */
+export function withExportLock<T>(fn: () => T): { ok: true; value: T } | { ok: false } {
+  if (exportBusy) return { ok: false };
+  exportBusy = true;
+  try {
+    return { ok: true, value: fn() };
+  } finally {
+    exportBusy = false;
+  }
+}
+
 export interface FittedContour {
   segs: Seg[];
   hole: boolean;
@@ -265,15 +278,31 @@ export function plateDxf(plate: PlateInfo, model: Model, project?: Project): str
 
 /** Combined SVG for every piece on one plate. */
 export function plateSvg(plate: PlateInfo): string {
+  if (!plate.parts.length) return emptyPlateSvg(plate.def.key);
   return shapeSvg(plate.parts.map((p) => ({ shape: p.shape, etch: [...p.etch, ...p.labelPaths] })));
+}
+
+/** Placeholder geometry so an empty layer still has a pack file (NOTE layer / outline). */
+export function emptyPlateDxf(key: string): string {
+  const w = new DxfWriter([LAYERS.NOTE]);
+  const wdt = Math.min(40, 12 + key.length);
+  w.path(LAYERS.NOTE.name, [[0, 0], [wdt, 0], [wdt, 8], [0, 8]], true);
+  return w.toString();
+}
+
+export function emptyPlateSvg(key: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="16mm" viewBox="0 0 40 16"><path d="M1,1h38v14h-38Z" fill="none" stroke="#888" stroke-width="0.4"/><text x="20" y="10" text-anchor="middle" font-size="4">empty ${key.replace(/[<>&"]/g, '')}</text></svg>\n`;
 }
 
 function plateArtifactFiles(model: Model, project: Project): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
-  for (const pl of model.sliced.plates) {
-    const base = `plates/${safe(pl.def.key)}`;
-    files[`${base}.dxf`] = strToU8(plateDxf(pl, model, project));
-    files[`${base}.svg`] = strToU8(plateSvg(pl));
+  const manifest = buildPlateManifest(model, project);
+  const byKey = new Map(model.sliced.plates.map((pl) => [pl.def.key, pl]));
+  for (const row of manifest.plates) {
+    const pl = byKey.get(row.key);
+    if (!pl) continue;
+    files[row.dxf] = strToU8(pl.parts.length ? plateDxf(pl, model, project) : emptyPlateDxf(row.key));
+    files[row.svg] = strToU8(pl.parts.length ? plateSvg(pl) : emptyPlateSvg(row.key));
   }
   return files;
 }

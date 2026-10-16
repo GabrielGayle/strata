@@ -11,6 +11,7 @@ import {
   partFiles,
   pourPlanText,
   sheetFiles,
+  withExportLock,
   BuildPackIntegrityError,
 } from '../core/exporters';
 import { cutListCsv, hardwareCsv, MATERIAL_NAME } from '../core/bom';
@@ -237,9 +238,12 @@ export default function Inspector() {
             className="btn default"
             onClick={() => {
               try {
-                const m = fullModel();
-                download(`${base}-fabrication.zip`, buildZip(m, project), 'application/zip');
-                toast('Fabrication ZIP exported');
+                const ran = withExportLock(() => {
+                  const m = fullModel();
+                  download(`${base}-fabrication.zip`, buildZip(m, project), 'application/zip');
+                });
+                if (!ran.ok) toast('Export already running');
+                else toast('Fabrication ZIP exported');
               } catch (e) {
                 const msg = e instanceof BuildPackIntegrityError ? `Fabrication zip integrity: ${e.message}` : (e as Error).message;
                 toast(msg);
@@ -252,7 +256,10 @@ export default function Inspector() {
             className="btn"
             onClick={() => {
               try {
-                openHtml(buildPackHtmlChecked(project, fullModel(), { rates: loadRates() }));
+                const ran = withExportLock(() => {
+                  openHtml(buildPackHtmlChecked(project, fullModel(), { rates: loadRates() }));
+                });
+                if (!ran.ok) toast('Build pack already opening');
               } catch (e) {
                 const msg = e instanceof BuildPackIntegrityError ? `Build pack integrity: ${e.message}` : (e as Error).message;
                 toast(msg);

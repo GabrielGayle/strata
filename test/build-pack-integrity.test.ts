@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { deserialize, newProject, PRESETS } from '../src/core/project';
-import { buildZip, buildPackHtmlChecked } from '../src/core/exporters';
-import { buildPlateManifest, dxfHasEntities, svgHasPaths } from '../src/core/buildPackIntegrity';
+import { buildZip, buildPackHtmlChecked, withExportLock } from '../src/core/exporters';
+import { buildPlateManifest, dxfHasEntities, inAppPlateCount, svgHasPaths, uniqueZipPath } from '../src/core/buildPackIntegrity';
 import { buildMapBundle } from '../src/core/mapPipeline';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { depthToGray } from '../src/core/depth';
@@ -20,8 +20,11 @@ function assertZipPlates(model: ReturnType<ReturnType<typeof createPipeline>>, p
   const zip = unzipSync(buildZip(model, project));
   const names = Object.keys(zip);
   const manifest = JSON.parse(strFromU8(zip['manifest.json']));
-  expect(manifest.plateCount, label).toBe(model.sliced.plates.length);
-  expect(manifest.plates.length, label).toBe(model.sliced.plates.length);
+  const inApp = inAppPlateCount(model);
+  expect(inApp, `${label} in-app`).toBe(model.sliced.plates.length);
+  expect(manifest.plateCount, label).toBe(inApp);
+  expect(manifest.plates.length, label).toBe(inApp);
+  expect(names.filter((n) => n.startsWith('plates/') && n.endsWith('.dxf')).length, `${label} plates/*.dxf`).toBe(inApp);
   for (const row of manifest.plates) {
     expect(names, label).toContain(row.dxf);
     expect(names, label).toContain(row.svg);
@@ -35,10 +38,18 @@ function assertZipPlates(model: ReturnType<ReturnType<typeof createPipeline>>, p
     }
     const ids = new Set(row.partIds);
     expect(ids.size, `${label} unique part ids`).toBe(row.partIds.length);
+    expect(htmlHasPlate(strFromU8(zip['build-pack.html']), row.key), `${label} gallery ${row.key}`).toBe(true);
   }
   const html = strFromU8(zip['build-pack.html']);
   buildPackHtmlChecked(project, model); // throws if HTML inconsistent
   expect(html).toContain('Strata build pack');
+  expect(html).toContain(`data-plate-count="${inApp}"`);
+  expect(html).toContain('id="show-spacers"');
+  expect(html).toContain('id="gallery"');
+}
+
+function htmlHasPlate(html: string, key: string) {
+  return html.includes(`data-plate-key="${key}"`);
 }
 
 describe('build pack integrity', { timeout: 120_000 }, () => {
@@ -100,5 +111,42 @@ describe('build pack integrity', { timeout: 120_000 }, () => {
     const gray = depthToGray(bundle.depth);
     const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: gray, insMesh: null, srcMesh: null });
     assertZipPlates(m, p, 'neasden-map');
+  });
+
+  it('keeps empty / zero-area layers in the pack (flat stack taller than the form)', () => {
+    const p = newProject();
+    p.params.sliceMode = 'flat';
+    p.params.plateCount = '24';
+    p.params.stackHeight = '8';
+    p.params.thickness = '3';
+    p.params.erosionAmp = '0';
+    p.params.crest = '0';
+    p.params.slope = '0';
+    const m = createPipeline()(p, assets);
+    const empty = m.sliced.plates.filter((pl) => !pl.parts.length);
+    expect(empty.length).toBeGreaterThan(0);
+    assertZipPlates(m, p, 'empty-layers');
+    const manifest = buildPlateManifest(m, p);
+    expect(manifest.plates.filter((r) => r.empty).length).toBe(empty.length);
+  });
+
+  it('does not overwrite zip paths after filename sanitisation', () => {
+    const claimed = new Set<string>();
+    const a = uniqueZipPath(claimed, 'plates/P_0.dxf');
+    const b = uniqueZipPath(claimed, 'plates/P_0.dxf');
+    expect(a).toBe('plates/P_0.dxf');
+    expect(b).toBe('plates/P_0-2.dxf');
+    expect(a).not.toBe(b);
+  });
+
+  it('ignores a nested export while one is already running', () => {
+    let inner: { ok: true; value: number } | { ok: false } | null = null;
+    const outer = withExportLock(() => {
+      inner = withExportLock(() => 2);
+      return 1;
+    });
+    expect(outer).toEqual({ ok: true, value: 1 });
+    expect(inner).toEqual({ ok: false });
+    expect(withExportLock(() => 3)).toEqual({ ok: true, value: 3 });
   });
 });

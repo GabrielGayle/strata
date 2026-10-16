@@ -1,7 +1,6 @@
 // Deep audit: model plates vs zip files vs build-pack HTML drawings (not just counts).
-import { unzipSync, strFromU8 } from 'fflate';
-import { buildPackHtml } from './buildPack';
-import { angledPlatePathCount } from './buildPack';
+import { unzipSync } from 'fflate';
+import { angledPlatePathCount, buildPackHtml } from './buildPack';
 import type { Model } from './pipeline';
 import type { Project } from './project';
 import type { Part } from './slicer';
@@ -41,8 +40,8 @@ export function auditZipPlates(scenario: string, model: Model, project: Project,
 
   for (const pl of model.sliced.plates) {
     const row = manifest.plates.find((r) => r.key === pl.def.key);
-    if (!pl.parts.length) {
-      issues.push({ scenario, plateKey: pl.def.key, kind: 'no_parts', detail: 'Plate def has zero laser parts' });
+    if (!pl.parts.length && !row) {
+      issues.push({ scenario, plateKey: pl.def.key, kind: 'no_parts', detail: 'Empty plate missing from manifest' });
       continue;
     }
     for (const part of pl.parts) {
@@ -83,24 +82,27 @@ export function auditHtmlPlates(scenario: string, model: Model, project: Project
       detail: `Schedule missing part ${id}`,
     });
   }
+  for (const pl of model.sliced.plates) {
+    if (!html.includes(`data-plate-key="${pl.def.key}"`)) {
+      issues.push({ scenario, plateKey: pl.def.key, kind: 'schedule_missing_part', detail: `Gallery missing plate ${pl.def.key}` });
+    }
+  }
+  const legend = html.match(/data-plate-count="(\d+)"/);
+  if (!legend || Number(legend[1]) !== model.sliced.plates.length) {
+    issues.push({
+      scenario,
+      plateKey: '*',
+      kind: 'schedule_missing_part',
+      detail: `HTML plate-count legend ${legend?.[1] ?? 'missing'} ≠ model ${model.sliced.plates.length}`,
+    });
+  }
   const { drawn, expected } = angledPlatePathCount(project, model, { maxH: 400 });
   if (drawn < expected) {
-    for (const p of mainParts) {
-      // coarse: if total short, list all plate keys once
-      issues.push({
-        scenario,
-        plateKey: p.plateKey,
-        kind: 'angled_missing',
-        detail: `Angled cover draws ${drawn}/${expected} main-part paths (part ${p.id} may be clipped or empty path)`,
-      });
-    }
-    // dedupe by plateKey
-    const seen = new Set<string>();
-    return issues.filter((i) => {
-      if (i.kind !== 'angled_missing') return true;
-      if (seen.has(i.plateKey)) return false;
-      seen.add(i.plateKey);
-      return true;
+    issues.push({
+      scenario,
+      plateKey: '*',
+      kind: 'angled_missing',
+      detail: `Angled cover draws ${drawn}/${expected} main-part paths (overlap/clip; gallery is source of truth)`,
     });
   }
   // Plan: row mode uses fill="#111" per main part path; flat uses stroke paths

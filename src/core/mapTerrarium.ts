@@ -40,7 +40,7 @@ async function decodeTerrariumPngAsync(buf: Uint8Array): Promise<{ w: number; h:
     bmp.close?.();
     return { w, h, data: rgbaToElevGrid(w, h, img.data) };
   }
-  const { decodeTerrariumPng } = await import('./mapTerrarium.node.ts');
+  const { decodeTerrariumPng } = await import('./mapTerrarium.node');
   return decodeTerrariumPng(buf);
 }
 
