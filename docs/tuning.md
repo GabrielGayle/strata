@@ -138,6 +138,19 @@ NODE_PATH=/tmp/pyodide-run/node_modules node tools/mindlin_pyodide.mjs
 If that import fails, `python3 tools/mindlin_plate.py` is the same numbers
 without the wasm runtime.
 
+## Speech-like (vowel colours)
+
+**Tuned plates › Speech-like** builds on Words: each syllable gets a cluster of
+plates tuned to the vowel's formants (F1, F2, and optionally F3) from
+**Peterson & Barney (1952)**, *J. Acoust. Soc. Am.* 24, 175–184 (`src/core/speechTuning.ts`).
+Each formant is octave-shifted until the predicted bar length sits in the
+10–2500 mm tuner range. An optional **Melody plate** per syllable rings the
+speech-melody note from Words mode; the cluster is meant to be struck together.
+
+This suggests vowel colour and rhythm, not intelligible speech. The tuning table
+shows a live plate count and Chop Chop price estimate, with **Melody preview**
+and **Speech-like preview** in Web Audio.
+
 ## Words (chant)
 
 **Tuned plates › Words (chant)** turns any phrase into one plate per syllable.
