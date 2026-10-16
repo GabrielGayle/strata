@@ -8,6 +8,7 @@ import { applyLayerBudget, computeLayerBreaks, type LayerBudgetMode } from './ma
 import { resolveExaggerationFactor } from './mapExaggeration';
 import { simplifyMetricGrid } from './mapSimplify';
 import { fetchCop30Grid, type Cop30GridLoader } from './mapCopernicus';
+import { fetchEaLidarGrid, isEaLidarSource, type EaGridLoader } from './mapEaLidar';
 import { fetchRegionalLidarGrid, isRegionalLidarSource, type RegionalGridLoader } from './mapRegionalLidar';
 import { pickAutoMapSource, pickExplicitSource } from './mapSourcePick';
 import { sourceMeta } from './mapSourceRegistry';
@@ -29,7 +30,7 @@ export class MapSourceNotImplementedError extends Error {
   }
 }
 
-const STUB_SOURCES = new Set<MapSource>(['ea-dtm', 'ea-dsm']);
+const STUB_SOURCES = new Set<MapSource>([]);
 
 export interface ResolvedMapSource {
   requested: MapSource;
@@ -60,6 +61,7 @@ export interface BuildMapImageOptions {
   fetch?: TileFetcher;
   stack?: MapStackContext;
   regionalLoader?: RegionalGridLoader;
+  eaLoader?: EaGridLoader;
   overpass?: OverpassFetcher;
   /** When true, Overpass may use the network if the cache misses (CLI default). */
   allowOverpassNetwork?: boolean;
@@ -101,6 +103,13 @@ async function fetchElevationGrid(
     warnings.push(
       `${effective} LiDAR not available for this bbox (no tile coverage or adapter offline); falling back to terrarium (~30 m).`,
     );
+    return fetchTerrariumGrid(spec, { fetch });
+  }
+
+  if (isEaLidarSource(effective)) {
+    const grid = await fetchEaLidarGrid(effective, spec, { loader: opts.eaLoader });
+    if (grid) return grid;
+    warnings.push(`${effective} LiDAR not available for this bbox; falling back to terrarium (~30 m).`);
     return fetchTerrariumGrid(spec, { fetch });
   }
 
