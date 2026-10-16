@@ -1,8 +1,8 @@
 /**
- * Vercel serverless EA CORS proxy (ticket T6). **Not deployed** from this repository.
- * Whitelists only `environment.data.gov.uk` hosts.
+ * Vercel serverless EA CORS proxy (ticket T6). Live on Vercel — whitelists only
+ * `environment.data.gov.uk` hosts over HTTPS.
  */
-import { buildEaUpstreamHeaders, parseAllowedEaProxyTarget } from '../src/server/eaCorsProxy';
+import { buildEaUpstreamHeaders, fetchEaUpstream, parseAllowedEaProxyTarget } from '../src/server/eaCorsProxy';
 
 type VercelReq = {
   method?: string;
@@ -39,17 +39,14 @@ export default async function handler(req: VercelReq, res: VercelRes) {
   const range = req.headers?.range ?? req.headers?.Range ?? null;
   const headers = buildEaUpstreamHeaders({ method: req.method ?? 'GET', targetUrl: upstream.href, range });
   try {
-    const proxied = await fetch(upstream.href, { method: req.method ?? 'GET', headers });
+    const proxied = await fetchEaUpstream(upstream, { method: req.method ?? 'GET', headers });
     res.status(proxied.status);
-    proxied.headers.forEach((v, k) => {
-      if (k.toLowerCase() === 'transfer-encoding') return;
-      res.setHeader(k, v);
-    });
+    for (const [k, v] of Object.entries(proxied.headers)) res.setHeader(k, v);
     if (req.method === 'HEAD') {
       res.end();
       return;
     }
-    res.send(Buffer.from(await proxied.arrayBuffer()));
+    res.send(Buffer.from(proxied.body ?? new ArrayBuffer(0)));
   } catch (e) {
     res.status(502).json({ error: `Upstream failed: ${(e as Error).message}` });
   }

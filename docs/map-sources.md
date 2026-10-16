@@ -63,7 +63,7 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 | **Licence** | **Open Government Licence v3.0** |
 | **Nominal resolution** | 1 m where published |
 | **Catalog (DTM 1 m)** | `https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m` |
-| **Strata status** | Ticket **T6** reads EA tiles via the adapter (cached under `--map-cache`); offline tests use `test/fixtures/map/regional/neasden-ea-dtm.json`. Browser fetches may use the **EA-only** CORS proxy in `api/ea-proxy.ts` (not deployed). |
+| **Strata status** | Ticket **T6** reads EA tiles via the adapter (cached under `--map-cache`); offline tests use `test/fixtures/map/regional/neasden-ea-dtm.json`. Browser fetches may use the **EA-only** CORS proxy in `api/ea-proxy.ts` (deployed on Vercel). |
 
 ## Neasden preset (ticket T18)
 
@@ -110,15 +110,16 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 
 Inside Great Britain bounding boxes, resampled depth grids use EPSG:27700; elsewhere a local WGS84 UTM zone is chosen automatically.
 
-## EA CORS proxy (ticket T6 — code only, not deployed)
+## EA CORS proxy (ticket T6 — live on Vercel)
 
-Browser fetches to `environment.data.gov.uk` are often blocked by CORS. Ticket **T6** adds `api/ea-proxy.ts` (Vercel serverless handler) that:
+Browser fetches to `environment.data.gov.uk` are often blocked by CORS. `api/ea-proxy.ts` (Vercel serverless handler) that:
 
-- Whitelists **only** `environment.data.gov.uk` and its subdomains (`src/server/eaCorsProxy.ts`).
-- Proxies GET/HEAD with optional `Range` for COG/catalog range reads.
-- Injects no credentials; attribution remains on the client `MapSpec`.
+- Whitelists **only** `environment.data.gov.uk` and its subdomains over **HTTPS** (`src/server/eaCorsProxy.ts`).
+- Uses `redirect: manual` and re-checks the allowlist on every redirect hop.
+- Forwards only `content-type`, `content-length`, `cache-control`, `etag`, and `last-modified` (never `set-cookie`).
+- Proxies GET/HEAD with optional `Range` for COG/catalog range reads; no injected credentials.
 
-**This repository does not deploy the proxy.** Scotland/Wales/NI adapters still need separate proxy work or CLI-only fetch until a broader allowlist ships.
+Scotland/Wales/NI adapters still need separate proxy work or CLI-only fetch until a broader allowlist ships.
 
 Other regional hosts (`remotesensingdata.gov.scot`, `datamap.gov.wales`, ArcGIS) remain CLI/fixture-only in the app until a future multi-host proxy is designed.
 
