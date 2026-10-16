@@ -7,6 +7,7 @@ import { buildForm, formSpec, meshVolume, toIndexedMesh, type Form, type Indexed
 import { blurSpec } from './blur';
 import { processImage, rotate, silhouetteMask, type Gray } from './image';
 import { buildHeightField, type HeightField } from './heightfield';
+import { buildMapHeightField, isMapDepth } from './mapPlateHeight';
 import { slice, type SliceResult } from './slicer';
 import { runChecks, type Issue } from './checks';
 import { nest, nestGroups, type NestResult } from './nest';
@@ -23,6 +24,9 @@ import { buildObjects, type ObjectBuild } from './objects';
 import { shelfCards } from './shelf';
 import { originFrame, toWorld, type Frame } from './origin';
 import { baseTop } from './slicer';
+import { basePlan } from './base';
+import { union } from './geom2d';
+import { buildMapSunkenFrameLayout, type SunkenFrameLayout } from './mapSunkenFrame';
 
 export interface Assets {
   sideImg: Gray | null;
@@ -70,6 +74,8 @@ export interface Model {
   mouldNest: NestResult;
   unfolded: UnfoldResult;
   pour: { rows: PourPlanRow[]; total: number; mismatch: number };
+  /** Cast tub the flat-stack plates sit in when Map › Sunken concrete frame is on. */
+  sunkenFrame: SunkenFrameLayout | null;
   bom: Bom;
   /** Free-free partials of the finished outlines, from the deferred worker. Null when tuning is not free-free. */
   sounding: SoundingMode[] | null;
@@ -208,18 +214,35 @@ export function createFrontPipeline() {
       const im = toIndexedMesh(form.geometry);
       return { form, mesh: im, volume: meshVolume(im) };
     };
-    const insert = stage('Insert form', [...pick(v, formKeys('ins')), assets.insMesh], () => mkForm('ins', assets.insMesh));
+    const mapTop = isMapDepth(project.images.top?.depth) && project.images.top?.map;
+    const mapDepth = mapTop ? project.images.top!.depth : undefined;
+    // Vermilion’s default fin insert is a 360 mm dark curve; it is not map terrain.
+    const insert = stage('Insert form', [...pick(v, formKeys('ins')), assets.insMesh, !!mapTop], () =>
+      mapTop ? null : mkForm('ins', assets.insMesh),
+    );
     const source = stage('Source form', [...pick(v, formKeys('src')), v.stackSource, assets.srcMesh], () =>
       v.stackSource === 'form' || v.unfoldTarget === 'source' ? mkForm('src', assets.srcMesh) : null,
     );
     const opts = () => ({ contrast: v.imgContrast, smooth: v.imgSmooth, blur: blurSpec(v), invert: v.imgInvert, rotate: Number(v.imgRotate) });
-    const sideImg = stage('Side image', [assets.sideImg, ...pick(v, IMG_KEYS)], () => (assets.sideImg ? processImage(assets.sideImg, opts()) : null));
-    const frontImg = stage('Front image', [assets.frontImg, ...pick(v, IMG_KEYS)], () => (assets.frontImg ? processImage(assets.frontImg, opts()) : null));
-    const topImg = stage('Top image', [assets.topImg ?? null, ...pick(v, IMG_KEYS)], () => (assets.topImg ? processImage(assets.topImg, opts()) : null));
-    const topMask = stage('Top silhouette', [assets.topImg ?? null, v.topOutline, v.topThreshold, v.imgRotate], () =>
-      assets.topImg && v.topOutline !== 'off' ? silhouetteMask(rotate(assets.topImg, Number(v.imgRotate)), String(v.topOutline), v.topThreshold) : null,
+    const processFace = (img: Gray | null, isMap: boolean) => {
+      if (!img) return null;
+      if (isMap) return img;
+      return processImage(img, opts());
+    };
+    const sideImg = stage('Side image', [assets.sideImg, ...pick(v, IMG_KEYS), !!project.images.side?.map], () =>
+      processFace(assets.sideImg, !!project.images.side?.map),
     );
-    const hf = stage('Strata field', [...pick(v, STRATA_KEYS), sideImg], () => (v.stackSource === 'strata' ? buildHeightField(v, sideImg) : null));
+    const frontImg = stage('Front image', [assets.frontImg, ...pick(v, IMG_KEYS), !!project.images.front?.map], () =>
+      processFace(assets.frontImg, !!project.images.front?.map),
+    );
+    const topImg = stage('Top image', [assets.topImg ?? null, ...pick(v, IMG_KEYS), !!mapTop], () => processFace(assets.topImg ?? null, !!mapTop));
+    const topMask = stage('Top silhouette', [assets.topImg ?? null, v.topOutline, v.topThreshold, v.imgRotate, !!mapTop], () =>
+      !mapTop && assets.topImg && v.topOutline !== 'off' ? silhouetteMask(rotate(assets.topImg, Number(v.imgRotate)), String(v.topOutline), v.topThreshold) : null,
+    );
+    const hf = stage('Strata field', [...pick(v, STRATA_KEYS), sideImg, mapDepth], () => {
+      if (mapDepth) return buildMapHeightField(v, mapDepth);
+      return v.stackSource === 'strata' ? buildHeightField(v, sideImg) : null;
+    });
     // parts that come out unchanged keep their identity, so checks, nesting and the 3D view skip them
     // which metal each plate is: a string, so it only counts as changed when a plate's metal does
     const mats = materialKey(project.appearance, String(v.plateMaterial));
@@ -231,8 +254,23 @@ export function createFrontPipeline() {
       buildObjects([...(project.objects ?? []).map((o) => toWorld(o, origin)), ...shelf.map((o) => toWorld(o, origin, true))]),
     );
     const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder }));
-    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects], () =>
-      share(cache.get('Slice plates')?.value as SliceResult | undefined, slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: topImg, topMask, moves: project.moves, materialFor, objects: cutters })),
+    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, !!mapTop], () =>
+      share(
+        cache.get('Slice plates')?.value as SliceResult | undefined,
+        slice({
+          v,
+          hf,
+          source: source?.mesh ?? null,
+          insert: insert?.mesh ?? null,
+          front: frontImg,
+          top: mapTop ? null : topImg,
+          topMask: mapTop ? null : topMask,
+          moves: project.moves,
+          materialFor,
+          objects: cutters,
+          mapTerrain: !!mapTop,
+        }),
+      ),
     );
     const carved = stage('Shadow carve', [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow], () => {
       if (!v.shadowOn || !v.sunOn || v.sliceMode !== 'parallel') return null;
@@ -245,7 +283,17 @@ export function createFrontPipeline() {
     const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
     const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
     const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: carved?.sliced ?? sliced, objects, origin, shadow: carved?.report ?? null, unfolded, pour, stages, totalMs: performance.now() - t0 };
+    const finalSliced = carved?.sliced ?? sliced;
+    const mapFrame = project.images.top?.map?.sunkenFrame;
+    const sunkenFrame = stage(
+      'Sunken frame',
+      [finalSliced, mapFrame, v.thickness, v.sliceMode, v.baseOn, v.baseLength, v.baseWidth, v.baseHeight, v.baseCornerChamfer],
+      () =>
+        v.sliceMode === 'flat'
+          ? buildMapSunkenFrameLayout(finalSliced, { sunkenFrame: mapFrame }, v.thickness, baseTop(v), v.baseOn ? union([basePlan(v)]) : undefined)
+          : null,
+    );
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, origin, shadow: carved?.report ?? null, unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
   };
 }
 

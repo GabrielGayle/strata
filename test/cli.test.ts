@@ -10,6 +10,8 @@ import { applyMasterSizeCli, loadProject, main, parseCliArgs, type CliIo } from 
 import { MAP_RENDER_HEIGHT, MAP_RENDER_WIDTH } from '../src/core/mapRender';
 import { setOverpassFetcher } from '../src/core/mapOverpass';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
+import { setCop30GridLoader } from '../src/core/mapCopernicus';
+import { loadBuiltinCop30Fixture } from '../src/core/mapCopernicus.fixtures';
 import { fixtureTileFetcher } from './map-cli-fixtures';
 
 const overpassNeasdenFixture = JSON.parse(
@@ -349,10 +351,12 @@ describe.sequential('cli map', () => {
   beforeEach(() => {
     setMapTileFetcher(fixtureTileFetcher);
     setOverpassFetcher(async () => overpassNeasdenFixture);
+    setCop30GridLoader(async () => loadBuiltinCop30Fixture());
   });
   afterEach(() => {
     setMapTileFetcher(null);
     setOverpassFetcher(null);
+    setCop30GridLoader(null);
   });
 
   it('builds Neasden from fixtures offline with --map flags', async () => {
@@ -442,6 +446,71 @@ describe('cli auto-dimension', () => {
     expect(await main(['help'], io)).toBe(0);
     expect(io.out).toMatch(/--auto-dimension/);
     expect(io.out).toMatch(/--relief-exaggeration/);
+  });
+});
+
+describe('cli flat-level', () => {
+  function u16(metres: (number | null)[], lo: number, hi: number): string {
+    const b = new Uint8Array(metres.length * 2);
+    metres.forEach((m, i) => {
+      const q = m === null ? 0 : 1 + Math.round(((m - lo) / (hi - lo)) * 65534);
+      b[i * 2] = q & 255;
+      b[i * 2 + 1] = q >> 8;
+    });
+    return btoa(String.fromCharCode(...b));
+  }
+
+  it('parses --flat-level, --edge-ease, --step-limit and --flat-negative', () => {
+    const args = parseCliArgs(['p.json', '--out', 'x', '--flat-level', '3.25', '--edge-ease', '0.2', '--step-limit', '0.05', '--flat-negative']);
+    expect(args.flat).toEqual({ flatLevel: 3.25, edgeEase: 0.2, stepLimit: 0.05, flatNegative: true });
+    expect(parseCliArgs(['p.json', '--out', 'x', '--flat-level=plateau']).flat).toEqual({ flatLevel: 'plateau' });
+    expect(parseCliArgs(['p.json', '--out', 'x', '--flat-level=off']).flat).toEqual({ flatLevel: 'off' });
+  });
+
+  it('mentions the flags in help', async () => {
+    const io = capture();
+    expect(await main(['help'], io)).toBe(0);
+    expect(io.out).toMatch(/--flat-level/);
+    expect(io.out).toMatch(/--edge-ease/);
+    expect(io.out).toMatch(/--step-limit/);
+    expect(io.out).toMatch(/--flat-negative/);
+  });
+
+  it('writes the locked flat-level onto image depth faces and skips map faces', async () => {
+    const dir = scratch();
+    const project = join(dir, 'p.json');
+    const depth = {
+      w: 4,
+      h: 1,
+      minM: 1,
+      maxM: 5,
+      nearM: 1,
+      farM: 4,
+      data: u16([1, 2, 4, null], 1, 5),
+      settings: { near: 1, far: 4, spacing: 'linear', curve: 1, flatten: 0, matte: false, resolution: 256, invert: false },
+    };
+    writeFileSync(
+      project,
+      JSON.stringify({
+        format: 'strata-project',
+        version: 1,
+        name: 'Flat level CLI',
+        params: { imgSideMode: 'heightmap', insShape: 'none', plateCount: '8', thickness: '2' },
+        images: {
+          side: { name: 'depth', dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', depth },
+        },
+      }),
+    );
+    const out = join(dir, 'out');
+    const io = capture();
+    expect(await main([project, '--out', out, '--flat-level', '2', '--edge-ease', '0.15', '--step-limit', '0.08', '--flat-negative'], io)).toBe(0);
+    const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
+    const s = back.images.side?.depth?.settings;
+    expect(s?.flatLevel).toBe(2);
+    expect(s?.flatLevelOverride).toBe(true);
+    expect(s?.edgeEase).toBe(0.15);
+    expect(s?.stepLimit).toBe(0.08);
+    expect(s?.flatNegative).toBe(true);
   });
 });
 

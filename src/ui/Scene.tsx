@@ -9,12 +9,13 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { Model } from '../core/pipeline';
 import type { Part } from '../core/slicer';
 import type { MouldPart } from '../core/mould';
-import { etchSegments, extrudeOnPlane, extrudePlan } from '../core/geometry3d';
+import { etchSegments, extrudeOnPlane, extrudePlan, extrudeSunkenFrame } from '../core/geometry3d';
 import { planeToWorld } from '../core/section';
 import { baseGeometry } from '../core/base';
 import { shapeBBox } from '../core/geom2d';
 import { makeConcreteMaterial, METALS, PLY, type Band } from './materials';
 import { lookOf, MAIN, type Appearance } from '../core/appearance';
+import { isMapDepth } from '../core/mapPlateHeight';
 import { useStore } from '../state/store';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { SunStudy3D } from './SunStudy';
@@ -122,7 +123,11 @@ function Etches({ parts, engraving, labels }: { parts: Part[]; engraving: boolea
 function Base({ model, xray }: { model: Model; xray: boolean }) {
   const v = model.v;
   const mat = useMemo(() => makeConcreteMaterial(), []);
-  const geo = useMemo(() => baseGeometry(v), [v.baseLength, v.baseHeight, v.baseWidth, v.baseCornerChamfer, v.baseEdgeChamfer]); // eslint-disable-line react-hooks/exhaustive-deps
+  const frame = model.sunkenFrame;
+  const geo = useMemo(
+    () => (frame ? extrudeSunkenFrame(frame) : baseGeometry(v)),
+    [frame, v.baseLength, v.baseHeight, v.baseWidth, v.baseCornerChamfer, v.baseEdgeChamfer],
+  ); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => geo.dispose(), [geo]);
   useEffect(() => () => mat.dispose(), [mat]);
   const bands: Band[] =
@@ -142,9 +147,10 @@ function Base({ model, xray }: { model: Model; xray: boolean }) {
 function Insert({ model }: { model: Model }) {
   const v = model.v;
   const ins = model.insert;
+  const mapTop = useStore((s) => isMapDepth(s.project.images.top?.depth) && !!s.project.images.top?.map);
   const mat = useMemo(() => makeConcreteMaterial(), []);
   useEffect(() => () => mat.dispose(), [mat]);
-  if (!ins) return null;
+  if (mapTop || !ins) return null;
   if (v.insMaterial === 'void')
     return (
       <mesh geometry={ins.form.geometry} userData={{ measure: 'insert' }}>
@@ -369,11 +375,11 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const preview = useRef<THREE.Group>(null);
   const dragKey = opts.moveMode ? (moveTarget(model, opts.selected)?.key ?? null) : null;
   const L = opts.viewportLayers;
-  const showBase = v.baseOn && (L.base || L.concrete);
   const showEngrave = L.engraving || (L.water && !!topMap);
   return (
     <>
       <Env />
+      <color attach="background" args={[cssVar('--viewport', '#e6e3dc')]} />
       <ambientLight intensity={v.sunOn ? 0.28 : 0.35} />
       {v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
       <directionalLight position={[-900, 500, -600]} intensity={v.sunOn ? 0.18 : 0.45} />
@@ -391,29 +397,31 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
           position={[0, gridY, 0]}
         />
       )}
-      {showBase && <Base model={model} xray={opts.xray} />}
-      {L.plates &&
-        model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
-        <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} />
-        ))}
-      {/* the plate under the gizmo, carried rigidly while it is dragged */}
-      <group ref={preview} matrixAutoUpdate={false}>
+      {(model.sunkenFrame || v.baseOn) && (L.base || L.concrete) && <Base model={model} xray={opts.xray} />}
+      <group position={[0, model.sunkenFrame?.plateLiftMm ?? 0, 0]}>
         {L.plates &&
-          dragKey &&
-          model.sliced.parts.filter((p) => p.plateKey === dragKey).map((p) => (
-            <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected onSelect={opts.onSelect} />
+          model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
+            <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} />
           ))}
+        {/* the plate under the gizmo, carried rigidly while it is dragged */}
+        <group ref={preview} matrixAutoUpdate={false}>
+          {L.plates &&
+            dragKey &&
+            model.sliced.parts.filter((p) => p.plateKey === dragKey).map((p) => (
+              <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected onSelect={opts.onSelect} />
+            ))}
+        </group>
+        {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
+        <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} />
+        <Rods model={model} />
+        {L.backing && <Insert model={model} />}
+        <PlacedObjects model={model} />
+        {opts.showSource && model.source && v.stackSource === 'form' && (
+          <mesh geometry={model.source.form.geometry}>
+            <meshBasicMaterial color={cssVar('--info', '#2f5f9e')} wireframe transparent opacity={0.12} />
+          </mesh>
+        )}
       </group>
-      {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
-      <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} />
-      <Rods model={model} />
-      {L.backing && <Insert model={model} />}
-      <PlacedObjects model={model} />
-      {opts.showSource && model.source && v.stackSource === 'form' && (
-        <mesh geometry={model.source.form.geometry}>
-          <meshBasicMaterial color={cssVar('--info', '#2f5f9e')} wireframe transparent opacity={0.12} />
-        </mesh>
-      )}
       {opts.showMoulds && L.frame && <Moulds model={model} explode={opts.explode} />}
       {opts.showIssues && <IssueMarkers model={model} />}
     </>
@@ -457,11 +465,18 @@ function ShadowSun({ model }: { model: Model }) {
 export function modelBounds(model: Model): { center: THREE.Vector3; size: number } {
   const v = model.v;
   const box = new THREE.Box3();
-  if (v.baseOn) box.expandByPoint(new THREE.Vector3(-v.baseLength / 2, 0, -v.baseWidth / 2)).expandByPoint(new THREE.Vector3(v.baseLength / 2, v.baseHeight, v.baseWidth / 2));
+  const frame = model.sunkenFrame;
+  const lift = frame?.plateLiftMm ?? 0;
+  if (frame) {
+    const bb = shapeBBox(frame.outer);
+    box.expandByPoint(new THREE.Vector3(bb.minX, 0, -bb.maxY)).expandByPoint(new THREE.Vector3(bb.maxX, frame.rimY, -bb.minY));
+  } else if (v.baseOn) {
+    box.expandByPoint(new THREE.Vector3(-v.baseLength / 2, 0, -v.baseWidth / 2)).expandByPoint(new THREE.Vector3(v.baseLength / 2, v.baseHeight, v.baseWidth / 2));
+  }
   for (const p of model.sliced.parts) {
     const a = planeToWorld(p.plane, p.bbox.minX, p.bbox.minY);
     const b = planeToWorld(p.plane, p.bbox.maxX, p.bbox.maxY);
-    box.expandByPoint(new THREE.Vector3(...a)).expandByPoint(new THREE.Vector3(...b));
+    box.expandByPoint(new THREE.Vector3(a[0], a[1] + lift, a[2])).expandByPoint(new THREE.Vector3(b[0], b[1] + lift, b[2]));
   }
   if (model.insert) box.union(model.insert.form.bbox);
   if (box.isEmpty()) box.set(new THREE.Vector3(-300, 0, -300), new THREE.Vector3(300, 300, 300));

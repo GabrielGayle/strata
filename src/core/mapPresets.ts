@@ -117,3 +117,33 @@ export function mapPresetSpec(id: string): MapSpec {
       throw new Error(`unknown map preset '${id}' (valid: ${mapPresetIdList()})`);
   }
 }
+
+/**
+ * Re-clicking a map preset (Maps menu or Map tab) keeps user-set map fields.
+ * Place identity (bbox, title) comes from the preset. Derived build artefacts
+ * (buildKey, readout, engraveArt, resolvedSource) are not copied.
+ */
+export function keepUserMapSettings(prev: MapSpec | undefined, next: MapSpec): MapSpec {
+  if (!prev) return next;
+  return defaultMapSpec({
+    ...next,
+    source: prev.source,
+    model: prev.model,
+    resM: prev.resM,
+    exaggeration: prev.exaggeration,
+    water: prev.water,
+    layerBudget: prev.layerBudget ?? next.layerBudget,
+    engrave: { ...prev.engrave, features: [...prev.engrave.features] },
+    commemorativeText: prev.commemorativeText,
+    editionNumber: prev.editionNumber,
+    buildingClampM: prev.buildingClampM,
+    sunkenFrame: prev.sunkenFrame ? { ...prev.sunkenFrame } : next.sunkenFrame,
+    giftSizeId: prev.giftSizeId,
+    bbox: next.bbox,
+    title: next.title,
+  });
+}
+
+export function mapPresetSpecKeepingUser(id: string, prev?: MapSpec): MapSpec {
+  return keepUserMapSettings(prev, mapPresetSpec(id));
+}

@@ -70,7 +70,12 @@ async function captureTheme(browser, theme) {
   });
   await context.addInitScript((stored) => {
     localStorage.setItem('strata.theme.v1', JSON.stringify(stored));
-    localStorage.setItem('strata:tour-seen', '1');
+    const keys = new Set(['strata:tour-seen']);
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && /tour-seen/i.test(k)) keys.add(k);
+    }
+    for (const k of keys) localStorage.setItem(k, '1');
   }, theme.theme);
 
   const page = await context.newPage();

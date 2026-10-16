@@ -1,4 +1,4 @@
-import { applyAutoDimensionPatch, previewAutoDimension } from '../autoDimension';
+import { previewAutoDimension } from '../autoDimension';
 import { wordsParamPatch } from '../chantWords';
 import { masterSizePresetPatch, parseMasterOrientation, resolveMasterSizeCli } from '../masterPresets';
 import { type RawValue } from '../params';
@@ -6,6 +6,7 @@ import { applyPreset, PRESETS, type Project } from '../project';
 import { speechParamPatch } from '../speechTuning';
 import { projectWithTopMapSpec } from '../mapTopAsset';
 import { unionMapBbox } from '../mapPresets';
+import { applyParamPatchRespectingOverrides, masterSizeBlocked } from '../projectOverrides';
 import type { ProjectPatch } from './types';
 
 /** Expand tuning side effects (same as the param panel). */
@@ -71,7 +72,7 @@ export function applyProjectPatch(project: Project, patch: ProjectPatch): Projec
     if (preset) p = applyPreset(p, preset);
   }
   let params = { ...p.params };
-  if (patch.masterSize) {
+  if (patch.masterSize && !masterSizeBlocked(p.userParamOverrides)) {
     const id = resolveMasterSizeCli(patch.masterSize.id);
     const ori = patch.masterSize.orientation ?? 'portrait';
     Object.assign(params, masterSizePresetPatch(params, id, ori));
@@ -81,7 +82,7 @@ export function applyProjectPatch(project: Project, patch: ProjectPatch): Projec
     const relief = patch.autoDimension.reliefExaggeration ?? 1;
     for (const face of patch.autoDimension.faces) {
       const preview = previewAutoDimension(face, p.images[face]?.depth, params, { reliefExaggeration: relief });
-      if (preview.ok) params = applyAutoDimensionPatch(params, preview);
+      if (preview.ok) params = applyParamPatchRespectingOverrides(params, preview.patch, p.userParamOverrides);
     }
   }
   if (patch.name) p = { ...p, name: patch.name };

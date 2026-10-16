@@ -23,12 +23,14 @@ describe('EA CORS proxy allowlist (T6)', () => {
 
   it('rejects http targets', () => {
     expect(() =>
-      parseAllowedEaProxyTarget('http://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m'),
+      parseAllowedEaProxyTarget('http://environment.data.gov.uk/geoservices/datasets/13787b9a-26a4-4775-8523-806d13af58fc/wcs'),
     ).toThrow(/https/i);
   });
 
   it('parses allowed HTTPS targets', () => {
-    const u = parseAllowedEaProxyTarget('https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m');
+    const u = parseAllowedEaProxyTarget(
+      'https://environment.data.gov.uk/geoservices/datasets/13787b9a-26a4-4775-8523-806d13af58fc/wcs',
+    );
     expect(u.hostname).toBe('environment.data.gov.uk');
   });
 

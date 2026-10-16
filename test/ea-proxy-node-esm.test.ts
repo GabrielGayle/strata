@@ -67,7 +67,7 @@ const EA_HANDLER_RUNNER = `import { pathToFileURL } from 'node:url';
 
 const handlerUrl = process.argv[2];
 const allowedCatalog =
-  'https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m';
+  'https://environment.data.gov.uk/geoservices/datasets/13787b9a-26a4-4775-8523-806d13af58fc/wcs';
 
 globalThis.fetch = async (input) => {
   const url = String(input);
@@ -137,7 +137,7 @@ describe('Vercel api handlers as Node ESM', () => {
     }
 
     const routes = listTs(apiRoot).filter(isApiRouteFile).map((p) => relative(apiRoot, p));
-    expect(routes).toEqual(['ea-proxy.ts']);
+    expect(routes).toEqual(['ea-proxy.ts', 'overpass.ts']);
   });
 
   it('serves 403 for example.com and accepts environment.data.gov.uk', () => {

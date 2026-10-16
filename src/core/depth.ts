@@ -4,6 +4,16 @@
 // the metric depth too, it is kept on the image and turned into the grey grid
 // here, so near / far / curve / resolution can change without asking again.
 import type { Gray } from './image';
+import {
+  fillFlatDefaults,
+  flattenBackgroundToPlate,
+  isFlatEngaged,
+  isMapDepthFace,
+  limitHeightSteps,
+  resolveFlatLevel,
+  sampleMetresAt,
+  type FlatLevelMode,
+} from './depthFlat';
 
 export type DepthMode = 'relief' | 'depth';
 
@@ -28,7 +38,24 @@ export interface DepthSettings {
   resolution: number;
   /** near = light instead of dark (the side profile reads bright as high). */
   invert: boolean;
+  /** How the background plate is chosen. Missing or `off` = feature off (the default). */
+  flatLevelMode?: FlatLevelMode;
+  /** Depth in metres of the background plate, when the user (or eyedropper) set it. */
+  flatLevel?: number;
+  /** User locked the level; auto rebuilds and parsers must leave these keys alone. */
+  flatLevelOverride?: boolean;
+  /** 0..100, used when mode is percentile. */
+  flatPercentile?: number;
+  /** Smooth falloff into the flat region, 0..1 of the near–far span. */
+  edgeEase?: number;
+  /** Max 0..1 height change between adjacent samples (0 = no limit). */
+  stepLimit?: number;
+  /** Also floor dips below the plate (the negative side of the relief). */
+  flatNegative?: boolean;
 }
+
+export type DepthSettingKey = keyof DepthSettings;
+export type DepthSettingsOverrides = Partial<Record<DepthSettingKey, true>>;
 
 /** Metric depth as sent by the service: uint16 per pixel, 0 = no depth, 1..65535 linear over minM..maxM. */
 /** Orthographic map terrain metadata (ticket T17) — exact ground metres, no pinhole back-projection. */
@@ -36,7 +63,10 @@ export interface MapOrthoMeta {
   source: 'map';
   widthM: number;
   heightM: number;
+  /** True max−min elevation in metres (not a percentile window). */
   reliefM: number;
+  zMinM?: number;
+  zMaxM?: number;
   bboxKm: string;
 }
 
@@ -57,6 +87,8 @@ export interface DepthData {
   /** EXIF focal length in pixels on the source photo, when known. */
   exifFocalLengthPx?: number;
   settings: DepthSettings;
+  /** Fields the user set manually; automatic rebuilds must not overwrite them. */
+  settingsOverrides?: DepthSettingsOverrides;
   mapOrtho?: MapOrthoMeta;
 }
 
@@ -70,8 +102,18 @@ export interface DepthResult {
   depth?: Omit<DepthData, 'settings'>;
 }
 
-export function defaultDepthSettings(d: Pick<DepthData, 'nearM' | 'farM'>, invert = false): DepthSettings {
-  return { near: d.nearM, far: d.farM, spacing: 'perspective', curve: 1, flatten: 0, matte: true, resolution: 256, invert };
+export function defaultDepthSettings(d: Pick<DepthData, 'nearM' | 'farM' | 'mapOrtho'>, invert = false): DepthSettings {
+  const map = d.mapOrtho?.source === 'map';
+  return {
+    near: d.nearM,
+    far: d.farM,
+    spacing: map ? 'linear' : 'perspective',
+    curve: 1,
+    flatten: 0,
+    matte: !map,
+    resolution: map ? 384 : 256,
+    invert,
+  };
 }
 
 function parseDepthData(raw: unknown): Omit<DepthData, 'settings'> | undefined {
@@ -191,8 +233,16 @@ function b64Bytes(b64: string): Uint8Array {
 const decoded = new Map<string, { metres: Float32Array; mask: Float32Array | null }>();
 
 /** Metres per pixel (NaN = no depth) and the 0..1 matte, decoded once per depth map. */
+/** Sample metric depth at normalised image coords (0..1). Null if no depth there. */
+export function sampleDepthMetres(d: Pick<DepthData, 'w' | 'h' | 'minM' | 'maxM' | 'data' | 'mask'>, u: number, v: number): number | null {
+  return sampleMetresAt(decodeDepthBuffers(d).metres, d.w, d.h, u, v);
+}
+
 export function decodeDepthBuffers(d: Pick<DepthData, 'w' | 'h' | 'minM' | 'maxM' | 'data' | 'mask'>) {
-  const key = `${d.w}x${d.h}:${d.data.length}:${d.data.slice(0, 48)}${d.data.slice(-48)}:${d.mask?.length ?? 0}:${d.mask?.slice(0, 48) ?? ''}${d.mask?.slice(-48) ?? ''}`;
+  // minM/maxM must be in the key: map exaggeration rescales the metre window but the
+  // uint16 payload is the same (q is (zMax−z)/relief). Reusing ×11 metres with a ×21
+  // window lifts valleys (live: terrain 136–282 mm vs a 278 mm stack).
+  const key = `${d.w}x${d.h}:${d.minM}:${d.maxM}:${d.data.length}:${d.data.slice(0, 48)}${d.data.slice(-48)}:${d.mask?.length ?? 0}:${d.mask?.slice(0, 48) ?? ''}${d.mask?.slice(-48) ?? ''}`;
   let hit = decoded.get(key);
   if (!hit) {
     const bytes = b64Bytes(d.data);
@@ -310,6 +360,16 @@ export function depthToGray(d: DepthData, s: DepthSettings = d.settings): Gray {
     }
     if (hi > 1e-6) for (let i = 0; i < out.length; i++) out[i] = Math.min(1, out[i] / hi);
     data = out;
+  }
+  // IMAGE faces only. Map terrain keeps real metres × exaggeration and skips this.
+  const flat = fillFlatDefaults(s);
+  if (!isMapDepthFace(d) && isFlatEngaged(flat)) {
+    const metresZ = new Float32Array(n);
+    for (let i = 0; i < n; i++) metresZ[i] = metres[i] > 0 ? metres[i] : 0;
+    const M = shrink(metresZ, d.w, d.h, side);
+    const { levelM } = resolveFlatLevel(metres, d, flat);
+    flattenBackgroundToPlate(data, K.data, M.data, levelM, flat, { near, far, persp });
+    if ((flat.stepLimit ?? 0) > 0) data = limitHeightSteps(data, w, h, flat.stepLimit ?? 0);
   }
   const grey = new Float32Array(w * h);
   for (let i = 0; i < grey.length; i++) {

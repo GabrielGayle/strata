@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import type { Path, Shape } from './geom2d';
 import type { Plane } from './section';
+import type { SunkenFrameLayout } from './mapSunkenFrame';
 
 function toThreeShapes(shape: Shape): THREE.Shape[] {
   return shape.map((ex) => {
@@ -71,4 +72,17 @@ export function mergeGeometries(geos: THREE.BufferGeometry[]): THREE.BufferGeome
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   return out;
+}
+
+/** Floor slab + walls of a sunken concrete frame (pit the plates sit in). */
+export function extrudeSunkenFrame(layout: SunkenFrameLayout): THREE.BufferGeometry {
+  const bits: THREE.BufferGeometry[] = [];
+  if (layout.floorMm > 0.01) bits.push(extrudePlan(layout.outer, layout.floorMm, 0));
+  const wallH = layout.rimY - layout.floorMm;
+  if (wallH > 0.01 && layout.ring.length) bits.push(extrudePlan(layout.ring, wallH, layout.floorMm));
+  if (!bits.length) return extrudePlan(layout.outer, Math.max(layout.rimY, 1), 0);
+  if (bits.length === 1) return bits[0];
+  const g = mergeGeometries(bits);
+  bits.forEach((b) => b.dispose());
+  return g;
 }

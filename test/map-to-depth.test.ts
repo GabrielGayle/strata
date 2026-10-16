@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { depthToGray } from '../src/core/depth';
+import { decodeDepthBuffers, depthToGray } from '../src/core/depth';
 import { createPipeline } from '../src/core/pipeline';
 import { newProject, PRESETS } from '../src/core/project';
 import { pointInShape } from '../src/core/geom2d';
@@ -7,6 +7,26 @@ import { baseTop } from '../src/core/slicer';
 import { mapGridToDepth, syntheticConeGrid } from '../src/core/mapToDepth';
 
 describe('mapToDepth', () => {
+  it('decode cache does not reuse ×11 metres under a ×21 window', () => {
+    const grid = syntheticConeGrid(32, 20, 18);
+    const a = mapGridToDepth(grid, { exaggeration: 11 });
+    const b = mapGridToDepth(grid, { exaggeration: 21 });
+    expect(a.depth.data).toBe(b.depth.data);
+    expect(b.depth.maxM / a.depth.maxM).toBeCloseTo(21 / 11, 2);
+    decodeDepthBuffers(a.depth);
+    const metres = decodeDepthBuffers(b.depth).metres;
+    let zMin = Infinity;
+    let zMax = -Infinity;
+    for (const z of metres) {
+      if (!Number.isFinite(z)) continue;
+      zMin = Math.min(zMin, z);
+      zMax = Math.max(zMax, z);
+    }
+    expect(zMax).toBeCloseTo(b.depth.maxM, 3);
+    expect(zMin).toBeCloseTo(b.depth.minM, 3);
+    expect(zMax).toBeGreaterThan(a.depth.maxM * 1.4);
+  });
+
   it('depthToGray is monotonic from cone centre to rim', () => {
     const grid = syntheticConeGrid(48, 24, 18);
     const { depth } = mapGridToDepth(grid);

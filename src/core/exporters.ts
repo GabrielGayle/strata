@@ -12,7 +12,7 @@ import type { Model } from './pipeline';
 import type { Part } from './slicer';
 import type { MouldPart } from './mould';
 import type { Values } from './params';
-import { extrudeOnPlane, extrudePlan, mergeGeometries } from './geometry3d';
+import { extrudeOnPlane, extrudePlan, extrudeSunkenFrame, mergeGeometries } from './geometry3d';
 import { cutListCsv, hardwareCsv } from './bom';
 import { DEFAULT_RATES, estimateMix, priceText, withHardware, type PriceRates } from './price';
 import { baseGeometry } from './base';
@@ -193,9 +193,8 @@ function geomToStl(geo: THREE.BufferGeometry): Uint8Array {
 export function modelStl(model: Model): Uint8Array {
   const v = model.v;
   const geos: THREE.BufferGeometry[] = model.sliced.parts.map((p) => extrudeOnPlane(p.shape, p.thickness, p.plane));
-  if (v.baseOn) {
-    geos.push(baseGeometry(v));
-  }
+  if (model.sunkenFrame) geos.push(extrudeSunkenFrame(model.sunkenFrame));
+  else if (v.baseOn) geos.push(baseGeometry(v));
   if (model.insert) geos.push(model.insert.form.geometry.clone());
   return geomToStl(mergeGeometries(geos));
 }

@@ -7,7 +7,9 @@ import { cleanMoves, type PartMoves } from './moves';
 import type { SoundSpec } from './sound';
 import { cleanAppearance, type Appearance } from './appearance';
 import type { DepthData } from './depth';
+import { fillFlatDefaults } from './depthFlat';
 import { cleanMapSpec, type MapSpec } from './mapSpec';
+import { cleanUserParamOverrides, type UserParamOverrides } from './projectOverrides';
 import { cleanShadow, type ShadowSpec } from './shadow';
 import { cleanObjects, type CutObject } from './objects';
 import { cleanShelf, type ShelfSpec } from './shelf';
@@ -85,6 +87,8 @@ export interface Project {
   shelf?: ShelfSpec;
   /** Where placed objects and the shelf are measured from (the middle of the floor under the base when missing). */
   origin?: WorldOrigin;
+  /** Parameter ids the user set; auto-dimension and design size patches must not overwrite them. */
+  userParamOverrides?: UserParamOverrides;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -279,7 +283,11 @@ function cleanImageAsset(raw: unknown): ImageAsset | undefined {
   if (o.pattern && typeof o.pattern === 'object') asset.pattern = o.pattern as ImageAsset['pattern'];
   if (o.composed === true) asset.composed = true;
   if (o.sound && typeof o.sound === 'object') asset.sound = o.sound as ImageAsset['sound'];
-  if (o.depth && typeof o.depth === 'object') asset.depth = o.depth as DepthData;
+  if (o.depth && typeof o.depth === 'object') {
+    const depth = { ...(o.depth as DepthData) };
+    if (depth.settings) depth.settings = fillFlatDefaults(depth.settings);
+    asset.depth = depth;
+  }
   const map = cleanMapSpec(o.map);
   if (map) asset.map = map;
   return asset;
@@ -318,5 +326,6 @@ export function deserialize(text: string): Project {
     objects: cleanObjects(raw.objects),
     shelf: cleanShelf(raw.shelf),
     origin: cleanOrigin(raw.origin),
+    userParamOverrides: cleanUserParamOverrides(raw.userParamOverrides),
   };
 }
