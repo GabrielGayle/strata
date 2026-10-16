@@ -6,7 +6,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { Model } from '../core/pipeline';
 import type { Part } from '../core/slicer';
 import type { MouldPart } from '../core/mould';
-import { etchSegments, extrudeOnPlane, extrudePlan } from '../core/geometry3d';
+import { extrudePlan } from '../core/geometry3d';
 import { planeToWorld } from '../core/section';
 import { baseGeometry } from '../core/base';
 import { shapeBBox } from '../core/geom2d';
@@ -15,6 +15,17 @@ import { lookOf, MAIN, type Appearance } from '../core/appearance';
 import { useStore } from '../state/store';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { SunStudy3D } from './SunStudy';
+import {
+  VIEWPORT_GRID_ARGS,
+  VIEWPORT_GRID_Y,
+  VIEWPORT_SHADOW_MAP,
+  etchGeometryKey,
+  partGeometryKey,
+  releaseEtchGeometry,
+  releasePlateGeometry,
+  retainEtchGeometry,
+  retainPlateGeometry,
+} from './viewportStability';
 
 export interface SceneOpts {
   selected: string | null;
@@ -53,8 +64,11 @@ export function Env() {
 }
 
 const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selected, onSelect, onPaint }: { part: Part; material: THREE.Material; selMaterial: THREE.Material; selected: boolean; onSelect?: (id: string) => void; onPaint?: (key: string, shift: boolean) => void }) {
-  const geo = useMemo(() => extrudeOnPlane(part.shape, part.thickness, part.plane), [part]);
-  useEffect(() => () => geo.dispose(), [geo]);
+  // key off the outline, not the Part wrapper: a new object with the same cut used to
+  // dispose + rebuild ExtrudeGeometry on every assemble() (slider, tab, deferred pass)
+  const geoKey = partGeometryKey(part);
+  const geo = useMemo(() => retainPlateGeometry(part), [geoKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => releasePlateGeometry(part), [geoKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <mesh
       geometry={geo}
@@ -82,21 +96,9 @@ const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selecte
 });
 
 function Etches({ parts }: { parts: Part[] }) {
-  const geo = useMemo(() => {
-    const geos = parts.filter((p) => p.etch.length || p.labelPaths.length).map((p) => etchSegments([...p.etch, ...p.labelPaths], p.thickness, p.plane));
-    const n = geos.reduce((a, g) => a + g.getAttribute('position').count, 0);
-    const pos = new Float32Array(n * 3);
-    let o = 0;
-    for (const g of geos) {
-      pos.set(g.getAttribute('position').array as Float32Array, o);
-      o += g.getAttribute('position').array.length;
-      g.dispose();
-    }
-    const out = new THREE.BufferGeometry();
-    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    return out;
-  }, [parts]);
-  useEffect(() => () => geo.dispose(), [geo]);
+  const geoKey = etchGeometryKey(parts);
+  const geo = useMemo(() => retainEtchGeometry(parts), [geoKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => releaseEtchGeometry(parts), [geoKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <lineSegments geometry={geo}>
       <lineBasicMaterial color="#1b1b1b" transparent opacity={0.75} />
@@ -350,10 +352,11 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   return (
     <>
       <Env />
+      <color attach="background" args={[cssVar('--viewport', '#e6e3dc')]} />
       <ambientLight intensity={v.sunOn ? 0.28 : 0.35} />
       {v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
       <directionalLight position={[-900, 500, -600]} intensity={v.sunOn ? 0.18 : 0.45} />
-      <Grid args={[20000, 20000]} cellSize={10} sectionSize={100} cellColor={gridA} sectionColor={gridB} cellThickness={0.6} sectionThickness={1} fadeDistance={7000} fadeStrength={1.5} infiniteGrid position={[0, -0.05, 0]} />
+      <Grid args={VIEWPORT_GRID_ARGS} cellSize={10} sectionSize={100} cellColor={gridA} sectionColor={gridB} cellThickness={0.6} sectionThickness={1} fadeDistance={7000} fadeStrength={1.5} infiniteGrid position={[0, VIEWPORT_GRID_Y, 0]} />
       {v.baseOn && <Base model={model} xray={opts.xray} />}
       {model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
         <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} />
@@ -401,7 +404,7 @@ function ShadowSun({ model }: { model: Model }) {
       position={pos}
       intensity={1.7}
       castShadow
-      shadow-mapSize={[2048, 2048]}
+      shadow-mapSize={VIEWPORT_SHADOW_MAP}
       shadow-bias={-0.0004}
       shadow-normalBias={0.6}
       shadow-camera-left={-r}

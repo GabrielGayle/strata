@@ -1,17 +1,24 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
 import { useStore, type Snap } from '../state/store';
 import { stackFrame } from '../core/heightfield';
 import type { Model } from '../core/pipeline';
-import Scene, { modelBounds } from './Scene';
+import Scene, { cssVar, modelBounds } from './Scene';
 import { gizmoIsBusy, moveTarget, useGizmoClearance } from './PlateGizmo';
 import { useModel, fmt } from './model';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
 import { SunBar } from './SunStudy';
 import { MeasurePanel, MeasureTool, useMeasure } from './Measure';
+import {
+  VIEWPORT_CAM_POS,
+  VIEWPORT_DPR,
+  VIEWPORT_GL,
+  ViewportParkedContext,
+  noteRendererCreated,
+} from './viewportStability';
 
 export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
@@ -28,6 +35,14 @@ export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up
     default:
       return { dir: new THREE.Vector3(0.95, 0.75, 1.25).normalize(), up };
   }
+}
+
+function ResumeWhenVisible({ parked }: { parked: boolean }) {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    if (!parked) invalidate();
+  }, [parked, invalidate]);
+  return null;
 }
 
 export function CameraRig({ model, snap, ortho }: { model: Model; snap: { dir: Snap; n: number; follow?: boolean }; ortho: boolean }) {
@@ -67,23 +82,28 @@ export function CameraRig({ model, snap, ortho }: { model: Model; snap: { dir: S
 
 export default function Viewport() {
   const model = useModel();
+  const modelRef = useRef(model);
+  modelRef.current = model;
+  const parked = useContext(ViewportParkedContext);
   const ui = useStore((s) => s.ui);
   const setUi = useStore((s) => s.setUi);
   const v = model.v;
   const snapTo = (dir: Snap) => setUi({ snap: { dir, n: ui.snap.n + 1 } });
+  const onSelect = useCallback((id: string | null) => setUi({ selected: id }), [setUi]);
+  const onPaint = useCallback((key: string, shift: boolean) => paintClick(modelRef.current, key, shift), []);
   const opts = useMemo(
     () => ({
       selected: ui.selected,
-      onSelect: ui.measureMode ? undefined : (id: string | null) => setUi({ selected: id }),
+      onSelect: ui.measureMode ? undefined : onSelect,
       showMoulds: ui.showMoulds,
       explode: ui.explode,
       xray: ui.xray,
       showIssues: ui.showIssues,
       showSource: ui.showSource,
       moveMode: ui.moveMode && !ui.paintMode && !ui.measureMode,
-      onPaint: ui.paintMode && !ui.measureMode ? (key: string, shift: boolean) => paintClick(model, key, shift) : undefined,
+      onPaint: ui.paintMode && !ui.measureMode ? onPaint : undefined,
     }),
-    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.moveMode, ui.paintMode, ui.measureMode, model, setUi],
+    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.moveMode, ui.paintMode, ui.measureMode, onSelect, onPaint],
   );
   const bucketed = Object.keys(useStore((s) => s.project.appearance?.assign) ?? {}).length;
   const movedCount = Object.keys(useStore((s) => s.project.moves) ?? {}).length;
@@ -129,9 +149,22 @@ export default function Viewport() {
   const hMax = heights.length ? Math.max(...heights) : 0;
   return (
     <>
-      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
-        <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={1} far={60000} position={[1500, 1100, 1800]} />
-        <OrthographicCamera makeDefault={ui.ortho} near={-50000} far={50000} position={[1500, 1100, 1800]} zoom={0.6} />
+      <Canvas
+        shadows="percentage"
+        dpr={VIEWPORT_DPR}
+        gl={VIEWPORT_GL}
+        frameloop={parked ? 'never' : 'always'}
+        resize={{ scroll: false, debounce: { scroll: 50, resize: 50 } }}
+        onCreated={({ gl }) => {
+          noteRendererCreated();
+          gl.setClearColor(cssVar('--viewport', '#e6e3dc'), 1);
+        }}
+        onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })}
+        style={{ position: 'absolute', inset: 0 }}
+      >
+        <ResumeWhenVisible parked={parked} />
+        <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={1} far={60000} position={VIEWPORT_CAM_POS} />
+        <OrthographicCamera makeDefault={ui.ortho} near={-50000} far={50000} position={VIEWPORT_CAM_POS} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
         <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} />
         <Scene model={model} opts={opts} />

@@ -374,6 +374,16 @@ input[type='number'],
   position: relative;
   background: var(--viewport);
 }
+/* Keep the WebGL canvas mounted when another tab is in front of it. */
+.view-layer {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+.view-layer.parked {
+  visibility: hidden;
+  pointer-events: none;
+}
 
 /* ---------- panels ---------- */
 .section {
