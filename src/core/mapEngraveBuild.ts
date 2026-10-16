@@ -24,6 +24,7 @@ export async function buildMapEngraveArt(
     fetch: opts.overpass,
     allowNetwork: opts.allowNetwork,
     query: opts.overpassQuery,
+    features,
   });
   const art = osmToEngraveArt(raw, spec.bbox, depth.w, depth.h, features);
   const w = art.imageW;

@@ -42,23 +42,28 @@ export async function defaultOverpassFetch(query: string): Promise<unknown> {
   return res.json();
 }
 
-export function overpassQueryForBbox(bbox: [number, number, number, number]): string {
+export function overpassQueryForBbox(bbox: [number, number, number, number], features: string[] = []): string {
   const [w, s, e, n] = bbox;
-  return `[out:json][timeout:25];
-(
-  way["highway"](${s},${w},${n},${e});
-  way["natural"="water"](${s},${w},${n},${e});
-  way["waterway"](${s},${w},${n},${e});
-  way["railway"](${s},${w},${n},${e});
-);
-out geom;`;
+  const want = new Set(features.map((f) => f.toLowerCase()));
+  const golf = want.has('golf') || want.has('fairway') || want.has('green');
+  const blocks = [
+    `  way["highway"](${s},${w},${n},${e});`,
+    `  way["natural"="water"](${s},${w},${n},${e});`,
+    `  way["waterway"](${s},${w},${n},${e});`,
+    `  way["railway"](${s},${w},${n},${e});`,
+  ];
+  if (golf) {
+    blocks.push(`  way["golf"](${s},${w},${n},${e});`);
+    blocks.push(`  way["leisure"="golf_course"](${s},${w},${n},${e});`);
+  }
+  return `[out:json][timeout:25];\n(\n${blocks.join('\n')}\n);\nout geom;`;
 }
 
 export async function fetchOverpass(
   bbox: [number, number, number, number],
-  opts: { cacheDir?: string; fetch?: OverpassFetcher; allowNetwork?: boolean; query?: string } = {},
+  opts: { cacheDir?: string; fetch?: OverpassFetcher; allowNetwork?: boolean; query?: string; features?: string[] } = {},
 ): Promise<unknown> {
-  const query = opts.query ?? overpassQueryForBbox(bbox);
+  const query = opts.query ?? overpassQueryForBbox(bbox, opts.features);
   if (opts.cacheDir) {
     const hit = readOverpassCache(opts.cacheDir, query);
     if (hit) return hit;

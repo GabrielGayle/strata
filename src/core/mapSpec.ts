@@ -208,7 +208,8 @@ function cleanEngraveArt(raw: unknown): SerializedMapEngraveArt | undefined {
     for (const ln of o.lines) {
       if (!ln || typeof ln !== 'object') continue;
       const rec = ln as Record<string, unknown>;
-      const kind = rec.kind === 'road' || rec.kind === 'water' || rec.kind === 'rail' || rec.kind === 'other' ? rec.kind : 'other';
+      const kind =
+        rec.kind === 'road' || rec.kind === 'water' || rec.kind === 'rail' || rec.kind === 'golf' || rec.kind === 'other' ? rec.kind : 'other';
       const path: [number, number][] = [];
       if (Array.isArray(rec.path)) {
         for (const pt of rec.path) {
