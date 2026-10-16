@@ -59,7 +59,11 @@ export async function fetchCop30Grid(
   if (builtin) return builtin;
   const url = cop30TileUrl(spec.bbox);
   const fetchBytes = opts.fetchBytes ?? (async (u) => cachedMapBytes(spec.cacheDir, 'cog', u, defaultFetch));
-  void fetchBytes(url);
+  try {
+    await fetchBytes(url);
+  } catch {
+    return null;
+  }
   return null;
 }
 
