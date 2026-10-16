@@ -1,0 +1,9 @@
+{
+  "format": "strata-project",
+  "version": 1,
+  "name": "Image cliff",
+  "preset": "Image cliff",
+  "params": {
+    "plateCount": "24"
+  }
+}

@@ -217,7 +217,11 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   files['cutlist.csv'] = strToU8(cutListCsv(v, model.bom));
   if (model.bom.hardware.length) files['hardware.csv'] = strToU8(hardwareCsv(model.bom));
   files['pour-plan.txt'] = strToU8(pourPlanText(model));
-  if (model.bom.partCount) files['price-estimate.txt'] = strToU8(priceText(withHardware(estimateMix(model.bom, v.thickness, rates), model.bom.hardware, rates), rates));
+  if (model.bom.partCount) {
+    const estimate = withHardware(estimateMix(model.bom, v.thickness, rates), model.bom.hardware, rates);
+    files['price-estimate.txt'] = strToU8(priceText(estimate, rates));
+    files['price-estimate.json'] = strToU8(JSON.stringify(estimate, null, 2) + '\n');
+  }
   if (model.shadow && project.shadow?.frames.length) files['shadow-install-card.html'] = strToU8(installCardHtml(project, v, model.shadow));
   files['build-pack.html'] = strToU8(buildPackHtml(project, model, { rates }));
   files['project.strata.json'] = strToU8(serialize(project));
