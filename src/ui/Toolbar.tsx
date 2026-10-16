@@ -3,7 +3,8 @@ import { useStore } from '../state/store';
 import { PRESETS, deserialize, serialize } from '../core/project';
 import { SOUND_PRESETS } from '../core/soundPresets';
 import { soundDataUrl } from './audio';
-import { buildZip, download } from '../core/exporters';
+import { buildZip, download, openHtml } from '../core/exporters';
+import { buildPackHtml } from '../core/buildPack';
 import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
 import { loadRates } from './PriceEstimate';
@@ -230,6 +231,14 @@ export default function Toolbar() {
     }
   };
 
+  const buildPack = () => {
+    try {
+      openHtml(buildPackHtml(project, fullModel(), { rates: loadRates() }));
+    } catch (e) {
+      toast(`Build pack failed: ${(e as Error).message}`);
+    }
+  };
+
   return (
     <header className="topbar">
       <div className="brand">
@@ -374,6 +383,9 @@ export default function Toolbar() {
         <AppearanceMenu />
       </div>
       <div className="spacer" />
+      <button className="tb" onClick={buildPack} title="One printable page for the workshop wall: numbered plate layout, assembly order, rods and spacers, glue-up and pour plan">
+        Build pack
+      </button>
       <button className="tb primary" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">
         Export ZIP
       </button>

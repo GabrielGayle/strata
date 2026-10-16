@@ -2291,3 +2291,185 @@ kbd {
 .objects .ob-edit input:not([type='number']):not([type='checkbox']) {
   width: 110px;
 }
+.objects .shelf-edit {
+  align-items: flex-start;
+}
+.objects .shelf-edit textarea {
+  width: 220px;
+  font-family: var(--mono);
+  font-size: 11px;
+  resize: vertical;
+}
+.objects .shelf-side {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  max-width: 420px;
+}
+.objects .ap-edit .ap-nth input {
+  width: 42px;
+}
+
+/* ---------- nodes: the postcard shelf as a node tree ---------- */
+.nodes-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg, var(--panel));
+}
+.nd-intro,
+.nd-explain {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  border-bottom: 1px solid var(--line);
+}
+.nd-intro span,
+.nd-explain > span:last-child {
+  flex: 1;
+}
+.nd-explain {
+  border-bottom: 0;
+  border-top: 1px solid var(--line);
+  min-height: 58px;
+  background: var(--panel);
+}
+.nd-step {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.nd-area {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  gap: 56px;
+  padding: 20px 24px;
+  align-items: flex-start;
+}
+.nd-wires {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 1500px;
+  min-height: 900px;
+  pointer-events: none;
+  overflow: visible;
+}
+.nd-wires path {
+  fill: none;
+  stroke: var(--muted, #888);
+  stroke-width: 2;
+  opacity: 0.6;
+}
+.nd-wires path.on {
+  stroke: var(--accent);
+  stroke-width: 3;
+  opacity: 1;
+}
+.nd-col {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  position: relative;
+  z-index: 1;
+}
+.nd-node {
+  width: 228px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  font-size: 12px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.nd-node.focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.nd-head {
+  position: relative;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11px;
+  border-bottom: 1px solid var(--line);
+}
+.nd-port {
+  position: absolute;
+  top: 11px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 2px solid var(--muted, #888);
+}
+.nd-port.in {
+  left: -6px;
+}
+.nd-port.out {
+  right: -6px;
+}
+.nd-node.focus .nd-port {
+  border-color: var(--accent);
+}
+.nd-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+.nd-body textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 11px;
+  resize: vertical;
+}
+.nd-body select {
+  width: 100%;
+}
+.nd-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+}
+.nd-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.nd-field span {
+  min-width: 42px;
+}
+.nd-field input[type='number'] {
+  width: 100%;
+  min-width: 0;
+}
+.nd-out {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted, inherit);
+}
+.nd-cards .nd-port.in,
+.nd-origin .nd-port.in {
+  display: none;
+}
+.nd-cut .nd-port.out {
+  display: none;
+}

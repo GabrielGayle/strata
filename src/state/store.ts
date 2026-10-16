@@ -11,10 +11,12 @@ import type { Appearance } from '../core/appearance';
 import type { DepthSettings } from '../core/depth';
 import type { ShadowSpec } from '../core/shadow';
 import type { CutObject } from '../core/objects';
+import type { ShelfSpec } from '../core/shelf';
+import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { createSaver, defaultKV, readWithLegacy, type KV, type SaveStatus } from './persist';
 
-export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'shadow' | 'graph' | 'compare';
+export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'shadow' | 'graph' | 'nodes' | 'compare';
 export type Snap = 'iso' | 'front' | 'side' | 'top';
 
 export interface UiState {
@@ -46,6 +48,8 @@ export interface UiState {
   /** Placed objects panel in the 3D view, and which object it is editing. */
   objectsMode: boolean;
   objectSel: string | null;
+  /** What the node view is pointing at, lit up in the 3D view (origin, cards, objects, plates). */
+  highlight: string | null;
   /** Sun study: clock time of day in hours, and whether the day is playing. Not part of the undo history. */
   sunTime: number;
   sunPlaying: boolean;
@@ -83,6 +87,9 @@ interface Store {
   setAppearance: (a: Appearance | undefined, label?: string) => void;
   /** Objects placed among the plates; `key` merges rapid edits (a value being dragged) into one undo step. */
   setObjects: (objects: CutObject[], key?: string) => void;
+  /** The postcard shelf (undefined removes it). */
+  setShelf: (shelf: ShelfSpec | undefined, key?: string) => void;
+  setOrigin: (origin: WorldOrigin | undefined, key?: string) => void;
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
   /** Change how a depth image is shaped; slider drags merge into one undo step. `dataUrl` refreshes its picture. */
@@ -235,6 +242,7 @@ export const useStore = create<Store>((set, get) => {
       activeBucket: 'b1',
       objectsMode: false,
       objectSel: null,
+      highlight: null,
       sunTime: 12,
       sunPlaying: false,
       ...loadUi(),
@@ -272,6 +280,8 @@ export const useStore = create<Store>((set, get) => {
       commit({ ...p, appearance: a }, `${label}:${performance.now()}`);
     },
     setObjects: (objects, key = `objects:${performance.now()}`) => commit({ ...get().project, objects: objects.length ? objects : undefined }, key),
+    setShelf: (shelf, key = `shelf:${performance.now()}`) => commit({ ...get().project, shelf }, key),
+    setOrigin: (origin, key = `origin:${performance.now()}`) => commit({ ...get().project, origin }, key),
     setName: (name) => commit({ ...get().project, name }, 'name'),
     setAsset: (kind, slot, asset) => {
       const p = get().project;
@@ -391,6 +401,8 @@ export const useStore = create<Store>((set, get) => {
         composition: p.composition,
         shadow: p.shadow ?? null,
         objects: p.objects ?? null,
+        shelf: p.shelf ?? null,
+        origin: p.origin ?? null,
         createdAt: new Date().toISOString(),
       };
       commit({ ...p, variants: [...p.variants, v] }, `variant:${v.id}`);

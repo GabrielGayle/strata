@@ -18,6 +18,7 @@ import {
   METAL_NAMES,
   newBucketId,
   pickPlates,
+  rainbowBuckets,
   removeBucket,
   runBetween,
   type Appearance,
@@ -88,6 +89,7 @@ export default function AppearancePanel() {
   const [nth, setNth] = useState(2);
   const [offset, setOffset] = useState(0);
   const [seed, setSeed] = useState(1);
+  const [bands, setBands] = useState(7);
 
   // plates per bucket, counting each plate once
   const keys = [...new Set(model.sliced.parts.map((p) => p.plateKey))];
@@ -197,6 +199,17 @@ export default function AppearancePanel() {
               </button>
             ),
           )}
+          <span className="ap-nth">
+            <button
+              className="btn sm"
+              onClick={() => save(rainbowBuckets(app, group.plates.map((p) => p.key), bands), 'fill:rainbow')}
+              title="Anodised aluminium in rainbow bands, red to violet, across these plates in order (replaces an earlier rainbow)"
+            >
+              Rainbow
+            </button>
+            <input type="number" aria-label="Rainbow colours" min={2} max={24} value={bands} onChange={(e) => setBands(Math.max(2, Math.min(24, Math.round(+e.target.value) || 7)))} />
+            <span>colours</span>
+          </span>
           {active !== MAIN && (
             <button className="btn sm" onClick={clear} title="Send this group's plates in the active bucket back to the main metal">
               Clear
