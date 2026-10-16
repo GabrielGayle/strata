@@ -1,9 +1,14 @@
 // The predicted note of every tuned plate, with a play button and the honest caveat.
+import { useMemo } from 'react';
 import { useModel, fmt } from './model';
 import { useStore } from '../state/store';
-import { hzToNote, MATERIALS, type PlateTune } from '../core/tuning';
+import { hzToNote, MATERIALS, NOTE_CHOICES, midiName, type PlateTune } from '../core/tuning';
 import type { SoundingMode } from '../core/pipeline';
-import { playChant, playModes, playStrike } from './audio';
+import { wordsOnsets } from '../core/chantWords';
+import { speechPlateCount, speechPlatesPerSyllable, speechHasFundamental } from '../core/speechTuning';
+import { estimateMix } from '../core/price';
+import { loadRates } from './PriceEstimate';
+import { playChant, playCluster, playModes, playStrike } from './audio';
 
 export function centsLabel(c: number): string {
   return c === 0 ? '±0¢' : `${c > 0 ? '+' : '−'}${Math.abs(c)}¢`;
@@ -24,16 +29,39 @@ export function heardPartials(tune: PlateTune, sounding?: SoundingMode, stale = 
 export default function TuningTable() {
   const model = useModel();
   const setUi = useStore((s) => s.setUi);
+  const setParams = useStore((s) => s.setParams);
   const v = model.v;
+  const wordsMode = v.tuneMode === 'words';
+  const speechMode = v.tuneMode === 'speech';
+  const chantMode = wordsMode || speechMode;
   const tuning = model.sliced.tuning;
+  const speechPlates = speechMode ? speechPlateCount(v) : 0;
+  const priceEst = useMemo(() => estimateMix(model.bom, v.thickness, loadRates()), [model.bom, v.thickness]);
   if (!tuning) return null;
   const rows = model.sliced.plates.map((p, i) => ({ plate: p, tune: tuning[i] })).filter((r) => r.tune) as { plate: (typeof model.sliced.plates)[number]; tune: PlateTune }[];
   if (!rows.length) return null;
   const byKey = new Map((model.sounding ?? []).map((s) => [s.key, s]));
   const matLabel = [...new Set(rows.map((r) => r.tune.material ?? v.plateMaterial))].map((m) => (MATERIALS[m] ?? MATERIALS.steel).label).join(' and ');
   const free = rows.some((r) => r.tune.model === 'free');
+  const block = speechMode ? speechPlatesPerSyllable(v) + (speechHasFundamental(v) ? 1 : 0) : 0;
+  const playSpeechPhrase = () => {
+    if (!block) return;
+    const onsets = wordsOnsets(v);
+    for (let s = 0; s < rows.length; s += block) {
+      const chunk = rows.slice(s, s + block);
+      const hzs = chunk.map((r) => r.tune.hz);
+      const onset = onsets[Math.floor(s / block)] ?? 0;
+      window.setTimeout(() => playCluster(hzs), onset * 1000);
+    }
+  };
   return (
     <div style={{ display: 'grid', gap: 6, padding: '4px 0 6px' }}>
+      {speechMode && (
+        <div className="perr" style={{ color: 'var(--muted)' }}>
+          Plates: <strong>{rows.length}</strong>
+          {speechPlates !== rows.length ? ` (layout expects ${speechPlates} — change the phrase or formant count)` : ''} · Chop Chop estimate: <strong>£{priceEst.total.toFixed(0)}</strong> incl. VAT (not a quote).
+        </div>
+      )}
       <table className="tbl" style={{ fontSize: 11 }}>
         <thead>
           <tr>
@@ -54,7 +82,33 @@ export default function TuningTable() {
               <tr key={plate.def.key} className="click" onClick={() => setUi({ selected: id })} style={tune.clamped ? { color: 'var(--warn)' } : undefined}>
                 <td className="mono">{id}</td>
                 <td className="mono" title={`${tune.label ? tune.label + ' · ' : ''}${fmt(tune.hz, 1)} Hz at ${fmt(tune.length, 1)} mm in ${(MATERIALS[tune.material] ?? MATERIALS.steel).label}`}>
-                  {tune.label ?? tune.name}
+                  {wordsMode ? (
+                    <span className="field-row" style={{ gap: 4 }}>
+                      <span>{tune.label?.split(' ')[0] ?? tune.name}</span>
+                      <select
+                        className="sel"
+                        style={{ fontSize: 10, maxWidth: 58 }}
+                        value={tune.midi}
+                        aria-label={`Note for ${tune.label ?? tune.name}`}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          const midi = Number(e.target.value);
+                          const list = rows.map((r) => r.tune.midi);
+                          const idx = rows.findIndex((r) => r.plate.def.key === plate.def.key);
+                          if (idx >= 0) list[idx] = midi;
+                          const notes = list.map((m) => midiName(m)).join(' ');
+                          setParams({ tuneWordNotes: notes, tuneNotes: notes }, 'syllable note');
+                        }}
+                      >
+                        {NOTE_CHOICES.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </span>
+                  ) : (
+                    tune.label ?? tune.name
+                  )}
                 </td>
                 <td className="num" title={nodeTitle}>{fmt(tune.cut, 1)}</td>
                 <td className="mono">{asCut(tune)}</td>
@@ -83,17 +137,46 @@ export default function TuningTable() {
           })}
         </tbody>
       </table>
-      {free && (
-        <button
-          className="btn"
-          onClick={() => playChant(rows.map((r) => heardPartials(r.tune, byKey.get(r.plate.def.key), model.stale)))}
-          title="Each plate in order, on the chant rhythm: quarter, two eighths, dotted quarter"
-        >
-          ▶ Play the chant
-        </button>
+      {free && chantMode && (
+        <div className="field-row" style={{ flexWrap: 'wrap', gap: 4 }}>
+          {speechMode ? (
+            <>
+              <button
+                className="btn"
+                onClick={() =>
+                  playChant(
+                    rows.filter((_, i) => i % block === 0).map((r) => heardPartials(r.tune, byKey.get(r.plate.def.key), model.stale)),
+                    wordsOnsets(v),
+                  )
+                }
+                title="Melody plates only, on the chant rhythm"
+              >
+                ▶ Melody preview
+              </button>
+              <button className="btn" onClick={playSpeechPhrase} title="Each syllable: formant cluster + melody plate struck together">
+                ▶ Speech-like preview
+              </button>
+            </>
+          ) : (
+            <button
+              className="btn"
+              onClick={() =>
+                playChant(
+                  rows.map((r) => heardPartials(r.tune, byKey.get(r.plate.def.key), model.stale)),
+                  wordsOnsets(v),
+                )
+              }
+              title="Each syllable in order, on the rhythm from vowel length and stress"
+            >
+              ▶ Play the chant
+            </button>
+          )}
+        </div>
       )}
       <div className="perr" style={{ color: 'var(--muted)' }}>
-        {free
+        {speechMode
+          ? 'Speech-like mode suggests vowel colour and rhythm, not intelligible speech: steel plates cannot reproduce a full vocal tract. Formant frequencies are from Peterson & Barney (1952), octave-shifted into the cut range.'
+          : free
           ? `Predicted for ${fmt(v.thickness, 1)} mm ${matLabel} hung freely at the nodes of the first mode (about 22.4% of the length from each end — the holes on the plate). f1 is tuned to the note; the overtones are the bar's own, not harmonics. The face width is free, so an image can sit on it. A 2D plate is a little off this 1D beam: strike each one and trim the length if a tuner disagrees.`
           : `Predicted for ${fmt(v.thickness, 1)} mm ${matLabel} clamped rigidly in the concrete. Real plates land off this, often by a semitone or more: the concrete grip gives a little, wide plates are stiffer than the simple model, and cut-outs change it. Plates are cut ${fmt(v.tuneAllowance, 1)}% tall so they start flat: strike each one, check it with a tuner or by ear, and grind the top down a little at a time to bring it up to pitch.`}
       </div>

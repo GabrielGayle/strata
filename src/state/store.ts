@@ -15,6 +15,8 @@ import type { ShelfSpec } from '../core/shelf';
 import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
+import { wordsParamPatch } from '../core/chantWords';
+import { speechParamPatch } from '../core/speechTuning';
 
 export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'shadow' | 'graph' | 'nodes' | 'compare';
 export type Snap = 'iso' | 'front' | 'side' | 'top';
@@ -254,7 +256,28 @@ export const useStore = create<Store>((set, get) => {
     setParam: (id, value) => {
       const p = get().project;
       if (p.params[id] === value) return;
-      commitParams({ ...p, params: { ...p.params, [id]: value } }, `param:${id}`);
+      const params = { ...p.params, [id]: value };
+      if (
+        id === 'tuneWords' ||
+        id === 'tuneMelodyRoot' ||
+        id === 'tuneSpeechPlates' ||
+        id === 'tuneSpeechFundamental' ||
+        (id === 'tuneMode' && (value === 'words' || value === 'speech'))
+      ) {
+        if (String(params.tuneMode) === 'words') Object.assign(params, wordsParamPatch(String(params.tuneWords ?? ''), String(params.tuneMelodyRoot ?? 'G4')));
+        if (String(params.tuneMode) === 'speech') {
+          Object.assign(
+            params,
+            speechParamPatch(
+              String(params.tuneWords ?? ''),
+              String(params.tuneMelodyRoot ?? 'G4'),
+              String(params.tuneSpeechPlates ?? '2'),
+              params.tuneSpeechFundamental !== false && params.tuneSpeechFundamental !== 'false',
+            ),
+          );
+        }
+      }
+      commitParams({ ...p, params }, `param:${id}`);
     },
     setParams: (patch, label = 'params') => {
       const p = get().project;

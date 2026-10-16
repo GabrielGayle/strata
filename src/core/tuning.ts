@@ -15,6 +15,8 @@
 // so plates are cut a little long and trimmed down to pitch with a tuner.
 import type { Values } from './params';
 import { tuneBar, beamModes } from './beam';
+import { wordsLabels, wordsPlateMidis } from './chantWords';
+import { speechLabels, speechPlateMidis } from './speechTuning';
 
 /** Young's modulus (Pa) and density (kg/m³) of the plate materials. */
 export const MATERIALS: Record<string, { E: number; rho: number; label: string }> = {
@@ -109,6 +111,12 @@ const opts = (r: Record<string, { label: string }>) => Object.entries(r).map(([v
 export const SCALE_OPTIONS = opts(SCALES);
 export const CHORD_OPTIONS = opts(CHORDS);
 
+/** MIDI choices for per-plate note dropdowns (C2–C6). */
+export const NOTE_CHOICES = Array.from({ length: 49 }, (_, i) => {
+  const midi = 36 + i;
+  return { value: midi, label: midiName(midi) };
+});
+
 /** `count` notes climbing a scale or chord from `root`, octave after octave. */
 export function climb(root: number, steps: number[], count: number): number[] {
   const out: number[] = [];
@@ -147,7 +155,15 @@ export function tuningActive(v: Values): boolean {
 export function plateNotes(v: Values, count: number): number[] {
   if (count <= 0) return [];
   let notes: number[];
-  if (v.tuneMode === 'notes') {
+  if (v.tuneMode === 'speech') {
+    notes = speechPlateMidis(v, count);
+    if (!notes.length) return [];
+  } else if (v.tuneMode === 'words') {
+    notes = wordsPlateMidis(v);
+    if (!notes.length) return [];
+    if (count > notes.length) notes = Array.from({ length: count }, (_, i) => notes[i % notes.length]);
+    else if (count < notes.length) notes = notes.slice(0, count);
+  } else if (v.tuneMode === 'notes') {
     const list = parseNoteList(v.tuneNotes);
     if (!list.length) return [];
     notes = Array.from({ length: count }, (_, i) => list[i % list.length]);
@@ -157,7 +173,7 @@ export function plateNotes(v: Values, count: number): number[] {
     const set = v.tuneMode === 'chord' ? CHORDS[v.tuneChord] ?? CHORDS.major : SCALES[v.tuneScale] ?? SCALES.major;
     notes = climb(root, set.steps, count);
   }
-  return arrange(notes, v.tuneOrder);
+  return arrange(notes, v.tuneMode === 'words' || v.tuneMode === 'speech' ? 'listed' : v.tuneOrder);
 }
 
 export interface PlateTune {
@@ -188,7 +204,7 @@ export interface PlateTune {
 export const MIN_TUNED = 10;
 export const MAX_TUNED = 2500;
 
-const words = (s: unknown) =>
+const splitLabels = (s: unknown) =>
   String(s ?? '')
     .trim()
     .split(/[\s,;]+/)
@@ -200,7 +216,8 @@ export function tunePlates(v: Values, count: number, materials?: string[], width
   if (!notes.length) return null;
   const allow = 1 + Math.max(0, v.tuneAllowance) / 100;
   const free = v.tuneModel === 'free';
-  const labels = words(v.tuneLabels);
+  const labels =
+    v.tuneMode === 'speech' ? speechLabels(v) : v.tuneMode === 'words' ? wordsLabels(v) : splitLabels(v.tuneLabels);
   return notes.map((midi, i) => {
     const material = materials?.[i] ?? String(v.plateMaterial);
     const name = midiName(midi);

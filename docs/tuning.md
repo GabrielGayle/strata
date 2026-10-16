@@ -138,9 +138,34 @@ NODE_PATH=/tmp/pyodide-run/node_modules node tools/mindlin_pyodide.mjs
 If that import fails, `python3 tools/mindlin_plate.py` is the same numbers
 without the wasm runtime.
 
+## Speech-like (vowel colours)
+
+**Tuned plates › Speech-like** builds on Words: each syllable gets a cluster of
+plates tuned to the vowel's formants (F1, F2, and optionally F3) from
+**Peterson & Barney (1952)**, *J. Acoust. Soc. Am.* 24, 175–184 (`src/core/speechTuning.ts`).
+Each formant is octave-shifted until the predicted bar length sits in the
+10–2500 mm tuner range. An optional **Melody plate** per syllable rings the
+speech-melody note from Words mode; the cluster is meant to be struck together.
+
+This suggests vowel colour and rhythm, not intelligible speech. The tuning table
+shows a live plate count and Chop Chop price estimate, with **Melody preview**
+and **Speech-like preview** in Web Audio.
+
+## Words (chant)
+
+**Tuned plates › Words (chant)** turns any phrase into one plate per syllable.
+`src/core/chantWords.ts` syllabifies English with a small rule set; hyphens in
+the text override it (`FREE-PAL-ES-TINE`). A speech-like melody lifts stressed
+syllables and falls back to **Melody home** on the last syllable; each note can
+be changed in the tuning table. Rhythm for the Web Audio preview comes from
+vowel length (long vowels and longer codas get more time at 96 bpm). Changing
+the phrase updates the plate count, etched labels, tuned lengths, and chant
+playback.
+
 ## Free Palestine
 
-Four free-free steel plates, 3 mm, one syllable each: FREE, PAL, ES, TINE.
+The Sound preset uses Words mode. Four free-free steel plates, 3 mm, one
+syllable each: FREE, PAL, ES, TINE.
 The contour is sol–do–ti–sol, **G4 C5 B4 G4** (392.00, 523.25, 493.88, 392.00 Hz).
 The call jumps a fourth onto PAL, steps down to ES, and comes home on TINE,
 which is the same bar as FREE. That is a singable four-note chant rather than

@@ -9,6 +9,7 @@ npm install
 npm run dev      # http://localhost:5173
 npm test         # engine tests
 npm run build    # static site in dist/
+npm run cli -- examples/image-cliff.strata.json --out out/
 ```
 
 ## What it does
@@ -73,6 +74,37 @@ STEP import isn't supported yet (it needs a CAD kernel); export STL in mm from F
 - `src/core/` — the engine (no UI): `params.ts` + `expr.ts` (graph), `forms.ts`, `section.ts`
   (mesh-plane sections), `heightfield.ts`, `flatstack.ts`, `image.ts`, `slicer.ts`, `checks.ts`, `arcs.ts` +
   `dxf.ts`, `nest.ts`, `mould.ts`, `unfold.ts`, `bom.ts`, `pipeline.ts`, `exporters.ts`.
+- `src/cli.ts` — headless export (`npm run cli`).
 - `src/ui/` — React + React Three Fiber views.
 - `test/` — vitest tests for the engine, including a DXF round trip that reads the exported files
   back (bulges, LINE, ARC) and checks them against the true outlines.
+
+## Command line
+
+Export the same fabrication files as the app, without opening it:
+
+```bash
+npm run cli -- examples/image-cliff.strata.json --out out/
+```
+
+`out/` is the fabrication bundle as a folder: part and sheet DXFs, mould DXFs/SVGs/STLs, `model.stl`,
+`cutlist.csv`, `price-estimate.txt`, `price-estimate.json`, `build-pack.html` and `project.strata.json`.
+
+```bash
+npm run cli -- project.strata.json --out out/ --preset "Image cliff" --image side=side.png --rates rates.json
+npm run cli -- project.strata.json --out out/ --size a4 --orientation portrait
+npm run cli -- params      # parameter catalogue (id, type, default, range, choices, group, help)
+npm run cli -- presets     # preset catalogue
+```
+
+A project file may include `"preset": "Image cliff"`. Preset values are applied first; parameters in
+the file override them. `--preset` selects a preset the same way. `--size` picks a master outline
+preset (`iphone-17`, `a3`–`a6`, `16:9`, `4:3`, `1:1`, `3:2`): fixed sizes set the base footprint
+in mm; ratio sizes keep the project’s current long edge. Only the outline changes—plate thickness and
+count are left alone. `--orientation` is `portrait` (default) or `landscape`. Size is applied after
+the file and `--preset`. `--image side=path.jpg` (also `front` and `top`) replaces that picture.
+`--rates rates.json` overrides the price-estimate rates; the built-in defaults stay as they are.
+
+Unknown parameters, unknown choices and formula errors are printed and the command exits with status 1
+without writing files. Values outside their range are clamped, reported as warnings, and the export
+still runs.
