@@ -1,15 +1,42 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
 import { sheetCutDxf, sheetEtchDxf, sheetFiles, buildZip, partDxf } from '../src/core/exporters';
-import { dxfCutLength, dxfEntitySummary, listDxfEntities } from '../src/core/dxf';
+import { DxfWriter, LAYERS, dxfCutLength, dxfCutStructure, dxfEntitySummary, dxfHasSheetBorder, listDxfEntities } from '../src/core/dxf';
 import { offset, shapeArea, signedArea, type Path, type Vec2 } from '../src/core/geom2d';
 import { unzipSync, strFromU8 } from 'fflate';
 import { GABRIEL_PARAMS, sliverFrontGray, sliverSideGray } from './image-sliver-fixture';
 
+const COMMISSARY = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/commissary');
+const COMMISSARY_FILES = ['coarse-cut-only.dxf', 'medium-cut-only.dxf', 'fine-cut-only.dxf'] as const;
+
 const assets: Assets = { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null };
 
 describe('sheet DXF cut-only + LWPOLYLINE/CIRCLE', () => {
+  it('flags a 1250×2500 rectangle as a sheet border', () => {
+    const lines = new DxfWriter([LAYERS.CUT]);
+    lines.line('CUT', 0, 0, 2500, 0);
+    lines.line('CUT', 2500, 0, 2500, 1250);
+    lines.line('CUT', 2500, 1250, 0, 1250);
+    lines.line('CUT', 0, 1250, 0, 0);
+    expect(dxfHasSheetBorder(lines.toString())).toBe(true);
+    const poly = new DxfWriter([LAYERS.CUT]);
+    poly.lwpolyline(
+      'CUT',
+      [
+        { kind: 'line', a: [0, 0], b: [2500, 0] },
+        { kind: 'line', a: [2500, 0], b: [2500, 1250] },
+        { kind: 'line', a: [2500, 1250], b: [0, 1250] },
+        { kind: 'line', a: [0, 1250], b: [0, 0] },
+      ],
+      true,
+    );
+    expect(dxfHasSheetBorder(poly.toString())).toBe(true);
+  });
+
   it('emits LWPOLYLINE and CIRCLE, never SPLINE, on part DXFs', () => {
     const m = createPipeline()(newProject(), assets);
     const withHole = m.sliced.parts.find((p) => p.shape[0].holes.length > 0);
@@ -28,10 +55,15 @@ describe('sheet DXF cut-only + LWPOLYLINE/CIRCLE', () => {
     expect(m.nested.sheets.length).toBeGreaterThan(0);
     const text = sheetCutDxf(m, 0);
     const ents = listDxfEntities(text);
+    const st = dxfCutStructure(text);
+    expect(st.cutOnly).toBe(true);
+    expect(st.hasBorder).toBe(false);
+    expect(st.hasEtch).toBe(false);
+    expect(st.hasForbidden).toBe(false);
+    expect(st.extraTypes).toEqual([]);
     expect(ents.every((e) => e.layer === 'CUT')).toBe(true);
     expect(ents.some((e) => e.type === 'LWPOLYLINE' || e.type === 'CIRCLE')).toBe(true);
     expect(ents.some((e) => e.type === 'SPLINE')).toBe(false);
-    // no 1250×2500 sheet-border rectangle (that would be four 2500/1250 LINEs)
     const lines = ents.filter((e) => e.type === 'LINE');
     expect(lines).toHaveLength(0);
     expect(text).not.toContain('\nETCH\n');
@@ -94,7 +126,7 @@ describe('sheet DXF cut-only + LWPOLYLINE/CIRCLE', () => {
     expect(readme).toMatch(/CUT ONLY/);
     expect(readme).toMatch(/sheet-NN-cut\.dxf/);
     expect(readme).toMatch(/sheet-NN-etch\.dxf/);
-    expect(readme).not.toMatch(/1250.×.2500 sheet border/i);
+    expect(readme).toMatch(/no 1250×2500 sheet border/i);
     const etch = sheetEtchDxf(m, 0);
     if (etch) {
       expect(names).toContain('laser/sheets/sheet-01-etch.dxf');
@@ -124,7 +156,56 @@ describe('sheet DXF cut-only + LWPOLYLINE/CIRCLE', () => {
       expect(dxfArea).toBeLessThan(partArea * 1.15);
     });
   });
+
+  it('matches Commissary cut-only refs (CUT layer, closed LWPOLYLINE, no border/etch)', () => {
+    const refs = COMMISSARY_FILES.map((name) => {
+      const text = readFileSync(join(COMMISSARY, name), 'utf8');
+      return { name, text, st: dxfCutStructure(text) };
+    });
+    for (const { name, st } of refs) {
+      expect(st.typeNames, name).toEqual(['LWPOLYLINE']);
+      expect(st.layers, name).toEqual(['CUT']);
+      expect(st.cutOnly, name).toBe(true);
+      expect(st.hasBorder, name).toBe(false);
+      expect(st.hasEtch, name).toBe(false);
+      expect(st.hasForbidden, name).toBe(false);
+    }
+
+    const m = createPipeline()(newProject(), assets);
+    const ours = sheetCutDxf(m, 0);
+    const st = dxfCutStructure(ours);
+    expect(st.layers).toEqual(['CUT']);
+    expect(st.cutOnly).toBe(true);
+    expect(st.hasBorder).toBe(false);
+    expect(st.hasEtch).toBe(false);
+    expect(st.hasForbidden).toBe(false);
+    expect(st.extraTypes).toEqual([]);
+    // Commissary tessellates round holes as LWPOLYLINE; we keep CIRCLE for CAM.
+    const extraVsRef = st.typeNames.filter((t) => t !== 'LWPOLYLINE');
+    expect(extraVsRef.every((t) => t === 'CIRCLE')).toBe(true);
+
+    const report = commissaryDiffReport(refs.map((r) => ({ name: r.name, st: r.st })), st);
+    expect(report).toMatch(/Commissary coarse-cut-only\.dxf: LWPOLYLINE \d+ on CUT/);
+    expect(report).toMatch(/ours extra vs Commissary: CIRCLE|ours extra vs Commissary: \(none\)/);
+    expect(report).toMatch(/both: CUT-only, no sheet border, no ETCH\/SHEET\/LINE\/POLYLINE\/SPLINE/);
+  });
 });
+
+function commissaryDiffReport(
+  refs: { name: string; st: ReturnType<typeof dxfCutStructure> }[],
+  ours: ReturnType<typeof dxfCutStructure>,
+): string {
+  const lines = ['Commissary cut-only vs Strata sheet-NN-cut.dxf', ''];
+  for (const { name, st } of refs) {
+    const n = st.types.LWPOLYLINE ?? 0;
+    lines.push(`Commissary ${name}: LWPOLYLINE ${n} on CUT; types=${JSON.stringify(st.types)}; layers=${st.layers.join(',')}; border=${st.hasBorder}; etch=${st.hasEtch}`);
+  }
+  lines.push(`Strata cut: types=${JSON.stringify(ours.types)}; layers=${ours.layers.join(',')}; border=${ours.hasBorder}; etch=${ours.hasEtch}`);
+  const extra = ours.typeNames.filter((t) => t !== 'LWPOLYLINE');
+  lines.push(`ours extra vs Commissary: ${extra.length ? extra.join(', ') : '(none)'} (CIRCLE = round holes; Commissary tessellates those as LWPOLYLINE)`);
+  lines.push('both: CUT-only, no sheet border, no ETCH/SHEET/LINE/POLYLINE/SPLINE');
+  return lines.join('\n') + '\n';
+}
 
 function bulgePoints(p1: Vec2, p2: Vec2, b: number): Vec2[] {
   if (Math.abs(b) < 1e-12) return [p1];

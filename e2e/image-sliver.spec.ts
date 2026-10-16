@@ -2,7 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gabrielProjectJson } from '../test/image-sliver-fixture';
-import { dxfEntitySummary, listDxfEntities } from '../src/core/dxf';
+import { readFileSync } from 'node:fs';
+import { dxfCutStructure, dxfEntitySummary, listDxfEntities } from '../src/core/dxf';
 
 const SHOT = join(process.cwd(), 'docs/screenshots/image-sliver');
 
@@ -80,7 +81,17 @@ test.describe('image sliver and cut-only sheet DXF', () => {
       `has LINE: ${Boolean(sum.types.LINE)}`,
       `has ETCH layer: ${Boolean(sum.layers.ETCH)}`,
       `has SHEET layer: ${Boolean(sum.layers.SHEET)}`,
+      `has sheet border: ${dxfCutStructure(dxf).hasBorder}`,
     ];
+    const commissaryDir = join(process.cwd(), 'test/fixtures/commissary');
+    lines.push('', 'Commissary cut-only refs:');
+    for (const name of ['coarse-cut-only.dxf', 'medium-cut-only.dxf', 'fine-cut-only.dxf']) {
+      const st = dxfCutStructure(readFileSync(join(commissaryDir, name), 'utf8'));
+      lines.push(`  ${name}: types=${JSON.stringify(st.types)} layers=${st.layers.join(',')} border=${st.hasBorder} etch=${st.hasEtch} forbidden=${st.hasForbidden}`);
+    }
+    const extra = Object.keys(sum.types).filter((t) => t !== 'LWPOLYLINE');
+    lines.push(`ours extra vs Commissary: ${extra.length ? extra.join(', ') : '(none)'} (CIRCLE = round holes)`);
+    lines.push('both: CUT-only, no sheet border, no ETCH/SHEET/LINE/POLYLINE/SPLINE');
     await writeFile(join(SHOT, 'sheet-dxf-entities.txt'), lines.join('\n') + '\n', 'utf8');
     expect(download.suggestedFilename()).toMatch(/sheet-0?1-cut\.dxf/);
     expect(sum.types.LWPOLYLINE).toBeGreaterThan(0);

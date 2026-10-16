@@ -186,6 +186,80 @@ export function dxfEntitySummary(text: string): { types: Record<string, number>;
   return { types, layers };
 }
 
+const FORBIDDEN_CUT_TYPES = ['POLYLINE', 'SPLINE', 'LINE', 'INSERT', 'TEXT', 'MTEXT', 'HATCH', 'ELLIPSE'] as const;
+const ALLOWED_CUT_TYPES = new Set(['LWPOLYLINE', 'CIRCLE', 'ARC']);
+
+function isSheetSize(w: number, h: number, sheetW: number, sheetH: number, tol: number) {
+  const a = Math.max(w, h);
+  const b = Math.min(w, h);
+  const A = Math.max(sheetW, sheetH);
+  const B = Math.min(sheetW, sheetH);
+  return Math.abs(a - A) <= tol && Math.abs(b - B) <= tol;
+}
+
+/** True when the file still contains a 1250×2500 (or similar) sheet-border rectangle. */
+export function dxfHasSheetBorder(text: string, sheetW = 2500, sheetH = 1250, tol = 2): boolean {
+  const P = dxfPairs(text);
+  let i = P.findIndex(([c, v], k) => c === 2 && v === 'ENTITIES' && P[k - 1]?.[1] === 'SECTION');
+  if (i < 0) return false;
+  i++;
+  const lineLens: number[] = [];
+  while (i < P.length && !(P[i][0] === 0 && P[i][1] === 'ENDSEC')) {
+    if (P[i][0] !== 0) {
+      i++;
+      continue;
+    }
+    const type = P[i][1];
+    const xs: number[] = [];
+    const ys: number[] = [];
+    let x0 = 0;
+    let y0 = 0;
+    let x1 = 0;
+    let y1 = 0;
+    let k = i + 1;
+    while (k < P.length && P[k][0] !== 0) {
+      if (P[k][0] === 10) {
+        x0 = +P[k][1];
+        xs.push(x0);
+      } else if (P[k][0] === 20) {
+        y0 = +P[k][1];
+        ys.push(y0);
+      } else if (P[k][0] === 11) x1 = +P[k][1];
+      else if (P[k][0] === 21) y1 = +P[k][1];
+      k++;
+    }
+    if (type === 'LINE') {
+      lineLens.push(Math.hypot(x1 - x0, y1 - y0));
+    } else if ((type === 'LWPOLYLINE' || type === 'POLYLINE') && xs.length >= 4) {
+      const w = Math.max(...xs) - Math.min(...xs);
+      const h = Math.max(...ys) - Math.min(...ys);
+      if (isSheetSize(w, h, sheetW, sheetH, tol)) return true;
+    }
+    i = k;
+  }
+  const long = lineLens.filter((L) => Math.abs(L - Math.max(sheetW, sheetH)) <= tol).length;
+  const short = lineLens.filter((L) => Math.abs(L - Math.min(sheetW, sheetH)) <= tol).length;
+  return long >= 2 && short >= 2;
+}
+
+/** Shape a bureau cut-only file should have: CUT layer, closed outlines, no sheet rectangle, no etch. */
+export function dxfCutStructure(text: string) {
+  const sum = dxfEntitySummary(text);
+  const ents = listDxfEntities(text);
+  const typeNames = Object.keys(sum.types).sort();
+  const layers = Object.keys(sum.layers).sort();
+  return {
+    types: sum.types,
+    typeNames,
+    layers,
+    cutOnly: ents.length > 0 && ents.every((e) => e.layer === 'CUT'),
+    hasBorder: dxfHasSheetBorder(text),
+    hasEtch: Boolean(sum.layers.ETCH || sum.layers.ENGRAVE),
+    hasForbidden: FORBIDDEN_CUT_TYPES.some((t) => sum.types[t]),
+    extraTypes: typeNames.filter((t) => !ALLOWED_CUT_TYPES.has(t)),
+  };
+}
+
 function bulgeLength(p1: Vec2, p2: Vec2, b: number): number {
   const chord = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
   if (Math.abs(b) < 1e-12) return chord;
