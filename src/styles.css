@@ -414,10 +414,7 @@ input[type='number'],
   font-weight: 400;
   letter-spacing: 0;
   text-transform: none;
-<<<<<<< HEAD
   color: var(--chrome-fg);
-=======
->>>>>>> cursor/form-field-contrast-501e
   text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
