@@ -77,7 +77,7 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 
 | Field | Value |
 |---|---|
-| **CLI** | `--map-cache <dir>` — terrarium PNGs, COG/WMS bytes, Nominatim JSON, and Overpass JSON share one hashed layout (`src/core/mapCache.ts`). |
+| **CLI** | `--map-cache <dir>` — terrarium PNGs, COG/WMS bytes, Nominatim JSON (`mapNominatimCli.ts`), and Overpass JSON share one hashed layout (`src/core/mapCache.ts`). |
 | **Browser** | Optional IndexedDB store (`src/core/mapCacheBrowser.ts`) for the map window when wired. |
 | **Acceptance** | Second fetch for the same URL/query reads disk (or IDB) and does not call the network fetcher. |
 

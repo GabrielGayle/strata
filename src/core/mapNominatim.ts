@@ -1,5 +1,3 @@
-import { cachedMapJson } from './mapCache';
-
 /** Nominatim search for the map UI (ticket T8). Throttled to 1 req/s; always send a proper User-Agent. */
 export const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
 export const STRATA_NOMINATIM_UA =
@@ -34,20 +32,15 @@ async function defaultNominatimFetch(url: string): Promise<NominatimPlace[]> {
 }
 
 /** Search with ≥1 s between calls (Nominatim usage policy). */
-export async function searchNominatim(
-  query: string,
-  opts: { fetch?: NominatimFetcher; cacheDir?: string } = {},
-): Promise<NominatimPlace[]> {
+export async function searchNominatim(query: string, opts: { fetch?: NominatimFetcher } = {}): Promise<NominatimPlace[]> {
   const q = query.trim();
   if (!q) return [];
+  const now = Date.now();
+  const wait = Math.max(0, 1000 - (now - lastRequestAt));
+  if (wait) await new Promise((r) => setTimeout(r, wait));
+  lastRequestAt = Date.now();
   const params = new URLSearchParams({ q, format: 'json', limit: '5', addressdetails: '0' });
   const url = `${NOMINATIM_SEARCH_URL}?${params}`;
-  return cachedMapJson(opts.cacheDir, 'nominatim', url, async () => {
-    const now = Date.now();
-    const wait = Math.max(0, 1000 - (now - lastRequestAt));
-    if (wait) await new Promise((r) => setTimeout(r, wait));
-    lastRequestAt = Date.now();
-    const run = opts.fetch ?? fetcherOverride ?? defaultNominatimFetch;
-    return run(url);
-  });
+  const run = opts.fetch ?? fetcherOverride ?? defaultNominatimFetch;
+  return run(url);
 }
