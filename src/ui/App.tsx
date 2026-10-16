@@ -13,6 +13,8 @@ import SetupTabs from './SetupTabs';
 import WorkspaceArea, { WorkspaceBar } from './Workspace';
 import DropOverlay from './DropOverlay';
 import HelpLayer, { HelpButton } from './Help';
+import DesignBox from './DesignBox';
+import { designShortcutFromKey } from './designShortcut';
 
 
 export default function App() {
@@ -109,6 +111,12 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
+      const design = designShortcutFromKey(e.key, e, e.target);
+      if (design === 'toggle') {
+        e.preventDefault();
+        setDesignOpen((o) => !o);
+        return;
+      }
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === 'z') {
@@ -147,6 +155,7 @@ export default function App() {
     },
     [front, local, project, assets],
   );
+  const [designOpen, setDesignOpen] = useState(false);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
 
@@ -197,6 +206,7 @@ export default function App() {
         )}
         <DropOverlay />
         <HelpLayer />
+        {designOpen && <DesignBox onClose={() => setDesignOpen(false)} />}
       </div>
     </ModelContext.Provider>
     </FullModelContext.Provider>

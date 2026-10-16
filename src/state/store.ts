@@ -15,6 +15,7 @@ import type { ShelfSpec } from '../core/shelf';
 import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
+import { applyProjectPatch, type ProjectPatch } from '../core/design';
 import { wordsParamPatch } from '../core/chantWords';
 import { speechParamPatch } from '../core/speechTuning';
 
@@ -80,6 +81,7 @@ interface Store {
   ui: UiState;
   setParam: (id: string, value: RawValue) => void;
   setParams: (patch: Record<string, RawValue>, label?: string) => void;
+  applyDesignPatch: (patch: ProjectPatch, label?: string) => void;
   toggleLock: (id: string) => void;
   setPour: (pour: PourLayer[]) => void;
   /** Shadow pictures and their times; `key` merges rapid edits (a time being typed) into one undo step. */
@@ -282,6 +284,10 @@ export const useStore = create<Store>((set, get) => {
     setParams: (patch, label = 'params') => {
       const p = get().project;
       commitParams({ ...p, params: { ...p.params, ...patch } }, `${label}:${performance.now()}`);
+    },
+    applyDesignPatch: (patch, label = 'design') => {
+      const p = get().project;
+      commit(applyProjectPatch(p, patch), `${label}:${performance.now()}`);
     },
     toggleLock: (id) => {
       const p = get().project;
