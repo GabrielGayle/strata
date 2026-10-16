@@ -12,6 +12,8 @@ npm run build    # static site in dist/
 npm run cli -- examples/image-cliff.strata.json --out out/
 ```
 
+Contributors and agents: see [AGENTS.md](AGENTS.md) for invariants (depth near/far overrides, design parser behaviour, live map networking).
+
 ## What it does
 
 - **Parameter graph.** Every dimension is a named parameter; any value can be an expression

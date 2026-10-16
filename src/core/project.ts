@@ -85,6 +85,8 @@ export interface Project {
   shelf?: ShelfSpec;
   /** Where placed objects and the shelf are measured from (the middle of the floor under the base when missing). */
   origin?: WorldOrigin;
+  /** Params the user set manually; design parser / auto-dimension must not overwrite them. */
+  userParamOverrides?: Record<string, true>;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -318,5 +320,15 @@ export function deserialize(text: string): Project {
     objects: cleanObjects(raw.objects),
     shelf: cleanShelf(raw.shelf),
     origin: cleanOrigin(raw.origin),
+    userParamOverrides: cleanUserParamOverrides(raw.userParamOverrides),
   };
+}
+
+function cleanUserParamOverrides(raw: unknown): Record<string, true> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: Record<string, true> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (v) out[k] = true;
+  }
+  return Object.keys(out).length ? out : undefined;
 }

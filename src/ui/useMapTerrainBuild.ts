@@ -37,7 +37,7 @@ export function useMapTerrainBuild() {
       .then((asset) => {
         if (token.current !== id) return;
         finishMapTerrainBuild(asset);
-        const warns = asset.map?.sourceWarnings;
+        const warns = asset.map?.sourceWarnings?.filter((w) => w.severity === 'warn') ?? [];
         if (warns?.length) {
           useStore.getState().toast(`${warns.length} map warning${warns.length === 1 ? '' : 's'} (see Map tab)`);
         }

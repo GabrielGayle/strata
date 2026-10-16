@@ -2,7 +2,7 @@
 // is kept on the image, so these re-shape it live without asking the service again.
 import { useEffect, useRef } from 'react';
 import { useStore } from '../state/store';
-import { DEPTH_RESOLUTIONS, defaultDepthSettings, depthToGray, type DepthData, type DepthSettings } from '../core/depth';
+import { DEPTH_RESOLUTIONS, depthToGray, type DepthData, type DepthSettings } from '../core/depth';
 import { grayDataUrl } from './surfaces';
 
 type Slot = 'top' | 'front' | 'side';
@@ -39,6 +39,7 @@ function Num({ label, value, min, max, step, onChange, title, show }: { label: s
 
 export default function DepthControls({ slot, depth }: { slot: Slot; depth: DepthData }) {
   const setDepthSettings = useStore((s) => s.setDepthSettings);
+  const resetDepthToAuto = useStore((s) => s.resetDepthToAuto);
   const s = depth.settings;
   // refresh the stored picture (thumbnails, composer) once the sliders settle; the pipeline reads the depth itself.
   // Only after a change made here, so undo / redo don't write a new step.
@@ -96,8 +97,13 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
         <button type="button" className={`btn sm ${s.invert ? 'on' : ''}`} onClick={() => set({ invert: !s.invert })} title="Near reads light instead of dark">
           Invert
         </button>
-        <button type="button" className="btn sm" onClick={() => set({ ...defaultDepthSettings(depth, slot === 'side'), resolution: s.resolution })} title="Back to the service's own near / far and a straight curve">
-          Auto
+        <button
+          type="button"
+          className="btn sm"
+          onClick={() => resetDepthToAuto(slot)}
+          title="Reset near, far, curve and spacing to automatic values from the depth data"
+        >
+          Reset to auto
         </button>
       </div>
     </div>

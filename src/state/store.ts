@@ -10,6 +10,8 @@ import { mulberry32 } from '../core/rng';
 import { keepPlatesInPlace } from '../core/remap';
 import type { Appearance } from '../core/appearance';
 import type { DepthSettings } from '../core/depth';
+import { mergeDepthAfterRebuild, markDepthSettingOverrides, resetDepthSettingsToAuto, type DepthSettingKey } from '../core/depthOverrides';
+import { markUserParamOverrides } from '../core/projectOverrides';
 import type { ShadowSpec } from '../core/shadow';
 import type { CutObject } from '../core/objects';
 import type { ShelfSpec } from '../core/shelf';
@@ -113,6 +115,7 @@ interface Store {
   setTopMap: (map: MapSpec) => void;
   /** Change how a depth image is shaped; slider drags merge into one undo step. `dataUrl` refreshes its picture. */
   setDepthSettings: (slot: 'top' | 'front' | 'side', patch: Partial<DepthSettings>, dataUrl?: string) => void;
+  resetDepthToAuto: (slot: 'top' | 'front' | 'side', keys?: DepthSettingKey[]) => void;
   replaceProject: (p: Project) => void;
   /** Store the composer's blocks and the rendered surface images in one undo step. */
   applyComposition: (comp: Composition, images: Partial<Record<Surface, ImageAsset | null>>, patch: Record<string, RawValue>) => void;
@@ -220,8 +223,13 @@ export const useStore = create<Store>((set, get) => {
     setMapTerrain: (patch) => set({ mapTerrain: { ...get().mapTerrain, ...patch } }),
     finishMapTerrainBuild: (asset) => {
       const p = get().project;
-      if (!p.images.top?.map) return;
-      commit({ ...p, images: { ...p.images, top: asset } }, `map-build:${performance.now()}`);
+      const prev = p.images.top;
+      if (!prev?.map) return;
+      let top = asset;
+      if (prev.depth && asset.depth) {
+        top = { ...asset, depth: mergeDepthAfterRebuild(prev.depth, asset.depth) };
+      }
+      commit({ ...p, images: { ...p.images, top } }, `map-build:${performance.now()}`);
       set({ mapTerrain: { phase: 'ready', message: 'Map terrain ready', error: undefined } });
     },
     newSetup: (mode) => {
@@ -280,6 +288,7 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       if (p.params[id] === value) return;
       const params = { ...p.params, [id]: value };
+      const userParamOverrides = markUserParamOverrides(p.userParamOverrides, [id]);
       if (
         id === 'tuneWords' ||
         id === 'tuneMelodyRoot' ||
@@ -300,11 +309,12 @@ export const useStore = create<Store>((set, get) => {
           );
         }
       }
-      commitParams({ ...p, params }, `param:${id}`);
+      commitParams({ ...p, params, userParamOverrides }, `param:${id}`);
     },
     setParams: (patch, label = 'params') => {
       const p = get().project;
-      commitParams({ ...p, params: { ...p.params, ...patch } }, `${label}:${performance.now()}`);
+      const userParamOverrides = markUserParamOverrides(p.userParamOverrides, Object.keys(patch));
+      commitParams({ ...p, params: { ...p.params, ...patch }, userParamOverrides }, `${label}:${performance.now()}`);
     },
     applyDesignPatch: (patch, label = 'design') => {
       const p = get().project;
@@ -352,8 +362,19 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       const a = p.images[slot];
       if (!a?.depth) return;
-      const depth = Object.keys(patch).length ? { ...a.depth, settings: { ...a.depth.settings, ...patch } } : a.depth;
+      const hasPatch = Object.keys(patch).length > 0;
+      const settingsOverrides = hasPatch ? markDepthSettingOverrides(a.depth.settingsOverrides, patch) : a.depth.settingsOverrides;
+      const depth = hasPatch
+        ? { ...a.depth, settings: { ...a.depth.settings, ...patch }, settingsOverrides }
+        : a.depth;
       commit({ ...p, images: { ...p.images, [slot]: { ...a, depth, ...(dataUrl ? { dataUrl } : {}) } } }, `depth:${slot}`);
+    },
+    resetDepthToAuto: (slot, keys) => {
+      const p = get().project;
+      const a = p.images[slot];
+      if (!a?.depth) return;
+      const depth = resetDepthSettingsToAuto(a.depth, keys);
+      commit({ ...p, images: { ...p.images, [slot]: { ...a, depth } } }, `depth-auto:${slot}`);
     },
     replaceProject: (np) => commit(np, `replace:${performance.now()}`),
     applyComposition: (comp, imgs, patch) => {

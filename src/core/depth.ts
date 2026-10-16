@@ -4,6 +4,7 @@
 // the metric depth too, it is kept on the image and turned into the grey grid
 // here, so near / far / curve / resolution can change without asking again.
 import type { Gray } from './image';
+import type { DepthSettingsOverrides } from './depthOverrides';
 
 export type DepthMode = 'relief' | 'depth';
 
@@ -57,6 +58,8 @@ export interface DepthData {
   /** EXIF focal length in pixels on the source photo, when known. */
   exifFocalLengthPx?: number;
   settings: DepthSettings;
+  /** Fields the user set manually; automatic rebuilds must not overwrite them. */
+  settingsOverrides?: DepthSettingsOverrides;
   mapOrtho?: MapOrthoMeta;
 }
 
