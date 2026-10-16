@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { dismissTour, openWorkspaceTab } from './map-helpers';
 
 test('neasden map design builds a carved top with plates', async ({ page }) => {
   await page.goto('/');
@@ -13,13 +14,13 @@ test('neasden map design builds a carved top with plates', async ({ page }) => {
 
   await expect(page.locator('.status-bar')).toContainText(/Fetching|building/i, { timeout: 15_000 });
   await expect(page.locator('.status-bar')).toContainText(/ready/i, { timeout: 120_000 });
+  await dismissTour(page);
 
   const partsText = await page.locator('.status-bar-field').first().textContent();
   const parts = Number(partsText?.match(/(\d+)\s+parts/)?.[1] ?? 0);
   expect(parts).toBeGreaterThan(4);
 
-  await page.getByRole('button', { name: /Maps/ }).click();
-  await page.getByRole('button', { name: 'Open Map tab' }).click();
+  await openWorkspaceTab(page, 'Map');
   await expect(page.locator('.map-view h2')).toBeVisible();
   await expect(page.locator('#map-model-dtm')).toBeChecked();
   await expect(page.locator('#map-water-bathy')).toBeChecked();
