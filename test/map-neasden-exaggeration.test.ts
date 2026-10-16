@@ -210,7 +210,14 @@ describe('Neasden auto exaggeration', () => {
     expect(bundle.asset.map?.exaggerationFactor).toBeLessThanOrEqual(12);
     expect(bundle.asset.map?.exaggerationReadout).toMatch(/×1[0-2]/);
     expect(bundle.asset.map?.exaggerationReadout).toMatch(/4[0-9] m relief/);
-    expect(bundle.asset.map?.exaggerationReadout).toMatch(/120 mm stack on 800 mm/);
+    const ortho = bundle.depth.mapOrtho!;
+    const factor = bundle.asset.map?.exaggerationFactor ?? 0;
+    const expectedMm = mapReliefToPlateRangeMm(ortho.reliefM, factor, mapScaleMmPerM(ortho.widthM, VERMILION.masterWidthMm));
+    expect(bundle.asset.map?.exaggerationReadout).toBe(
+      formatExaggerationStackReadout(factor, ortho.reliefM, ortho.widthM, VERMILION.masterWidthMm),
+    );
+    expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(ortho.reliefM)} m relief`);
+    expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(expectedMm)} mm stack on 800 mm`);
   });
 
   it('9 m Terrarium-scale relief on the full Neasden width clamps Vermilion 40 auto to ×50', () => {
