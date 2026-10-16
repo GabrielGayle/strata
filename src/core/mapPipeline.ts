@@ -201,7 +201,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   });
   metric = simplified.grid;
   const { factor, readout } = resolveExaggerationFactor(spec, metric, stack);
-  const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384 });
+  const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384, bbox: spec.bbox });
   let engraveArt: MapSpec['engraveArt'];
   if (spec.engrave?.enabled) {
     try {

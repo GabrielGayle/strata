@@ -16,7 +16,7 @@ function copyGrid(g: Float32Grid): Float32Grid {
 
 export function waterRingsFromOverpass(
   data: { elements?: Array<{ type?: string; tags?: Record<string, string>; geometry?: { lat: number; lon: number }[] }> },
-  spec: Pick<MapSpec, 'bbox'>,
+  _spec: Pick<MapSpec, 'bbox'>,
   crs = 'EPSG:27700',
 ): WaterRing[] {
   const out: WaterRing[] = [];
