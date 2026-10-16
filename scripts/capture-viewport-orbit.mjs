@@ -1,6 +1,6 @@
 /**
  * Orbit the 3D viewport and save PNG frames (no video).
- * Usage: npm run build && node scripts/capture-viewport-orbit.mjs [before|after] [preset]
+ * Usage: VITE_E2E_MAP_FIXTURES=1 npm run build && node scripts/capture-viewport-orbit.mjs [before|after] [preset]
  * preset: default | map-x18-frame
  */
 import { spawn } from 'node:child_process';
@@ -77,11 +77,8 @@ async function waitMapReady(page) {
   await page.waitForFunction(
     () => {
       const bar = document.querySelector('.status-bar')?.textContent ?? '';
-      const map = document.querySelector('.map-terrain-status')?.textContent ?? '';
       const working = document.querySelector('.map-terrain-working');
       if (working) return false;
-      if (/Fetching|building/i.test(bar) && !/ready/i.test(bar)) return false;
-      if (/working|Fetching|building/i.test(map) && !/ready|idle/i.test(map)) return false;
       return /ready/i.test(bar) || /(\d+)\s+parts/.test(bar);
     },
     { timeout: 240000 },
@@ -95,28 +92,17 @@ async function setupPage(page, presetId) {
   await expectStatusReady(page);
 
   if (presetId === 'map-x18-frame') {
-    await page.keyboard.press('/');
-    await page.waitForSelector('.design-box .design-input', { timeout: 30000 });
-    await page.fill('.design-box .design-input', 'neasden map');
-    await page.getByRole('button', { name: 'Apply' }).click();
-    await page
-      .waitForFunction(
-        () => /Fetching|building/i.test(document.querySelector('.status-bar')?.textContent ?? ''),
-        { timeout: 30_000 },
-      )
-      .catch(() => {});
-    await expectStatusReady(page, 180000);
-
-    await openMapTab(page);
-    await page.waitForSelector('.map-view', { timeout: 60000 });
+    console.log('map: opening Maps › Neasden');
+    await page.getByRole('button', { name: /Maps/i }).click();
     await page.getByRole('button', { name: 'Neasden', exact: true }).click();
+    await page.waitForSelector('.map-view', { timeout: 60000 });
     await waitMapReady(page);
-
+    console.log('map: set ×18 + sunken frame');
     const ex = page.locator('.map-section').filter({ hasText: 'Vertical exaggeration' }).locator('select');
     await ex.selectOption('18');
     await page.locator('label').filter({ hasText: 'Sunken concrete frame' }).locator('input[type=checkbox]').check({ force: true });
     await waitMapReady(page);
-
+    console.log('map: back to 3D');
     await show3dTab(page);
     await waitForViewportCanvas(page);
     await expectStatusReady(page, 180000);
@@ -170,9 +156,10 @@ async function orbitFrames(page, outDir) {
 async function main() {
   const preview = spawn('npm', ['run', 'preview', '--', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
     cwd: root,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: 'ignore',
     env: { ...process.env, VITE_E2E_MAP_FIXTURES: '1' },
   });
+  preview.unref?.();
   try {
     await waitForUrl(BASE);
     const browser = await chromium.launch();
@@ -189,11 +176,17 @@ async function main() {
     await browser.close();
     console.log(`Wrote ${OUT}`);
   } finally {
-    preview.kill('SIGTERM');
+    try {
+      preview.kill('SIGKILL');
+    } catch {
+      /* already gone */
+    }
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
