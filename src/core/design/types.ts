@@ -1,3 +1,4 @@
+import type { DepthFace } from '../autoDimension';
 import type { MasterOrientation, MasterPresetId } from '../masterPresets';
 import type { Project } from '../project';
 import type { RawValue } from '../params';
@@ -13,6 +14,8 @@ export interface ProjectPatch {
   preset?: string;
   masterSize?: { id: string; orientation?: MasterOrientation };
   name?: string;
+  /** Run auto-dimension on faces after other patch fields (needs metric depth on that image). */
+  autoDimension?: { faces: DepthFace[]; reliefExaggeration?: number };
 }
 
 export interface ParseContext {

@@ -1,3 +1,4 @@
+import type { DepthFace } from '../autoDimension';
 import { MASTER_SIZE_CLI_CANONICAL } from '../masterPresets';
 import { PRESETS } from '../project';
 import { speechParamPatch } from '../speechTuning';
@@ -440,11 +441,62 @@ export const CORE_RULES: DesignRule[] = [
   },
 ];
 
-/** Hook for PR #52: register auto-dimension / relief exaggeration rules without copying that PR. */
+const DEPTH_FACES = new Set<DepthFace>(['side', 'front', 'top']);
+
+function parseFaceList(spec: string): DepthFace[] {
+  const faces: DepthFace[] = [];
+  for (const part of spec.split(/[,&]/).map((s) => s.trim()).filter(Boolean)) {
+    const f = part.toLowerCase() as DepthFace;
+    if (DEPTH_FACES.has(f) && !faces.includes(f)) faces.push(f);
+  }
+  return faces;
+}
+
+/** Auto-dimension / relief exaggeration (uses metric depth on project images at apply time). */
 export function registerAutoDimensionRules(registry: DesignRule[]): void {
-  // When auto-dimension merges, add rules like:
-  // registry.push({ id: 'auto-dimension-side', priority: 58, run: (text) => ... autoDimension patch ... });
-  void registry;
+  registry.push({
+    id: 'auto-dimension',
+    priority: 58,
+    run: (text) => {
+      const out: RuleMatch[] = [];
+      out.push(
+        ...allMatches(text, /\bauto[- ]?dimension(?:\s+the)?\s+(side|front|top)\b/gi, (m) => ({
+          start: m.index!,
+          end: m.index! + m[0].length,
+          patch: { autoDimension: { faces: [m[1].toLowerCase() as DepthFace] } },
+          note: `auto-dimension ${m[1].toLowerCase()}`,
+        }), 58),
+      );
+      out.push(
+        ...allMatches(text, /\bauto[- ]?dimension\s+((?:side|front|top)(?:\s*,\s*(?:side|front|top))*)\b/gi, (m) => {
+          const faces = parseFaceList(m[1]);
+          if (!faces.length) return null;
+          return {
+            start: m.index!,
+            end: m.index! + m[0].length,
+            patch: { autoDimension: { faces } },
+            note: `auto-dimension ${faces.join(',')}`,
+          };
+        }, 58),
+      );
+      return out;
+    },
+  });
+  registry.push({
+    id: 'relief-exaggeration',
+    priority: 57,
+    run: (text) =>
+      allMatches(text, /\b(?:exaggerate|boost)\s+relief\s*(?:(\d+(?:\.\d+)?)\s*(?:×|x|times)?|(\d+)\s*fold)\b/gi, (m) => {
+        const n = Number(m[1] ?? m[2]);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return {
+          start: m.index!,
+          end: m.index! + m[0].length,
+          patch: { autoDimension: { faces: [], reliefExaggeration: n } },
+          note: `relief exaggeration ${n}×`,
+        };
+      }, 57),
+  });
 }
 
 export function buildRuleRegistry(): DesignRule[] {

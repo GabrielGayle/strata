@@ -1,3 +1,4 @@
+import { applyAutoDimensionPatch, previewAutoDimension } from '../autoDimension';
 import { wordsParamPatch } from '../chantWords';
 import { masterSizePresetPatch, parseMasterOrientation, resolveMasterSizeCli } from '../masterPresets';
 import { type RawValue } from '../params';
@@ -36,6 +37,15 @@ export function mergePatches(...parts: ProjectPatch[]): ProjectPatch {
     if (p.masterSize) out.masterSize = p.masterSize;
     if (p.name) out.name = p.name;
     if (p.params) out.params = { ...out.params, ...p.params };
+    if (p.autoDimension) {
+      const prev = out.autoDimension ?? { faces: [], reliefExaggeration: 1 };
+      const faces = [...prev.faces];
+      for (const f of p.autoDimension.faces) if (!faces.includes(f)) faces.push(f);
+      out.autoDimension = {
+        faces,
+        reliefExaggeration: p.autoDimension.reliefExaggeration ?? prev.reliefExaggeration,
+      };
+    }
   }
   return out;
 }
@@ -59,6 +69,13 @@ export function applyProjectPatch(project: Project, patch: ProjectPatch): Projec
     Object.assign(params, masterSizePresetPatch(params, id, ori));
   }
   if (patch.params) params = enrichParamPatch({ ...params, ...patch.params });
+  if (patch.autoDimension?.faces.length) {
+    const relief = patch.autoDimension.reliefExaggeration ?? 1;
+    for (const face of patch.autoDimension.faces) {
+      const preview = previewAutoDimension(face, p.images[face]?.depth, params, { reliefExaggeration: relief });
+      if (preview.ok) params = applyAutoDimensionPatch(params, preview);
+    }
+  }
   if (patch.name) p = { ...p, name: patch.name };
   return { ...p, params };
 }

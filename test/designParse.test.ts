@@ -3,9 +3,34 @@ import { applyProjectPatch, diffProjectPatch, formatPatchDiff, masterSizePatch }
 import { parseDesign } from '../src/core/design/parse';
 import { DESIGN_PARAM_COVERAGE } from '../src/core/design/rules';
 import { applyMasterSizeCli, loadProject, main, type CliIo } from '../src/cli';
+import { defaultDepthSettings, type DepthData } from '../src/core/depth';
 import { newProject } from '../src/core/project';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+
+function sideDepth(w = 40, h = 10): DepthData {
+  const minM = 1;
+  const maxM = 20;
+  const cells: number[] = [];
+  for (let v = 0; v < h; v++) for (let u = 0; u < w; u++) cells.push(10);
+  const b = new Uint8Array(w * h * 2);
+  cells.forEach((m, i) => {
+    const q = 1 + Math.round(((m - minM) / (maxM - minM)) * 65534);
+    b[i * 2] = q & 255;
+    b[i * 2 + 1] = q >> 8;
+  });
+  return {
+    w,
+    h,
+    minM,
+    maxM,
+    nearM: 1,
+    farM: 15,
+    data: btoa(String.fromCharCode(...b)),
+    settings: defaultDepthSettings({ nearM: 1, farM: 15 }),
+    focalLengthPx: 200,
+  };
+}
 
 const example = fileURLToPath(new URL('../examples/image-cliff.strata.json', import.meta.url));
 
@@ -64,6 +89,17 @@ describe('design parser', () => {
     const r = parseDesign(phrase, ctx());
     expect(r.unrecognised.some((span) => phrase.slice(span.start, span.end).includes('xyzzy'))).toBe(true);
   });
+
+  it('parses auto-dimension faces and relief exaggeration', () => {
+    const r = parseDesign('auto dimension the side, exaggerate relief 2x', ctx());
+    expect(r.patch.autoDimension?.faces).toEqual(['side']);
+    expect(r.patch.autoDimension?.reliefExaggeration).toBe(2);
+  });
+
+  it('parses auto-dimension side, front list', () => {
+    const r = parseDesign('auto dimension side, front', ctx());
+    expect(r.patch.autoDimension?.faces).toEqual(['side', 'front']);
+  });
 });
 
 describe('applyProjectPatch', () => {
@@ -90,6 +126,17 @@ describe('applyProjectPatch', () => {
     const diff = diffProjectPatch(p, patch);
     expect(diff.changes.some((c) => c.id === 'plateCount')).toBe(true);
     expect(formatPatchDiff(p, patch)).toContain('plateCount');
+  });
+
+  it('applies auto-dimension from a parsed patch when metric depth exists', () => {
+    const p = newProject();
+    p.params.stackSource = 'strata';
+    p.params.imgSideMode = 'heightmap';
+    p.images.side = { name: 'side.png', dataUrl: 'data:image/png;base64,aa', depth: sideDepth() };
+    const { patch } = parseDesign('auto dimension the side', { project: p });
+    const after = applyProjectPatch(p, patch);
+    expect(after.params.imgSideFit).toBe('length');
+    expect(Number(after.params.imgRange)).toBeGreaterThan(0);
   });
 });
 
