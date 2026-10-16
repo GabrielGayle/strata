@@ -10,10 +10,11 @@ import { DEFAULT_SOUND, type SoundSpec } from '../core/sound';
 import type { Composition, Surface } from '../core/compose';
 import { moveBlock } from '../core/compose';
 import { isLayered, LayerNodes, SurfaceLayers, useLiveLayers } from './SurfaceLayers';
-import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, invertDataUrl, wakeDepth } from '../core/depth';
+import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, invertDataUrl, sampleDepthMetres, wakeDepth } from '../core/depth';
+import { isMapDepthFace } from '../core/depthFlat';
 import { exifFocalFromDataUrl } from '../core/exifFocal';
 
-function GrayCanvas({ g }: { g: Gray | null }) {
+function GrayCanvas({ g, picking, onPick }: { g: Gray | null; picking?: boolean; onPick?: (u: number, v: number) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current;
@@ -32,7 +33,25 @@ function GrayCanvas({ g }: { g: Gray | null }) {
     ctx.putImageData(img, 0, 0);
   }, [g]);
   if (!g) return <div className="empty" style={{ padding: 30 }}>No image</div>;
-  return <canvas ref={ref} className="thumb" style={{ aspectRatio: `${g.w} / ${g.h}`, maxHeight: 260, objectFit: 'contain' }} />;
+  return (
+    <canvas
+      ref={ref}
+      className="thumb"
+      data-testid={picking ? 'depth-preview-pick' : 'depth-preview'}
+      title={picking ? 'Click to pick a flat level' : undefined}
+      onClick={
+        onPick
+          ? (e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              const u = (e.clientX - r.left) / Math.max(1e-6, r.width);
+              const v = (e.clientY - r.top) / Math.max(1e-6, r.height);
+              onPick(Math.min(1, Math.max(0, u)), Math.min(1, Math.max(0, v)));
+            }
+          : undefined
+      }
+      style={{ aspectRatio: `${g.w} / ${g.h}`, maxHeight: 260, objectFit: 'contain', cursor: picking ? 'crosshair' : undefined }}
+    />
+  );
 }
 
 const ReliefPreview = lazy(() => import('./ReliefPreview'));
@@ -60,6 +79,7 @@ export default function ImageView() {
   const model = useModel();
   const project = useStore((s) => s.project);
   const setAsset = useStore((s) => s.setAsset);
+  const setDepthSettings = useStore((s) => s.setDepthSettings);
   const setParams = useStore((s) => s.setParams);
   const setUi = useStore((s) => s.setUi);
   const ui = useStore((s) => s.ui);
@@ -201,7 +221,7 @@ export default function ImageView() {
         {board === 'nodes' ? (
           <LayerNodes live={live} onOpenSurface={() => setBoard('cards')} />
         ) : (
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+        <div className="img-face-grid">
           {slots.map((s) => {
             const asset = project.images[s.slot];
             const other = s.slot === 'top' ? project.images.front ?? project.images.side : null;
@@ -209,6 +229,7 @@ export default function ImageView() {
               <div
                 className="window box"
                 key={s.slot}
+                data-testid={`face-card-${s.slot}`}
                 onDragOver={(e) => e.dataTransfer.types.includes('text/x-block') && e.preventDefault()}
                 onDrop={(e) => {
                   const id = e.dataTransfer.getData('text/x-block');
@@ -223,7 +244,24 @@ export default function ImageView() {
                     {asset ? asset.name : 'empty'}
                   </span>
                 </div>
-                {isLayered(live, s.slot) ? <SurfaceLayers live={live} surface={s.slot} /> : <GrayCanvas g={s.g} />}
+                {isLayered(live, s.slot) ? (
+                  <SurfaceLayers live={live} surface={s.slot} />
+                ) : (
+                  <GrayCanvas
+                    g={s.g}
+                    picking={!!asset?.depth && !isMapDepthFace(asset.depth) && asset.depth.settings.flatLevelMode === 'eyedropper'}
+                    onPick={
+                      asset?.depth && !isMapDepthFace(asset.depth) && asset.depth.settings.flatLevelMode === 'eyedropper'
+                        ? (u, v) => {
+                            const m = sampleDepthMetres(asset.depth!, u, v);
+                            if (m == null) return;
+                            const next = { ...asset.depth!, settings: { ...asset.depth!.settings, flatLevel: m, flatLevelMode: 'eyedropper' as const, flatLevelOverride: true } };
+                            setDepthSettings(s.slot, { flatLevel: m, flatLevelMode: 'eyedropper', flatLevelOverride: true }, grayDataUrl(depthToGray(next)));
+                          }
+                        : undefined
+                    }
+                  />
+                )}
                 <div className="note">{s.desc}</div>
                 <div className="btnrow" style={{ paddingBottom: 0 }}>
                   <span className="seg" role="group" aria-label={`${s.title} source`}>
