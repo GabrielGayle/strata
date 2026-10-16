@@ -8,6 +8,8 @@ import { PATTERN_PRESETS, type PatternSpec } from '../core/pattern';
 import { grayDataUrl, readImage, topAspectGuess } from './surfaces';
 import { DEFAULT_SOUND, type SoundSpec } from '../core/sound';
 import type { Composition, Surface } from '../core/compose';
+import { moveBlock } from '../core/compose';
+import { isLayered, LayerNodes, SurfaceLayers, useLiveLayers } from './SurfaceLayers';
 import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, invertDataUrl, wakeDepth } from '../core/depth';
 
 function GrayCanvas({ g }: { g: Gray | null }) {
@@ -66,6 +68,9 @@ export default function ImageView() {
   const [editing, setEditing] = useState<Slot | null>(null);
   const [hearing, setHearing] = useState<Slot | null>(null);
   const [composing, setComposing] = useState<{ comp: Composition; surface: Surface } | null>(null);
+  // every surface can hold any number of layers, arranged on its card or wired up on the node board
+  const live = useLiveLayers(topAspectGuess(v));
+  const [board, setBoard] = useState<'cards' | 'nodes'>('cards');
   const openComposer = async (surface: Surface) => {
     const { seedComposition } = await loadComposer();
     setComposing({ comp: await seedComposition(useStore.getState().project, topAspectGuess(v)), surface });
@@ -167,19 +172,51 @@ export default function ImageView() {
   return (
     <div className="scroll">
       <div className="pad" style={{ display: 'grid', gap: 12 }}>
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+        <div className="sl-bar">
+          <menu role="tablist" aria-label="Surfaces view">
+            <li role="tab" aria-selected={board === 'cards'}>
+              <a href="#cards" onClick={(e) => (e.preventDefault(), setBoard('cards'))} title="One card per surface, its layers arranged on it">
+                Cards
+              </a>
+            </li>
+            <li role="tab" aria-selected={board === 'nodes'}>
+              <a href="#nodes" onClick={(e) => (e.preventDefault(), setBoard('nodes'))} title="Every layer as a node, wired into a surface">
+                Layer nodes
+              </a>
+            </li>
+          </menu>
+          <span className="note">
+            {board === 'nodes'
+              ? 'Drag a layer\'s dot onto Top, Front or Side to send it there, or onto Tray to set it aside. Double-click a surface to arrange it.'
+              : 'Each surface can hold any number of images: Add images…, then drag, pin or lay them out. Dark cuts deepest.'}
+          </span>
+        </div>
+        {board === 'nodes' ? (
+          <LayerNodes live={live} onOpenSurface={() => setBoard('cards')} />
+        ) : (
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
           {slots.map((s) => {
             const asset = project.images[s.slot];
             const other = s.slot === 'top' ? project.images.front ?? project.images.side : null;
             return (
-              <div className="window box" key={s.slot}>
+              <div
+                className="window box"
+                key={s.slot}
+                onDragOver={(e) => e.dataTransfer.types.includes('text/x-block') && e.preventDefault()}
+                onDrop={(e) => {
+                  const id = e.dataTransfer.getData('text/x-block');
+                  if (!id) return;
+                  e.preventDefault();
+                  live.change((c) => moveBlock(c, id, s.slot));
+                }}
+              >
                 <div className="title-bar box-head">
                   <span>{s.title}</span>
                   <span className="mono" style={{ fontWeight: 400, textTransform: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
                     {asset ? asset.name : 'empty'}
                   </span>
                 </div>
-                <GrayCanvas g={s.g} />
+                {isLayered(live, s.slot) ? <SurfaceLayers live={live} surface={s.slot} /> : <GrayCanvas g={s.g} />}
                 <div className="note">{s.desc}</div>
                 <div className="btnrow" style={{ paddingBottom: 0 }}>
                   <span className="seg" role="group" aria-label={`${s.title} source`}>
@@ -196,6 +233,9 @@ export default function ImageView() {
                       Composer
                     </button>
                   </span>
+                  <button className="btn sm" onClick={() => live.addImages(s.slot)} title="Add one or more pictures to this surface as layers you can move, pin and lay out">
+                    Add images…
+                  </button>
                 </div>
                 {asset?.depth && sourceOf(s.slot) === 'image' && (
                   <Suspense fallback={null}>
@@ -297,6 +337,7 @@ export default function ImageView() {
             );
           })}
         </div>
+        )}
         <div className="window box">
           <div className="title-bar box-head" style={{ flexWrap: 'wrap' }}>
             <span>Relief preview</span>

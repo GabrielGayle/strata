@@ -67,3 +67,33 @@ export function useBlockSources(blocks: Block[]): (b: Block) => Gray | null {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return useCallback((b: Block) => sourceGray(b.source), [blocks, tick]);
 }
+
+/** A decoded image if it is ready, without starting a decode. */
+export function cachedGray(dataUrl: string): Gray | null {
+  return imgCache.get(dataUrl) ?? null;
+}
+
+/** Decode these images and return a number that changes whenever any decode finishes. */
+export function useDecoded(urls: string[]): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const on = () => setTick((t) => t + 1);
+    listeners.add(on);
+    return () => {
+      listeners.delete(on);
+    };
+  }, []);
+  const key = urls.join('\n');
+  useEffect(() => {
+    for (const url of urls) {
+      if (imgCache.has(url) || pending.has(url)) continue;
+      pending.add(url);
+      loadImageGray(url).finally(() => {
+        pending.delete(url);
+        listeners.forEach((f) => f());
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return tick;
+}

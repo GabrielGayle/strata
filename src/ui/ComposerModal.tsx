@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   blockId,
-  blockSize,
   composite,
   frameSize,
   makeBlock,
@@ -26,7 +25,9 @@ import type { ImageAsset, Project } from '../core/project';
 import type { RawValue } from '../core/params';
 import { useStore } from '../state/store';
 import { loadImageGray, useBlockSources } from './blockSources';
+import ArrangeStage from './ArrangeStage';
 import DrawModal from './DrawModal';
+import { ArrangeBar } from './SurfaceLayers';
 import NodeView from './NodeView';
 import PatternModal, { ASPECTS } from './PatternModal';
 import { sampleCliff } from './sample';
@@ -81,112 +82,6 @@ function Num({ label, value, min, max, step = 0.01, onChange, onStart }: { label
       <input type="range" min={min} max={max} step={step} value={value} onPointerDown={onStart} onChange={(e) => onChange(Number(e.target.value))} aria-label={label} />
       <span className="mono">{step >= 1 ? Math.round(value) : value.toFixed(2)}</span>
     </label>
-  );
-}
-
-type Drag = { id: string; mode: 'move' | 'scale' | 'rotate'; x0: number; y0: number; b0: Block; rect: DOMRect };
-
-function Stage({
-  comp,
-  surface,
-  sourceOf,
-  preview,
-  sel,
-  onSelect,
-  onChange,
-  onBegin,
-  onDropBlock,
-}: {
-  comp: Composition;
-  surface: Surface;
-  sourceOf: (b: Block) => Gray | null;
-  preview: Gray;
-  sel: string | null;
-  onSelect: (id: string | null) => void;
-  onChange: (id: string, patch: Partial<Block>) => void;
-  onBegin: () => void;
-  onDropBlock: (id: string, x: number, y: number) => void;
-}) {
-  const frame = comp.frames[surface];
-  const ref = useRef<HTMLDivElement>(null);
-  const cv = useRef<HTMLCanvasElement>(null);
-  const drag = useRef<Drag | null>(null);
-  useEffect(() => {
-    if (cv.current) paintGray(cv.current, preview);
-  }, [preview]);
-
-  const start = (e: React.PointerEvent, b: Block, mode: Drag['mode']) => {
-    e.stopPropagation();
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    onSelect(b.id);
-    onBegin();
-    drag.current = { id: b.id, mode, x0: e.clientX, y0: e.clientY, b0: b, rect: ref.current!.getBoundingClientRect() };
-  };
-  const move = (e: React.PointerEvent) => {
-    const d = drag.current;
-    if (!d) return;
-    const { rect, b0 } = d;
-    const cx = rect.left + b0.x * rect.width, cy = rect.top + b0.y * rect.height;
-    if (d.mode === 'move') onChange(d.id, { x: b0.x + (e.clientX - d.x0) / rect.width, y: b0.y + (e.clientY - d.y0) / rect.height });
-    else if (d.mode === 'scale') {
-      const r0 = Math.hypot(d.x0 - cx, d.y0 - cy), r1 = Math.hypot(e.clientX - cx, e.clientY - cy);
-      onChange(d.id, { scale: Math.min(4, Math.max(0.02, (b0.scale * r1) / Math.max(1, r0))) });
-    } else {
-      const a0 = Math.atan2(d.y0 - cy, d.x0 - cx), a1 = Math.atan2(e.clientY - cy, e.clientX - cx);
-      let r = b0.rotate + ((a1 - a0) * 180) / Math.PI;
-      r = ((((r + 180) % 360) + 360) % 360) - 180;
-      if (e.shiftKey) r = Math.round(r / 15) * 15;
-      onChange(d.id, { rotate: +r.toFixed(1) });
-    }
-  };
-  const end = () => (drag.current = null);
-
-  const blocks = comp.blocks.filter((b) => b.surface === surface);
-  return (
-    <div className="cm-stage-wrap" onPointerDown={() => onSelect(null)}>
-      <div
-        ref={ref}
-        className="cm-stage"
-        style={{ aspectRatio: `${preview.w} / ${preview.h}`, ['--fa' as string]: frame.aspect }}
-        onDragOver={(e) => e.dataTransfer.types.includes('text/x-block') && e.preventDefault()}
-        onDrop={(e) => {
-          const id = e.dataTransfer.getData('text/x-block');
-          if (!id) return;
-          e.preventDefault();
-          const r = ref.current!.getBoundingClientRect();
-          onDropBlock(id, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
-        }}
-      >
-        <canvas ref={cv} />
-        {blocks.map((b) => {
-          const src = sourceOf(b);
-          const sz = blockSize(b, src ?? { w: 1, h: 1 }, frame.aspect);
-          const on = b.id === sel;
-          return (
-            <div
-              key={b.id}
-              className={`cm-box ${on ? 'on' : ''} ${b.hidden ? 'hidden' : ''}`}
-              style={{ left: `${(b.x - sz.w / 2) * 100}%`, top: `${(b.y - sz.h / 2) * 100}%`, width: `${sz.w * 100}%`, height: `${sz.h * 100}%`, transform: `rotate(${b.rotate}deg)` }}
-              onPointerDown={(e) => start(e, b, 'move')}
-              onPointerMove={move}
-              onPointerUp={end}
-              onPointerCancel={end}
-              title={b.name}
-            >
-              {on && (
-                <>
-                  <span className="cm-h cm-scale" onPointerDown={(e) => start(e, b, 'scale')} onPointerMove={move} onPointerUp={end} title="Drag to resize" />
-                  <span className="cm-h cm-rot" onPointerDown={(e) => start(e, b, 'rotate')} onPointerMove={move} onPointerUp={end} title="Drag to turn (Shift snaps to 15°)" />
-                  <span className="cm-label">{b.name}</span>
-                </>
-              )}
-            </div>
-          );
-        })}
-        {!blocks.length && <div className="empty cm-empty">No blocks on this surface yet. Add one, or drag one here from the tray.</div>}
-      </div>
-    </div>
   );
 }
 
@@ -429,7 +324,7 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
           />
         ) : (
           <div className="cm-body">
-            <Stage
+            <ArrangeStage
               comp={comp}
               surface={surface}
               sourceOf={sourceOf}
@@ -497,6 +392,8 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
                 ))}
                 {!onSurface.length && <div className="note">Nothing here yet.</div>}
               </div>
+              <div className="pm-group">Arrange</div>
+              <ArrangeBar comp={comp} surface={surface} sel={sel} dimsOf={sourceOf} onArrange={commit} />
 
               {selected && selected.surface === surface && (
                 <>
