@@ -115,6 +115,8 @@ export interface EstimateOpts {
    * The order-size factor uses this so every part sees the same discount.
    */
   orderAreaMm2?: number;
+  /** Map gift sizing discount 0..1 (ticket T27). */
+  mapGiftPriceFactor?: number;
 }
 
 const METAL_LABEL: Record<string, string> = { steel: 'Mild steel', corten: 'Corten', aluminium: 'Aluminium' };
@@ -250,10 +252,25 @@ export function estimatePrice(bom: Bom, material: string, thickness: number, rat
  * Plates in more than one metal: each metal is priced on its own rates,
  * with the order minimum applied once to the lot.
  */
+function applyMapGiftFactor(est: PriceEstimate, factor: number): PriceEstimate {
+  if (factor === 1) return est;
+  const lines = est.lines.map((l) => ({ ...l, cost: l.cost * factor }));
+  return {
+    ...est,
+    lines,
+    subtotal: est.subtotal * factor,
+    net: est.net * factor,
+    vat: est.vat * factor,
+    total: est.total * factor,
+    hardware: est.hardware != null ? est.hardware * factor : est.hardware,
+  };
+}
+
 export function estimateMix(bom: Bom, thickness: number, rates: PriceRates = DEFAULT_RATES, opts: EstimateOpts = {}): PriceEstimate {
+  const mapFactor = opts.mapGiftPriceFactor ?? 1;
   const groups = bom.byMaterial?.filter((g) => g.partCount) ?? [];
   const main = bom.byMaterial?.[0]?.material ?? 'steel';
-  if (groups.length <= 1) return estimatePrice(bom, groups[0]?.material ?? main, thickness, rates, opts);
+  if (groups.length <= 1) return applyMapGiftFactor(estimatePrice(bom, groups[0]?.material ?? main, thickness, rates, opts), mapFactor);
   const orderAreaMm2 = opts.orderAreaMm2 ?? groups.reduce((a, g) => a + g.rows.reduce((b, r) => b + r.area, 0), 0);
   const parts = groups.map((g) => {
     const sub = { ...bom, rows: g.rows, partCount: g.partCount, cutLength: g.cutLength, pierces: g.pierces };
@@ -263,19 +280,22 @@ export function estimateMix(bom: Bom, thickness: number, rates: PriceRates = DEF
     est.lines.map((l) => ({ ...l, label: est.fitted ? `${metalName(g.material)} ${l.label}` : `${metalName(g.material)} ${l.label.toLowerCase()}` })),
   );
   const warnings = [...new Set(parts.flatMap((p) => p.est.warnings))];
-  return applyMinimum(
-    {
-      lines,
-      subtotal: parts.reduce((a, p) => a + p.est.subtotal, 0),
-      minutes: parts.reduce((a, p) => a + p.est.minutes, 0),
-      sheetKg: parts.reduce((a, p) => a + p.est.sheetKg, 0),
-      warnings,
-      fitted: parts.every((p) => p.est.fitted),
-      etchM: parts.reduce((a, p) => a + p.est.etchM, 0),
-      partCount: bom.partCount,
-      orderFactor: parts[0]?.est.orderFactor ?? 1,
-    },
-    rates,
+  return applyMapGiftFactor(
+    applyMinimum(
+      {
+        lines,
+        subtotal: parts.reduce((a, p) => a + p.est.subtotal, 0),
+        minutes: parts.reduce((a, p) => a + p.est.minutes, 0),
+        sheetKg: parts.reduce((a, p) => a + p.est.sheetKg, 0),
+        warnings,
+        fitted: parts.every((p) => p.est.fitted),
+        etchM: parts.reduce((a, p) => a + p.est.etchM, 0),
+        partCount: bom.partCount,
+        orderFactor: parts[0]?.est.orderFactor ?? 1,
+      },
+      rates,
+    ),
+    mapFactor,
   );
 }
 

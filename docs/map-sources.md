@@ -65,6 +65,13 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 | **Catalog (DTM 1 m)** | `https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m` |
 | **Strata status** | Ticket **T6** reads EA tiles via the adapter (cached under `--map-cache`); offline tests use `test/fixtures/map/regional/neasden-ea-dtm.json`. Browser fetches may use the **EA-only** CORS proxy in `api/ea-proxy.ts` (deployed on Vercel). |
 
+## Gift sizing / map pricing (ticket T27)
+
+| Field | Value |
+|---|---|
+| **Factor** | `mapGiftPriceFactor(bom, map)` scales Chop Chop estimates from plate area vs map bbox |
+| **Estimate** | Pass `mapGiftPriceFactor` in `estimateMix` opts when a map gift size applies |
+
 ## Sunken concrete frame (ticket T28)
 
 | Field | Value |
