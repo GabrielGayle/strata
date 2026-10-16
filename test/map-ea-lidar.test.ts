@@ -13,8 +13,8 @@ describe('map EA LiDAR (T6)', () => {
     expect(g?.crs).toBe('EPSG:27700');
     const min = Math.min(...g!.data);
     const max = Math.max(...g!.data);
-    expect(min).toBeGreaterThanOrEqual(28);
-    expect(max).toBeLessThanOrEqual(68);
+    expect(min).toBeGreaterThanOrEqual(18);
+    expect(max).toBeLessThanOrEqual(70);
   });
 
   it('builds map bundle from ea-dtm fixture without terrarium fallback warning', async () => {

@@ -13,15 +13,70 @@ export const OVERPASS_MIRRORS = [
 /** Per-mirror attempt timeout. Query XML also has [timeout:25]; fail over sooner. */
 export const OVERPASS_ATTEMPT_TIMEOUT_MS = 8_000;
 
+/** Browser-only extra proxy retry (Vite/Vercel already walked mirrors). */
+export const OVERPASS_BROWSER_RETRY_MS = 500;
+
 const BACKOFF_MS = [0, 400];
 
 const inflight = new Map<string, Promise<unknown>>();
+
+/** Injected by tests so retries never really sleep and never wait on a live 8 s abort. */
+let testBackoffMs: readonly number[] | null = null;
+let testTimeoutMs: number | null = null;
+let testBrowserRetryMs: number | null = null;
+
+export function setOverpassTestDelays(
+  opts: { backoffMs?: readonly number[] | null; timeoutMs?: number | null; browserRetryMs?: number | null } | null,
+): void {
+  if (!opts) {
+    testBackoffMs = null;
+    testTimeoutMs = null;
+    testBrowserRetryMs = null;
+    return;
+  }
+  if ('backoffMs' in opts) testBackoffMs = opts.backoffMs ?? null;
+  if ('timeoutMs' in opts) testTimeoutMs = opts.timeoutMs ?? null;
+  if ('browserRetryMs' in opts) testBrowserRetryMs = opts.browserRetryMs ?? null;
+}
+
+function isVitest(): boolean {
+  try {
+    // Vite `define` rewrites `process.env` to `{}`, so process.env.VITEST is
+    // always missing in transformed modules. Vitest sets import.meta.env.
+    const env = import.meta.env;
+    if (env && (env.VITEST || env.MODE === 'test')) return true;
+  } catch {
+    /* Vercel Node has no Vite env */
+  }
+  try {
+    return Boolean((globalThis as { process?: { env?: { VITEST?: string } } }).process?.env?.VITEST);
+  } catch {
+    return false;
+  }
+}
+
+export function resolveOverpassBackoffMs(): readonly number[] {
+  if (testBackoffMs) return testBackoffMs;
+  if (isVitest()) return [0, 0];
+  return BACKOFF_MS;
+}
+
+export function resolveOverpassTimeoutMs(): number {
+  if (testTimeoutMs != null && testTimeoutMs >= 0) return testTimeoutMs;
+  return OVERPASS_ATTEMPT_TIMEOUT_MS;
+}
+
+export function resolveOverpassBrowserRetryMs(): number {
+  if (testBrowserRetryMs != null && testBrowserRetryMs >= 0) return testBrowserRetryMs;
+  if (isVitest()) return 0;
+  return OVERPASS_BROWSER_RETRY_MS;
+}
 
 export function resetOverpassInflight(): void {
   inflight.clear();
 }
 
-function sleep(ms: number): Promise<void> {
+export function sleep(ms: number): Promise<void> {
   if (ms <= 0) return Promise.resolve();
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -44,7 +99,7 @@ export async function postOverpassEndpoint(
   query: string,
   opts: { timeoutMs?: number; fetchImpl?: typeof fetch } = {},
 ): Promise<unknown> {
-  const timeoutMs = opts.timeoutMs ?? OVERPASS_ATTEMPT_TIMEOUT_MS;
+  const timeoutMs = opts.timeoutMs ?? resolveOverpassTimeoutMs();
   const fetchImpl = opts.fetchImpl ?? fetch;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -83,7 +138,7 @@ export async function fetchOverpassWithMirrors(
   opts: { fetchImpl?: typeof fetch; timeoutMs?: number; mirrors?: readonly string[]; backoffMs?: readonly number[] } = {},
 ): Promise<unknown> {
   const mirrors = opts.mirrors ?? OVERPASS_MIRRORS;
-  const backoff = opts.backoffMs ?? (process.env.VITEST ? [0, 0] : BACKOFF_MS);
+  const backoff = opts.backoffMs ?? resolveOverpassBackoffMs();
   let last: Error | null = null;
   for (let pass = 0; pass < 2; pass++) {
     const wait = backoff[Math.min(pass, backoff.length - 1)] ?? 0;
