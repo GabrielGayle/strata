@@ -3,11 +3,15 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 test('neasden map design builds a carved top with plates', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('strata:tour-seen', '1');
+  });
   await page.goto('/');
   await page.waitForSelector('.app.window', { timeout: 60_000 });
-
-  await page.keyboard.press('/');
-  await page.waitForSelector('.design-box .design-input');
+  // Blur the parameter filter so `/` is not eaten as text input.
+  await page.locator('.status-bar').click();
+  await page.keyboard.press('Control+K');
+  await page.waitForSelector('.design-box .design-input', { timeout: 15_000 });
   await page.fill('.design-box .design-input', 'neasden map');
   await page.getByRole('button', { name: 'Apply' }).click();
 
