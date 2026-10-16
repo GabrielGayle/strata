@@ -43,6 +43,10 @@ export interface DepthData {
   data: string;
   /** base64 uint8 subject matte (255 = keep), when the service made one */
   mask?: string;
+  /** Depth Pro focal length in pixels (same units as w×h depth map). Older saves omit this. */
+  focalLengthPx?: number;
+  /** EXIF focal length in pixels on the source photo, when known. */
+  exifFocalLengthPx?: number;
   settings: DepthSettings;
 }
 
@@ -70,7 +74,25 @@ function parseDepthData(raw: unknown): Omit<DepthData, 'settings'> | undefined {
   if (!(w >= 1 && h >= 1 && maxM > minM && minM >= 0)) return undefined;
   const nearM = Number(d.near_m) || minM;
   const farM = Number(d.far_m) || maxM;
-  return { w, h, minM, maxM, nearM, farM, data: d.data, ...(typeof d.mask === 'string' ? { mask: d.mask } : {}) };
+  const focal =
+    Number(d.focal_length_px) ||
+    Number(d.focal_px) ||
+    Number(d.focal_length) ||
+    Number(d.f_px);
+  return {
+    w,
+    h,
+    minM,
+    maxM,
+    nearM,
+    farM,
+    data: d.data,
+    ...(typeof d.mask === 'string' ? { mask: d.mask } : {}),
+    ...(Number.isFinite(focal) && focal > 0 ? { focalLengthPx: focal } : {}),
+    ...(Number.isFinite(Number(d.exif_focal_length_px)) && Number(d.exif_focal_length_px) > 0
+      ? { exifFocalLengthPx: Number(d.exif_focal_length_px) }
+      : {}),
+  };
 }
 
 export function parseDepthResponse(body: unknown): DepthResult {
@@ -159,7 +181,7 @@ function b64Bytes(b64: string): Uint8Array {
 const decoded = new Map<string, { metres: Float32Array; mask: Float32Array | null }>();
 
 /** Metres per pixel (NaN = no depth) and the 0..1 matte, decoded once per depth map. */
-function decodeDepth(d: DepthData) {
+export function decodeDepthBuffers(d: Pick<DepthData, 'w' | 'h' | 'minM' | 'maxM' | 'data' | 'mask'>) {
   const key = `${d.w}x${d.h}:${d.data.length}:${d.data.slice(0, 48)}${d.data.slice(-48)}:${d.mask?.length ?? 0}:${d.mask?.slice(0, 48) ?? ''}${d.mask?.slice(-48) ?? ''}`;
   let hit = decoded.get(key);
   if (!hit) {
@@ -238,7 +260,7 @@ function blur(src: Float32Array, w: number, h: number, r: number): Float32Array 
  * inverted), farther than `far`, no depth or cut out by the matte = white.
  */
 export function depthToGray(d: DepthData, s: DepthSettings = d.settings): Gray {
-  const { metres, mask } = decodeDepth(d);
+  const { metres, mask } = decodeDepthBuffers(d);
   const n = d.w * d.h;
   const near = Math.max(1e-3, Math.min(s.near, s.far - 1e-3));
   const far = Math.max(near + 1e-3, s.far);

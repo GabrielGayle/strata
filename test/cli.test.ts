@@ -383,6 +383,15 @@ describe('cli map', () => {
   });
 });
 
+describe('cli auto-dimension', () => {
+  it('mentions --auto-dimension in help', async () => {
+    const io = capture();
+    expect(await main(['help'], io)).toBe(0);
+    expect(io.out).toMatch(/--auto-dimension/);
+    expect(io.out).toMatch(/--relief-exaggeration/);
+  });
+});
+
 describe('cli script', () => {
   it('runs under tsx', () => {
     const out = execFileSync('npx', ['tsx', 'src/cli.ts', 'presets'], { cwd: fileURLToPath(new URL('..', import.meta.url)), encoding: 'utf8' });
