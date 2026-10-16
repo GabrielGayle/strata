@@ -7,6 +7,7 @@ import { cleanMoves, type PartMoves } from './moves';
 import type { SoundSpec } from './sound';
 import { cleanAppearance, type Appearance } from './appearance';
 import type { DepthData } from './depth';
+import { fillFlatDefaults } from './depthFlat';
 import { cleanMapSpec, type MapSpec } from './mapSpec';
 import { cleanShadow, type ShadowSpec } from './shadow';
 import { cleanObjects, type CutObject } from './objects';
@@ -279,7 +280,11 @@ function cleanImageAsset(raw: unknown): ImageAsset | undefined {
   if (o.pattern && typeof o.pattern === 'object') asset.pattern = o.pattern as ImageAsset['pattern'];
   if (o.composed === true) asset.composed = true;
   if (o.sound && typeof o.sound === 'object') asset.sound = o.sound as ImageAsset['sound'];
-  if (o.depth && typeof o.depth === 'object') asset.depth = o.depth as DepthData;
+  if (o.depth && typeof o.depth === 'object') {
+    const depth = { ...(o.depth as DepthData) };
+    if (depth.settings) depth.settings = fillFlatDefaults(depth.settings);
+    asset.depth = depth;
+  }
   const map = cleanMapSpec(o.map);
   if (map) asset.map = map;
   return asset;
