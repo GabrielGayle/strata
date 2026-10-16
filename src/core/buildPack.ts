@@ -115,13 +115,25 @@ function fitBox(b: Box, maxW: number, maxH: number, m: [number, number, number, 
   return { s, w, h, X: (x: number) => m[0] + (x - b.minX) * s, Y: (y: number) => m[2] + (b.maxY - y) * s };
 }
 
-/** Polyline path data in px, dropping points that land on the same tenth of a pixel. */
-function pathD(pts: P2[], X: (x: number) => number, Y: (y: number) => number, close = true, tol = 0): string {
+interface PathDOpts {
+  /** Drop successive points closer than this in screen px (insert meshes only). */
+  tol?: number;
+  /** Decimal places for coordinates; angled plates use finer coords so thin rows do not collapse. */
+  prec?: number;
+  /** When set with tol, return '' if fewer than this many vertices survive (insert meshes only). */
+  minPts?: number;
+}
+
+/** Polyline path data in screen px. */
+function pathD(pts: P2[], X: (x: number) => number, Y: (y: number) => number, close = true, opts: PathDOpts = {}): string {
+  const tol = opts.tol ?? 0;
+  const minPts = opts.minPts ?? 3;
+  const fmt = (v: number) => v.toFixed(opts.prec ?? 1);
   let d = '', last = '', lx = NaN, ly = NaN, n = 0;
   for (const [x, y] of pts) {
     const sx = X(x), sy = Y(y);
     if (tol && Math.hypot(sx - lx, sy - ly) < tol) continue;
-    const k = `${px(sx)},${px(sy)}`;
+    const k = `${fmt(sx)},${fmt(sy)}`;
     if (k === last) continue;
     d += (n ? 'L' : 'M') + k;
     last = k;
@@ -129,8 +141,7 @@ function pathD(pts: P2[], X: (x: number) => number, Y: (y: number) => number, cl
     ly = sy;
     n++;
   }
-  // with a tolerance, anything that thins to less than a triangle is too small to see
-  return tol && n < 3 ? '' : d + (close && d ? 'Z' : '');
+  return tol && n < minPts ? '' : d + (close && d ? 'Z' : '');
 }
 
 /** A round number for a scale bar about a fifth of `span`. */
@@ -432,7 +443,7 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   };
   const clip = v.baseOn;
 
-  type Item = { d: number; pts: P2[][]; fill: string; stroke: string; sw: number; tri?: boolean };
+  type Item = { d: number; pts: P2[][]; fill: string; stroke: string; sw: number; tri?: boolean; plate?: boolean };
   const items: Item[] = [];
   const all: P2[] = [];
 
@@ -489,7 +500,7 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
     const d = flatPts.reduce((s, q) => s + depth(q), 0) / flatPts.length;
     const pts = rings.map((r) => r.map(scr));
     all.push(...pts[0]);
-    items.push({ d, pts, fill: shade(look.color, lit(nr) * (p.family === 'S' ? 0.85 : 1)), stroke: shade(look.color, 1.6), sw: 0.6 });
+    items.push({ d, pts, fill: shade(look.color, lit(nr) * (p.family === 'S' ? 0.85 : 1)), stroke: shade(look.color, 1.6), sw: 0.6, plate: isMain(p) });
   }
 
   // the insert, a triangle at a time (only the side facing us)
@@ -520,22 +531,56 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   const f = fitBox(bx, opts.maxW ?? 690, opts.maxH ?? 520, [16, 16, 16, 16]);
   const out: string[] = [];
   for (const b of baseFaces) out.push(`<path d="${pathD(b.pts, f.X, f.Y)}" fill="${b.fill}" stroke="${shade(b.fill, 0.6)}" stroke-width="0.8" stroke-linejoin="round"/>`);
-  items.sort((a, b) => b.d - a.d);
+  const byDepth = (a: Item, b: Item) => b.d - a.d;
+  const tris = items.filter((it) => it.tri).sort(byDepth);
+  const plates = items.filter((it) => !it.tri).sort(byDepth);
   // a little haze with distance, so plates standing one behind another read apart
-  const d0 = items.length ? items[items.length - 1].d : 0, d1 = items.length ? items[0].d : 1;
-  for (const it of items) {
-    if (it.tri) continue;
+  const d0 = plates.length ? plates[plates.length - 1].d : 0, d1 = plates.length ? plates[0].d : 1;
+  for (const it of plates) {
     const k = 1 - 0.3 * ((it.d - d0) / Math.max(1e-6, d1 - d0));
     it.fill = shade(it.fill, k);
   }
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    let d = it.pts.map((r) => pathD(r, f.X, f.Y, true, 0.6)).join('');
-    // a run of insert triangles in one shade: one path (they don't overlap, so nonzero fill is right)
-    while (it.tri && items[i + 1]?.tri && items[i + 1].fill === it.fill) d += pathD(items[++i].pts[0], f.X, f.Y, true, 0.6);
-    if (d) out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"${it.tri ? '' : ' fill-rule="evenodd"'}/>`);
-  }
+  const triTol = { tol: 0.6, minPts: 3 };
+  const platePrec = { prec: 2 };
+  const emit = (list: Item[], pathOpts: PathDOpts, plateLayer: boolean) => {
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i];
+      let d = it.pts.map((r) => pathD(r, f.X, f.Y, true, pathOpts)).join('');
+      if (it.tri) {
+        while (list[i + 1]?.tri && list[i + 1].fill === it.fill) d += pathD(list[++i].pts[0], f.X, f.Y, true, pathOpts);
+      }
+      if (d) out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"${it.tri ? '' : ' fill-rule="evenodd"'}${plateLayer ? ' class="plate"' : ''}/>`);
+    }
+  };
+  // insert and other meshes first; plates on top so thin rows stay visible through the cast-in shape
+  emit(tris, triTol, false);
+  emit(plates, platePrec, true);
   return `<svg class="drawing angled" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="${esc(title)}">${out.join('')}</svg>`;
+}
+
+/** How many distinct main-plate paths the angled cover draw emits (for regression tests). */
+export function angledPlatePathCount(project: Project, m: Model, opts: { turn?: number; tilt?: number; maxW?: number; maxH?: number } = {}): { expected: number; drawn: number; pitchPx: number } {
+  const svg = angledSvg(project, m, viewOf(m), 'count', { turn: opts.turn ?? 35, tilt: opts.tilt ?? 30, maxW: opts.maxW ?? 690, maxH: opts.maxH ?? 400 });
+  const expected = m.sliced.parts.filter((p) => p.family === 'P' || p.family === 'X' || p.family === 'R').length;
+  const drawn = svg ? [...svg.matchAll(/class="plate"/g)].length : 0;
+  const v = m.v;
+  const f = stackFrame(v);
+  const back: P2 = [f.stack[0], f.stack[1]];
+  const th = ((opts.turn ?? 35) * Math.PI) / 180, ph = ((opts.tilt ?? 30) * Math.PI) / 180;
+  const ex: V3 = [Math.cos(th), Math.sin(th), 0];
+  const ey: V3 = [-Math.sin(th) * Math.sin(ph), Math.cos(th) * Math.sin(ph), Math.cos(ph)];
+  const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const step = v.pitch;
+  const a: V3 = [0, 0, 0];
+  const b: V3 = [back[0] * step, 0, back[1] * step];
+  const scr = (w: V3): P2 => {
+    const right: P2 = [-f.stack[1], f.stack[0]];
+    const plan = (q: V3): P2 => [q[0] * right[0] + q[2] * right[1], q[0] * back[0] + q[2] * back[1]];
+    const p: V3 = [plan(w)[0], plan(w)[1], w[1]];
+    return [dot(p, ex), dot(p, ey)];
+  };
+  const pitchPxVal = Math.hypot(scr(b)[0] - scr(a)[0], scr(b)[1] - scr(a)[1]);
+  return { expected, drawn, pitchPx: pitchPxVal };
 }
 
 // --- sections -----------------------------------------------------------------------
