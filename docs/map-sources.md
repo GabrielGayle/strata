@@ -65,6 +65,14 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 | **Catalog (DTM 1 m)** | `https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m` |
 | **Strata status** | Ticket **T6** reads EA tiles via the adapter (cached under `--map-cache`); offline tests use `test/fixtures/map/regional/neasden-ea-dtm.json`. Browser fetches may use the **EA-only** CORS proxy in `api/ea-proxy.ts` (not deployed). |
 
+## Neasden preset (ticket T18)
+
+| Field | Value |
+|---|---|
+| **Default bbox** | `NEASDEN_MAP_BBOX` in `src/core/mapPresets.ts` (matches `test/map-fixtures.ts`) |
+| **Welsh Harp expansion** | Plain-language `include Welsh Harp` unions `WELSH_HARP_WATER_BBOX` for Brent Reservoir |
+| **Design parser** | `registerMapParserRules()` in `src/core/design/mapRules.ts` via `buildRuleRegistry()` |
+
 ## Map cache (ticket T7)
 
 | Field | Value |

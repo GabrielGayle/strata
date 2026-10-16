@@ -5,6 +5,7 @@ import { speechParamPatch } from '../speechTuning';
 import { wordsParamPatch } from '../chantWords';
 import type { ParseContext, ProjectPatch, Span } from './types';
 import { mergePatches } from './patch';
+import { registerMapParserRules } from './mapRules';
 
 export interface RuleMatch {
   start: number;
@@ -71,7 +72,7 @@ const SLICE_MODES: Record<string, string> = {
   'flat stack': 'flat',
 };
 
-function allMatches(text: string, re: RegExp, fn: (m: RegExpMatchArray) => RuleMatchDraft | null, priority: number): RuleMatch[] {
+export function allMatches(text: string, re: RegExp, fn: (m: RegExpMatchArray) => RuleMatchDraft | null, priority: number): RuleMatch[] {
   const out: RuleMatch[] = [];
   const r = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
   let m: RegExpExecArray | null;
@@ -502,6 +503,7 @@ export function registerAutoDimensionRules(registry: DesignRule[]): void {
 export function buildRuleRegistry(): DesignRule[] {
   const rules = [...CORE_RULES];
   registerAutoDimensionRules(rules);
+  registerMapParserRules(rules);
   return rules;
 }
 
