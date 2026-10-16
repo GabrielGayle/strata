@@ -65,6 +65,8 @@ export interface MapSpec {
   commemorativeText?: string;
   /** Max DSM − DTM rise in metres before exaggeration (ticket 15, default 25). */
   buildingClampM?: number;
+  /** Sunken concrete-frame surround (ticket 28). */
+  sunkenFrame?: { enabled: boolean; castToleranceMm?: number; wallMm?: number };
 }
 
 export const TERRARIUM_ATTRIBUTION = [
@@ -185,6 +187,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   const commemorativeText =
     typeof o.commemorativeText === 'string' && o.commemorativeText.trim() ? o.commemorativeText.trim() : undefined;
   const buildingClampM = num(o.buildingClampM);
+  const sunkenFrame = cleanSunkenFrame(o.sunkenFrame);
   return {
     kind: 'map',
     bbox,
@@ -211,6 +214,20 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(archetypeCard ? { archetypeCard } : {}),
     ...(commemorativeText ? { commemorativeText } : {}),
     ...(buildingClampM != null && buildingClampM > 0 ? { buildingClampM } : {}),
+    ...(sunkenFrame ? { sunkenFrame } : {}),
+  };
+}
+
+function cleanSunkenFrame(raw: unknown): MapSpec['sunkenFrame'] | undefined {
+  const o = (raw ?? null) as Record<string, unknown> | null;
+  if (!o || typeof o !== 'object') return undefined;
+  if (o.enabled === false) return { enabled: false };
+  const castToleranceMm = num(o.castToleranceMm);
+  const wallMm = num(o.wallMm);
+  return {
+    enabled: true,
+    ...(castToleranceMm != null && castToleranceMm > 0 ? { castToleranceMm } : {}),
+    ...(wallMm != null && wallMm > 0 ? { wallMm } : {}),
   };
 }
 
