@@ -16,6 +16,8 @@ export interface FragmentEvent {
   w: number;
   h: number;
   parentId?: string;
+  /** True when Merge into parent was requested (or auto chose merge) but the union was dropped. */
+  mergeFallback?: boolean;
 }
 
 export function fragmentMinMm(v: Values): number {
@@ -63,6 +65,9 @@ export function formatFragment(ev: FragmentEvent): string {
         ? ', does not reach the concrete'
         : ', below min fragment';
   if (ev.action === 'merged') return `Merged ${ev.pieceId} (${size}${why}) into ${ev.parentId ?? ev.plateId}.`;
+  if (ev.action === 'dropped' && ev.mergeFallback) {
+    return `Merge into parent fell back to dropping ${ev.pieceId} (${size}${why}).`;
+  }
   if (ev.action === 'dropped') return `Dropped ${ev.pieceId} (${size}${why}).`;
   return `Kept ${ev.pieceId} (${size}${why}) as a part of plate ${ev.plateId}.`;
 }
@@ -123,6 +128,7 @@ export function resolveFragments(
     const want: FragmentMode = mode === 'auto' ? (touchingIndex(f.ex) >= 0 ? 'merge' : 'drop') : mode;
     let action: FragmentAction = want === 'keep' ? 'kept' : want === 'drop' ? 'dropped' : 'merged';
     let parentId: string | undefined;
+    let mergeFallback = false;
     if (want === 'merge') {
       let idx = touchingIndex(f.ex);
       if (idx < 0 && mode === 'merge') {
@@ -136,9 +142,11 @@ export function resolveFragments(
           action = 'merged';
         } else {
           action = 'dropped';
+          mergeFallback = true;
         }
       } else {
         action = 'dropped';
+        mergeFallback = true;
       }
     } else if (want === 'keep') {
       live.push(f.ex);
@@ -155,6 +163,7 @@ export function resolveFragments(
       w: f.size.w,
       h: f.size.h,
       parentId,
+      ...(mergeFallback ? { mergeFallback: true } : {}),
     });
   }
 

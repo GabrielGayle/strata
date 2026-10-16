@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
-import { piecesTouch, resolveFragments, isSubMinimum } from '../src/core/fragments';
+import { piecesTouch, resolveFragments, isSubMinimum, formatFragment } from '../src/core/fragments';
 import { rect, type ExPoly } from '../src/core/geom2d';
 import { GABRIEL_PARAMS, sliverFrontGray, sliverSideGray } from './image-sliver-fixture';
 import { assertCountsAgree } from '../src/core/counts';
@@ -57,6 +57,19 @@ describe('fragment resolve', () => {
     expect(pieces).toHaveLength(1);
     expect(events[0].action).toBe('dropped');
     expect(events[0].reason).toMatch(/unanchored|both|small/);
+  });
+
+  it('reports when Merge into parent falls back to dropping', () => {
+    const { pieces, events } = resolveFragments([parent, island], {
+      v: { minFragment: 3, fragmentMode: 'merge', kerf: 0.15, minPartSize: 15, thickness: 1.5 },
+      plateKey: 'P2',
+      plateId: 'S-03',
+      anchored: (ex) => ex === parent,
+    });
+    expect(pieces).toHaveLength(1);
+    expect(events[0].action).toBe('dropped');
+    expect(events[0].mergeFallback).toBe(true);
+    expect(formatFragment(events[0])).toMatch(/Merge into parent fell back to dropping/);
   });
 
   it('keeps fragments when asked', () => {

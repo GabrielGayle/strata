@@ -27,8 +27,29 @@ const f = (x: number) => {
   return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s;
 };
 
+const ENTITY_SUBCLASS: Record<string, string> = {
+  LWPOLYLINE: 'AcDbPolyline',
+  CIRCLE: 'AcDbCircle',
+  LINE: 'AcDbLine',
+  ARC: 'AcDbCircle',
+  POLYLINE: 'AcDb2dPolyline',
+  VERTEX: 'AcDbVertex',
+  SEQEND: 'AcDbEntity',
+};
+
+class HandleGen {
+  private n = 1;
+  next(): string {
+    return (this.n++).toString(16).toUpperCase();
+  }
+  seed(): string {
+    return this.n.toString(16).toUpperCase();
+  }
+}
+
+/** DXF 2000 (AC1015) entity with handle + AcDbEntity / geometry subclass markers. */
 export class DxfWriter {
-  private ents: string[] = [];
+  private ents: string[][] = [];
   private minX = Infinity;
   private minY = Infinity;
   private maxX = -Infinity;
@@ -65,7 +86,7 @@ export class DxfWriter {
         this.ext(s.c[0] + s.r, s.c[1] + s.r);
       }
     }
-    this.ents.push(e.join('\n'));
+    this.ents.push(e);
   }
 
   /** Same geometry as separate LINE and ARC entities. */
@@ -78,7 +99,7 @@ export class DxfWriter {
         if (s.sweep < 0) [a0, a1] = [a1, a0]; // DXF arcs always run CCW
         a0 = (a0 + 360) % 360;
         a1 = (a1 + 360) % 360;
-        this.ents.push(['0', 'ARC', '8', layer, '10', f(s.c[0]), '20', f(s.c[1]), '30', '0', '40', f(s.r), '50', f(a0), '51', f(a1)].join('\n'));
+        this.ents.push(['0', 'ARC', '8', layer, '10', f(s.c[0]), '20', f(s.c[1]), '30', '0', '40', f(s.r), '50', f(a0), '51', f(a1)]);
         this.ext(s.a[0], s.a[1]);
         this.ext(s.b[0], s.b[1]);
       }
@@ -86,7 +107,7 @@ export class DxfWriter {
   }
 
   line(layer: string, x0: number, y0: number, x1: number, y1: number) {
-    this.ents.push(['0', 'LINE', '8', layer, '10', f(x0), '20', f(y0), '30', '0', '11', f(x1), '21', f(y1), '31', '0'].join('\n'));
+    this.ents.push(['0', 'LINE', '8', layer, '10', f(x0), '20', f(y0), '30', '0', '11', f(x1), '21', f(y1), '31', '0']);
     this.ext(x0, y0);
     this.ext(x1, y1);
   }
@@ -98,39 +119,157 @@ export class DxfWriter {
   }
 
   circle(layer: string, cx: number, cy: number, r: number) {
-    this.ents.push(['0', 'CIRCLE', '8', layer, '10', f(cx), '20', f(cy), '30', '0', '40', f(r)].join('\n'));
+    this.ents.push(['0', 'CIRCLE', '8', layer, '10', f(cx), '20', f(cy), '30', '0', '40', f(r)]);
     this.ext(cx - r, cy - r);
     this.ext(cx + r, cy + r);
   }
 
   toString(): string {
     const ext = Number.isFinite(this.minX) ? [this.minX, this.minY, this.maxX, this.maxY] : [0, 0, 0, 0];
+    const h = new HandleGen();
+    const root = '0';
+    const vportT = h.next();
+    const ltypeT = h.next();
+    const layerT = h.next();
+    const styleT = h.next();
+    const viewT = h.next();
+    const ucsT = h.next();
+    const appidT = h.next();
+    const dimT = h.next();
+    const blockRecT = h.next();
+    const ltByBlock = h.next();
+    const ltByLayer = h.next();
+    const ltCont = h.next();
+    const layer0 = h.next();
+    const layerDef = h.next();
+    const layerIds = this.layers.map(() => h.next());
+    const styleStd = h.next();
+    const appAcad = h.next();
+    const dimStd = h.next();
+    const modelRec = h.next();
+    const paperRec = h.next();
+    const modelBlk = h.next();
+    const modelEnd = h.next();
+    const paperBlk = h.next();
+    const paperEnd = h.next();
+    const dictRoot = h.next();
+    const dictGroup = h.next();
+    const vportActive = h.next();
+    const entHandles = this.ents.map(() => h.next());
+
+    const table = (name: string, handle: string, count: number, extra: string[] = []) => [
+      '0', 'TABLE', '2', name, '5', handle, '330', root, '100', 'AcDbSymbolTable', '70', String(count), ...extra,
+    ];
+    const rec = (type: string, handle: string, owner: string, subclass: string, rest: string[]) => [
+      '0', type, '5', handle, '330', owner, '100', 'AcDbSymbolTableRecord', '100', subclass, ...rest,
+    ];
+
     const out: string[] = [];
     out.push('0', 'SECTION', '2', 'HEADER');
     out.push('9', '$ACADVER', '1', 'AC1015');
+    out.push('9', '$HANDSEED', '5', h.seed());
     out.push('9', '$INSUNITS', '70', '4');
     out.push('9', '$MEASUREMENT', '70', '1');
     out.push('9', '$EXTMIN', '10', f(ext[0]), '20', f(ext[1]), '30', '0');
     out.push('9', '$EXTMAX', '10', f(ext[2]), '20', f(ext[3]), '30', '0');
     out.push('0', 'ENDSEC');
+
+    out.push('0', 'SECTION', '2', 'CLASSES', '0', 'ENDSEC');
+
     out.push('0', 'SECTION', '2', 'TABLES');
-    out.push('0', 'TABLE', '2', 'LTYPE', '70', '1');
-    out.push('0', 'LTYPE', '2', 'CONTINUOUS', '70', '0', '3', 'Solid line', '72', '65', '73', '0', '40', '0.0');
+    out.push(...table('VPORT', vportT, 1));
+    out.push(
+      ...rec('VPORT', vportActive, vportT, 'AcDbViewportTableRecord', [
+        '2', '*Active', '70', '0', '10', '0', '20', '0', '11', '1', '21', '1', '12', '0', '22', '0',
+        '13', '0', '23', '0', '14', '0.5', '24', '0.5', '15', '0.5', '25', '0.5', '16', '0', '26', '0', '36', '1',
+        '17', '0', '27', '0', '37', '0', '40', '1000', '41', '1.34', '42', '50', '43', '0', '44', '0', '50', '0', '51', '0',
+        '71', '0', '72', '1000', '73', '1', '74', '3', '75', '0', '76', '0', '77', '0', '78', '0',
+      ]),
+    );
     out.push('0', 'ENDTAB');
-    out.push('0', 'TABLE', '2', 'LAYER', '70', String(this.layers.length + 1));
-    out.push('0', 'LAYER', '2', '0', '70', '0', '62', '7', '6', 'CONTINUOUS');
-    for (const l of this.layers) {
-      const row = ['0', 'LAYER', '2', l.name, '70', '0', '62', String(l.color), '6', 'CONTINUOUS'];
-      if (l.plot === false) row.push('290', '0');
-      out.push(...row);
+
+    out.push(...table('LTYPE', ltypeT, 3));
+    for (const [id, name] of [
+      [ltByBlock, 'ByBlock'],
+      [ltByLayer, 'ByLayer'],
+      [ltCont, 'Continuous'],
+    ] as const) {
+      out.push(
+        ...rec('LTYPE', id, ltypeT, 'AcDbLinetypeTableRecord', ['2', name, '70', '0', '3', name === 'Continuous' ? 'Solid line' : '', '72', '65', '73', '0', '40', '0.0']),
+      );
     }
     out.push('0', 'ENDTAB');
+
+    out.push(...table('LAYER', layerT, this.layers.length + 2));
+    out.push(...rec('LAYER', layer0, layerT, 'AcDbLayerTableRecord', ['2', '0', '70', '0', '62', '7', '6', 'Continuous']));
+    out.push(...rec('LAYER', layerDef, layerT, 'AcDbLayerTableRecord', ['2', 'Defpoints', '70', '0', '62', '7', '6', 'Continuous', '290', '0']));
+    this.layers.forEach((l, i) => {
+      const row = ['2', l.name, '70', '0', '62', String(l.color), '6', 'Continuous'];
+      if (l.plot === false) row.push('290', '0');
+      out.push(...rec('LAYER', layerIds[i], layerT, 'AcDbLayerTableRecord', row));
+    });
+    out.push('0', 'ENDTAB');
+
+    out.push(...table('STYLE', styleT, 1));
+    out.push(
+      ...rec('STYLE', styleStd, styleT, 'AcDbTextStyleTableRecord', [
+        '2', 'Standard', '70', '0', '40', '0', '41', '1', '50', '0', '71', '0', '42', '2.5', '3', 'txt', '4', '',
+      ]),
+    );
+    out.push('0', 'ENDTAB');
+
+    out.push(...table('VIEW', viewT, 0), '0', 'ENDTAB');
+    out.push(...table('UCS', ucsT, 0), '0', 'ENDTAB');
+
+    out.push(...table('APPID', appidT, 1));
+    out.push(...rec('APPID', appAcad, appidT, 'AcDbRegAppTableRecord', ['2', 'ACAD', '70', '0']));
+    out.push('0', 'ENDTAB');
+
+    out.push(...table('DIMSTYLE', dimT, 1, ['100', 'AcDbDimStyleTable']));
+    out.push('0', 'DIMSTYLE', '105', dimStd, '330', dimT, '100', 'AcDbSymbolTableRecord', '100', 'AcDbDimStyleTableRecord', '2', 'Standard', '70', '0');
+    out.push('0', 'ENDTAB');
+
+    out.push(...table('BLOCK_RECORD', blockRecT, 2));
+    out.push(...rec('BLOCK_RECORD', modelRec, blockRecT, 'AcDbBlockTableRecord', ['2', '*Model_Space']));
+    out.push(...rec('BLOCK_RECORD', paperRec, blockRecT, 'AcDbBlockTableRecord', ['2', '*Paper_Space']));
+    out.push('0', 'ENDTAB');
     out.push('0', 'ENDSEC');
-    out.push('0', 'SECTION', '2', 'BLOCKS', '0', 'ENDSEC');
+
+    const block = (handle: string, owner: string, name: string, endHandle: string) => {
+      out.push('0', 'BLOCK', '5', handle, '330', owner, '100', 'AcDbEntity', '8', '0', '100', 'AcDbBlockBegin', '2', name, '70', '0', '10', '0', '20', '0', '30', '0', '3', name, '1', '');
+      out.push('0', 'ENDBLK', '5', endHandle, '330', owner, '100', 'AcDbEntity', '8', '0', '100', 'AcDbBlockEnd');
+    };
+    out.push('0', 'SECTION', '2', 'BLOCKS');
+    block(modelBlk, modelRec, '*Model_Space', modelEnd);
+    block(paperBlk, paperRec, '*Paper_Space', paperEnd);
+    out.push('0', 'ENDSEC');
+
     out.push('0', 'SECTION', '2', 'ENTITIES');
-    const head = out.join('\n');
-    const body = this.ents.join('\n');
-    return `${head}\n${body ? body + '\n' : ''}0\nENDSEC\n0\nEOF\n`;
+    this.ents.forEach((raw, i) => {
+      const type = raw[1];
+      const layer = raw[3];
+      const rest = raw.slice(4);
+      const eh = entHandles[i];
+      out.push('0', type, '5', eh, '330', modelRec, '100', 'AcDbEntity', '8', layer);
+      if (type === 'ARC') {
+        const i50 = rest.indexOf('50');
+        out.push('100', 'AcDbCircle', ...rest.slice(0, i50), '100', 'AcDbArc', ...rest.slice(i50));
+      } else if (type === 'SEQEND') {
+        /* AcDbEntity only */
+      } else {
+        const sub = ENTITY_SUBCLASS[type] ?? 'AcDbEntity';
+        if (sub !== 'AcDbEntity') out.push('100', sub);
+        out.push(...rest);
+      }
+    });
+    out.push('0', 'ENDSEC');
+
+    out.push('0', 'SECTION', '2', 'OBJECTS');
+    out.push('0', 'DICTIONARY', '5', dictRoot, '330', root, '100', 'AcDbDictionary', '281', '1', '3', 'ACAD_GROUP', '350', dictGroup);
+    out.push('0', 'DICTIONARY', '5', dictGroup, '330', dictRoot, '100', 'AcDbDictionary', '281', '1');
+    out.push('0', 'ENDSEC');
+    out.push('0', 'EOF');
+    return out.join('\n') + '\n';
   }
 }
 
@@ -139,6 +278,86 @@ export function dxfPairs(text: string): [number, string][] {
   const out: [number, string][] = [];
   for (let i = 0; i + 1 < l.length; i += 2) out.push([parseInt(l[i].trim(), 10), l[i + 1].trim()]);
   return out;
+}
+
+const R2000_PLUS = new Set(['AC1015', 'AC1018', 'AC1021', 'AC1024', 'AC1027', 'AC1032']);
+
+const REQUIRED_SUBCLASS: Record<string, string[]> = {
+  LWPOLYLINE: ['AcDbEntity', 'AcDbPolyline'],
+  CIRCLE: ['AcDbEntity', 'AcDbCircle'],
+  LINE: ['AcDbEntity', 'AcDbLine'],
+  ARC: ['AcDbEntity', 'AcDbCircle', 'AcDbArc'],
+  POLYLINE: ['AcDbEntity', 'AcDb2dPolyline'],
+};
+
+/** Strict R2000+ check: handles, AcDbEntity / geometry subclass markers. No recover. */
+export function assertStrictDxfR2000(text: string): void {
+  const P = dxfPairs(text);
+  let acad = '';
+  for (let i = 0; i < P.length - 1; i++) {
+    if (P[i][0] === 9 && P[i][1] === '$ACADVER' && P[i + 1][0] === 1) acad = P[i + 1][1];
+  }
+  if (!R2000_PLUS.has(acad)) throw new Error(`DXF $ACADVER ${acad || 'missing'} is not R2000+ (AC1015)`);
+
+  const handles = new Set<string>();
+  const takeHandle = (code: number, value: string, ctx: string) => {
+    if (code !== 5 && code !== 105) return;
+    if (!value) throw new Error(`${ctx}: empty handle`);
+    if (handles.has(value)) throw new Error(`${ctx}: duplicate handle ${value}`);
+    handles.add(value);
+  };
+
+  let i = P.findIndex(([c, v], k) => c === 2 && v === 'ENTITIES' && P[k - 1]?.[1] === 'SECTION');
+  if (i < 0) throw new Error('DXF has no ENTITIES section');
+  i++;
+  while (i < P.length && !(P[i][0] === 0 && P[i][1] === 'ENDSEC')) {
+    if (P[i][0] !== 0) {
+      i++;
+      continue;
+    }
+    const type = P[i][1];
+    const subs: string[] = [];
+    let handle = '';
+    let k = i + 1;
+    while (k < P.length && P[k][0] !== 0) {
+      if (P[k][0] === 5 || P[k][0] === 105) handle = P[k][1];
+      if (P[k][0] === 100) subs.push(P[k][1]);
+      k++;
+    }
+    if (type !== 'VERTEX' && type !== 'SEQEND' && type !== 'ENDBLK') {
+      takeHandle(5, handle, type);
+      const need = REQUIRED_SUBCLASS[type];
+      if (need) {
+        for (const s of need) {
+          if (!subs.includes(s)) throw new Error(`${type}: missing ${s} subclass (got ${subs.join(',') || 'none'})`);
+        }
+      } else if (!subs.includes('AcDbEntity')) {
+        throw new Error(`${type}: missing AcDbEntity subclass`);
+      }
+    }
+    i = k;
+  }
+
+  // Unique handles on table records / blocks / objects as well.
+  for (let k = 0; k < P.length; k++) {
+    if (P[k][0] !== 0) continue;
+    const type = P[k][1];
+    if (type === 'SECTION' || type === 'ENDSEC' || type === 'ENDTAB' || type === 'EOF' || type === 'TABLE') continue;
+    let handle = '';
+    let code = 5;
+    let n = k + 1;
+    while (n < P.length && P[n][0] !== 0) {
+      if (P[n][0] === 5 || P[n][0] === 105) {
+        handle = P[n][1];
+        code = P[n][0];
+        break;
+      }
+      n++;
+    }
+    if (!handle) continue;
+    if (handles.has(handle)) continue; // already taken from ENTITIES
+    takeHandle(code, handle, type);
+  }
 }
 
 export interface DxfEntityRef {
