@@ -203,7 +203,7 @@ export default function Viewport() {
         <span>
           {model.sliced.plates.length} {v.sliceMode === 'flat' ? 'layers' : 'plates'} × {fmt(v.thickness, 1)} mm {v.sliceMode === 'flat' ? 'face to face' : v.sliceMode !== 'radial' ? `@ ${fmt(v.pitch, 2)} pitch` : 'radial'}
         </span>
-        <span>
+        <span data-testid="plate-height-range">
           {v.sliceMode === 'flat' ? `stack height ${fmt(model.sliced.plates.length * v.thickness, 0)} mm` : `plate height ${fmt(hMin, 0)}–${fmt(hMax, 0)} mm`}
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
