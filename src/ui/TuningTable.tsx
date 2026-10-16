@@ -1,8 +1,9 @@
 // The predicted note of every tuned plate, with a play button and the honest caveat.
 import { useModel, fmt } from './model';
 import { useStore } from '../state/store';
-import { hzToNote, MATERIALS, type PlateTune } from '../core/tuning';
+import { hzToNote, MATERIALS, NOTE_CHOICES, midiName, type PlateTune } from '../core/tuning';
 import type { SoundingMode } from '../core/pipeline';
+import { wordsOnsets } from '../core/chantWords';
 import { playChant, playModes, playStrike } from './audio';
 
 export function centsLabel(c: number): string {
@@ -24,7 +25,9 @@ export function heardPartials(tune: PlateTune, sounding?: SoundingMode, stale = 
 export default function TuningTable() {
   const model = useModel();
   const setUi = useStore((s) => s.setUi);
+  const setParams = useStore((s) => s.setParams);
   const v = model.v;
+  const wordsMode = v.tuneMode === 'words';
   const tuning = model.sliced.tuning;
   if (!tuning) return null;
   const rows = model.sliced.plates.map((p, i) => ({ plate: p, tune: tuning[i] })).filter((r) => r.tune) as { plate: (typeof model.sliced.plates)[number]; tune: PlateTune }[];
@@ -54,7 +57,33 @@ export default function TuningTable() {
               <tr key={plate.def.key} className="click" onClick={() => setUi({ selected: id })} style={tune.clamped ? { color: 'var(--warn)' } : undefined}>
                 <td className="mono">{id}</td>
                 <td className="mono" title={`${tune.label ? tune.label + ' · ' : ''}${fmt(tune.hz, 1)} Hz at ${fmt(tune.length, 1)} mm in ${(MATERIALS[tune.material] ?? MATERIALS.steel).label}`}>
-                  {tune.label ?? tune.name}
+                  {wordsMode ? (
+                    <span className="field-row" style={{ gap: 4 }}>
+                      <span>{tune.label?.split(' ')[0] ?? tune.name}</span>
+                      <select
+                        className="sel"
+                        style={{ fontSize: 10, maxWidth: 58 }}
+                        value={tune.midi}
+                        aria-label={`Note for ${tune.label ?? tune.name}`}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          const midi = Number(e.target.value);
+                          const list = rows.map((r) => r.tune.midi);
+                          const idx = rows.findIndex((r) => r.plate.def.key === plate.def.key);
+                          if (idx >= 0) list[idx] = midi;
+                          const notes = list.map((m) => midiName(m)).join(' ');
+                          setParams({ tuneWordNotes: notes, tuneNotes: notes }, 'syllable note');
+                        }}
+                      >
+                        {NOTE_CHOICES.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </span>
+                  ) : (
+                    tune.label ?? tune.name
+                  )}
                 </td>
                 <td className="num" title={nodeTitle}>{fmt(tune.cut, 1)}</td>
                 <td className="mono">{asCut(tune)}</td>
@@ -86,8 +115,13 @@ export default function TuningTable() {
       {free && (
         <button
           className="btn"
-          onClick={() => playChant(rows.map((r) => heardPartials(r.tune, byKey.get(r.plate.def.key), model.stale)))}
-          title="Each plate in order, on the chant rhythm: quarter, two eighths, dotted quarter"
+          onClick={() =>
+            playChant(
+              rows.map((r) => heardPartials(r.tune, byKey.get(r.plate.def.key), model.stale)),
+              wordsMode ? wordsOnsets(v) : undefined,
+            )
+          }
+          title={wordsMode ? 'Each syllable in order, on the rhythm from vowel length and stress' : 'Each plate in order, on the chant rhythm: quarter, two eighths, dotted quarter'}
         >
           ▶ Play the chant
         </button>

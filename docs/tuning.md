@@ -138,9 +138,21 @@ NODE_PATH=/tmp/pyodide-run/node_modules node tools/mindlin_pyodide.mjs
 If that import fails, `python3 tools/mindlin_plate.py` is the same numbers
 without the wasm runtime.
 
+## Words (chant)
+
+**Tuned plates › Words (chant)** turns any phrase into one plate per syllable.
+`src/core/chantWords.ts` syllabifies English with a small rule set; hyphens in
+the text override it (`FREE-PAL-ES-TINE`). A speech-like melody lifts stressed
+syllables and falls back to **Melody home** on the last syllable; each note can
+be changed in the tuning table. Rhythm for the Web Audio preview comes from
+vowel length (long vowels and longer codas get more time at 96 bpm). Changing
+the phrase updates the plate count, etched labels, tuned lengths, and chant
+playback.
+
 ## Free Palestine
 
-Four free-free steel plates, 3 mm, one syllable each: FREE, PAL, ES, TINE.
+The Sound preset uses Words mode. Four free-free steel plates, 3 mm, one
+syllable each: FREE, PAL, ES, TINE.
 The contour is sol–do–ti–sol, **G4 C5 B4 G4** (392.00, 523.25, 493.88, 392.00 Hz).
 The call jumps a fourth onto PAL, steps down to ES, and comes home on TINE,
 which is the same bar as FREE. That is a singable four-note chant rather than
