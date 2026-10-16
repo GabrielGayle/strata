@@ -13,6 +13,7 @@ import SetupTabs from './SetupTabs';
 import WorkspaceArea, { WorkspaceBar } from './Workspace';
 import DropOverlay from './DropOverlay';
 import HelpLayer, { HelpButton } from './Help';
+import DesignBox from './DesignBox';
 
 
 export default function App() {
@@ -120,6 +121,9 @@ export default function App() {
         redo();
       } else if (!mod && /^[1-8]$/.test(e.key)) {
         setUi({ tab: TABS[Number(e.key) - 1].id });
+      } else if (mod && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        setDesignOpen((o) => !o);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -147,6 +151,7 @@ export default function App() {
     },
     [front, local, project, assets],
   );
+  const [designOpen, setDesignOpen] = useState(false);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
 
@@ -197,6 +202,7 @@ export default function App() {
         )}
         <DropOverlay />
         <HelpLayer />
+        {designOpen && <DesignBox onClose={() => setDesignOpen(false)} />}
       </div>
     </ModelContext.Provider>
     </FullModelContext.Provider>

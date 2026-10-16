@@ -10,13 +10,9 @@ import { depthToGray } from './core/depth';
 import { createPipeline, type Assets } from './core/pipeline';
 import { defaultRaw, PARAMS, PARAM_MAP, type EvalResult, type ParamKind, type RawValue } from './core/params';
 import { DEFAULT_RATES, type PriceRates } from './core/price';
-import {
-  MASTER_SIZE_CLI_CANONICAL,
-  masterSizePresetPatch,
-  parseMasterOrientation,
-  resolveMasterSizeCli,
-} from './core/masterPresets';
-import { deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
+import { MASTER_SIZE_CLI_CANONICAL } from './core/masterPresets';
+import { applyProjectPatch, formatPatchDiff, masterSizePatch, parseDesign } from './core/design';
+import { serialize, deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
 
 export interface CliIssue {
   level: 'error' | 'warning';
@@ -76,6 +72,8 @@ const SIZE_HELP = MASTER_SIZE_CLI_CANONICAL.join(', ');
 const USAGE = `Usage:
   npm run cli -- <project.json> --out <dir> [--preset <name>] [--size <id>] [--orientation portrait|landscape]
                  [--image side=path.jpg] [--rates rates.json]
+  npm run cli -- say <project.json> "<instruction>"
+  npm run cli -- <project.json> say [--apply] "<instruction>"
   npm run cli -- params
   npm run cli -- presets
 
@@ -86,13 +84,15 @@ A project may set "preset"; parameters in the file override the preset. --preset
 ratio sizes keep the current long edge. Only the outline changes (thickness and plate count stay).
 --orientation is portrait (default) or landscape. Applied after the project file and --preset.
 --image replaces the side, front or top picture. --rates overrides price-estimate rates.
+say parses plain-language design instructions (same rules as the in-app Type a design box),
+prints the parameter diff and any unrecognised phrases. --apply writes the updated project JSON to stdout.
 Unknown parameters and formula errors exit 1 and write nothing. Clamped values are warnings.
 `;
 
 type Slot = 'side' | 'front' | 'top';
 
 interface Args {
-  cmd: 'export' | 'params' | 'presets' | 'help';
+  cmd: 'export' | 'params' | 'presets' | 'help' | 'say';
   project?: string;
   out?: string;
   preset?: string;
@@ -100,6 +100,8 @@ interface Args {
   rates?: string;
   size?: string;
   orientation?: string;
+  sayText?: string;
+  sayApply?: boolean;
 }
 
 function take(argv: string[], i: number, flag: string): string {
@@ -118,6 +120,23 @@ function parseImage(spec: string, images: Args['images']) {
   images[slot] = path;
 }
 
+function parseSay(argv: string[]): Args {
+  if (argv.length < 2) throw new Error(`say needs a project file and instruction\n\n${USAGE}`);
+  const project = argv[0] === 'say' ? argv[1] : argv[0];
+  const rest = argv[0] === 'say' ? argv.slice(2) : argv.slice(1);
+  let sayApply = false;
+  const textParts: string[] = [];
+  for (const a of rest) {
+    if (a === 'say') continue;
+    if (a === '--apply') sayApply = true;
+    else if (a.startsWith('--')) throw new Error(`unknown argument '${a}'`);
+    else textParts.push(a);
+  }
+  const sayText = textParts.join(' ').trim();
+  if (!sayText) throw new Error(`missing instruction text\n\n${USAGE}`);
+  return { cmd: 'say', project, sayText, sayApply, images: {} };
+}
+
 function parseArgs(argv: string[]): Args {
   if (argv.length === 0) throw new Error(`missing project file\n\n${USAGE}`);
   if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') return { cmd: 'help', images: {} };
@@ -125,6 +144,7 @@ function parseArgs(argv: string[]): Args {
     if (argv.length > 1) throw new Error(`unexpected argument '${argv[1]}'`);
     return { cmd: argv[0], images: {} };
   }
+  if (argv[0] === 'say' || (argv.length >= 2 && argv[1] === 'say')) return parseSay(argv);
   const args: Args = { cmd: 'export', project: argv[0], images: {} };
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
@@ -192,9 +212,9 @@ export function applyMasterSizeCli(
   size: string,
   orientation?: string,
 ): void {
-  const presetId = resolveMasterSizeCli(size);
-  const ori = orientation == null ? 'portrait' : parseMasterOrientation(orientation);
-  project.params = { ...project.params, ...masterSizePresetPatch(project.params, presetId, ori) };
+  const next = applyProjectPatch(project, masterSizePatch(size, orientation));
+  project.params = next.params;
+  if (next.name !== project.name) project.name = next.name;
 }
 
 function evalIssues(ev: EvalResult): CliIssue[] {
@@ -331,6 +351,31 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
   if (args.cmd === 'presets') {
     io.stdout(JSON.stringify(presetCatalog(), null, 2) + '\n');
     return 0;
+  }
+  if (args.cmd === 'say') {
+    try {
+      const text = readFileSync(args.project!, 'utf8');
+      const { project, issues } = loadProject(text);
+      if (issues.some((i) => i.level === 'error')) {
+        report(issues, io);
+        return 1;
+      }
+      const parsed = parseDesign(args.sayText!, { project });
+      io.stdout(formatPatchDiff(project, parsed.patch) + '\n');
+      if (parsed.unrecognised.length) {
+        const bits = parsed.unrecognised.map((s) => args.sayText!.slice(s.start, s.end));
+        io.stdout(`unrecognised: ${bits.join('; ')}\n`);
+      }
+      if (parsed.notes.length) io.stderr(`note: ${parsed.notes.join('; ')}\n`);
+      if (args.sayApply) {
+        const updated = applyProjectPatch(project, parsed.patch);
+        io.stdout(serialize(updated) + '\n');
+      }
+      return 0;
+    } catch (e) {
+      io.stderr(`error: ${(e as Error).message}\n`);
+      return 1;
+    }
   }
   try {
     const text = readFileSync(args.project!, 'utf8');

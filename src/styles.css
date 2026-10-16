@@ -2592,6 +2592,78 @@ canvas.thumb {
 .help-sheet {
   width: min(820px, 100%);
 }
+
+.design-box {
+  width: min(560px, 96vw);
+  z-index: 120;
+}
+.design-box-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+.design-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.design-input {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+}
+.design-highlight {
+  min-height: 1.2em;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 6px;
+  background: var(--panel-2);
+  border: 1px inset var(--line-soft);
+}
+.design-match {
+  background: #d4edda;
+  color: inherit;
+}
+.design-unrec {
+  background: #f8d7da;
+  text-decoration: wavy underline;
+}
+.design-diff,
+.design-history {
+  margin: 0;
+  padding: 6px 8px 8px;
+}
+.design-diff-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  max-height: 140px;
+  overflow: auto;
+}
+.design-param {
+  font-weight: 700;
+}
+.design-warn {
+  margin: 6px 0 0;
+  color: var(--err);
+  font-size: 11px;
+}
+.design-history ul {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 100px;
+  overflow: auto;
+}
+.design-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .help-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
