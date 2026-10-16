@@ -8,7 +8,7 @@ import type { Gray } from './image';
 export type DepthMode = 'relief' | 'depth';
 
 /** Endpoint URL, e.g. https://<workspace>--strata-depth.modal.run/strata. Unset = feature off. */
-export const DEPTH_URL: string | undefined = (import.meta.env.VITE_DEPTH_URL as string | undefined)?.trim() || undefined;
+export const DEPTH_URL: string | undefined = (import.meta.env?.VITE_DEPTH_URL as string | undefined)?.trim() || undefined;
 
 /** How the metric depth becomes a brightness grid. Distances in metres. */
 export interface DepthSettings {

@@ -18,30 +18,58 @@ export interface ImageOpts {
   rotate: number; // 0 | 90 | 180 | 270
 }
 
-export async function decodeImage(dataUrl: string, maxSide = 256): Promise<Gray> {
-  const img = new Image();
-  img.src = dataUrl;
-  await img.decode();
-  const k = Math.min(1, maxSide / Math.max(img.width, img.height));
-  const w = Math.max(2, Math.round(img.width * k));
-  const h = Math.max(2, Math.round(img.height * k));
-  const cv = document.createElement('canvas');
-  cv.width = w;
-  cv.height = h;
-  const ctx = cv.getContext('2d')!;
-  ctx.drawImage(img, 0, 0, w, h);
-  const px = ctx.getImageData(0, 0, w, h).data;
+/** Longest side capped at `maxSide`, at least 2×2. Same size the browser canvas is drawn at. */
+export function scaledSize(sw: number, sh: number, maxSide: number): { w: number; h: number } {
+  const k = Math.min(1, maxSide / Math.max(sw, sh));
+  return { w: Math.max(2, Math.round(sw * k)), h: Math.max(2, Math.round(sh * k)) };
+}
+
+/** Brightness grid from RGBA pixels. Transparent areas read as a white background. */
+export function grayFromRgba(px: ArrayLike<number>, w: number, h: number): Gray {
   const data = new Float32Array(w * h);
   const alpha = new Float32Array(w * h);
   let clear = false;
   for (let i = 0; i < w * h; i++) {
     const a = px[i * 4 + 3] / 255;
     const lum = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
-    data[i] = lum * a + (1 - a); // transparent areas read as white background
+    data[i] = lum * a + (1 - a);
     alpha[i] = a;
     if (a < 0.98) clear = true;
   }
   return clear ? { w, h, data, alpha } : { w, h, data };
+}
+
+const hasDom = () => typeof document !== 'undefined' && typeof Image !== 'undefined';
+
+type NodeDecode = (dataUrl: string, maxSide: number) => Gray | Promise<Gray>;
+let nodeDecode: NodeDecode | undefined;
+
+/**
+ * PNG/JPEG decoding for Node (see imageNode.ts). The browser uses canvas.
+ * The CLI installs this on startup; keeping the import out of this file means
+ * the client bundle does not include it.
+ */
+export function setNodeImageDecoder(fn: NodeDecode) {
+  nodeDecode = fn;
+}
+
+async function decodeImageDom(dataUrl: string, maxSide: number): Promise<Gray> {
+  const img = new Image();
+  img.src = dataUrl;
+  await img.decode();
+  const { w, h } = scaledSize(img.width, img.height, maxSide);
+  const cv = document.createElement('canvas');
+  cv.width = w;
+  cv.height = h;
+  const ctx = cv.getContext('2d')!;
+  ctx.drawImage(img, 0, 0, w, h);
+  return grayFromRgba(ctx.getImageData(0, 0, w, h).data, w, h);
+}
+
+export async function decodeImage(dataUrl: string, maxSide = 256): Promise<Gray> {
+  if (hasDom()) return decodeImageDom(dataUrl, maxSide);
+  if (!nodeDecode) throw new Error('No image decoder (browser canvas, or setNodeImageDecoder in Node)');
+  return nodeDecode(dataUrl, maxSide);
 }
 
 export function rotate(g: Gray, deg: number): Gray {

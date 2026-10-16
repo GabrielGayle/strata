@@ -44,6 +44,9 @@ describe('fabrication zip carries every feature', () => {
     expect(price).toMatch(/Threaded rod/);
     expect(price).toMatch(/Nuts and washers/);
     expect(price).toMatch(/Total/);
+    const priceJson = JSON.parse(text('price-estimate.json'));
+    expect(priceJson.lines.some((l: { label: string }) => l.label === 'Threaded rod')).toBe(true);
+    expect(priceJson.total).toBeGreaterThan(0);
     const back = deserialize(text('project.strata.json'));
     expect(back.appearance?.assign).toEqual(p.appearance!.assign);
     expect(back.variants[0].name).toBe('A');
