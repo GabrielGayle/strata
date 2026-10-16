@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
-import { piecesTouch, resolveFragments, isSubMinimum, formatFragment } from '../src/core/fragments';
-import { rect, type ExPoly } from '../src/core/geom2d';
+import { piecesTouch, resolveFragments, isSubMinimum, formatFragment, repairThinNecks, morphOpen } from '../src/core/fragments';
+import { difference, rect, unionShapes, type ExPoly } from '../src/core/geom2d';
 import { GABRIEL_PARAMS, sliverFrontGray, sliverSideGray } from './image-sliver-fixture';
 import { assertCountsAgree } from '../src/core/counts';
 import { buildPackHtml } from '../src/core/buildPack';
@@ -81,6 +81,39 @@ describe('fragment resolve', () => {
     });
     expect(pieces).toHaveLength(2);
     expect(events[0].action).toBe('kept');
+  });
+});
+
+describe('thin necks (min feature)', () => {
+  const dumbbell = () =>
+    unionShapes(rect(0, 0, 40, 40), rect(38, 19.2, 72, 20.8), rect(70, 0, 110, 40));
+
+  it('merge/auto widen a 1.6 mm neck so the 2 mm opening is empty', () => {
+    const s = dumbbell();
+    const thinBefore = difference(s, morphOpen(s, 2));
+    expect(thinBefore.length).toBeGreaterThan(0);
+    const merged = repairThinNecks(s, { minFeature: 2, fragmentMode: 'merge' });
+    expect(difference(merged, morphOpen(merged, 2))).toHaveLength(0);
+    const auto = repairThinNecks(s, { minFeature: 2, fragmentMode: 'auto' });
+    expect(difference(auto, morphOpen(auto, 2))).toHaveLength(0);
+  });
+
+  it('drop opens the neck (splits the lobes) and keep leaves the thin web', () => {
+    const s = dumbbell();
+    const dropped = repairThinNecks(s, { minFeature: 2, fragmentMode: 'drop' });
+    expect(dropped.length).toBeGreaterThan(1);
+    const kept = repairThinNecks(s, { minFeature: 2, fragmentMode: 'keep' });
+    expect(difference(kept, morphOpen(kept, 2)).length).toBeGreaterThan(0);
+  });
+
+  it('does not overwrite the user minFeature / minFragment', () => {
+    const p = newProject();
+    p.params = { ...p.params, ...GABRIEL_PARAMS, fragmentMode: 'auto', minFeature: '3', minFragment: '9' };
+    const m = createPipeline()(p, assets());
+    expect(m.v.minFeature).toBe(3);
+    expect(m.v.minFragment).toBe(9);
+    expect(p.params.minFeature).toBe('3');
+    expect(p.params.minFragment).toBe('9');
   });
 });
 

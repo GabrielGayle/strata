@@ -4,9 +4,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
-import { sheetCutDxf, sheetEtchDxf, sheetFiles, buildZip, partDxf } from '../src/core/exporters';
-import { DxfWriter, LAYERS, dxfCutLength, dxfCutStructure, dxfEntitySummary, dxfHasSheetBorder, listDxfEntities } from '../src/core/dxf';
-import { offset, shapeArea, signedArea, type Path, type Vec2 } from '../src/core/geom2d';
+import { sheetCutDxf, sheetEtchDxf, sheetFiles, buildZip, partDxf, segsAsCircle, fitShape } from '../src/core/exporters';
+import { DxfWriter, LAYERS, dxfCutCircles, dxfCutLwPolylines, dxfCutLength, dxfCutStructure, dxfEntitySummary, dxfHasSheetBorder, listDxfEntities } from '../src/core/dxf';
+import { circlePath, offset, pointInPath, rect, shapeArea, signedArea, type Path, type Vec2 } from '../src/core/geom2d';
+import { fitArcs } from '../src/core/arcs';
 import { unzipSync, strFromU8 } from 'fflate';
 import { GABRIEL_PARAMS, sliverFrontGray, sliverSideGray } from './image-sliver-fixture';
 
@@ -188,6 +189,51 @@ describe('sheet DXF cut-only + LWPOLYLINE/CIRCLE', () => {
     expect(report).toMatch(/Commissary coarse-cut-only\.dxf: LWPOLYLINE \d+ on CUT/);
     expect(report).toMatch(/ours extra vs Commissary: CIRCLE|ours extra vs Commissary: \(none\)/);
     expect(report).toMatch(/both: CUT-only, no sheet border, no ETCH\/SHEET\/LINE\/POLYLINE\/SPLINE/);
+  });
+
+  it('does not treat a rectangle or mixed blob as a CIRCLE', () => {
+    const tol = 0.1;
+    const square = fitArcs(rect(0, 0, 40, 40)[0].outer, 0.05);
+    expect(segsAsCircle(square, tol)).toBeNull();
+    const blob = fitShape([{ outer: circlePath(0, 0, 50), holes: [rect(-20, -8, 20, 8)[0].outer] }], {
+      kerf: 0.2,
+      arcTolerance: 0.05,
+      dxfMode: 'polyline',
+    } as never);
+    const hole = blob.find((c) => c.hole);
+    expect(hole).toBeTruthy();
+    expect(segsAsCircle(hole!.segs, tol)).toBeNull();
+    const round = fitArcs(circlePath(10, 20, 5), 0.05);
+    expect(segsAsCircle(round, tol)?.r).toBeGreaterThan(4);
+  });
+
+  it('every CUT CIRCLE lies inside exactly one nested part outline', () => {
+    const check = (m: ReturnType<ReturnType<typeof createPipeline>>) => {
+      m.nested.sheets.forEach((_, si) => {
+        const text = sheetCutDxf(m, si);
+        const circles = dxfCutCircles(text);
+        const polys = dxfCutLwPolylines(text);
+        const areas = polys.map((p) => Math.abs(signedArea(p)));
+        const outers = polys.filter((poly, i) => !polys.some((other, j) => j !== i && areas[j] > areas[i] && pointInPath(poly[0], other)));
+        for (const c of circles) {
+          const owners: number[] = [];
+          outers.forEach((outer, i) => {
+            const samples: Vec2[] = [[c.cx, c.cy]];
+            for (let k = 0; k < 16; k++) {
+              const a = (k / 16) * Math.PI * 2;
+              samples.push([c.cx + c.r * Math.cos(a), c.cy + c.r * Math.sin(a)]);
+            }
+            if (samples.every((p) => pointInPath(p, outer))) owners.push(i);
+          });
+          expect(owners, `sheet ${si} CIRCLE r=${c.r.toFixed(2)} at ${c.cx.toFixed(1)},${c.cy.toFixed(1)}`).toEqual([owners[0]]);
+          expect(owners).toHaveLength(1);
+        }
+      });
+    };
+    check(createPipeline()(newProject(), assets));
+    const p = newProject();
+    p.params = { ...p.params, ...GABRIEL_PARAMS, fragmentMode: 'auto' };
+    check(createPipeline()(p, { ...assets, frontImg: sliverFrontGray(), sideImg: sliverSideGray() }));
   });
 });
 

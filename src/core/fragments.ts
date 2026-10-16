@@ -1,6 +1,6 @@
 // Sub-minimum and unsupported plate fragments: merge into a touching parent,
 // drop, or keep as their own laser parts.
-import { bboxOf, intersection, offset, shapeArea, unionShapes, type ExPoly } from './geom2d';
+import { bboxOf, difference, intersection, offset, shapeArea, unionShapes, type ExPoly, type Shape } from './geom2d';
 import type { Values } from './params';
 
 export type FragmentMode = 'auto' | 'merge' | 'drop' | 'keep';
@@ -18,6 +18,41 @@ export interface FragmentEvent {
   parentId?: string;
   /** True when Merge into parent was requested (or auto chose merge) but the union was dropped. */
   mergeFallback?: boolean;
+}
+
+/** Morphological opening used by fit checks: drops material narrower than `mf`. */
+export function morphOpen(s: Shape, mf: number): Shape {
+  if (mf <= 0 || !s.length) return s;
+  return offset(offset(s, -mf / 2, 'miter'), mf / 2, 'miter');
+}
+
+/**
+ * Honour Small fragments mode on thin necks (not just detached slivers).
+ * Does not write `minFeature` / `minFragment` — those stay the user's values.
+ *
+ * - keep: leave geometry (warnings remain)
+ * - drop: open, which splits or removes necks below min feature
+ * - merge / auto: widen thin regions so the min-feature check is clear
+ */
+export function repairThinNecks(
+  s: Shape,
+  v: { minFeature?: number; fragmentMode?: string },
+): Shape {
+  const mf = Number(v.minFeature) || 0;
+  if (mf <= 0 || !s.length) return s;
+  const mode = (String(v.fragmentMode || 'auto') as FragmentMode) || 'auto';
+  if (mode === 'keep') return s;
+  const opened = morphOpen(s, mf);
+  if (mode === 'drop') return opened;
+  const thin = difference(s, opened).filter((e) => shapeArea([e]) > mf * mf * 0.6);
+  if (!thin.length) return s;
+  // Thicken the thin web in place (long necks are far apart as "cores").
+  // Punch original holes back so a thin rim cannot fill a round cut-out.
+  let out = unionShapes(s, offset(thin, mf / 2 + 0.05, 'round'));
+  const holes: Shape = [];
+  for (const ex of s) for (const h of ex.holes) holes.push({ outer: h, holes: [] });
+  if (holes.length) out = difference(out, holes);
+  return out;
 }
 
 export function fragmentMinMm(v: Values): number {

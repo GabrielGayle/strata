@@ -80,4 +80,6 @@ test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page
       { timeout: 90_000 },
     )
     .toBeGreaterThan(3);
+
+  await expect(page.locator('.issue').filter({ hasText: /narrower than 2 mm/ })).toHaveCount(0);
 });

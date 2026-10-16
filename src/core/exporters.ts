@@ -70,20 +70,31 @@ export function fitShape(shape: Shape, v: Values): FittedContour[] {
 /** A closed contour that is a circle within `tol` (round holes → CIRCLE). */
 export function segsAsCircle(segs: Seg[], tol: number): { cx: number; cy: number; r: number } | null {
   if (segs.length < 2) return null;
-  if (segs.every((s) => s.kind === 'arc')) {
-    const a0 = segs[0];
-    if (a0.kind !== 'arc') return null;
+  const arcs = segs.filter((s): s is Extract<Seg, { kind: 'arc' }> => s.kind === 'arc');
+  const lines = segs.filter((s): s is Extract<Seg, { kind: 'line' }> => s.kind === 'line');
+  if (arcs.length >= 2) {
+    const a0 = arcs[0];
     const allow = Math.max(tol, a0.r * 0.02);
     let sweep = 0;
-    for (const s of segs) {
-      if (s.kind !== 'arc') return null;
+    for (const s of arcs) {
       if (Math.abs(s.r - a0.r) > allow) return null;
       if (Math.hypot(s.c[0] - a0.c[0], s.c[1] - a0.c[1]) > allow) return null;
       sweep += s.sweep;
     }
-    if (Math.abs(Math.abs(sweep) - Math.PI * 2) > 0.35) return null;
+    // Two 180° arcs plus a tiny closing chord is still a circle; a rounded
+    // rect has corner arcs on different centres and fails above.
+    if (Math.abs(Math.abs(sweep) - Math.PI * 2) > 0.6) return null;
+    for (const s of lines) {
+      const d0 = Math.hypot(s.a[0] - a0.c[0], s.a[1] - a0.c[1]);
+      const d1 = Math.hypot(s.b[0] - a0.c[0], s.b[1] - a0.c[1]);
+      if (Math.abs(d0 - a0.r) > allow || Math.abs(d1 - a0.r) > allow) return null;
+      if (Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) > a0.r * 0.45) return null;
+    }
     return { cx: a0.c[0], cy: a0.c[1], r: a0.r };
   }
+  // Tessellated circle (no arcs): many short chords, including midpoints on the rim.
+  // Four rectangle corners lie on a circle — reject those (need ≥ 8 chords).
+  if (lines.length !== segs.length || segs.length < 8) return null;
   const pts = segs.map((s) => s.a);
   pts.push(segs[segs.length - 1].b);
   let sx = 0, sy = 0;
@@ -97,20 +108,32 @@ export function segsAsCircle(segs: Seg[], tol: number): { cx: number; cy: number
   if (r < 0.2) return null;
   const allow = Math.max(tol, r * 0.02);
   if (rs.some((x) => Math.abs(x - r) > allow)) return null;
+  for (const s of lines) {
+    const mx = (s.a[0] + s.b[0]) / 2;
+    const my = (s.a[1] + s.b[1]) / 2;
+    if (Math.abs(Math.hypot(mx - cx, my - cy) - r) > allow) return null;
+  }
   return { cx, cy, r };
+}
+
+function placeCircle(circ: { cx: number; cy: number; r: number }, tf: (p: Vec2) => Vec2) {
+  const c = tf([circ.cx, circ.cy]);
+  const q = tf([circ.cx + circ.r, circ.cy]);
+  return { cx: c[0], cy: c[1], r: Math.hypot(q[0] - c[0], q[1] - c[1]) };
 }
 
 function emitContours(w: DxfWriter, contours: FittedContour[], v: Values, tf: (p: Vec2) => Vec2) {
   const tol = Math.max(0.02, v.arcTolerance * 2);
   for (const c of contours) {
-    const segs = c.segs.map((s) => mapSeg(s, tf));
     if (c.hole) {
-      const circ = segsAsCircle(segs, tol);
-      if (circ) {
+      const local = segsAsCircle(c.segs, tol);
+      if (local) {
+        const circ = placeCircle(local, tf);
         w.circle(LAYERS.CUT.name, circ.cx, circ.cy, circ.r);
         continue;
       }
     }
+    const segs = c.segs.map((s) => mapSeg(s, tf));
     if (v.dxfMode === 'lines') w.linesAndArcs(LAYERS.CUT.name, segs);
     else w.polyline(LAYERS.CUT.name, segs, true);
   }

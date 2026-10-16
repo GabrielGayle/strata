@@ -4,6 +4,14 @@
 
 These rules are non-negotiable. Regressions are guarded by unit tests and Playwright e2e.
 
+### Nested sheet holes travel with their parent
+
+Round holes (`CIRCLE` in cut DXF) are detected on the part in local coordinates, then transformed with that part’s nest placement. A CIRCLE must lie inside **exactly one** part outline and must not overlap another part. Irregular cut-outs stay LWPOLYLINE. Enforced by `test/sheet-dxf-cut.test.ts`.
+
+### Thin necks honour min-feature and Small fragments mode
+
+Material narrower than **Min feature** is repaired on the plate outline: **merge** / **auto** widen the neck, **drop** opens (splits or removes) it, **keep** leaves it (warnings remain). User `minFeature` / `minFragment` values are never overwritten. Enforced by `repairThinNecks`, `test/fragments.test.ts`, and Neasden ×11/×21 fit-check tests.
+
 ### Fabrication build pack contains every plate
 
 The fabrication build pack must contain **every plate** in the model (`sliced.plates`), including empty or zero-area layers. Zip `plates/*.dxf` count, `manifest.json` `plateCount`, the HTML cover legend (`data-plate-count`), and the Every plate gallery (`data-plate-key` per plate) must equal `sliced.plates.length`. Cuttable plates also have laser part DXFs. Filename sanitisation must not overwrite another plate. Enforced by `buildPackIntegrity` and `test/build-pack-integrity.test.ts`. On mismatch the UI shows an error and the CLI exits with code 1.

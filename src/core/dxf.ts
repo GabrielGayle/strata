@@ -564,3 +564,84 @@ export function dxfCutLength(text: string): number {
   }
   return len;
 }
+
+function bulgeArcPoints(p1: Vec2, p2: Vec2, b: number): Vec2[] {
+  if (Math.abs(b) < 1e-12) return [p1];
+  const th = 4 * Math.atan(b);
+  const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+  const L = Math.hypot(dx, dy);
+  if (L < 1e-12) return [p1];
+  const h = L / 2 / Math.tan(th / 2);
+  const c: Vec2 = [(p1[0] + p2[0]) / 2 - (dy / L) * h, (p1[1] + p2[1]) / 2 + (dx / L) * h];
+  const r = Math.hypot(p1[0] - c[0], p1[1] - c[1]);
+  const a0 = Math.atan2(p1[1] - c[1], p1[0] - c[0]);
+  const n = Math.max(4, Math.ceil(Math.abs(th) * r / 0.4));
+  const pts: Vec2[] = [];
+  for (let k = 0; k < n; k++) {
+    const a = a0 + (th * k) / n;
+    pts.push([c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r]);
+  }
+  return pts;
+}
+
+/** CUT-layer CIRCLE entities (centre + radius, mm). */
+export function dxfCutCircles(text: string): { cx: number; cy: number; r: number }[] {
+  const P = dxfPairs(text);
+  let i = P.findIndex(([c, v], k) => c === 2 && v === 'ENTITIES' && P[k - 1]?.[1] === 'SECTION');
+  if (i < 0) return [];
+  i++;
+  const out: { cx: number; cy: number; r: number }[] = [];
+  while (i < P.length && !(P[i][0] === 0 && P[i][1] === 'ENDSEC')) {
+    const type = P[i][1];
+    let cx = 0, cy = 0, r = 0, layer = '0';
+    let k = i + 1;
+    while (k < P.length && P[k][0] !== 0) {
+      if (P[k][0] === 8) layer = P[k][1];
+      else if (P[k][0] === 10) cx = +P[k][1];
+      else if (P[k][0] === 20) cy = +P[k][1];
+      else if (P[k][0] === 40) r = +P[k][1];
+      k++;
+    }
+    if (type === 'CIRCLE' && layer === 'CUT') out.push({ cx, cy, r });
+    i = k;
+  }
+  return out;
+}
+
+/** CUT-layer closed LWPOLYLINE vertices, bulges tessellated (mm). */
+export function dxfCutLwPolylines(text: string): Path[] {
+  const P = dxfPairs(text);
+  let i = P.findIndex(([c, v], k) => c === 2 && v === 'ENTITIES' && P[k - 1]?.[1] === 'SECTION');
+  if (i < 0) return [];
+  i++;
+  const out: Path[] = [];
+  while (i < P.length && !(P[i][0] === 0 && P[i][1] === 'ENDSEC')) {
+    const type = P[i][1];
+    const verts: { p: Vec2; b: number }[] = [];
+    let x = 0, y = 0, bulge = 0, have = false, layer = '0';
+    let k = i + 1;
+    const flush = () => {
+      if (have) verts.push({ p: [x, y], b: bulge });
+      bulge = 0;
+      have = false;
+    };
+    while (k < P.length && P[k][0] !== 0) {
+      if (P[k][0] === 8) layer = P[k][1];
+      else if (P[k][0] === 10) {
+        flush();
+        x = +P[k][1];
+        have = true;
+      } else if (P[k][0] === 20) y = +P[k][1];
+      else if (P[k][0] === 42) bulge = +P[k][1];
+      k++;
+    }
+    flush();
+    if (type === 'LWPOLYLINE' && layer === 'CUT' && verts.length >= 3) {
+      const pts: Path = [];
+      for (let n = 0; n < verts.length; n++) pts.push(...bulgeArcPoints(verts[n].p, verts[(n + 1) % verts.length].p, verts[n].b));
+      out.push(pts);
+    }
+    i = k;
+  }
+  return out;
+}

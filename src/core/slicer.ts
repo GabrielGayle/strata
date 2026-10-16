@@ -36,7 +36,7 @@ import { strokeTextCentered, textWidth } from './strokefont';
 import { MAX_TUNED, MIN_TUNED, tunePlates, tuningActive, type PlateTune } from './tuning';
 import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
 import { buildSpacers, planRods, rodHardware, rodHoles, type BraceIssue, type HardwareRow, type RodPlan, type SpacerResult } from './brace';
-import { resolveFragments, type FragmentEvent } from './fragments';
+import { repairThinNecks, resolveFragments, type FragmentEvent } from './fragments';
 import { movePlane, type PartMoves } from './moves';
 
 export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T';
@@ -1422,6 +1422,7 @@ export function slice(input: SliceInput): SliceResult {
       const bb = bboxOf([ex.outer]);
       return isFlat ? def.index === 0 || shapeArea(intersection([ex], below)) > 1 : e <= 0 || bb.minY < -0.5;
     };
+    pieces = pieces.flatMap((ex) => repairThinNecks([ex], v).filter((p) => shapeArea([p]) >= 0.5));
     const resolved = resolveFragments(pieces, { v, plateKey: def.key, plateId: base, anchored: anchoredOf });
     fragmentEvents.push(...resolved.events);
     pieces = resolved.pieces;
@@ -1478,6 +1479,7 @@ export function slice(input: SliceInput): SliceResult {
     let pieces = ring.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
     const plane = supportPlane(support);
     const base = partLabel(v, 'S', 0, 1);
+    pieces = pieces.flatMap((ex) => repairThinNecks([ex], v).filter((p) => shapeArea([p]) >= 0.5));
     const resolved = resolveFragments(pieces, { v, plateKey: 'S0', plateId: base, anchored: () => true });
     fragmentEvents.push(...resolved.events);
     pieces = resolved.pieces;
