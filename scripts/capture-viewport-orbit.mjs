@@ -1,6 +1,9 @@
 /**
  * Orbit the 3D viewport and save PNG frames (no video).
- * Usage: VITE_E2E_MAP_FIXTURES=1 npm run build && node scripts/capture-viewport-orbit.mjs [before|after] [preset]
+ * Usage:
+ *   npm run build && node scripts/capture-viewport-orbit.mjs after default
+ *   npm run build && node scripts/capture-viewport-orbit.mjs after map-x18-frame
+ * map-x18-frame uses the live network (no VITE_E2E_MAP_FIXTURES). Build without that env.
  * preset: default | map-x18-frame
  */
 import { spawn } from 'node:child_process';
@@ -49,9 +52,9 @@ async function dismissTour(page) {
 }
 
 async function waitForViewportCanvas(page) {
-  await page.waitForSelector('.ws-area canvas', { timeout: 120000 });
+  await page.waitForSelector('[data-testid="viewport-3d"] canvas', { timeout: 120000 });
   await page.waitForFunction(() => {
-    const c = document.querySelector('.ws-area canvas');
+    const c = document.querySelector('[data-testid="viewport-3d"] canvas');
     return !!c && c.clientWidth > 80 && c.clientHeight > 80;
   }, { timeout: 120000 });
   await page.waitForTimeout(800);
@@ -133,13 +136,15 @@ async function setupPage(page, presetId) {
 }
 
 async function clipScreenshot(page, filePath) {
-  const canvas = page.locator('.ws-area canvas').first();
+  const canvas = page.locator('[data-testid="viewport-3d"] canvas').first();
   await canvas.waitFor({ state: 'visible', timeout: 120000 });
   const box = await canvas.boundingBox();
   if (!box || box.width < 40 || box.height < 40) throw new Error('No canvas bounding box');
   // WebGL canvases never go "stable" under rAF; clip the page instead of locator.screenshot().
   await page.screenshot({
     path: filePath,
+    type: 'jpeg',
+    quality: 68,
     clip: {
       x: Math.max(0, box.x),
       y: Math.max(0, box.y),
@@ -151,7 +156,7 @@ async function clipScreenshot(page, filePath) {
 
 async function orbitFrames(page, outDir) {
   await mkdir(outDir, { recursive: true });
-  const canvas = page.locator('.ws-area canvas').first();
+  const canvas = page.locator('[data-testid="viewport-3d"] canvas').first();
   await canvas.waitFor({ state: 'visible', timeout: 120000 });
   const box = await canvas.boundingBox();
   if (!box) throw new Error('No canvas bounding box');
@@ -167,7 +172,7 @@ async function orbitFrames(page, outDir) {
     await page.mouse.move(cx + dx, cy + dy, { steps: 12 });
     await page.mouse.up();
     await page.waitForTimeout(400);
-    await clipScreenshot(page, path.join(outDir, `orbit-${String(i + 1).padStart(2, '0')}.png`));
+    await clipScreenshot(page, path.join(outDir, `orbit-${String(i + 1).padStart(2, '0')}.jpg`));
   }
 }
 
@@ -175,7 +180,7 @@ async function main() {
   const preview = spawn('npm', ['run', 'preview', '--', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
     cwd: root,
     stdio: 'ignore',
-    env: { ...process.env, VITE_E2E_MAP_FIXTURES: '1' },
+    env: { ...process.env },
   });
   preview.unref?.();
   try {

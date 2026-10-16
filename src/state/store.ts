@@ -17,7 +17,7 @@ import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
 import { applyProjectPatch, type ProjectPatch } from '../core/design';
-import { projectWithTopMapSpec } from '../core/mapTopAsset';
+import { applyBuiltMapAsset, projectWithTopMapSpec } from '../core/mapTopAsset';
 import { wordsParamPatch } from '../core/chantWords';
 import { speechParamPatch } from '../core/speechTuning';
 
@@ -219,9 +219,9 @@ export const useStore = create<Store>((set, get) => {
     mapTerrain: { phase: 'idle', message: '' },
     setMapTerrain: (patch) => set({ mapTerrain: { ...get().mapTerrain, ...patch } }),
     finishMapTerrainBuild: (asset) => {
-      const p = get().project;
-      if (!p.images.top?.map) return;
-      commit({ ...p, images: { ...p.images, top: asset } }, `map-build:${performance.now()}`);
+      const next = applyBuiltMapAsset(get().project, asset);
+      if (!next) return;
+      commit(next, `map-build:${performance.now()}`);
       set({ mapTerrain: { phase: 'ready', message: 'Map terrain ready', error: undefined } });
     },
     newSetup: (mode) => {

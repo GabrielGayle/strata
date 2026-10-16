@@ -368,6 +368,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   return (
     <>
       <Env />
+      <color attach="background" args={[cssVar('--viewport', '#e6e3dc')]} />
       <ambientLight intensity={v.sunOn ? 0.28 : 0.35} />
       {v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
       <directionalLight position={[-900, 500, -600]} intensity={v.sunOn ? 0.18 : 0.45} />
