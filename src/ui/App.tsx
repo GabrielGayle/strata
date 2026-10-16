@@ -176,6 +176,8 @@ export default function App() {
     <ModelContext.Provider value={model}>
       <div
         className="app window"
+        data-strata-map-phase={mapTerrain.phase}
+        data-strata-map-error={mapTerrain.phase === 'error' ? (mapTerrain.error || mapTerrain.message || 'map terrain error') : undefined}
         data-strata-map-relief-m={mapFace && mapRelief != null ? String(mapRelief) : undefined}
         data-strata-map-exaggeration={mapFace && mapEx ? String(mapEx) : undefined}
         data-strata-map-scale-mm-per-m={mapFace && mapScale ? String(mapScale) : undefined}

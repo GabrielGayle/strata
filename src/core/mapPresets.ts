@@ -119,17 +119,29 @@ export function mapPresetSpec(id: string): MapSpec {
 }
 
 /**
- * Re-clicking a map preset (Maps menu or Map tab) must not wipe user-set
- * exaggeration, sunken frame, or gift size. Compatible with #91 depth/project
- * override helpers: those merge near/far and master size on rebuild.
+ * Re-clicking a map preset (Maps menu or Map tab) keeps user-set map fields.
+ * Place identity (bbox, title) comes from the preset. Derived build artefacts
+ * (buildKey, readout, engraveArt, resolvedSource) are not copied.
  */
 export function keepUserMapSettings(prev: MapSpec | undefined, next: MapSpec): MapSpec {
   if (!prev) return next;
-  const out: MapSpec = { ...next };
-  if (typeof prev.exaggeration === 'number' && prev.exaggeration > 0) out.exaggeration = prev.exaggeration;
-  if (prev.sunkenFrame) out.sunkenFrame = { ...prev.sunkenFrame };
-  if (prev.giftSizeId) out.giftSizeId = prev.giftSizeId;
-  return out;
+  return defaultMapSpec({
+    ...next,
+    source: prev.source,
+    model: prev.model,
+    resM: prev.resM,
+    exaggeration: prev.exaggeration,
+    water: prev.water,
+    layerBudget: prev.layerBudget ?? next.layerBudget,
+    engrave: { ...prev.engrave, features: [...prev.engrave.features] },
+    commemorativeText: prev.commemorativeText,
+    editionNumber: prev.editionNumber,
+    buildingClampM: prev.buildingClampM,
+    sunkenFrame: prev.sunkenFrame ? { ...prev.sunkenFrame } : next.sunkenFrame,
+    giftSizeId: prev.giftSizeId,
+    bbox: next.bbox,
+    title: next.title,
+  });
 }
 
 export function mapPresetSpecKeepingUser(id: string, prev?: MapSpec): MapSpec {

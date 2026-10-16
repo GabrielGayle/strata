@@ -153,7 +153,11 @@ export default function MapView() {
       >
         {mapTerrain.phase === 'working' && <span className="map-terrain-spinner" aria-hidden />}
         <span>{mapTerrain.message || (mapTerrain.phase === 'idle' ? 'No map on the top face yet.' : '')}</span>
-        {mapTerrain.error && <p className="map-terrain-error">{mapTerrain.error}</p>}
+        {mapTerrain.error && (
+          <p className="map-terrain-error" data-testid="map-terrain-error" data-strata-map-error={mapTerrain.error}>
+            {mapTerrain.error}
+          </p>
+        )}
         {notices.length ? (
           <ul className="map-notices">
             {notices.map((w, i) => (

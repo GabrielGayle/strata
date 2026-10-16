@@ -32,16 +32,18 @@ export async function openApp(page: Page) {
 }
 
 export async function waitForMapReady(page: Page) {
+  const root = page.locator('.app.window');
   await expect
     .poll(
       async () => {
-        const status = (await page.locator('.status-bar').textContent()) ?? '';
-        if (/error|failed/i.test(status) && !/Map terrain ready/i.test(status)) {
-          throw new Error(status.trim() || 'map terrain error');
+        const phase = (await root.getAttribute('data-strata-map-phase')) ?? '';
+        if (phase === 'error') {
+          const err = (await root.getAttribute('data-strata-map-error'))?.trim();
+          throw new Error(err || 'map terrain error');
         }
-        const range = Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm'));
-        const expected = Number(await page.locator('.app.window').getAttribute('data-strata-map-expected-height-mm'));
-        return /Map terrain ready/i.test(status) && range > 0 && expected > 0 ? range : 0;
+        const range = Number(await root.getAttribute('data-strata-plate-height-range-mm'));
+        const expected = Number(await root.getAttribute('data-strata-map-expected-height-mm'));
+        return phase === 'ready' && range > 0 && expected > 0 ? range : 0;
       },
       { timeout: MAP_READY_MS, intervals: [150, 300, 600, 1000] },
     )
