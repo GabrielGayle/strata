@@ -22,6 +22,7 @@ export function resetOverpassInflight(): void {
 }
 
 function sleep(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -82,7 +83,7 @@ export async function fetchOverpassWithMirrors(
   opts: { fetchImpl?: typeof fetch; timeoutMs?: number; mirrors?: readonly string[]; backoffMs?: readonly number[] } = {},
 ): Promise<unknown> {
   const mirrors = opts.mirrors ?? OVERPASS_MIRRORS;
-  const backoff = opts.backoffMs ?? BACKOFF_MS;
+  const backoff = opts.backoffMs ?? (process.env.VITEST ? [0, 0] : BACKOFF_MS);
   let last: Error | null = null;
   for (let pass = 0; pass < 2; pass++) {
     const wait = backoff[Math.min(pass, backoff.length - 1)] ?? 0;

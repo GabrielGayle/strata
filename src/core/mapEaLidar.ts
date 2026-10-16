@@ -30,10 +30,7 @@ export async function fetchEaLidarGrid(
 ): Promise<Float32Grid | null> {
   if (!isEaLidarSource(source)) return null;
   const run = opts.loader ?? loaderOverride;
-  if (run) {
-    const g = await run(source, spec);
-    if (g) return g;
-  }
+  if (run) return run(source, spec);
   const wcsUrl = eaWcsUrlForSpec(source, spec);
   if (!wcsUrl) return null;
   const fetchBytes =
