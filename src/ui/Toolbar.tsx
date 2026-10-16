@@ -212,7 +212,7 @@ function AppearanceMenu() {
   );
 }
 
-export default function Toolbar() {
+export default function Toolbar({ onOpenMap }: { onOpenMap?: () => void }) {
   const project = useStore((s) => s.project);
   const past = useStore((s) => s.past.length);
   const future = useStore((s) => s.future.length);
@@ -355,6 +355,11 @@ export default function Toolbar() {
             </ul>
           )}
         </Menu>
+        {onOpenMap && (
+          <button className="tb" type="button" onClick={onOpenMap} title="Set map bbox and title (Nominatim search)">
+            Map
+          </button>
+        )}
         <Menu label="Shuffle">
           {(close) => (
             <>
