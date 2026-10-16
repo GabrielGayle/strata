@@ -120,7 +120,9 @@ Resolved source and warnings are stored on `MapSpec.resolvedSource` and `MapSpec
 
 Strata stores the attribution line on `MapSpec.attribution` and in `MapEngraveArt.osmAttribution` when OSM linework is fetched.
 
-**Golf (T21):** enable `golf` / `fairway` / `green` in `--engrave` to fetch `golf=*` ways; use `--engrave-preset golf` for yardage-book line weights (fixture: `test/fixtures/map/overpass-golf.json`).
+**Golf (T21):** enable `golf` / `fairway` / `green` in `--engrave` to fetch `golf=*` ways; use preset `golf` for yardage-book line weights (fixture: `test/fixtures/map/overpass-golf.json`).
+
+**Ski (T22):** enable `ski` / `piste` / `alpine` for `piste:type` and `aerialway` ways; preset `ski` / `alpine` (fixture: `test/fixtures/map/overpass-ski.json`).
 
 ## Excluded in this product
 

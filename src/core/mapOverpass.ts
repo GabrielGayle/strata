@@ -46,6 +46,7 @@ export function overpassQueryForBbox(bbox: [number, number, number, number], fea
   const [w, s, e, n] = bbox;
   const want = new Set(features.map((f) => f.toLowerCase()));
   const golf = want.has('golf') || want.has('fairway') || want.has('green');
+  const ski = want.has('ski') || want.has('piste') || want.has('alpine');
   const blocks = [
     `  way["highway"](${s},${w},${n},${e});`,
     `  way["natural"="water"](${s},${w},${n},${e});`,
@@ -55,6 +56,10 @@ export function overpassQueryForBbox(bbox: [number, number, number, number], fea
   if (golf) {
     blocks.push(`  way["golf"](${s},${w},${n},${e});`);
     blocks.push(`  way["leisure"="golf_course"](${s},${w},${n},${e});`);
+  }
+  if (ski) {
+    blocks.push(`  way["piste:type"](${s},${w},${n},${e});`);
+    blocks.push(`  way["aerialway"](${s},${w},${n},${e});`);
   }
   return `[out:json][timeout:25];\n(\n${blocks.join('\n')}\n);\nout geom;`;
 }

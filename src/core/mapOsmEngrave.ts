@@ -1,7 +1,7 @@
 import type { Path, Vec2 } from './geom2d';
 import type { MapSpec } from './mapSpec';
 
-export type OsmEngraveKind = 'road' | 'water' | 'rail' | 'golf' | 'other';
+export type OsmEngraveKind = 'road' | 'water' | 'rail' | 'golf' | 'piste' | 'other';
 
 export interface OsmEngraveLine {
   kind: OsmEngraveKind;
@@ -65,6 +65,7 @@ interface OsmResponse {
 function kindOf(tags: Record<string, string> | undefined): OsmEngraveKind {
   if (!tags) return 'other';
   if (tags.golf || tags.leisure === 'golf_course') return 'golf';
+  if (tags['piste:type'] || tags.aerialway) return 'piste';
   if (tags.natural === 'water' || tags.waterway) return 'water';
   if (tags.railway) return 'rail';
   if (tags.highway) return 'road';
@@ -91,6 +92,7 @@ export function osmToEngraveArt(
   const allowWater = want.has('water');
   const allowRail = want.has('rail') || want.has('roads');
   const allowGolf = want.has('golf') || want.has('fairway') || want.has('green');
+  const allowPiste = want.has('ski') || want.has('piste') || want.has('alpine');
   const resp = raw as OsmResponse;
   const lines: OsmEngraveLine[] = [];
   for (const el of resp.elements ?? []) {
@@ -100,6 +102,7 @@ export function osmToEngraveArt(
     if (kind === 'water' && !allowWater) continue;
     if (kind === 'rail' && !allowRail) continue;
     if (kind === 'golf' && !allowGolf) continue;
+    if (kind === 'piste' && !allowPiste) continue;
     if (kind === 'other') continue;
     const path: Path = el.geometry.map((g) => {
       const [nx, ny] = lonLatToNorm(g.lon, g.lat, bbox);

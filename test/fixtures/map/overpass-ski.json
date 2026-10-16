@@ -1,0 +1,16 @@
+{
+  "version": 0.6,
+  "generator": "Strata fixture",
+  "elements": [
+    {
+      "type": "way",
+      "id": 20,
+      "tags": { "piste:type": "downhill" },
+      "geometry": [
+        { "lat": 51.55, "lon": -0.26 },
+        { "lat": 51.556, "lon": -0.255 },
+        { "lat": 51.562, "lon": -0.25 }
+      ]
+    }
+  ]
+}
