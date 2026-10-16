@@ -92,8 +92,9 @@ async function openTab(page: Page, name: string) {
 }
 
 async function setFlatLevelNear(page: Page) {
-  const slider = page.getByLabel('Flat level');
+  const slider = page.getByRole('slider', { name: 'Flat level' });
   await expect(slider).toBeVisible({ timeout: 30_000 });
+  await slider.fill('0');
   await slider.evaluate((el) => {
     const input = el as HTMLInputElement;
     input.value = '0';
@@ -122,10 +123,11 @@ test.describe('flat level', () => {
 
     await openTab(page, 'Image / Graphic');
     await expect(page.getByTestId('flat-plate')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('flat-plate').screenshot({ path: join(SHOT, 'controls-light.png') });
+    await page.getByTestId('flat-plate').screenshot({ path: join(SHOT, 'controls-before-light.png') });
 
     await setFlatLevelNear(page);
     await expect(page.getByRole('button', { name: 'Reset to auto' })).toBeVisible();
+    await page.getByTestId('flat-plate').screenshot({ path: join(SHOT, 'controls-after-light.png') });
 
     await openTab(page, '3D');
     await expect(page.getByTestId('plate-height-range')).toBeVisible({ timeout: 60_000 });
@@ -158,8 +160,9 @@ test.describe('flat level', () => {
 
     await openTab(page, 'Image / Graphic');
     await expect(page.getByTestId('flat-plate')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('flat-plate').screenshot({ path: join(SHOT, 'controls-dark.png') });
+    await page.getByTestId('flat-plate').screenshot({ path: join(SHOT, 'controls-before-dark.png') });
     await setFlatLevelNear(page);
+    await page.getByTestId('flat-plate').screenshot({ path: join(SHOT, 'controls-after-dark.png') });
 
     await openTab(page, '3D');
     await expect.poll(async () => (await page.getByTestId('plate-height-range').textContent()) ?? '', { timeout: 30_000 }).toMatch(/plate height/);

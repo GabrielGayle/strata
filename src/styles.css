@@ -1246,7 +1246,7 @@ canvas.thumb {
   color: var(--param-muted);
 }
 .flat-plate-ctl .pm-row > span:first-child {
-  width: 88px;
+  width: 100px;
   color: var(--param-muted);
 }
 .flat-plate-ctl .pm-row .mono {
