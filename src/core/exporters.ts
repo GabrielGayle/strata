@@ -9,7 +9,7 @@ import { fitArcs, type Seg } from './arcs';
 import { DxfWriter, LAYERS } from './dxf';
 import { bboxOf, offset, type Path, type Shape, type Vec2 } from './geom2d';
 import type { Model } from './pipeline';
-import type { Part } from './slicer';
+import type { Part, PlateInfo } from './slicer';
 import type { MouldPart } from './mould';
 import type { Values } from './params';
 import { extrudeOnPlane, extrudePlan, mergeGeometries } from './geometry3d';
@@ -24,6 +24,32 @@ import { mapEngravePathsForPart, type MapEngravePlateContext } from './mapEngrav
 import type { UnfoldPiece } from './unfold';
 import { materialOf } from './appearance';
 import { packManifest } from './counts';
+import {
+  assertHtmlBuildPackIntegrity,
+  assertZipBuildPackIntegrity,
+  buildPlateManifest,
+  BuildPackIntegrityError,
+} from './buildPackIntegrity';
+
+let exportBusy = false;
+let exportCooldown = false;
+let exportCooldownTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Ignore a nested or double-clicked Export ZIP / Build pack while one is writing. */
+export function withExportLock<T>(fn: () => T): { ok: true; value: T } | { ok: false } {
+  if (exportBusy || exportCooldown) return { ok: false };
+  exportBusy = true;
+  try {
+    return { ok: true, value: fn() };
+  } finally {
+    exportBusy = false;
+    exportCooldown = true;
+    clearTimeout(exportCooldownTimer);
+    exportCooldownTimer = setTimeout(() => {
+      exportCooldown = false;
+    }, 400);
+  }
+}
 
 export interface FittedContour {
   segs: Seg[];
@@ -100,6 +126,8 @@ function mapSeg(s: Seg, tf: (p: Vec2) => Vec2): Seg {
 }
 
 const shiftTo = (minX: number, minY: number) => (p: Vec2): Vec2 => [p[0] - minX, p[1] - minY];
+
+export { BuildPackIntegrityError } from './buildPackIntegrity';
 
 export function partDxf(part: Part, v: Values, mapEngrave: Path[] = [], extraEtch: Path[] = []): string {
   const w = new DxfWriter([LAYERS.CUT, LAYERS.ETCH, LAYERS.ENGRAVE]);
@@ -327,9 +355,67 @@ export function partFiles(model: Model, project?: Project): Record<string, Uint8
   for (const p of model.sliced.parts) {
     const engrave = mapEngraveForPart(p, project, model);
     const backEtch = mapBackEtchForPart(p, project, model);
-    files[`${mixed ? `${safe(metal(p.plateKey))}/` : ''}${safe(p.id)}.dxf`] = strToU8(partDxf(p, model.v, engrave, backEtch));
+    const rel = `${mixed ? `${safe(metal(p.plateKey))}/` : ''}${safe(p.id)}.dxf`;
+    if (files[rel]) {
+      throw new BuildPackIntegrityError(`Duplicate laser part path laser/parts/${rel} (part ${p.id})`);
+    }
+    files[rel] = strToU8(partDxf(p, model.v, engrave, backEtch));
   }
   return files;
+}
+
+/** Combined DXF for every piece on one plate (same plane). */
+export function plateDxf(plate: PlateInfo, model: Model, project?: Project): string {
+  const v = model.v;
+  const w = new DxfWriter([LAYERS.CUT, LAYERS.ETCH, LAYERS.ENGRAVE]);
+  for (const p of plate.parts) {
+    const engrave = mapEngraveForPart(p, project, model);
+    const backEtch = mapBackEtchForPart(p, project, model);
+    const bb = p.bbox;
+    const tf = shiftTo(bb.minX - v.kerf, bb.minY - v.kerf);
+    emitContours(w, fitShape(p.shape, v), v, tf);
+    for (const path of [...p.etch, ...p.labelPaths, ...backEtch]) w.path(LAYERS.ETCH.name, path.map(tf));
+    for (const path of engrave) w.path(LAYERS.ENGRAVE.name, path.map(tf));
+  }
+  return w.toString();
+}
+
+/** Combined SVG for every piece on one plate. */
+export function plateSvg(plate: PlateInfo): string {
+  if (!plate.parts.length) return emptyPlateSvg(plate.def.key);
+  return shapeSvg(plate.parts.map((p) => ({ shape: p.shape, etch: [...p.etch, ...p.labelPaths] })));
+}
+
+/** Placeholder geometry so an empty layer still has a pack file (NOTE layer / outline). */
+export function emptyPlateDxf(key: string): string {
+  const w = new DxfWriter([LAYERS.NOTE]);
+  const wdt = Math.min(40, 12 + key.length);
+  w.path(LAYERS.NOTE.name, [[0, 0], [wdt, 0], [wdt, 8], [0, 8]], true);
+  return w.toString();
+}
+
+export function emptyPlateSvg(key: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="16mm" viewBox="0 0 40 16"><path d="M1,1h38v14h-38Z" fill="none" stroke="#888" stroke-width="0.4"/><text x="20" y="10" text-anchor="middle" font-size="4">empty ${key.replace(/[<>&"]/g, '')}</text></svg>\n`;
+}
+
+function plateArtifactFiles(model: Model, project: Project): Record<string, Uint8Array> {
+  const files: Record<string, Uint8Array> = {};
+  const manifest = buildPlateManifest(model, project);
+  const byKey = new Map(model.sliced.plates.map((pl) => [pl.def.key, pl]));
+  for (const row of manifest.plates) {
+    const pl = byKey.get(row.key);
+    if (!pl) continue;
+    files[row.dxf] = strToU8(pl.parts.length ? plateDxf(pl, model, project) : emptyPlateDxf(row.key));
+    files[row.svg] = strToU8(pl.parts.length ? plateSvg(pl) : emptyPlateSvg(row.key));
+  }
+  return files;
+}
+
+/** Printable build pack HTML with integrity checks (use this instead of `buildPackHtml` directly). */
+export function buildPackHtmlChecked(project: Project, model: Model, opts: import('./buildPack').BuildPackOptions = {}): string {
+  const html = buildPackHtml(project, model, opts);
+  assertHtmlBuildPackIntegrity(project, model, html);
+  return html;
 }
 
 /** `rates` are the price estimate's (the user's edited ones, when the UI has them). */
@@ -337,6 +423,7 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   const v = model.v;
   const files: Record<string, Uint8Array> = {};
   for (const [name, data] of Object.entries(partFiles(model, project))) files[`laser/parts/${name}`] = data;
+  for (const [name, data] of Object.entries(plateArtifactFiles(model, project))) files[name] = data;
   for (const [name, data] of Object.entries(sheetFiles(model))) files[`laser/sheets/${name}`] = data;
   for (const mp of model.moulds.parts) {
     files[`mould/dxf/${safe(mp.id)}.dxf`] = strToU8(mouldPartDxf(mp, v));
@@ -358,13 +445,14 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   }
   if (model.shadow && project.shadow?.frames.length) files['shadow-install-card.html'] = strToU8(installCardHtml(project, v, model.shadow));
   files['README.txt'] = strToU8(packReadme(model));
-  files['manifest.json'] = strToU8(JSON.stringify(packManifest(model), null, 2) + '\n');
-  files['build-pack.html'] = strToU8(buildPackHtml(project, model, { rates }));
+  files['build-pack.html'] = strToU8(buildPackHtmlChecked(project, model, { rates }));
+  files['manifest.json'] = strToU8(JSON.stringify({ ...packManifest(model), ...buildPlateManifest(model, project) }, null, 2) + '\n');
   const archetype = project.images.top?.map?.archetypeCard;
   if (archetype && typeof archetype === 'object') {
     files['map/archetype-card.json'] = strToU8(JSON.stringify(archetype, null, 2) + '\n');
   }
   files['project.strata.json'] = strToU8(serialize(project));
+  assertZipBuildPackIntegrity(model, project, files);
   return zipSync(files, { level: 6 });
 }
 

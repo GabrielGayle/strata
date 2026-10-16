@@ -1,8 +1,19 @@
 import { Fragment, useMemo, useState } from 'react';
 import { useStore } from '../state/store';
 import { useFullModel, useModel, fmt, fmtInt } from './model';
-import { buildZip, download, modelStl, openHtml, partDxf, partFiles, pourPlanText, sheetFiles } from '../core/exporters';
-import { buildPackHtml } from '../core/buildPack';
+import {
+  buildPackHtmlChecked,
+  buildZip,
+  download,
+  modelStl,
+  openHtml,
+  partDxf,
+  partFiles,
+  pourPlanText,
+  sheetFiles,
+  withExportLock,
+  BuildPackIntegrityError,
+} from '../core/exporters';
 import { cutListCsv, hardwareCsv, MATERIAL_NAME } from '../core/bom';
 import { serialize } from '../core/project';
 import { zipSync } from 'fflate';
@@ -108,8 +119,12 @@ export default function Inspector() {
       <div className="stats">
         <div className="stat" data-testid="inspector-plates">
           <div className="k">Plates</div>
-          <div className="v">
-            {b.plateCount} <small>{b.partCount} parts</small>
+          <div className="v" data-in-app-plates={model.sliced.plates.length}>
+            {model.sliced.plates.length}{' '}
+            <small>
+              {b.partCount} parts
+              {b.plateCount !== model.sliced.plates.length ? ` · ${b.plateCount} cut` : ''}
+            </small>
           </div>
         </div>
         <div className="stat">
@@ -239,14 +254,36 @@ export default function Inspector() {
           <button
             className="btn default"
             onClick={() => {
-              const m = fullModel();
-              download(`${base}-fabrication.zip`, buildZip(m, project), 'application/zip');
-              toast('Fabrication ZIP exported');
+              try {
+                const ran = withExportLock(() => {
+                  const m = fullModel();
+                  download(`${base}-fabrication.zip`, buildZip(m, project), 'application/zip');
+                });
+                if (!ran.ok) toast('Export already running');
+                else toast('Fabrication ZIP exported');
+              } catch (e) {
+                const msg = e instanceof BuildPackIntegrityError ? `Fabrication zip integrity: ${e.message}` : (e as Error).message;
+                toast(msg);
+              }
             }}
           >
             Everything (ZIP)
           </button>
-          <button className="btn" onClick={() => openHtml(buildPackHtml(project, fullModel(), { rates: loadRates() }))} title="Printable plate layout, assembly order, rods and spacers, glue-up and pour plan">
+          <button
+            className="btn"
+            onClick={() => {
+              try {
+                const ran = withExportLock(() => {
+                  openHtml(buildPackHtmlChecked(project, fullModel(), { rates: loadRates() }));
+                });
+                if (!ran.ok) toast('Build pack already opening');
+              } catch (e) {
+                const msg = e instanceof BuildPackIntegrityError ? `Build pack integrity: ${e.message}` : (e as Error).message;
+                toast(msg);
+              }
+            }}
+            title="Printable plate layout, assembly order, rods and spacers, glue-up and pour plan"
+          >
             Build pack
           </button>
           <button className="btn" onClick={plateZip}>

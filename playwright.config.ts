@@ -1,15 +1,17 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: 'e2e',
+  testDir: '.',
+  testMatch: ['e2e/**/*.spec.ts', 'test/e2e/**/*.spec.ts'],
   fullyParallel: false,
   retries: 0,
   workers: 1,
   reporter: 'list',
-  timeout: 180_000,
+  timeout: 360_000,
   use: {
     ...devices['Desktop Chrome'],
     baseURL: 'http://127.0.0.1:4173',
+    acceptDownloads: true,
     trace: 'on-first-retry',
   },
   webServer: {

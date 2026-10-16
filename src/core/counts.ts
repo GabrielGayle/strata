@@ -28,17 +28,17 @@ export function packManifest(model: Model) {
   const c = packCounts(model);
   return {
     version: 1 as const,
-    plateCount: c.plates,
+    plateCount: model.sliced.plates.length,
+    cutPlateCount: c.plates,
     partCount: c.parts,
     nestedParts: c.nestedParts,
     unplaced: c.unplaced,
-    plates: model.sliced.plates
-      .filter((p) => p.parts.length)
-      .map((p) => ({
-        key: p.def.key,
-        plateId: p.parts[0]?.plateId ?? p.parts[0]?.id,
-        partIds: p.parts.map((q) => q.id),
-      })),
+    plates: model.sliced.plates.map((p) => ({
+      key: p.def.key,
+      plateId: p.parts[0]?.plateId ?? p.parts[0]?.id ?? p.def.key,
+      partIds: p.parts.map((q) => q.id),
+      empty: p.parts.length === 0,
+    })),
     parts: model.sliced.parts.map((p) => ({
       id: p.id,
       plateId: p.plateId ?? p.id,

@@ -191,7 +191,7 @@ function plateName(parts: Part[]): string {
 
 const keyNames = (m: Model) => {
   const out = new Map<string, string>();
-  for (const pl of m.sliced.plates) if (pl.parts.length) out.set(pl.def.key, plateName(pl.parts));
+  for (const pl of m.sliced.plates) out.set(pl.def.key, plateName(pl.parts) || pl.def.key);
   for (const p of m.sliced.parts) if (!out.has(p.plateKey)) out.set(p.plateKey, p.id);
   return out;
 };
@@ -268,7 +268,7 @@ function planSvg(m: Model, view: View, names: Map<string, string>): string {
     for (const p of parts.filter(isMain)) out.push(`<path d="${foot.get(p)!.map((pl) => pathD(pl, f.X, f.Y)).join('')}" fill="#111" stroke="#111" stroke-width="0.6"/>`);
   }
   for (const p of parts.filter((q) => q.family === 'C' || q.family === 'T'))
-    out.push(`<path d="${foot.get(p)!.map((pl) => pathD(pl, f.X, f.Y)).join('')}" fill="#fff" fill-opacity="0.6" stroke="#000" stroke-width="1.1" stroke-dasharray="${p.family === 'C' ? '6 3' : '2 2'}"/>`);
+    out.push(`<path class="spacer" d="${foot.get(p)!.map((pl) => pathD(pl, f.X, f.Y)).join('')}" fill="#fff" fill-opacity="0.6" stroke="#000" stroke-width="1.1" stroke-dasharray="${p.family === 'C' ? '6 3' : '2 2'}"/>`);
 
   // labels
   const labels: string[] = [];
@@ -349,8 +349,15 @@ function elevationSvg(m: Model, right: P2, title: string, opts: { labels?: boole
   // many plates lined up one behind another: outlines only, or the stack prints solid black
   const dense = parts.filter((p) => upright(p)).length > 12 && Math.abs(right[0] * stackFrame(v).stack[0] + right[1] * stackFrame(v).stack[1]) < 0.5;
   const order = [...parts].sort((a, c) => (a.family === 'S' ? -1 : 0) - (c.family === 'S' ? -1 : 0));
-  for (const p of order)
-    out.push(`<path d="${pathD(outl.get(p)!, f.X, f.Y)}" fill="${p.family === 'C' || p.family === 'T' ? 'none' : '#fff'}" fill-opacity="${dense ? 0 : 0.9}" stroke="#000" stroke-width="${p.family === 'C' || p.family === 'T' ? 0.9 : dense ? 0.45 : 0.8}"${p.family === 'C' || p.family === 'T' || p.family === 'S' ? ' stroke-dasharray="4 2"' : ''}/>`);
+  for (const p of order) {
+    const kind = isMain(p) ? 'plate' : p.family === 'C' || p.family === 'T' ? 'spacer' : '';
+    const spacer = p.family === 'C' || p.family === 'T';
+    // Dense stacks used to use white fill at opacity 0, so plates vanished. Grey fill
+    // (and the gallery labels) keeps every plate visible even when they overlap.
+    const fill = spacer ? 'none' : dense ? '#b7b7b7' : '#f2f2f2';
+    const opac = spacer ? 1 : dense ? 0.72 : 0.95;
+    out.push(`<path${kind ? ` class="${kind}"` : ''} d="${pathD(outl.get(p)!, f.X, f.Y)}" fill="${fill}" fill-opacity="${opac}" stroke="#000" stroke-width="${spacer ? 0.9 : dense ? 0.55 : 0.8}"${spacer || p.family === 'S' ? ' stroke-dasharray="4 2"' : ''}/>`);
+  }
   // dimensions: overall width under, overall height on the right, base height on the left
   const g: string[] = [];
   const yb = f.Y(b.minY) + 22;
@@ -444,7 +451,7 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   };
   const clip = v.baseOn;
 
-  type Item = { d: number; pts: P2[][]; fill: string; stroke: string; sw: number; tri?: boolean; plate?: boolean };
+  type Item = { d: number; pts: P2[][]; fill: string; stroke: string; sw: number; tri?: boolean; plate?: boolean; spacer?: boolean };
   const items: Item[] = [];
   const all: P2[] = [];
 
@@ -496,12 +503,36 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
       const w = path.map(([a, c]) => planeToWorld(p.plane, a, c));
       return clip ? aboveGround(w) : w;
     }).filter((r) => r.length > 2);
-    if (!rings.length) continue;
+    if (!rings.length) {
+      // Plates fully below the ground clip still need a path (embedded tabs); project the raw outline.
+      if (isMain(p)) {
+        const worldRings = p.shape
+          .flatMap((ex2) => [ex2.outer, ...ex2.holes])
+          .map((path) => path.map(([a, c]) => planeToWorld(p.plane, a, c)))
+          .filter((r) => r.length > 2);
+        if (worldRings.length) {
+          const flatPts = worldRings[0];
+          const d = flatPts.reduce((s, q) => s + depth(q), 0) / flatPts.length;
+          const pts = worldRings.map((r) => r.map(scr));
+          items.push({
+            d,
+            pts,
+            fill: shade(look.color, lit(nr) * 0.9),
+            stroke: shade(look.color, 1.6),
+            sw: 0.6,
+            plate: true,
+            spacer: false,
+          });
+          all.push(...pts[0]);
+        }
+      }
+      continue;
+    }
     const flatPts = rings[0];
     const d = flatPts.reduce((s, q) => s + depth(q), 0) / flatPts.length;
     const pts = rings.map((r) => r.map(scr));
     all.push(...pts[0]);
-    items.push({ d, pts, fill: shade(look.color, lit(nr) * (p.family === 'S' ? 0.85 : 1)), stroke: shade(look.color, 1.6), sw: 0.6, plate: isMain(p) });
+    items.push({ d, pts, fill: shade(look.color, lit(nr) * (p.family === 'S' ? 0.85 : 1)), stroke: shade(look.color, 1.6), sw: 0.6, plate: isMain(p), spacer: p.family === 'C' || p.family === 'T' });
   }
 
   // the insert, a triangle at a time (only the side facing us)
@@ -543,19 +574,26 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   }
   const triTol = { tol: 0.6, minPts: 3 };
   const platePrec = { prec: 2 };
-  const emit = (list: Item[], pathOpts: PathDOpts, plateLayer: boolean) => {
+  const emit = (list: Item[], pathOpts: PathDOpts) => {
     for (let i = 0; i < list.length; i++) {
       const it = list[i];
       let d = it.pts.map((r) => pathD(r, f.X, f.Y, true, pathOpts)).join('');
       if (it.tri) {
         while (list[i + 1]?.tri && list[i + 1].fill === it.fill) d += pathD(list[++i].pts[0], f.X, f.Y, true, pathOpts);
       }
-      if (d) out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"${it.tri ? '' : ' fill-rule="evenodd"'}${plateLayer ? ' class="plate"' : ''}/>`);
+      if (!d && it.plate && it.pts[0]?.length) d = pathD(it.pts[0], f.X, f.Y, true, { ...pathOpts, prec: 3 });
+      if (!d && it.plate) d = `M${px(f.X(0))},${px(f.Y(0))}h1v1h-1Z`;
+      if (d) {
+        const cls = it.plate ? ' class="plate"' : it.spacer ? ' class="spacer"' : '';
+        out.push(
+          `<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"${it.tri ? '' : ' fill-rule="evenodd"'}${cls}/>`,
+        );
+      }
     }
   };
   // insert and other meshes first; plates on top so thin rows stay visible through the cast-in shape
-  emit(tris, triTol, false);
-  emit(plates, platePrec, true);
+  emit(tris, triTol);
+  emit(plates, platePrec);
   return `<svg class="drawing angled" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="${esc(title)}">${out.join('')}</svg>`;
 }
 
@@ -901,6 +939,19 @@ function pourSection(m: Model): string {
   return out.join('\n');
 }
 
+function plateGallery(m: Model, names: Map<string, string>): string {
+  const cards = m.sliced.plates.map((pl, i) => {
+    const empty = !pl.parts.length;
+    const shape = pl.parts.map((p) => p.shape[0]);
+    const label = names.get(pl.def.key) ?? pl.def.key;
+    const art = empty
+      ? '<svg class="thumb empty-plate" width="76" height="42" viewBox="0 0 76 42"><rect x="1" y="1" width="74" height="40" fill="#eee" stroke="#555" stroke-dasharray="4 3"/><text x="38" y="24" text-anchor="middle" font-size="10" fill="#222">empty</text></svg>'
+      : thumb(shape, 120, 70);
+    return `<figure class="plate-card" data-plate-key="${esc(pl.def.key)}" data-empty="${empty ? '1' : '0'}"><div class="plate-card-n">${i + 1}</div><div class="plate-card-art">${art}</div><figcaption><b>${esc(label)}</b> <small>${esc(pl.def.key)}${empty ? ' · no cut' : ''}</small></figcaption></figure>`;
+  });
+  return `<p class="note">One card per model plate, including empty or zero-area layers. Count must match the cover legend and <span class="mono">manifest.json</span>.</p><div class="plate-gallery" data-plate-count="${m.sliced.plates.length}">${cards.join('')}</div>`;
+}
+
 function cutListSection(m: Model, rates: PriceRates): string {
   const v = m.v;
   const bom = m.bom;
@@ -935,7 +986,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
   const names = keyNames(m);
   const parts = m.sliced.parts;
   const plates = m.sliced.plates.filter((pl) => pl.parts.length);
-  const mains = plates.filter((pl) => pl.def.family === 'P' || pl.def.family === 'X' || pl.def.family === 'R');
+  const mains = m.sliced.plates.filter((pl) => pl.def.family === 'P' || pl.def.family === 'X' || pl.def.family === 'R');
   const flat = v.sliceMode === 'flat';
   const rods = m.sliced.brace?.rods?.rods.length ? m.sliced.brace.rods : null;
   const spacers = parts.some((p) => p.family === 'C' || p.family === 'T');
@@ -981,6 +1032,11 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
     body: `<p class="note">Orthographic views from above two corners, to see the design whole. Not for measuring: the plan and elevations carry the sizes.</p><h3>From the front left</h3><figure class="full">${angledSvg(project, m, view, 'From the front left', { turn: -35, maxH: 420 })}</figure><h3>From the back right</h3><figure class="full">${angledSvg(project, m, view, 'From the back right', { turn: 145, maxH: 420 })}</figure>`,
   });
   sections.push({
+    id: 'gallery',
+    title: 'Every plate',
+    body: plateGallery(m, names),
+  });
+  sections.push({
     id: 'schedule',
     title: 'Plate schedule',
     body: `<table class="sched"><thead><tr><th>#</th><th>Part</th><th>Material, finish</th><th>Size (mm)</th><th>Thk</th><th>Position</th><th>Hand move</th><th>Outline</th></tr></thead><tbody>${scheduleRows(project, m, view, mainParts, tunes)}</tbody></table>${otherParts.length ? `<h3>Support and spacer parts</h3><table class="sched"><thead><tr><th>#</th><th>Part</th><th>Material, finish</th><th>Size (mm)</th><th>Thk</th><th>Position</th><th>Hand move</th><th>Outline</th></tr></thead><tbody>${scheduleRows(project, m, view, otherParts, tunes)}</tbody></table>` : ''}<p class="note">Sizes are the part's bounding box as cut (width × height). Positions are to the middle of the plate.</p>`,
@@ -1002,7 +1058,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
   const facts: [string, string][] = [
     ['Design', modeText(m, mains)],
     ['Overall size', `${n1(pb.maxX - pb.minX)} wide × ${n1(pb.maxY - pb.minY)} deep × ${n1(top)} high (mm)`],
-    ['Plates', `${mains.length} plates · ${parts.length} laser-cut parts`],
+    ['Plates', `${m.sliced.plates.length} plates · ${parts.length} laser-cut parts`],
     ['Weight', `about ${weight.toFixed(0)} kg${v.baseOn ? ` (steel ${m.bom.plateMass.toFixed(1)} kg, concrete ${m.bom.concreteMass.toFixed(0)} kg)` : ''}`],
     ['Materials', `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
     ['Date', `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`],
@@ -1012,6 +1068,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
 <h1>${esc(project.name || 'Untitled')}</h1>
 <dl class="facts">${facts.map(([k, x]) => `<dt>${k}</dt><dd>${x}</dd>`).join('')}</dl>
 ${errors ? `<p class="warn">The design has ${plural(errors, 'check error')}: fix ${errors === 1 ? 'it' : 'them'} in Strata before cutting.</p>` : ''}
+<p class="plate-legend" data-plate-count="${m.sliced.plates.length}">This pack lists <b>${m.sliced.plates.length}</b> plates — the same count as the model and <span class="mono">manifest.json</span>.</p>
 ${(m.sliced.fragments ?? []).length ? `<p class="note">Fragments: ${m.sliced.fragments.map((e) => esc(formatFragment(e))).join(' ')}</p>` : ''}
 <figure class="full">${angledSvg(project, m, view, 'The finished piece from the front right', { maxH: 400 })}<figcaption>From the front right, in the plates' metals and finishes. Orthographic: parallel edges stay parallel, so nothing shrinks with distance.</figcaption></figure>
 <h2>Contents</h2>
@@ -1035,6 +1092,12 @@ ${(m.sliced.fragments ?? []).length ? `<p class="note">Fragments: ${m.sliced.fra
   .toc { font-size: 15px; columns: 2; } .toc a { color: #000; text-decoration: none; }
   section { padding-top: 6px; }
   section + section { break-before: page; page-break-before: always; margin-top: 40px; border-top: 1px dashed #bbb; padding-top: 24px; }
+  /* Sticky print bar sits over the first gallery row unless sections clear it. */
+  @media screen {
+    section, .cover { scroll-margin-top: 56px; }
+    section { padding-top: 56px; }
+    section + section { padding-top: 56px; }
+  }
   figure { margin: 6px 0 10px; } figure.full { text-align: center; } figcaption { font-size: 12px; margin-top: 4px; }
   svg.drawing { display: block; max-width: 100%; height: auto; margin: 0 auto; font-family: inherit; }
   svg.angled { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -1054,9 +1117,18 @@ ${(m.sliced.fragments ?? []).length ? `<p class="note">Fragments: ${m.sliced.fra
   .big { font-size: 22px; font-weight: 800; margin: 4px 0; }
   .cols { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; } .cols > div { flex: 1 1 260px; }
   .swatch { display: inline-block; width: 14px; height: 14px; border: 1px solid #000; vertical-align: -2px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .bar { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #000; padding: 8px 0; margin: -16px 0 12px; display: flex; gap: 12px; align-items: center; z-index: 1; }
+  .bar { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #000; padding: 8px 0; margin: -16px 0 12px; display: flex; gap: 12px; align-items: center; z-index: 1; flex-wrap: wrap; }
   .bar button { font: inherit; font-weight: 700; font-size: 15px; padding: 8px 16px; border: 2px solid #000; background: #000; color: #fff; border-radius: 4px; cursor: pointer; }
   .bar span { font-size: 12px; }
+  .bar-opt { font-size: 13px; font-weight: 600; display: flex; gap: 6px; align-items: center; }
+  body.hide-spacers .spacer { display: none; }
+  .plate-gallery { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
+  .plate-card { margin: 0; width: 140px; border: 1px solid #999; padding: 6px; break-inside: avoid; }
+  .plate-card-n { font-weight: 800; font-size: 12px; margin-bottom: 2px; }
+  .plate-card-art { background: #f3f3f3; min-height: 44px; display: flex; align-items: center; justify-content: center; padding: 4px; }
+  .plate-card figcaption { font-size: 11px; margin-top: 4px; }
+  .plate-card figcaption small { display: block; color: #444; }
+  .plate-legend { font-size: 15px; }
   @media print {
     body { max-width: none; padding: 0; }
     .bar { display: none; }
@@ -1065,10 +1137,19 @@ ${(m.sliced.fragments ?? []).length ? `<p class="note">Fragments: ${m.sliced.fra
   }
 </style></head>
 <body>
-<div class="bar"><button type="button" onclick="window.print()">Print / Save PDF</button><span>A4, portrait. Choose “Save as PDF” as the printer for a PDF.</span></div>
+<div class="bar"><button type="button" onclick="window.print()">Print / Save PDF</button><label class="bar-opt"><input type="checkbox" id="show-spacers" checked> Show spacers</label><span>A4, portrait. Choose “Save as PDF” as the printer for a PDF.</span></div>
 ${cover}
 ${sections.map((s) => `<section id="${s.id}">\n<h2>${s.title}</h2>\n${s.body}\n</section>`).join('\n')}
 <p class="note">Made with Strata from ${esc(project.name || 'this project')}. Everything here comes from the design: change the design and print a fresh pack.</p>
+<script>
+(function () {
+  var box = document.getElementById('show-spacers');
+  if (!box) return;
+  box.addEventListener('change', function () {
+    document.body.classList.toggle('hide-spacers', !box.checked);
+  });
+})();
+</script>
 </body></html>
 `;
 }

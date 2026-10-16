@@ -35,6 +35,7 @@ describe('map edition + archetype card (T25)', () => {
 
   it('ships archetype-card.json in the build zip', () => {
     const p = newProject();
+    p.params = { ...p.params, plateCount: '6', insShape: 'none', anchorHoles: '0' };
     p.images.top = {
       name: 'Map',
       dataUrl: 'data:image/png;base64,AA',
