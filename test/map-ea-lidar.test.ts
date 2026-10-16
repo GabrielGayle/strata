@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildMapBundle } from '../src/core/mapPipeline';
-import { EA_LIDAR_DTM_CATALOG, loadBuiltinEaFixture } from '../src/core/mapEaLidar';
+import { EA_LIDAR_DTM_CATALOG } from '../src/core/mapEaLidar';
+import { loadBuiltinEaFixture } from '../src/core/mapEaLidar.fixtures';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
 import { fixtureTileFetcher } from './map-cli-fixtures';
@@ -26,7 +27,11 @@ describe('map EA LiDAR (T6)', () => {
         layerBudget: 'equal',
         resM: 32,
       }),
-      { fetch: fixtureTileFetcher, stack: { plateCount: 4, thicknessMm: 3, masterWidthMm: 120, layerBudget: 'equal' } },
+      {
+        fetch: fixtureTileFetcher,
+        eaLoader: async () => loadBuiltinEaFixture(),
+        stack: { plateCount: 4, thicknessMm: 3, masterWidthMm: 120, layerBudget: 'equal' },
+      },
     );
     expect(bundle.asset.map?.resolvedSource).toBe('ea-dtm');
     expect(bundle.asset.map?.sourceWarnings?.some((w) => /falling back to terrarium/i.test(w))).toBeFalsy();

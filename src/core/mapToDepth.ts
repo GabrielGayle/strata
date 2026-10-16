@@ -5,9 +5,13 @@ import type { Float32Grid } from './mapGrid';
 import { gridMetricWidthHeight } from './mapProject';
 
 function b64FromU16(words: Uint16Array): string {
-  const b = Buffer.alloc(words.length * 2);
-  for (let i = 0; i < words.length; i++) b.writeUInt16LE(words[i], i * 2);
-  return b.toString('base64');
+  const b = new Uint8Array(words.length * 2);
+  const view = new DataView(b.buffer);
+  for (let i = 0; i < words.length; i++) view.setUint16(i * 2, words[i], true);
+  let s = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < b.length; i += chunk) s += String.fromCharCode(...b.subarray(i, i + chunk));
+  return btoa(s);
 }
 
 function percentile(vals: number[], p: number): number {

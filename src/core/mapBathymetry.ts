@@ -1,6 +1,4 @@
 // Lake bathymetry import: CSV soundings, DXF contours, GeoTIFF stub (ticket T24).
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { Float32Grid } from './mapGrid';
 import { lonLatToMetric } from './mapProject';
 import type { MapSpec } from './mapSpec';
@@ -85,13 +83,8 @@ function bboxIntersects(a: MapSpec['bbox'], b: MapSpec['bbox']): boolean {
   return aw <= be && ae >= bw && as <= bn && an >= bs;
 }
 
-/** Offline Welsh Harp sample (synthetic CSV — not a third-party dataset). */
+/** Offline Welsh Harp sample (CLI/tests: `mapBathymetry.fixtures.ts`). */
 export function loadWelshHarpSampleSoundings(bbox: MapSpec['bbox']): Sounding[] {
   if (!bboxIntersects(bbox, WELSH_HARP_WATER_BBOX)) return [];
-  try {
-    const raw = readFileSync(fileURLToPath(new URL('../../test/fixtures/map/welsh-harp-soundings.csv', import.meta.url)), 'utf8');
-    return parseSoundingsCsv(raw);
-  } catch {
-    return [];
-  }
+  return [];
 }

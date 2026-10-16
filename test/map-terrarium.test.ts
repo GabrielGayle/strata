@@ -2,12 +2,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import {
-  decodeTerrariumMetres,
-  decodeTerrariumPng,
-  fetchTerrariumGrid,
-  terrariumUrl,
-} from '../src/core/mapTerrarium';
+import { decodeTerrariumMetres, fetchTerrariumGrid, terrariumUrl } from '../src/core/mapTerrarium';
+import { decodeTerrariumPng } from '../src/core/mapTerrarium.node';
 import { gridElevationRange, gridPercentileRange } from '../src/core/mapTerrarium';
 import { NEASDEN_BBOX } from './map-fixtures';
 

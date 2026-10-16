@@ -2662,7 +2662,6 @@ canvas.thumb {
 .design-hint {
   margin: 0;
   font-size: 11px;
-  color: var(--muted);
 }
 .design-input {
   width: 100%;
@@ -3070,4 +3069,88 @@ kbd {
 .map-window-status {
   font-size: 11px;
   margin: 0;
+}
+
+/* Map tab */
+.map-view {
+  padding: 10px 12px 24px;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+.map-view-head h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+.map-view-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.map-section h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.map-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.map-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.map-terrain-status {
+  padding: 8px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.map-terrain-working {
+  border-color: var(--accent);
+}
+.map-terrain-error {
+  border-color: var(--err);
+}
+.map-terrain-error .map-terrain-error,
+.map-terrain-status .map-terrain-error {
+  margin: 0;
+  color: var(--err);
+}
+.map-warnings {
+  margin: 4px 0 0;
+  padding-left: 1.2em;
+  font-size: 11px;
+  color: var(--warn);
+}
+.map-readout {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.map-terrain-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: map-spin 0.8s linear infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+@keyframes map-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

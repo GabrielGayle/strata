@@ -29,6 +29,7 @@ table.tbl,
 }
 
 .theme-surface,
+.map-view,
 .nodes-view,
 .shadow-view,
 .lib-body,
@@ -139,4 +140,36 @@ table.tbl tbody tr.highlighted td {
 
 .status-bar-field {
   color: var(--chrome-fg);
+}
+
+.left.window .section-head,
+.right.window .section-head {
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
+  color-scheme: light;
+}
+.left.window .section-head .count,
+.right.window .section-head .count {
+  color: var(--chrome-muted);
+}
+.left.window .section-collapsed-summary,
+.right.window .section-collapsed-summary {
+  color: var(--chrome-fg);
+}
+
+.design-box .design-hint,
+.map-window-note,
+.map-window-status,
+.design-box .note {
+  color: var(--chrome-muted);
+}
+.design-box .design-highlight,
+.design-box fieldset,
+.map-window fieldset {
+  color: var(--chrome-fg);
+}
+.design-box kbd {
+  color: var(--chrome-fg);
+  background: var(--field-bg);
+  border-color: var(--chrome-muted);
 }
