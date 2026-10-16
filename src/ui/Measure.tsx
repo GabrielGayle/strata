@@ -114,7 +114,7 @@ function edgesNear(mesh: THREE.Mesh, p: THREE.Vector3, r: number): Seg[] {
 const SKIP_RAYCAST = () => {};
 
 /** The measuring tool inside the Canvas: picking, snap marker, and every measurement drawn as a dimension line. */
-export function MeasureTool({ active }: { active: boolean }) {
+export function MeasureTool({ active, showDimensions = true }: { active: boolean; showDimensions?: boolean }) {
   const { camera, gl, scene } = useThree();
   const kind = useMeasure((s) => s.kind);
   const list = useMeasure((s) => s.list);
@@ -204,9 +204,10 @@ export function MeasureTool({ active }: { active: boolean }) {
 
   return (
     <group>
-      {list.map((m) => (
-        <Dimension key={m.id} m={m} color={accent} ink={ink} />
-      ))}
+      {(showDimensions || active) &&
+        list.map((m) => (
+          <Dimension key={m.id} m={m} color={accent} ink={ink} />
+        ))}
       {active && pending && (
         <>
           {pending.snap.edge && PICKS[kind][0] === 'edge' && <Line points={pending.snap.edge} color={accent} lineWidth={3} depthTest={false} renderOrder={10} raycast={SKIP_RAYCAST} />}

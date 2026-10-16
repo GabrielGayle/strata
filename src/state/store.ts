@@ -15,6 +15,7 @@ import type { CutObject } from '../core/objects';
 import type { ShelfSpec } from '../core/shelf';
 import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
+import { loadViewportLayers, saveViewportLayers, type ViewportLayerId, type ViewportLayers } from '../ui/viewportLayers';
 import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
 import { applyProjectPatch, type ProjectPatch } from '../core/design';
 import { projectWithTopMapSpec } from '../core/mapTopAsset';
@@ -66,6 +67,7 @@ export interface UiState {
   /** Sun study: clock time of day in hours, and whether the day is playing. Not part of the undo history. */
   sunTime: number;
   sunPlaying: boolean;
+  viewportLayers: ViewportLayers;
 }
 
 /** A whole master setup (project) open in its own tab. The active one lives in `project`. */
@@ -126,6 +128,7 @@ interface Store {
   loadVariant: (id: string) => void;
   deleteVariant: (id: string) => void;
   setUi: (patch: Partial<UiState>) => void;
+  toggleViewportLayer: (id: ViewportLayerId) => void;
   setTheme: (t: ThemeChoice) => void;
   toast: (msg: string) => void;
 }
@@ -274,6 +277,7 @@ export const useStore = create<Store>((set, get) => {
       highlight: null,
       sunTime: 12,
       sunPlaying: false,
+      viewportLayers: loadViewportLayers(),
       ...loadUi(),
     },
     setParam: (id, value) => {
@@ -480,6 +484,11 @@ export const useStore = create<Store>((set, get) => {
       commit({ ...p, variants: p.variants.filter((x) => x.id !== id) }, `delvar:${performance.now()}`);
     },
     setUi: (patch) => set({ ui: { ...get().ui, ...patch } }),
+    toggleViewportLayer: (id) => {
+      const layers = { ...get().ui.viewportLayers, [id]: !get().ui.viewportLayers[id] };
+      saveViewportLayers(layers);
+      set({ ui: { ...get().ui, viewportLayers: layers } });
+    },
     setTheme: (t) => {
       applyTheme(t);
       saveTheme(t);
