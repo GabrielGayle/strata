@@ -4,9 +4,23 @@ import { useStore } from '../state/store';
 import type { Project } from '../core/project';
 import { decodeShare, LONG_LINK, projectFromShare, shareCodeFromHash, shareLink, type ShareState } from '../core/share';
 import {
-  defaultLibrary, duplicateEntry, hasUnsavedChanges, openEntry, projectFingerprint, readLinks, recentEntries, renameEntry, saveAs, saveOver, sortEntries, uniqueName, writeLink,
+  defaultLibrary, duplicateEntry, exportLibrary, hasUnsavedChanges, importLibrary, openEntry, projectFingerprint, readLinks, recentEntries, renameEntry, saveAs, saveOver, sortEntries, uniqueName, writeLink,
   type LibraryLink, type LibraryMeta,
 } from '../state/library';
+import { isOneOffAddress, MAIN_HOST } from '../state/persist';
+import { download } from '../core/exporters';
+
+const host = () => (typeof location !== 'undefined' ? location.host : '');
+
+function pickFile(accept: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = accept;
+    inp.onchange = () => resolve(inp.files?.[0] ?? null);
+    inp.click();
+  });
+}
 
 const ls = () => (typeof localStorage !== 'undefined' ? localStorage : undefined);
 const linkOf = (setup: string): LibraryLink | undefined => readLinks(ls())[setup];
@@ -64,12 +78,12 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
   }, [onClose]);
   return (
     <div className="pm-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`pm lib ${wide ? '' : 'narrow'}`} role="dialog" aria-modal="true" aria-label={title}>
-        <div className="box-head">
-          <span>{title}</span>
-          <button className="btn sm" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
+      <div className={`window pm lib ${wide ? '' : 'narrow'}`} role="dialog" aria-modal="true" aria-label={title}>
+        <div className="title-bar">
+          <div className="title-bar-text">{title}</div>
+          <div className="title-bar-controls">
+            <button aria-label="Close" onClick={onClose}></button>
+          </div>
         </div>
         {children}
       </div>
@@ -176,7 +190,25 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
     });
   };
 
+  const doExport = () =>
+    void run(async () => {
+      const { text, count } = await exportLibrary(store);
+      if (!count) return toast('The library is empty: nothing to export');
+      download(`strata-library-${new Date().toISOString().slice(0, 10)}.json`, text, 'application/json');
+      toast(`Exported ${count} project${count === 1 ? '' : 's'}`);
+    });
+  const doImport = async () => {
+    const file = await pickFile('.json,application/json');
+    if (!file) return;
+    void run(async () => {
+      const { added, skipped } = await importLibrary(store, await file.text());
+      const already = skipped ? ` (${skipped} already here)` : '';
+      toast(added.length ? `Added ${added.length} project${added.length === 1 ? '' : 's'} to the library${already}` : `Nothing new to add${already}`);
+    });
+  };
+
   const sorted = list ? sortEntries(list) : [];
+  const here = host();
   const recent = list ? recentEntries(list.filter((m) => m.openedAt > 0)) : [];
   return (
     <Modal title="Projects" onClose={onClose} wide>
@@ -195,7 +227,21 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
             Save as…
           </button>
         </span>
+        <span className="seg">
+          <button className="btn sm" disabled={busy} onClick={doExport} title="Download every project in the library as one file, to move them to another address, browser or computer">
+            Export all
+          </button>
+          <button className="btn sm" disabled={busy} onClick={() => void doImport()} title="Add the projects from a library file (or a single project file)">
+            Import…
+          </button>
+        </span>
       </div>
+      {isOneOffAddress(here) && (
+        <div className="lib-note warn">
+          This is a one-off build address ({here}). Projects saved here stay at this address only and won't appear at{' '}
+          <a href={`https://${MAIN_HOST}`}>{MAIN_HOST}</a>. Use Export all here and Import… there to move them.
+        </div>
+      )}
       {error && <div className="lib-note err">{error}</div>}
       {recent.length > 0 && (
         <>
@@ -250,7 +296,9 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
-      <div className="lib-note">Kept in this browser only. Use Save in the toolbar for a project file you can move or back up.</div>
+      <div className="lib-note">
+        Kept in this browser{here ? ` at ${here}` : ''} only: another address, browser or computer has its own separate library. Export all makes a backup you can Import anywhere.
+      </div>
     </Modal>
   );
 }

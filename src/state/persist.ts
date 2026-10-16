@@ -138,3 +138,32 @@ export function createSaver(kv: KV, onStatus: (s: SaveStatus, err?: Error) => vo
     },
   };
 }
+
+/**
+ * Asks the browser to keep Strata's storage instead of clearing it when the
+ * disk runs low (or, in Safari, after a stretch without visits). Browsers may
+ * say no; saves still work, they're just "best effort" then.
+ */
+export async function requestPersistentStorage(nav: Navigator | undefined = typeof navigator !== 'undefined' ? navigator : undefined): Promise<boolean> {
+  try {
+    const s = nav?.storage;
+    if (!s?.persist) return false;
+    if (s.persisted && (await s.persisted())) return true;
+    return await s.persist();
+  } catch {
+    return false;
+  }
+}
+
+/** The everyday address. Saves made anywhere else stay at that other address. */
+export const MAIN_HOST = 'strata-gamma-one.vercel.app';
+
+/**
+ * Whether this page is a one-off build address: Vercel gives every build and
+ * every branch its own address, and the browser keeps a separate, empty set
+ * of saves for each one.
+ */
+export function isOneOffAddress(host: string): boolean {
+  const h = host.toLowerCase();
+  return h.endsWith('.vercel.app') && h !== MAIN_HOST;
+}
