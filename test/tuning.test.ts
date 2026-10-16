@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createPipeline } from '../src/core/pipeline';
 import { newProject, applyPreset } from '../src/core/project';
 import { SOUND_PRESETS } from '../src/core/soundPresets';
+import { centsBetween } from '../src/core/beam';
 import { arrange, cantileverHz, climb, hzToNote, lengthForHz, midiToHz, parseNote, parseNoteList } from '../src/core/tuning';
 
 function run(params: Record<string, string>) {
@@ -67,6 +68,34 @@ describe('tuned plates', () => {
   it('is off for waffle stacks and leaves strata plates alone', () => {
     expect(run({ sliceMode: 'waffle', tuneMode: 'scale' }).sliced.tuning).toBeNull();
     expect(run({}).sliced.tuning).toBeNull();
+  });
+
+  it('free-free plates hit their notes within a cent, holes at the nodes', () => {
+    const preset = SOUND_PRESETS.find((p) => p.name === 'Free Palestine');
+    expect(preset).toBeTruthy();
+    const p = applyPreset(newProject(), preset!);
+    const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null });
+    const t = m.sliced.tuning!;
+    expect(t.map((x) => x!.label)).toEqual(['FREE G4', 'PAL C5', 'ES B4', 'TINE G4']);
+    expect(m.sliced.warnings.filter((w) => w.startsWith('Tuning') || w.includes('overhang'))).toEqual([]);
+    expect(m.issues.filter((i) => i.severity === 'error')).toEqual([]);
+    t.forEach((x, i) => {
+      expect(x!.model).toBe('free');
+      expect(Math.abs(centsBetween(x!.cutHz, x!.hz)), x!.label).toBeLessThan(1);
+      expect(x!.partials, x!.label).toHaveLength(3);
+      expect(x!.nodes![0]).toBeGreaterThan(0.2);
+      expect(x!.nodes![0]).toBeLessThan(0.25);
+      expect(x!.nodes![1]).toBeCloseTo(1 - x!.nodes![0], 2);
+      const part = m.sliced.plates[i].parts[0];
+      expect(part.shape[0].holes.length).toBe(2);
+      expect(part.labelPaths.length).toBeGreaterThan(4);
+      // the cut length is the bar the fast model tuned
+      expect(part.bbox.maxY - part.bbox.minY).toBeCloseTo(x!.cut, 0);
+    });
+    expect(m.sounding).toHaveLength(4);
+    m.sounding!.forEach((s, i) => {
+      expect(Math.abs(centsBetween(s.hz[0], t[i]!.hz)), s.key).toBeLessThan(1);
+    });
   });
 
   it('every tuned template loads with plates inside the height range and no tuning warnings', () => {

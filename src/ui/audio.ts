@@ -4,6 +4,7 @@ import { synth, type Audio, type SoundSpec } from '../core/sound';
 import { grayDataUrl } from './surfaces';
 import { renderSound, soundSize } from '../core/sound';
 import { OVERTONE_RATIO } from '../core/tuning';
+import { CHANT_ONSETS } from '../core/soundPresets';
 
 const MAX_RATE = 16000;
 const MAX_SECONDS = 120;
@@ -86,6 +87,56 @@ export function playStrike(hz: number, seconds = 2.5) {
     data[i] = attack * (Math.sin(2 * Math.PI * hz * t) * Math.exp(-t * 1.6) + (f2 < rate / 2 ? 0.35 * Math.sin(2 * Math.PI * f2 * t) * Math.exp(-t * 9) : 0));
   }
   playAudio({ rate, data }, 0.35);
+}
+
+const PARTIAL_AMP = [1, 0.28, 0.14];
+const PARTIAL_DECAY = [1.5, 4.2, 7.5];
+
+/** One struck free-free plate: f1, f2 and f3 as decaying sines. */
+export function strikeSamples(partials: number[], seconds: number, rate = 22050): Float32Array {
+  const n = Math.round(seconds * rate);
+  const data = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / rate;
+    const attack = Math.min(1, t / 0.004);
+    let s = 0;
+    for (let k = 0; k < partials.length && k < 3; k++) {
+      const f = partials[k];
+      if (f > 20 && f < rate / 2) s += PARTIAL_AMP[k] * Math.sin(2 * Math.PI * f * t) * Math.exp(-t * PARTIAL_DECAY[k]);
+    }
+    data[i] = attack * s;
+  }
+  return data;
+}
+
+export function playModes(partials: number[], seconds = 2.2) {
+  const rate = 22050;
+  const data = strikeSamples(partials, seconds, rate);
+  let peak = 0;
+  for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
+  if (peak > 0) for (let i = 0; i < data.length; i++) data[i] /= peak;
+  playAudio({ rate, data }, 0.4);
+}
+
+/**
+ * Plates in order, each entering on the chant rhythm (quarter, eighth, eighth,
+ * dotted quarter when there are four). Decays overlap, the way a call does.
+ */
+export function playChant(partials: number[][], onsets: number[] = CHANT_ONSETS) {
+  const rate = 22050;
+  const tail = 2.4;
+  const at = partials.map((_, i) => (i < onsets.length ? onsets[i] : onsets[onsets.length - 1] + (i - onsets.length + 1) * 0.5));
+  const n = Math.max(1, Math.round(((at[at.length - 1] ?? 0) + tail) * rate));
+  const data = new Float32Array(n);
+  partials.forEach((p, i) => {
+    const start = Math.round(at[i] * rate);
+    const hit = strikeSamples(p, tail, rate);
+    for (let j = 0; j < hit.length && start + j < n; j++) data[start + j] += hit[j];
+  });
+  let peak = 0;
+  for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(data[i]));
+  if (peak > 0) for (let i = 0; i < n; i++) data[i] /= peak;
+  playAudio({ rate, data }, 0.45);
 }
 
 /** The audio behind a spec: the tone it describes, or the file loaded this session. */

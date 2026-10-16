@@ -50,6 +50,7 @@ export function shareResult(prev: DeferredModel | null, next: DeferredModel): De
     moulds: share(prev.moulds, next.moulds),
     mouldNest: share(prev.mouldNest, next.mouldNest),
     bom: share(prev.bom, next.bom),
+    sounding: share(prev.sounding, next.sounding),
   };
 }
 

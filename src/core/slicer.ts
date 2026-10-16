@@ -1101,11 +1101,11 @@ export function slice(input: SliceInput): SliceResult {
 
   // tuned plates: every main plate gets a flat top at the height that rings its note
   const main = defs.filter((d) => d.family === 'P' || d.family === 'R');
-  const tunes = !useForm && tuningActive(v) ? tunePlates(v, main.length, input.materialFor ? main.map((d) => input.materialFor!(d.key)) : undefined) : null;
+  const tunes = !useForm && tuningActive(v) ? tunePlates(v, main.length, input.materialFor ? main.map((d) => input.materialFor!(d.key)) : undefined, main.map((d) => d.u1 - d.u0)) : null;
   if (!useForm && tuningActive(v) && !tunes) warnings.push('Tuning: no readable notes. Use names like C3, F#2 or Bb4.');
   const tuning = tunes ? defs.map((d) => (d.family === 'P' || d.family === 'R' ? tunes[main.indexOf(d)] : null)) : null;
   if (tunes) {
-    if (!v.baseOn || embedOf(v) <= 0) warnings.push('Tuning assumes each plate is clamped in the concrete: turn the base on and give the plates an embed depth.');
+    if (v.tuneModel !== 'free' && (!v.baseOn || embedOf(v) <= 0)) warnings.push('Tuning assumes each plate is clamped in the concrete: turn the base on and give the plates an embed depth.');
     const off = tunes.filter((t) => t.clamped);
     if (off.length) warnings.push(`Tuning: ${off.length} plate${off.length > 1 ? 's are' : ' is'} outside the ${MIN_TUNED}–${MAX_TUNED} mm height range at this thickness. Change the notes or the plate thickness.`);
   }
@@ -1132,7 +1132,9 @@ export function slice(input: SliceInput): SliceResult {
   const outlines = homeDefs.map((d, di) => {
     if (useForm) return input.source ? formOutline(d, input.source, v) : [];
     const tune = tuning?.[di];
-    if (tune) return tunedOutline(d, tune.cut, v);
+    // a free bar's cut length includes nothing below the concrete line; the
+    // outline still grows an embed tab when one is asked for
+    if (tune) return tunedOutline(d, tune.model === 'free' ? tune.cut - e : tune.cut, v);
     if (isFlat) return flat ? flatOutline(flat, flatFootprint(v), (d.index + 0.5) * t) : [];
     return hf ? strataOutline(d, hf, v) : [];
   });
@@ -1304,6 +1306,7 @@ export function slice(input: SliceInput): SliceResult {
     }
 
     // 5. anchor holes in the embedded tab (any that would run into a rod hole are left out)
+    const tune = tuning?.[di] ?? null;
     const rodsHere = rods && def.home ? rodsThrough(rods, def.plane) : rods;
     const rodCut = rodsHere ? rodHoles(rodsHere, { key: def.key, family: def.family, shape: outlines[di] }, v.minFeature) : null;
     if (e > 0 && v.embedMode === 'cast' && v.anchorHoles > 0 && e > v.anchorDia + 2 * v.minFeature) {
@@ -1321,6 +1324,13 @@ export function slice(input: SliceInput): SliceResult {
       if (holes.length) {
         cuts.push(holes.map((h) => ({ outer: h, holes: [] })));
       }
+    }
+    // 5a. free-free bars: a mounting hole at each node of the first bending mode
+    if (tune?.model === 'free' && tune.nodes && tune.nodes.length >= 2 && v.tuneHole > 0) {
+      const cx = (def.u0 + def.u1) / 2;
+      const r = v.tuneHole / 2;
+      const y0 = -e;
+      cuts.push(tune.nodes.map((s) => ({ outer: circlePath(cx, y0 + s * tune.cut, r), holes: [] })));
     }
     // 5b. threaded rod holes
     if (rodCut && def.family === 'P') {
@@ -1375,6 +1385,14 @@ export function slice(input: SliceInput): SliceResult {
       const hLab = Math.min(v.labelHeight, e > 0 ? e * 0.5 : v.labelHeight);
       const prefer: Vec2 = [(bb.minX + bb.maxX) / 2, e > 0 && bb.minY < -e / 2 ? -e / 2 : bb.minY + hLab];
       const lab = placeLabel(id, ex, prefer, hLab);
+      let labelPaths = lab?.paths ?? [];
+      if (tune?.label) {
+        const cx = (def.u0 + def.u1) / 2;
+        const mid = tune.nodes && tune.nodes.length >= 2 ? -e + ((tune.nodes[0] + tune.nodes[1]) / 2) * tune.cut : (bb.minY + bb.maxY) / 2;
+        const h = Math.min(Math.max(v.labelHeight, 7), (bb.maxY - bb.minY) * 0.16);
+        const syl = placeLabel(tune.label, ex, [cx, mid], h);
+        if (syl) labelPaths = [...labelPaths, ...syl.paths];
+      }
       const pieceEtch = etch.length ? clipLines(etch, offset([ex], -0.8)) : [];
       const part: Part = {
         id,
@@ -1386,7 +1404,7 @@ export function slice(input: SliceInput): SliceResult {
         thickness: t,
         shape: [ex],
         etch: pieceEtch,
-        labelPaths: lab?.paths ?? [],
+        labelPaths,
         labelAt: lab?.at ?? null,
         area: shapeArea([ex]),
         perimeter: shapePerimeter([ex]),

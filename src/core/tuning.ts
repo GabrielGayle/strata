@@ -1,5 +1,10 @@
-// Tuned plates: each plate stands in the concrete like a tuning fork tine, so
-// its free height above the base sets the note it rings at when struck.
+// Tuned plates. Two models:
+//
+// Cantilever — the plate stands in the concrete like a tuning-fork tine, and
+// its free height above the base sets the note.
+//
+// Free — a sounding plate, hung at the nodes like a xylophone bar. Length is
+// chosen so the free-free fundamental (src/core/beam.ts) is the note.
 //
 // Model: an Euler–Bernoulli cantilever, rigidly clamped at the concrete and
 // free at the top, bending through its thickness. The first mode is
@@ -9,6 +14,7 @@
 // plates stiffen like a plate rather than a beam, cut-outs change the mass),
 // so plates are cut a little long and trimmed down to pitch with a tuner.
 import type { Values } from './params';
+import { tuneBar, beamModes } from './beam';
 
 /** Young's modulus (Pa) and density (kg/m³) of the plate materials. */
 export const MATERIALS: Record<string, { E: number; rho: number; label: string }> = {
@@ -169,22 +175,56 @@ export interface PlateTune {
   material: string;
   /** The length was held to MIN_TUNED…MAX_TUNED, so the plate won't reach its note. */
   clamped: boolean;
+  /** Cantilever tine, or a free-free bar hung at its nodes. */
+  model?: 'cantilever' | 'free';
+  /** f1..f3 of the plate as cut. Set for free-free bars. */
+  partials?: number[];
+  /** Nodes of the first mode, fractions of the bar length from the low end. */
+  nodes?: number[];
+  /** Etched on the plate, e.g. "FREE G4". */
+  label?: string;
 }
 
 export const MIN_TUNED = 10;
 export const MAX_TUNED = 2500;
 
+const words = (s: unknown) =>
+  String(s ?? '')
+    .trim()
+    .split(/[\s,;]+/)
+    .filter(Boolean);
+
 /** Per-plate target notes and free lengths for `count` plates, or null when the notes can't be read. */
-export function tunePlates(v: Values, count: number, materials?: string[]): PlateTune[] | null {
+export function tunePlates(v: Values, count: number, materials?: string[], widths?: number[]): PlateTune[] | null {
   const notes = plateNotes(v, count);
   if (!notes.length) return null;
   const allow = 1 + Math.max(0, v.tuneAllowance) / 100;
+  const free = v.tuneModel === 'free';
+  const labels = words(v.tuneLabels);
   return notes.map((midi, i) => {
     const material = materials?.[i] ?? String(v.plateMaterial);
+    const name = midiName(midi);
     const hz = midiToHz(midi);
-    const length = lengthForHz(hz, v.thickness, material);
-    const want = length * allow;
+    const word = labels[i];
+    const label = word ? `${word} ${name}` : free ? name : undefined;
+    if (!free) {
+      const length = lengthForHz(hz, v.thickness, material);
+      const want = length * allow;
+      const cut = Math.min(MAX_TUNED, Math.max(MIN_TUNED, want));
+      return { midi, name, hz, length, cut, cutHz: cantileverHz(cut, v.thickness, material), material, clamped: cut !== want, model: 'cantilever' as const, label };
+    }
+    const width = widths?.[i] && widths[i] > 1 ? widths[i] : Number(v.plateWidth) || 40;
+    const holeR = Math.max(0, Number(v.tuneHole) || 0) / 2;
+    const tuned = tuneBar({ targetHz: hz, thicknessMm: v.thickness, widthMm: width, material, holeRmm: holeR });
+    const want = tuned.lengthMm * allow;
     const cut = Math.min(MAX_TUNED, Math.max(MIN_TUNED, want));
-    return { midi, name: midiName(midi), hz, length, cut, cutHz: cantileverHz(cut, v.thickness, material), material, clamped: cut !== want };
+    const atCut =
+      Math.abs(cut - tuned.lengthMm) < 1e-6
+        ? tuned
+        : beamModes({ lengthMm: cut, thicknessMm: v.thickness, widthMm: width, material, holeRmm: holeR, holeAt: tuned.nodes });
+    return {
+      midi, name, hz, length: tuned.lengthMm, cut, cutHz: atCut.hz[0], material, clamped: Math.abs(cut - want) > 1e-6,
+      model: 'free' as const, partials: atCut.hz, nodes: atCut.nodes, label,
+    };
   });
 }

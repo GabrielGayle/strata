@@ -11,6 +11,7 @@ import { runChecks, type Issue } from './checks';
 import { nest, nestGroups, type NestResult } from './nest';
 import { materialKey, materialOf } from './appearance';
 import { tuningActive } from './tuning';
+import { modesOfOutline } from './beam';
 import { buildMoulds, pourPlan, type MouldResult, type PourPlanRow } from './mould';
 import { unfold, type UnfoldResult } from './unfold';
 import { buildBom, type Bom } from './bom';
@@ -69,10 +70,21 @@ export interface Model {
   unfolded: UnfoldResult;
   pour: { rows: PourPlanRow[]; total: number; mismatch: number };
   bom: Bom;
+  /** Free-free partials of the finished outlines, from the deferred worker. Null when tuning is not free-free. */
+  sounding: SoundingMode[] | null;
   stages: StageLog[];
   totalMs: number;
   /** True when deferred stages (checks, nesting, moulds, BOM) are from an earlier state. */
   stale: boolean;
+}
+
+export interface SoundingMode {
+  key: string;
+  /** f1, f2, f3 measured on the cut outline, Hz. */
+  hz: number[];
+  /** Node fractions from the low end. */
+  nodes: number[];
+  ms: number;
 }
 
 const formKeys = (p: string) => ['Shape', 'X', 'Y', 'Z', 'Rot', 'Length', 'Width', 'Height', 'Taper', 'Sweep', 'Camber', 'Bend', 'Twist', 'Scale'].map((k) => p + k);
@@ -120,7 +132,7 @@ function stager(cache: Cache, mode: 'fast' | 'full') {
 const pick = (v: Values, keys: string[]) => keys.map((k) => v[k]);
 
 /** Everything the 3D view needs: parameters, forms, images, strata, plates, unfold, pour. */
-export type FrontModel = Omit<Model, 'issues' | 'nested' | 'moulds' | 'mouldNest' | 'bom' | 'stale'>;
+export type FrontModel = Omit<Model, 'issues' | 'nested' | 'moulds' | 'mouldNest' | 'bom' | 'sounding' | 'stale'>;
 
 /**
  * What the deferred stages read. Plain data only, so it can be posted to a
@@ -140,6 +152,7 @@ export interface DeferredModel {
   moulds: MouldResult;
   mouldNest: NestResult;
   bom: Bom;
+  sounding: SoundingMode[] | null;
   stages: StageLog[];
   totalMs: number;
   stale: boolean;
@@ -279,7 +292,26 @@ export function createDeferredPipeline() {
       buildBom(v, sliced, nested, moulds, mouldNest, insert?.volume ?? 0, input.pourRows, appearance),
       true,
     );
-    return { issues, nested, moulds, mouldNest, bom, stages: st.stages, totalMs: performance.now() - t0, stale: st.stale };
+    // the fast model also runs while slicing, so the length is already cut;
+    // here it is run again on the finished outline (rounds, holes and all)
+    const sounding = stage('Sounding modes', [sliced, v.tuneModel, v.thickness], () => {
+      if (v.tuneModel !== 'free' || !sliced.tuning) return null;
+      const out: SoundingMode[] = [];
+      sliced.plates.forEach((plate, i) => {
+        const tune = sliced.tuning?.[i];
+        const shape = plate.parts[0]?.shape;
+        if (!tune || tune.model !== 'free' || !shape?.length) return;
+        const t1 = performance.now();
+        try {
+          const m = modesOfOutline(shape, v.thickness, tune.material);
+          out.push({ key: plate.def.key, hz: m.hz, nodes: m.nodes, ms: performance.now() - t1 });
+        } catch {
+          /* the length was still chosen by the fast model during slicing */
+        }
+      });
+      return out.length ? out : null;
+    }, true);
+    return { issues, nested, moulds, mouldNest, bom, sounding, stages: st.stages, totalMs: performance.now() - t0, stale: st.stale };
   };
 }
 
@@ -292,6 +324,7 @@ export function assemble(f: FrontModel, d: Omit<DeferredModel, 'totalMs'> & { to
     moulds: d.moulds,
     mouldNest: d.mouldNest,
     bom: d.bom,
+    sounding: d.sounding ?? null,
     stages: [...f.stages, ...d.stages],
     totalMs: f.totalMs + (d.totalMs ?? 0),
     stale,
