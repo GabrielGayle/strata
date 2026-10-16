@@ -4,11 +4,25 @@ import {
   fixedOutlineMm,
   masterSizePresetPatch,
   outlineForMasterPreset,
+  parseMasterOrientation,
   ratioOutlineMm,
+  resolveMasterSizeCli,
 } from '../src/core/masterPresets';
 import { evaluateParams } from '../src/core/params';
 
 describe('master size presets', () => {
+  it('resolveMasterSizeCli accepts canonical ids', () => {
+    expect(resolveMasterSizeCli('iphone-17')).toBe('iphone17');
+    expect(resolveMasterSizeCli('A4')).toBe('a4');
+    expect(resolveMasterSizeCli('16:9')).toBe('ratio16x9');
+    expect(() => resolveMasterSizeCli('ledger')).toThrow(/unknown size 'ledger'/);
+  });
+
+  it('parseMasterOrientation', () => {
+    expect(parseMasterOrientation('Portrait')).toBe('portrait');
+    expect(() => parseMasterOrientation('wide')).toThrow(/unknown orientation/);
+  });
+
   it('ISO A-series footprints in portrait', () => {
     expect(fixedOutlineMm('a4', 'portrait')).toEqual({ baseWidth: 210, baseLength: 297 });
     expect(fixedOutlineMm('a3', 'portrait')).toEqual({ baseWidth: 297, baseLength: 420 });

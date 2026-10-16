@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { unzipSync } from 'fflate';
 import { PNG } from 'pngjs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadProject, main, type CliIo } from '../src/cli';
+import { applyMasterSizeCli, loadProject, main, type CliIo } from '../src/cli';
+import { evaluateParams } from '../src/core/params';
 import { buildZip } from '../src/core/exporters';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { deserialize } from '../src/core/project';
@@ -126,6 +127,80 @@ describe('cli export', () => {
     expect(await main([example, '--out', plain], capture())).toBe(0);
     const normal = JSON.parse(readFileSync(join(plain, 'price-estimate.json'), 'utf8'));
     expect(normal.total).toBeGreaterThan(0);
+  });
+});
+
+describe('cli master size', () => {
+  it('applies --size a4 portrait to the exported project', async () => {
+    const dir = scratch();
+    const project = join(dir, 'p.json');
+    writeFileSync(project, JSON.stringify({ format: 'strata-project', version: 1, preset: 'Mini waffle', params: { plateCount: '9', thickness: '2' } }));
+    const out = join(dir, 'out');
+    const io = capture();
+    expect(await main([project, '--out', out, '--size', 'a4'], io)).toBe(0);
+    const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
+    expect(back.params.baseWidth).toBe('210');
+    expect(back.params.baseLength).toBe('297');
+    expect(back.params.masterScale).toBe('1');
+    expect(back.params.plateCount).toBe('9');
+    expect(back.params.thickness).toBe('2');
+    const { values } = evaluateParams(back.params);
+    expect(values.baseWidth).toBe(210);
+    expect(values.baseLength).toBe(297);
+  });
+
+  it('applies --orientation landscape', async () => {
+    const dir = scratch();
+    const project = join(dir, 'p.json');
+    writeFileSync(project, JSON.stringify({ format: 'strata-project', version: 1, preset: 'Mini waffle' }));
+    const out = join(dir, 'out');
+    expect(await main([project, '--out', out, '--size', 'a4', '--orientation', 'landscape'], capture())).toBe(0);
+    const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
+    expect(back.params.baseWidth).toBe('297');
+    expect(back.params.baseLength).toBe('210');
+  });
+
+  it('ratio --size keeps the long edge from the loaded project', async () => {
+    const dir = scratch();
+    const project = join(dir, 'p.json');
+    writeFileSync(
+      project,
+      JSON.stringify({
+        format: 'strata-project',
+        version: 1,
+        params: { baseLength: '800', baseWidth: '300', masterScale: '0.5', plateCount: '11', thickness: '1.5' },
+      }),
+    );
+    const out = join(dir, 'out');
+    expect(await main([project, '--out', out, '--size', '16:9'], capture())).toBe(0);
+    const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
+    expect(back.params.plateCount).toBe('11');
+    expect(back.params.thickness).toBe('1.5');
+    const { values } = evaluateParams(back.params);
+    expect(values.baseLength).toBeCloseTo(400);
+    expect(values.baseWidth).toBeCloseTo(225);
+  });
+
+  it('errors on unknown --size and --orientation without --size', async () => {
+    const dir = scratch();
+    const project = join(dir, 'p.json');
+    writeFileSync(project, JSON.stringify({ format: 'strata-project', version: 1, preset: 'Mini waffle' }));
+    const io = capture();
+    expect(await main([project, '--out', join(dir, 'out'), '--size', 'tabloid'], io)).toBe(1);
+    expect(io.err).toMatch(/unknown size 'tabloid'/);
+    expect(io.err).toMatch(/iphone-17/);
+    expect(() => statSync(join(dir, 'out'))).toThrow();
+
+    const io2 = capture();
+    expect(await main([project, '--out', join(dir, 'out2'), '--orientation', 'landscape'], io2)).toBe(1);
+    expect(io2.err).toMatch(/--orientation requires --size/);
+  });
+
+  it('applyMasterSizeCli resolves iphone-17', () => {
+    const { project } = loadProject(JSON.stringify({ format: 'strata-project', version: 1 }));
+    applyMasterSizeCli(project, 'iphone-17');
+    expect(project.params.baseWidth).toBe('71.5');
+    expect(project.params.baseLength).toBe('149.6');
   });
 });
 

@@ -109,9 +109,13 @@ export function masterSizePresetPatch(
   };
 }
 
-/** CLI / scripting alias: preset id strings like `a4`, `iphone17`. */
+/** Canonical ids shown in CLI help and error messages. */
+export const MASTER_SIZE_CLI_CANONICAL = ['iphone-17', 'a3', 'a4', 'a5', 'a6', '16:9', '4:3', '1:1', '3:2'] as const;
+
+/** CLI / scripting alias: preset id strings like `a4`, `iphone-17`. */
 export const MASTER_PRESET_CLI_IDS: Record<string, MasterPresetId> = {
   iphone17: 'iphone17',
+  'iphone-17': 'iphone17',
   iphone: 'iphone17',
   a3: 'a3',
   a4: 'a4',
@@ -127,3 +131,17 @@ export const MASTER_PRESET_CLI_IDS: Record<string, MasterPresetId> = {
   '3:2': 'ratio3x2',
   '3x2': 'ratio3x2',
 };
+
+export function resolveMasterSizeCli(id: string): MasterPresetId {
+  const mapped = MASTER_PRESET_CLI_IDS[id] ?? MASTER_PRESET_CLI_IDS[id.toLowerCase()];
+  if (!mapped) {
+    throw new Error(`unknown size '${id}' (expected ${MASTER_SIZE_CLI_CANONICAL.join(', ')})`);
+  }
+  return mapped;
+}
+
+export function parseMasterOrientation(value: string): MasterOrientation {
+  const o = value.toLowerCase();
+  if (o === 'portrait' || o === 'landscape') return o;
+  throw new Error(`unknown orientation '${value}' (expected portrait or landscape)`);
+}
