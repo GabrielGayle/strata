@@ -30,6 +30,7 @@ import type { MapSource } from './mapSpec';
 import { mapBuildKey } from './mapBuildKey';
 import { mapInfo, mapWarn, noticesWithoutStaleEngraveSkip, type MapSourceNotice } from './mapNotices';
 import type { DepthData } from './depth';
+import type { Float32Grid } from './mapGrid';
 import type { ImageAsset, Project } from './project';
 import type { RawValue } from './params';
 
@@ -92,42 +93,42 @@ async function fetchElevationGrid(
   effective: MapSource,
   notices: MapSourceNotice[],
   opts: BuildMapImageOptions,
-): Promise<Awaited<ReturnType<typeof fetchTerrariumGrid>>> {
+): Promise<{ grid: Float32Grid; used: MapSource }> {
   const fetch: TileFetcher = async (url) => {
     const inner = opts.fetch ?? getTileFetcher();
     return cachedTileFetch(spec.cacheDir ?? opts.cacheDir, url, inner);
   };
 
   if (effective === 'terrarium') {
-    return fetchTerrariumGrid(spec, { fetch });
+    return { grid: await fetchTerrariumGrid(spec, { fetch }), used: 'terrarium' };
   }
 
   if (effective === 'cop30') {
     const grid = await fetchCop30Grid(spec, { loader: opts.cop30Loader });
-    if (grid) return grid;
+    if (grid) return { grid, used: 'cop30' };
     notices.push(mapWarn('cop30 COG tile unavailable for this bbox; falling back to terrarium (~30 m).'));
-    return fetchTerrariumGrid(spec, { fetch });
+    return { grid: await fetchTerrariumGrid(spec, { fetch }), used: 'terrarium' };
   }
 
   if (isRegionalLidarSource(effective)) {
     const grid = await fetchRegionalLidarGrid(effective, spec, opts.regionalLoader);
-    if (grid) return grid;
+    if (grid) return { grid, used: effective };
     notices.push(
       mapWarn(`${effective} LiDAR not available for this bbox (no tile coverage or adapter offline); falling back to terrarium (~30 m).`),
     );
-    return fetchTerrariumGrid(spec, { fetch });
+    return { grid: await fetchTerrariumGrid(spec, { fetch }), used: 'terrarium' };
   }
 
   if (isEaLidarSource(effective)) {
     const grid = await fetchEaLidarGrid(effective, spec, { loader: opts.eaLoader });
-    if (grid) return grid;
+    if (grid) return { grid, used: effective };
     notices.push(mapWarn(`${effective} LiDAR not available for this bbox; falling back to terrarium (~30 m).`));
-    return fetchTerrariumGrid(spec, { fetch });
+    return { grid: await fetchTerrariumGrid(spec, { fetch }), used: 'terrarium' };
   }
 
   if (STUB_SOURCES.has(effective)) {
     notices.push(mapWarn(`${effective} adapter not shipped yet; falling back to terrarium (~30 m).`));
-    return fetchTerrariumGrid(spec, { fetch });
+    return { grid: await fetchTerrariumGrid(spec, { fetch }), used: 'terrarium' };
   }
 
   throw new MapSourceNotImplementedError(effective);
@@ -151,13 +152,16 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   const commWarn = spec.commemorativeText ? commemorativeFitWarning(spec.commemorativeText, faceW) : null;
   if (commWarn) notices.push(mapWarn(commWarn));
   const fetchSource = resolveElevationSourceForModel(resolved.effective, spec.model);
-  const elev = await fetchElevationGrid(spec, fetchSource, notices, opts);
+  const elevHit = await fetchElevationGrid(spec, fetchSource, notices, opts);
+  const elev = elevHit.grid;
+  /** Actual raster after fallback — auto exaggeration and the readout source must use this, not the pick. */
+  const usedSource = elevHit.used;
   const resampleSpec = { ...spec, model: spec.model === 'dtm+buildings' ? 'dtm' : spec.model };
   let metric = reprojectResample(elev, resampleSpec);
   let dtmMetric = metric;
   if (spec.model === 'dsm' && fetchSource !== resolved.effective) {
     const dtmElev = await fetchElevationGrid(spec, resolved.effective, notices, opts);
-    dtmMetric = reprojectResample(dtmElev, { ...spec, model: 'dtm' });
+    dtmMetric = reprojectResample(dtmElev.grid, { ...spec, model: 'dtm' });
   }
   if (spec.model === 'dtm+buildings') {
     dtmMetric = metric;
@@ -208,7 +212,11 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     }
   }
   const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
-  const { factor, readout } = resolveExaggerationFactor(spec, metricForExaggeration, stack);
+  const { factor, readout } = resolveExaggerationFactor(
+    { exaggeration: spec.exaggeration },
+    metricForExaggeration,
+    stack,
+  );
   const budgetMode = spec.layerBudget ?? stack.layerBudget ?? 'jenks';
   const budget = computeLayerBreaks(metric, stack.plateCount, budgetMode);
   metric = applyLayerBudget(metric, budget.breaksM);
@@ -244,9 +252,9 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     exaggerationReadout: readout,
     exaggeration: spec.exaggeration === 'auto' ? 'auto' : factor,
     simplifyLostFeatures: simplified.lostFeatures,
-    resolvedSource: resolved.effective,
+    resolvedSource: usedSource,
     sourceWarnings: filteredNotices.length ? filteredNotices : undefined,
-    attribution: mergeAttribution(spec, resolved.effective).concat(
+    attribution: mergeAttribution(spec, usedSource).concat(
       hasEngraveArt ? ['Map features © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), ODbL'] : [],
     ),
   };
