@@ -65,6 +65,14 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 | **Catalog (DTM 1 m)** | `https://environment.data.gov.uk/DefraDataDownload/?mapService=EA/LIDARCompositeDTM1m` |
 | **Strata status** | Ticket **T6** reads EA tiles via the adapter (cached under `--map-cache`); offline tests use `test/fixtures/map/regional/neasden-ea-dtm.json`. Browser fetches may use the **EA-only** CORS proxy in `api/ea-proxy.ts` (not deployed). |
 
+## Map cache (ticket T7)
+
+| Field | Value |
+|---|---|
+| **CLI** | `--map-cache <dir>` — terrarium PNGs, COG/WMS bytes, Nominatim JSON, and Overpass JSON share one hashed layout (`src/core/mapCache.ts`). |
+| **Browser** | Optional IndexedDB store (`src/core/mapCacheBrowser.ts`) for the map window when wired. |
+| **Acceptance** | Second fetch for the same URL/query reads disk (or IDB) and does not call the network fetcher. |
+
 ## Nominatim (map UI geocoding) — ticket T8
 
 | Field | Value |
