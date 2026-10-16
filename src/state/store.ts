@@ -14,7 +14,7 @@ import type { CutObject } from '../core/objects';
 import type { ShelfSpec } from '../core/shelf';
 import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
-import { createSaver, defaultKV, readWithLegacy, type KV, type SaveStatus } from './persist';
+import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
 
 export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'shadow' | 'graph' | 'nodes' | 'compare';
 export type Snap = 'iso' | 'front' | 'side' | 'top';
@@ -116,6 +116,7 @@ interface Store {
 const STORAGE_KEY = 'strata.project.v1';
 const UI_KEY = 'strata.ui.v1';
 const SETUPS_KEY = 'strata.setups.v1';
+const RESCUE_KEY = 'strata.project.unreadable';
 
 function parseProject(s: string | undefined): Project | null {
   if (!s) return null;
@@ -461,12 +462,16 @@ const setupsJson = (s: Store) => JSON.stringify({ active: s.activeSetup, list: s
 export async function hydrate(store: KV = kv): Promise<void> {
   kv = store;
   const legacy = typeof localStorage !== 'undefined' ? localStorage : undefined;
-  const project = parseProject(await readWithLegacy(kv, STORAGE_KEY, legacy));
+  const text = await readWithLegacy(kv, STORAGE_KEY, legacy);
+  const project = parseProject(text);
+  // an autosave this version can't read is kept aside, not overwritten by the next edit
+  if (text && !project) await kv.set(RESCUE_KEY, text).catch(() => undefined);
   if (project) {
     const { setups, activeSetup } = parseSetups(await readWithLegacy(kv, SETUPS_KEY, legacy), project);
     useStore.setState({ project, setups, activeSetup, past: [], future: [] });
   }
   hydrated = true;
+  void requestPersistentStorage();
 }
 
 /** Wait for every queued autosave write (tests, and before a reload). */

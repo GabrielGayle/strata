@@ -117,6 +117,76 @@ export async function duplicateEntry(store: LibraryStore, id: string, now = Date
   return meta;
 }
 
+/**
+ * The whole library as one file. Browser storage belongs to a single site
+ * address, so this is how saves move to another address, browser or computer.
+ */
+export const LIBRARY_FORMAT = 'strata-library';
+
+export async function exportLibrary(store: LibraryStore, now = Date.now()): Promise<{ text: string; count: number }> {
+  const entries: { meta: LibraryMeta; data: string }[] = [];
+  for (const meta of sortEntries(await store.list())) {
+    const data = await store.getData(meta.id);
+    if (data != null) entries.push({ meta, data });
+  }
+  return { text: JSON.stringify({ format: LIBRARY_FORMAT, version: 1, exportedAt: now, entries }), count: entries.length };
+}
+
+/**
+ * Adds the entries of a library file. An entry already here unchanged is
+ * skipped; one whose id is taken by a different project comes in as a new
+ * entry with a name that doesn't clash. A single project file also works.
+ */
+export async function importLibrary(store: LibraryStore, text: string, now = Date.now()): Promise<{ added: string[]; skipped: number }> {
+  const raw = JSON.parse(text);
+  let incoming: { meta?: Partial<LibraryMeta>; data: string }[];
+  if (raw?.format === LIBRARY_FORMAT && Array.isArray(raw.entries)) incoming = raw.entries;
+  else if (raw?.format === 'strata-project') incoming = [{ data: text }];
+  else throw new Error('Not a Strata library or project file');
+  const existing = await store.list();
+  const prints = new Map<string, string>();
+  for (const m of existing) {
+    const d = await store.getData(m.id);
+    if (d != null) prints.set(m.id, fingerprint(d));
+  }
+  const have = new Set(prints.values());
+  const names = existing.map((m) => m.name);
+  const added: string[] = [];
+  let skipped = 0;
+  for (const [i, e] of incoming.entries()) {
+    if (typeof e?.data !== 'string') continue;
+    const project = deserialize(e.data); // throws on a broken entry
+    const print = fingerprint(e.data);
+    if (have.has(print)) {
+      skipped++;
+      continue;
+    }
+    const m = e.meta ?? {};
+    const id = typeof m.id === 'string' && m.id && !prints.has(m.id) ? m.id : newEntryId(now + i);
+    let data = e.data;
+    let name = typeof m.name === 'string' && m.name.trim() ? m.name.trim() : project.name;
+    const unique = uniqueName(name, names);
+    if (unique !== name || project.name !== unique) {
+      name = unique;
+      data = serialize({ ...project, name });
+    }
+    const meta: LibraryMeta = {
+      id,
+      name,
+      savedAt: Number.isFinite(m.savedAt) ? (m.savedAt as number) : now,
+      openedAt: Number.isFinite(m.openedAt) ? (m.openedAt as number) : 0,
+      size: data.length,
+      ...(typeof m.thumb === 'string' ? { thumb: m.thumb } : {}),
+    };
+    await store.put(meta, data);
+    prints.set(id, fingerprint(data));
+    have.add(print);
+    names.push(name);
+    added.push(name);
+  }
+  return { added, skipped };
+}
+
 export function memoryLibrary(): LibraryStore {
   const meta = new Map<string, LibraryMeta>();
   const data = new Map<string, string>();
