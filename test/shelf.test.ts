@@ -63,3 +63,24 @@ describe('rainbow anodising', () => {
     expect(new Set(Object.values(b.assign))).toEqual(new Set(['rb1', 'rb2', 'rb3']));
   });
 });
+
+import { originFrame, toWorld } from '../src/core/origin';
+import { newObject } from '../src/core/objects';
+describe('world origin', () => {
+  it('measures objects from the chosen spot, turned, and leaves shelf heights on the concrete', () => {
+    const v = { baseLength: 800, baseWidth: 300, baseOn: true, baseHeight: 120 } as never;
+    const f = originFrame({ ref: 'corner', x: 10, y: 5, z: 0, turn: 90 }, v);
+    expect(f.p[0]).toBeCloseTo(-400, 6);
+    expect(f.p[1]).toBeCloseTo(125, 6);
+    expect(f.p[2]).toBeCloseTo(150 - 10, 6);
+    const o = { ...newObject('box', [], { y: 0 }), x: 100, y: 20, z: 0 };
+    const w = toWorld(o, f);
+    expect(w.x).toBeCloseTo(-400, 6);
+    expect(w.z).toBeCloseTo(140 - 100, 6);
+    expect(w.y).toBeCloseTo(145, 6);
+    expect(w.ry).toBeCloseTo(90, 6);
+    expect(toWorld(o, f)).toBe(w);
+    expect(toWorld(o, f, true).y).toBe(20);
+    expect(toWorld(o, originFrame(undefined, v))).toBe(o);
+  });
+});

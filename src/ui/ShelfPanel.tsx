@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, type ShelfLayout, type ShelfSpec } from '../core/shelf';
-import { defaultAppearance, rainbowBuckets } from '../core/appearance';
+import { defaultAppearance, rainbowBuckets, type Appearance } from '../core/appearance';
+import type { Model } from '../core/pipeline';
+import type { RawValue } from '../core/params';
 import { baseTop } from '../core/slicer';
 
-type NumKey = 'radius' | 'gap' | 'rows' | 'rowStep' | 'rowRise' | 'seat' | 'lean' | 'lift' | 'shoulder' | 'thick' | 'clearance' | 'x' | 'z' | 'turn';
+export type NumKey = 'radius' | 'gap' | 'rows' | 'rowStep' | 'rowRise' | 'seat' | 'lean' | 'lift' | 'shoulder' | 'thick' | 'clearance' | 'x' | 'z' | 'turn';
 
-interface Field {
+export interface Field {
   key: NumKey;
   label: string;
   step: number;
@@ -15,7 +17,7 @@ interface Field {
   show?: (s: ShelfSpec) => boolean;
 }
 
-const FIELDS: Field[] = [
+export const FIELDS: Field[] = [
   {
     key: 'radius',
     label: 'Radius',
@@ -105,8 +107,38 @@ const FIELDS: Field[] = [
   },
 ];
 
-const DEFAULT_HINT =
+export const DEFAULT_HINT =
   'Type one postcard per line as width × height in mm, with an optional name. The cards are laid edge to edge along the arc, each standing in a notch, and the plate tops step down so every card shows. Hover any value to see what it does.';
+
+/** Settings that make the plates flat-topped and tall enough for every shelf card, on a base big enough to hold them (null with no cards). */
+export function fitShelf(model: Model, s: ShelfSpec): Record<string, RawValue> | null {
+  const cards = model.objects.filter((o) => o.object.seat !== undefined);
+  if (!cards.length) return null;
+  const v = model.v;
+  const top = baseTop(v);
+  let need = 0;
+  let ext = 0;
+  let depth = 0;
+  for (const b of cards) {
+    const bb = b.geometry.boundingBox!;
+    need = Math.max(need, bb.min.y - top + s.seat + 2);
+    ext = Math.max(ext, Math.abs(bb.min.x), Math.abs(bb.max.x));
+    depth = Math.max(depth, Math.abs(bb.min.z), Math.abs(bb.max.z));
+  }
+  return {
+    strataOn: false,
+    insShape: 'none',
+    stackHeight: String(Math.ceil(need)),
+    baseLength: String(Math.max(Math.ceil(2 * ext + 60), Number(v.baseLength))),
+    baseWidth: String(Math.max(Math.ceil(2 * depth + 60), Number(v.baseWidth))),
+  };
+}
+
+/** Rainbow anodised buckets over the main plates, in order along the stack. */
+export function rainbowPlates(model: Model, appearance: Appearance | undefined, n: number): Appearance {
+  const keys = model.sliced.plates.filter((p) => p.parts.length && p.def.family === 'P').map((p) => p.def.key);
+  return rainbowBuckets(appearance ?? defaultAppearance(), keys, n);
+}
 
 /** Postcard shelf: the cards, the arc they follow, and how the plates hold them. */
 export default function ShelfPanel() {
@@ -118,7 +150,6 @@ export default function ShelfPanel() {
   const setAppearance = useStore((s) => s.setAppearance);
   const [hint, setHint] = useState<string | null>(null);
   const [bands, setBands] = useState(7);
-  const v = model.v;
 
   if (!stored)
     return (
@@ -139,34 +170,11 @@ export default function ShelfPanel() {
     title: h,
   });
 
-  const shelfBuilds = model.objects.filter((o) => o.object.seat !== undefined);
   const fit = () => {
-    if (!shelfBuilds.length) return;
-    const top = baseTop(v);
-    let need = 0;
-    let ext = 0;
-    let depth = 0;
-    for (const b of shelfBuilds) {
-      const bb = b.geometry.boundingBox!;
-      need = Math.max(need, bb.min.y - top + s.seat + 2);
-      ext = Math.max(ext, Math.abs(bb.min.x), Math.abs(bb.max.x));
-      depth = Math.max(depth, Math.abs(bb.min.z), Math.abs(bb.max.z));
-    }
-    setParams(
-      {
-        strataOn: false,
-        insShape: 'none',
-        stackHeight: String(Math.ceil(need)),
-        baseLength: String(Math.max(Math.ceil(2 * ext + 60), Number(v.baseLength))),
-        baseWidth: String(Math.max(Math.ceil(2 * depth + 60), Number(v.baseWidth))),
-      },
-      'Fit plates to the postcard shelf',
-    );
+    const patch = fitShelf(model, s);
+    if (patch) setParams(patch, 'Fit plates to the postcard shelf');
   };
-  const rainbow = () => {
-    const keys = model.sliced.plates.filter((p) => p.parts.length && p.def.family === 'P').map((p) => p.def.key);
-    setAppearance(rainbowBuckets(appearance ?? defaultAppearance(), keys, bands), 'fill:rainbow');
-  };
+  const rainbow = () => setAppearance(rainbowPlates(model, appearance, bands), 'fill:rainbow');
 
   return (
     <>
