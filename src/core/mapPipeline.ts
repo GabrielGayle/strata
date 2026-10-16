@@ -6,6 +6,7 @@ import { reprojectResample } from './mapProject';
 import { mapGridToDepth } from './mapToDepth';
 import { applyLayerBudget, computeLayerBreaks, type LayerBudgetMode } from './mapLayerBudget';
 import { resolveExaggerationFactor } from './mapExaggeration';
+import { simplifyMetricGrid } from './mapSimplify';
 import type { DepthData } from './depth';
 import type { ImageAsset, Project } from './project';
 import type { RawValue } from './params';
@@ -30,6 +31,7 @@ export interface MapStackContext {
   thicknessMm: number;
   masterWidthMm: number;
   layerBudget?: LayerBudgetMode;
+  kerfMm?: number;
 }
 
 export interface BuildMapImageOptions {
@@ -62,6 +64,11 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   const budgetMode = spec.layerBudget ?? stack.layerBudget ?? 'jenks';
   const budget = computeLayerBreaks(metric, stack.plateCount, budgetMode);
   metric = applyLayerBudget(metric, budget.breaksM);
+  const simplified = simplifyMetricGrid(metric, {
+    kerfMm: stack.kerfMm ?? 0.2,
+    pixelSizeM: Math.abs(metric.transform.pixelW),
+  });
+  metric = simplified.grid;
   const { factor, readout } = resolveExaggerationFactor(spec, metric, stack);
   const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384 });
   const stored: MapSpec = {
@@ -74,6 +81,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     exaggerationFactor: factor,
     exaggerationReadout: readout,
     exaggeration: spec.exaggeration === 'auto' ? 'auto' : factor,
+    simplifyLostFeatures: simplified.lostFeatures,
   };
   const asset: ImageAsset = {
     name: spec.title?.trim() || 'Map terrain',
@@ -118,6 +126,7 @@ export function mapStackFromProject(project: Project, layerBudget?: LayerBudgetM
     thicknessMm: numParam(p, 'thickness', 3),
     masterWidthMm: Math.max(numParam(p, 'baseLength', 520), numParam(p, 'baseWidth', 380)),
     layerBudget,
+    kerfMm: numParam(p, 'kerf', 0.2),
   };
 }
 

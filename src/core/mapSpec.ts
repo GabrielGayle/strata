@@ -40,6 +40,8 @@ export interface MapSpec {
   exaggerationReadout?: string;
   /** Elevation breaks (metres) used for the layer budget. */
   layerBreaksM?: number[];
+  /** Features dropped by auto-simplify (islands/holes below min area). */
+  simplifyLostFeatures?: number;
 }
 
 export const TERRARIUM_ATTRIBUTION = [
@@ -139,6 +141,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   const layerBreaksM = Array.isArray(o.layerBreaksM)
     ? o.layerBreaksM.map((x) => Number(x)).filter((x) => Number.isFinite(x))
     : undefined;
+  const simplifyLostFeatures = num(o.simplifyLostFeatures);
   return {
     kind: 'map',
     bbox,
@@ -157,6 +160,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(exaggerationFactor != null && exaggerationFactor > 0 ? { exaggerationFactor } : {}),
     ...(exaggerationReadout ? { exaggerationReadout } : {}),
     ...(layerBreaksM?.length ? { layerBreaksM } : {}),
+    ...(simplifyLostFeatures != null && simplifyLostFeatures >= 0 ? { simplifyLostFeatures } : {}),
   };
 }
 
