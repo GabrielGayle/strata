@@ -87,7 +87,17 @@ describe('map elevation → plate heights (invariant)', () => {
   it('flatten, contrast and mix do not change map plate heights', () => {
     const grid = syntheticConeGrid(32, 20, 12);
     const { depth } = mapGridToDepth(grid, { exaggeration: 3 });
-    depth.settings = { ...depth.settings, flatten: 1, curve: 2.5, spacing: 'perspective' };
+    depth.settings = {
+      ...depth.settings,
+      flatten: 1,
+      curve: 2.5,
+      spacing: 'perspective',
+      flatLevelMode: 'auto',
+      flatLevel: 0.5,
+      flatLevelOverride: true,
+      stepLimit: 0.08,
+      edgeEase: 1,
+    };
     const v = evaluateParams({
       baseLength: '400',
       baseWidth: '400',

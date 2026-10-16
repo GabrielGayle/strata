@@ -14,6 +14,7 @@ It must **bypass** every photo/image step:
 - image-as-height mix with strata (`imgMix`)
 - contrast, blur / smooth, invert-as-filter
 - depth-from-photo flatten, curve, and perspective spacing
+- background-to-plate flat (`depthFlat` / `flatLevelMode`) — image faces only
 - impression “flat level” (`topFloor: flat`) and strata-flow (`edgeFlow`)
 - the image height-range cap (`imgRange`)
 - water flatten when water mode is **raw** (only `flat`, or `bathy` fallback, may flatten water)
