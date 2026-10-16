@@ -7,6 +7,12 @@ import { useModel } from './model';
 import PourEditor from './PourEditor';
 import { changedByGroup, resetGroupPatch } from '../core/paramDiff';
 import RoundPreview, { ROUND_PREVIEW_IDS } from './RoundPreview';
+import {
+  MASTER_PRESET_OPTIONS,
+  masterSizePresetPatch,
+  type MasterOrientation,
+  type MasterPresetId,
+} from '../core/masterPresets';
 
 function fmtVal(x: number, step = 1): string {
   if (!Number.isFinite(x)) return '–';
@@ -237,6 +243,65 @@ function OtherParam({ def, value }: { def: ParamDef; value: any }) {
   );
 }
 
+function MasterSizePresets() {
+  const setParams = useStore((s) => s.setParams);
+  const params = useStore((s) => s.project.params);
+  const [orientation, setOrientation] = useState<MasterOrientation>('portrait');
+  const [lastPreset, setLastPreset] = useState<MasterPresetId | null>(null);
+  const apply = (id: MasterPresetId) => {
+    setLastPreset(id);
+    setParams(masterSizePresetPatch(params, id, orientation), `Master size: ${id} ${orientation}`);
+  };
+  const setOri = (o: MasterOrientation) => {
+    setOrientation(o);
+    if (lastPreset) setParams(masterSizePresetPatch(params, lastPreset, o), `Master size: ${lastPreset} ${o}`);
+  };
+  return (
+    <div className="prow field-row-stacked">
+      <div className="field-row">
+        <div className="plabel">
+          <span>Outline preset</span>
+        </div>
+        <div className="ctrls field-row" style={{ flexWrap: 'wrap', gap: 4 }}>
+          <select
+            className="sel"
+            defaultValue=""
+            onChange={(e) => {
+              const id = e.target.value as MasterPresetId;
+              if (id) apply(id);
+            }}
+            aria-label="Outline size preset"
+          >
+            <option value="" disabled>Choose…</option>
+            {MASTER_PRESET_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className={`btn sm ${orientation === 'portrait' ? 'on' : ''}`}
+            title="Portrait: longer edge along the stack length"
+            onClick={() => setOri('portrait')}
+          >
+            Portrait
+          </button>
+          <button
+            type="button"
+            className={`btn sm ${orientation === 'landscape' ? 'on' : ''}`}
+            title="Landscape: longer edge across the width"
+            onClick={() => setOri('landscape')}
+          >
+            Landscape
+          </button>
+        </div>
+      </div>
+      <div className="perr" style={{ color: 'var(--muted)' }}>
+        Fixed sizes set the base outline in real mm (A-sizes are ISO 216). Ratio presets keep the current long edge. Plate thickness and count are unchanged.
+      </div>
+    </div>
+  );
+}
+
 function MasterButtons({ value }: { value: number }) {
   const setParam = useStore((s) => s.setParam);
   const sizes: [string, number][] = [['1:4', 0.25], ['1:3', 1 / 3], ['1:2', 0.5], ['3:4', 0.75], ['1:1', 1], ['1.5:1', 1.5], ['2:1', 2]];
@@ -364,7 +429,12 @@ export default function ParamPanel() {
                     <OtherParam key={d.id} def={d} value={v[d.id]} />
                   ),
                 )}
-                {g === 'Master' && !changedOnly && <MasterButtons value={v.masterScale} />}
+                {g === 'Master' && !changedOnly && (
+                  <>
+                    <MasterSizePresets />
+                    <MasterButtons value={v.masterScale} />
+                  </>
+                )}
                 {g === 'Concrete' && !changedOnly && <PourEditor compact />}
                 {g === 'Tuning' && !changedOnly && <TuningTable />}
               </div>
