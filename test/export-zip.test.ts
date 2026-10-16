@@ -40,10 +40,14 @@ describe('fabrication zip carries every feature', () => {
   it('has the pour plan, the price estimate with hardware, and the project', () => {
     expect(text('pour-plan.txt')).toMatch(/Bottom band/);
     const price = text('price-estimate.txt');
-    expect(price).toMatch(/Aluminium laser time/);
+    expect(price).toMatch(/Aluminium S-/);
+    expect(price).toMatch(/Delivery is not included/);
     expect(price).toMatch(/Threaded rod/);
     expect(price).toMatch(/Nuts and washers/);
     expect(price).toMatch(/Total/);
+    const priceJson = JSON.parse(text('price-estimate.json'));
+    expect(priceJson.lines.some((l: { label: string }) => l.label === 'Threaded rod')).toBe(true);
+    expect(priceJson.total).toBeGreaterThan(0);
     const back = deserialize(text('project.strata.json'));
     expect(back.appearance?.assign).toEqual(p.appearance!.assign);
     expect(back.variants[0].name).toBe('A');

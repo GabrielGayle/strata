@@ -82,11 +82,13 @@ describe('mixed metals through the pipeline', () => {
     expect(Object.keys(unzipSync(buildZip(plain, newProject())))).toContain('laser/sheets/sheet-01.dxf');
   });
 
-  it('prices each metal as its own job with one minimum order', () => {
+  it('prices each metal on its own rates with one order minimum', () => {
     const m = createPipeline()(mixed(), assets);
     const e = estimateMix(m.bom, m.v.thickness);
-    expect(e.lines.filter((l) => l.label.endsWith('setup'))).toHaveLength(2);
+    expect(e.fitted).toBe(true);
     expect(e.lines.some((l) => l.label.startsWith('Aluminium'))).toBe(true);
+    expect(e.lines.some((l) => l.label.startsWith('Corten'))).toBe(true);
+    expect(e.lines.filter((l) => l.label === 'Minimum order charge')).toHaveLength(e.subtotal < 55 - 1e-9 ? 1 : 0);
     // a single metal prices exactly as before
     const plain = createPipeline()(newProject(), assets);
     expect(estimateMix(plain.bom, 3).total).toBeCloseTo(estimatePrice(plain.bom, 'corten', 3).total, 9);
