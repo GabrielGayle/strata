@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COPERNICUS_DEM30_BASE, fetchCop30Grid, loadBuiltinCop30Fixture } from '../src/core/mapCopernicus';
+import { COPERNICUS_DEM30_BASE, loadBuiltinCop30Fixture } from '../src/core/mapCopernicus';
 import { buildMapBundle } from '../src/core/mapPipeline';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
