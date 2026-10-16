@@ -6,7 +6,10 @@ import {
   CHROME_CSS_VAR_NAMES,
   FIELD,
   FIELD_CSS_VAR_NAMES,
+  PARAM_PANEL,
+  PARAM_PANEL_CSS_VAR_NAMES,
   THEME_SURFACES,
+  WCAG_AA_LARGE,
   WCAG_AA_NORMAL,
   contrastRatio,
   meetsWcagAaNormal,
@@ -41,6 +44,13 @@ describe('form + chrome contrast (WCAG AA)', () => {
     expect(meetsWcagAaNormal(CHROME.listFg, CHROME.listBg)).toBe(true);
   });
 
+  it('parameters panel text tokens meet WCAG on silver panel (all themes)', () => {
+    expect(meetsWcagAaNormal(PARAM_PANEL.fg, PARAM_PANEL.bg)).toBe(true);
+    expect(meetsWcagAaNormal(PARAM_PANEL.muted, PARAM_PANEL.bg)).toBe(true);
+    expect(meetsWcagAaNormal(PARAM_PANEL.disabled, PARAM_PANEL.bg)).toBe(true);
+    expect(contrastRatio(PARAM_PANEL.heading, PARAM_PANEL.bg)).toBeGreaterThanOrEqual(WCAG_AA_LARGE);
+  });
+
   it('themed ink on panel surfaces meet 4.5:1 in light and dark', () => {
     for (const mode of ['light', 'dark'] as const) {
       const t = THEME_SURFACES[mode];
@@ -63,7 +73,9 @@ describe('form + chrome contrast (WCAG AA)', () => {
     expect(root['--chrome-muted']).toBe(CHROME.muted);
     expect(root['--chrome-list-bg']).toBe(CHROME.listBg);
     expect(root['--chrome-list-fg']).toBe(CHROME.listFg);
-    for (const name of [...FIELD_CSS_VAR_NAMES, ...CHROME_CSS_VAR_NAMES]) {
+    expect(root['--param-fg']).toBe(PARAM_PANEL.fg);
+    expect(root['--param-muted']).toBe(PARAM_PANEL.muted);
+    for (const name of [...FIELD_CSS_VAR_NAMES, ...CHROME_CSS_VAR_NAMES, ...PARAM_PANEL_CSS_VAR_NAMES]) {
       expect(root[name], name).toBeTruthy();
     }
   });
@@ -73,6 +85,8 @@ describe('form + chrome contrast (WCAG AA)', () => {
     expect(dark['--field-fg']).toBe(FIELD.fg);
     expect(dark['--field-bg']).toBe(FIELD.bg);
     expect(dark['--chrome-fg']).toBe(CHROME.fg);
+    expect(dark['--param-fg']).toBe(PARAM_PANEL.fg);
+    expect(dark['--param-muted']).toBe(PARAM_PANEL.muted);
     expect(dark['--ink']).toBe(THEME_SURFACES.dark.ink);
   });
 });

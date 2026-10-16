@@ -8,6 +8,15 @@ export const CHROME = {
   listFg: '#ffffff',
 } as const;
 
+/** Left/right Win98 side panels (Parameters, Inspector): always dark-on-silver, not --ink/--muted. */
+export const PARAM_PANEL = {
+  bg: CHROME.bg,
+  fg: CHROME.fg,
+  muted: CHROME.muted,
+  disabled: '#4a4a4a',
+  heading: CHROME.fg,
+} as const;
+
 export const THEME_SURFACES = {
   light: { ink: '#141414', panel: '#fbfaf7', panel2: '#f3f1ec', bg: '#efede8' },
   dark: { ink: '#ecebe6', panel: '#1c1c1a', panel2: '#232320', bg: '#141412' },
@@ -39,6 +48,16 @@ export const CHROME_CSS_VAR_NAMES = [
   '--chrome-list-fg',
 ] as const;
 
+export const PARAM_PANEL_CSS_VAR_NAMES = [
+  '--param-bg',
+  '--param-fg',
+  '--param-muted',
+  '--param-disabled',
+  '--param-heading',
+] as const;
+
+export const WCAG_AA_LARGE = 3;
+
 export function fieldThemeTokens(): Record<string, string> {
   return {
     '--field-bg': FIELD.bg,
@@ -60,8 +79,18 @@ export function chromeThemeTokens(): Record<string, string> {
   };
 }
 
+export function paramPanelThemeTokens(): Record<string, string> {
+  return {
+    '--param-bg': PARAM_PANEL.bg,
+    '--param-fg': PARAM_PANEL.fg,
+    '--param-muted': PARAM_PANEL.muted,
+    '--param-disabled': PARAM_PANEL.disabled,
+    '--param-heading': PARAM_PANEL.heading,
+  };
+}
+
 export function pairedThemeTokens(): Record<string, string> {
-  return { ...chromeThemeTokens(), ...fieldThemeTokens() };
+  return { ...chromeThemeTokens(), ...paramPanelThemeTokens(), ...fieldThemeTokens() };
 }
 
 function hexToRgb(hex: string): [number, number, number] {
