@@ -10,14 +10,10 @@ import { depthToGray } from './core/depth';
 import { createPipeline, type Assets } from './core/pipeline';
 import { defaultRaw, PARAMS, PARAM_MAP, type EvalResult, type ParamKind, type RawValue } from './core/params';
 import { DEFAULT_RATES, type PriceRates } from './core/price';
-import {
-  MASTER_SIZE_CLI_CANONICAL,
-  masterSizePresetPatch,
-  parseMasterOrientation,
-  resolveMasterSizeCli,
-} from './core/masterPresets';
+import { MASTER_SIZE_CLI_CANONICAL } from './core/masterPresets';
 import { applyAutoDimensionPatch, previewAutoDimension, type DepthFace } from './core/autoDimension';
-import { deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
+import { applyProjectPatch, formatPatchDiff, masterSizePatch, parseDesign } from './core/design';
+import { serialize, deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
 import { buildMapBundle, MapSourceNotImplementedError, mapSpecFromCli } from './core/mapPipeline';
 import { renderVenueMockup } from './core/mapRender';
 import { parseBbox, parseEngraveFlag, parseExaggeration, parseLayerBudget, parseMapSource, type MapSpec } from './core/mapSpec';
@@ -87,6 +83,8 @@ const USAGE = `Usage:
                  [--map-res <metres>] [--exaggeration auto|<n>] [--layer-budget equal|quantile|jenks]
                  [--engrave on|off|roads,water,...]
                  [--map-cache <dir>] [--render <out.png>]
+  npm run cli -- say <project.json> "<instruction>"
+  npm run cli -- <project.json> say [--apply] "<instruction>"
   npm run cli -- params
   npm run cli -- presets
 
@@ -103,13 +101,15 @@ side, front, top). Needs depth data on that image. --relief-exaggeration scales 
 Regional LiDAR adapters use offline fixtures in tests; production COG/WMS reads are stubbed until later tickets.
 Unimplemented explicit sources fall back to terrarium with a warning. --engrave is stored
 on the MapSpec (default on); engraving is a no-op until a later release.
+say parses plain-language design instructions (same rules as the in-app Type a design box),
+prints the parameter diff and any unrecognised phrases. --apply writes the updated project JSON to stdout.
 Unknown parameters and formula errors exit 1 and write nothing. Clamped values are warnings.
 `;
 
 type Slot = 'side' | 'front' | 'top';
 
 interface Args {
-  cmd: 'export' | 'params' | 'presets' | 'help';
+  cmd: 'export' | 'params' | 'presets' | 'help' | 'say';
   project?: string;
   out?: string;
   preset?: string;
@@ -117,6 +117,8 @@ interface Args {
   rates?: string;
   size?: string;
   orientation?: string;
+  sayText?: string;
+  sayApply?: boolean;
   render?: string;
   autoDimension: DepthFace[];
   reliefExaggeration: number;
@@ -149,6 +151,38 @@ function parseAutoDimension(spec: string, faces: DepthFace[]) {
   }
 }
 
+function idleArgs(cmd: Args['cmd']): Args {
+  return { cmd, images: {}, autoDimension: [], reliefExaggeration: 1 };
+}
+
+function newExportArgs(project: string): Args {
+  return {
+    cmd: 'export',
+    project,
+    images: {},
+    autoDimension: [],
+    reliefExaggeration: 1,
+    map: { source: 'auto', resM: 8, exaggeration: 'auto', engrave: parseEngraveFlag(undefined, true) },
+  };
+}
+
+function parseSay(argv: string[]): Args {
+  if (argv.length < 2) throw new Error(`say needs a project file and instruction\n\n${USAGE}`);
+  const project = argv[0] === 'say' ? argv[1] : argv[0];
+  const rest = argv[0] === 'say' ? argv.slice(2) : argv.slice(1);
+  let sayApply = false;
+  const textParts: string[] = [];
+  for (const a of rest) {
+    if (a === 'say') continue;
+    if (a === '--apply') sayApply = true;
+    else if (a.startsWith('--')) throw new Error(`unknown argument '${a}'`);
+    else textParts.push(a);
+  }
+  const sayText = textParts.join(' ').trim();
+  if (!sayText) throw new Error(`missing instruction text\n\n${USAGE}`);
+  return { ...idleArgs('say'), project, sayText, sayApply };
+}
+
 function parseImage(spec: string, images: Args['images']) {
   const eq = spec.indexOf('=');
   if (eq <= 0) throw new Error('--image expects side=path, front=path or top=path');
@@ -161,21 +195,13 @@ function parseImage(spec: string, images: Args['images']) {
 
 function parseArgs(argv: string[]): Args {
   if (argv.length === 0) throw new Error(`missing project file\n\n${USAGE}`);
-  if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') {
-    return { cmd: 'help', images: {}, autoDimension: [], reliefExaggeration: 1 };
-  }
+  if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') return idleArgs('help');
   if (argv[0] === 'params' || argv[0] === 'presets') {
     if (argv.length > 1) throw new Error(`unexpected argument '${argv[1]}'`);
-    return { cmd: argv[0], images: {}, autoDimension: [], reliefExaggeration: 1 };
+    return idleArgs(argv[0]);
   }
-  const args: Args = {
-    cmd: 'export',
-    project: argv[0],
-    images: {},
-    autoDimension: [],
-    reliefExaggeration: 1,
-    map: { source: 'auto', resM: 8, exaggeration: 'auto', engrave: parseEngraveFlag(undefined, true) },
-  };
+  if (argv[0] === 'say' || (argv.length >= 2 && argv[1] === 'say')) return parseSay(argv);
+  const args: Args = newExportArgs(argv[0]);
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--out') args.out = take(argv, ++i, a);
@@ -212,7 +238,7 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--map-cache=')) args.map!.cacheDir = a.slice(12);
     else if (a === '--render') args.render = take(argv, ++i, a);
     else if (a.startsWith('--render=')) args.render = a.slice(9);
-    else if (a === '--help' || a === '-h') return { cmd: 'help', images: {}, autoDimension: [], reliefExaggeration: 1 };
+    else if (a === '--help' || a === '-h') return idleArgs('help');
     else throw new Error(`unknown argument '${a}'`);
   }
   if (!args.out) throw new Error(`missing --out <dir>\n\n${USAGE}`);
@@ -288,9 +314,9 @@ export function applyMasterSizeCli(
   size: string,
   orientation?: string,
 ): void {
-  const presetId = resolveMasterSizeCli(size);
-  const ori = orientation == null ? 'portrait' : parseMasterOrientation(orientation);
-  project.params = { ...project.params, ...masterSizePresetPatch(project.params, presetId, ori) };
+  const next = applyProjectPatch(project, masterSizePatch(size, orientation));
+  project.params = next.params;
+  if (next.name !== project.name) project.name = next.name;
 }
 
 function evalIssues(ev: EvalResult): CliIssue[] {
@@ -427,6 +453,31 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
   if (args.cmd === 'presets') {
     io.stdout(JSON.stringify(presetCatalog(), null, 2) + '\n');
     return 0;
+  }
+  if (args.cmd === 'say') {
+    try {
+      const text = readFileSync(args.project!, 'utf8');
+      const { project, issues } = loadProject(text);
+      if (issues.some((i) => i.level === 'error')) {
+        report(issues, io);
+        return 1;
+      }
+      const parsed = parseDesign(args.sayText!, { project });
+      io.stdout(formatPatchDiff(project, parsed.patch) + '\n');
+      if (parsed.unrecognised.length) {
+        const bits = parsed.unrecognised.map((s) => args.sayText!.slice(s.start, s.end));
+        io.stdout(`unrecognised: ${bits.join('; ')}\n`);
+      }
+      if (parsed.notes.length) io.stderr(`note: ${parsed.notes.join('; ')}\n`);
+      if (args.sayApply) {
+        const updated = applyProjectPatch(project, parsed.patch);
+        io.stdout(serialize(updated) + '\n');
+      }
+      return 0;
+    } catch (e) {
+      io.stderr(`error: ${(e as Error).message}\n`);
+      return 1;
+    }
   }
   try {
     const text = readFileSync(args.project!, 'utf8');

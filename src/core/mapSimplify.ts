@@ -165,9 +165,8 @@ export function simplifyMetricGrid(grid: Float32Grid, opts: MapSimplifyOptions =
     fillFromBorder(pixels);
   });
 
-  let out = data;
   const sr = opts.smoothRadiusPx ?? 1;
-  if (sr > 0) out = boxBlur(out, w, h, sr);
+  const out: Float32Array = sr > 0 ? boxBlur(data, w, h, sr) : data;
   return { grid: { ...grid, data: out }, lostFeatures: lost };
 }
 
