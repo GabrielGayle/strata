@@ -350,7 +350,7 @@ export const PARAMS: ParamDef[] = [
   num('cutSmooth', 'Cut edge smoothing', 'Image', 0, 0, 25, {
     step: 0.25,
     show: (v) => v.imgTopMode !== 'off' || (v.sliceMode === 'parallel' && v.imgFrontMode !== 'off'),
-    help: 'Rounds the edges of the image cuts only (steps, recess floors, pixel stair-steps). Outer plate edges are untouched: use Edges › Round all corners for those.',
+    help: 'Rounds the edges of the image cuts only (steps, recess floors, pixel stair-steps). Narrow details are rounded, not flattened. Outer plate edges are untouched: use Edges › Round all corners for those.',
   }),
   choice('imgFrontMode', 'Front view', 'Image', 'off', [
     { value: 'off', label: 'Off' },
