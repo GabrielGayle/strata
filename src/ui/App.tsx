@@ -11,6 +11,8 @@ import ParamPanel from './ParamPanel';
 import Inspector from './Inspector';
 import SetupTabs from './SetupTabs';
 import WorkspaceArea, { WorkspaceBar } from './Workspace';
+import DropOverlay from './DropOverlay';
+import HelpLayer, { HelpButton } from './Help';
 
 
 export default function App() {
@@ -175,8 +177,11 @@ export default function App() {
             last edit rebuilt {work.current.stages} stage{work.current.stages === 1 ? '' : 's'} in {fmt(work.current.ms, 0)} ms{model.stale ? ' · updating checks…' : ''}
           </span>
           <span>mm</span>
+          <HelpButton />
         </footer>
         {ui.toast && <div className="toast">{ui.toast}</div>}
+        <DropOverlay />
+        <HelpLayer />
       </div>
     </ModelContext.Provider>
     </FullModelContext.Provider>

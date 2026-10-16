@@ -10,6 +10,7 @@ import { frameMatch, renderWall, windowDays, type ShadowFrame } from '../core/sh
 import { clock, shiftSite, siteOf, sunTimes } from '../core/sun';
 import { SunBar } from './SunStudy';
 import { installCardHtml } from '../core/installCard';
+import { receiveShadowDrops } from './dropInbox';
 
 // only needed once a video is chosen
 const VideoPicker = lazy(() => import('./VideoPicker'));
@@ -256,7 +257,7 @@ export default function ShadowView() {
     const added: ShadowFrame[] = stills.map((st, k) => ({ id: `f${Date.now().toString(36)}${k}`, name: st.name, dataUrl: st.dataUrl, time: Math.min(23.9, Math.max(0.1, start + k * step)), hold: 2 }));
     if (added.length) save([...frames, ...added]);
   };
-  const add = async (files: FileList | null) => {
+  const add = async (files: FileList | File[] | null) => {
     if (!files?.length) return;
     const list = [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     const urls = await Promise.all(list.map((f) => readPicture(f).catch(() => null)));
@@ -264,6 +265,17 @@ export default function ShadowView() {
     append(list.flatMap((f, k) => (urls[k] ? [{ name: f.name.replace(/\.[^.]+$/, ''), dataUrl: urls[k]! }] : [])));
     if (fileRef.current) fileRef.current.value = '';
   };
+  // pictures or a clip dropped anywhere on the window (see DropOverlay)
+  const addRef = useRef(add);
+  addRef.current = add;
+  useEffect(
+    () =>
+      receiveShadowDrops((d) => {
+        if (d.images?.length) addRef.current(d.images);
+        if (d.video) setVideo(d.video);
+      }),
+    [],
+  );
   const spread = () => {
     const step = 0.5;
     save(frames.map((f, i) => ({ ...f, time: noon + (i - (frames.length - 1) / 2) * step })));
