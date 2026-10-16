@@ -117,7 +117,7 @@ export function inAppPlateCount(model: Model): number {
 }
 
 export function dxfHasEntities(text: string): boolean {
-  return text.includes('ENTITIES') && /0\s+LINE|0\s+POLYLINE|0\s+ARC/i.test(text);
+  return text.includes('ENTITIES') && /0\s+(LINE|POLYLINE|LWPOLYLINE|ARC|CIRCLE)\b/i.test(text);
 }
 
 export function svgHasPaths(text: string): boolean {

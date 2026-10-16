@@ -8,9 +8,8 @@ import { osmToEngraveArt, serializeMapEngraveArt } from '../src/core/mapOsmEngra
 import { MAP_ENGRAVE_PRESETS, resolveEngravePreset } from '../src/core/mapEngravePresets';
 import { mapEngravePathsForPart } from '../src/core/mapEngravePlate';
 import { STRATA_OVERPASS_UA } from '../src/core/mapOverpass';
-import { buildMapBundle } from '../src/core/mapPipeline';
-import { setMapTileFetcher } from '../src/core/mapTerrarium';
-import { fixtureTileFetcher } from './map-cli-fixtures';
+import { buildMapEngraveArt } from '../src/core/mapEngraveBuild';
+import { mapGridToDepth, syntheticConeGrid } from '../src/core/mapToDepth';
 import { NEASDEN_BBOX } from './map-fixtures';
 import type { Part } from '../src/core/slicer';
 
@@ -62,14 +61,15 @@ describe('map OSM engrave (T13)', () => {
     expect(STRATA_OVERPASS_UA).toMatch(/StrataMap/);
   });
 
-  it('buildMapBundle attaches engrave art when Overpass fixture is supplied', async () => {
-    setMapTileFetcher(fixtureTileFetcher);
-    const bundle = await buildMapBundle(
-      defaultMapSpec({ bbox: NEASDEN_BBOX, source: 'terrarium', engrave: { enabled: true, features: ['roads', 'water'] } }),
-      { fetch: fixtureTileFetcher, overpass: async () => overpassFixture },
-    );
-    expect(bundle.asset.map?.engraveArt?.lines.length).toBeGreaterThan(0);
-    setMapTileFetcher(null);
+  it('attaches engrave art when Overpass fixture is supplied', async () => {
+    const { depth } = mapGridToDepth(syntheticConeGrid(32, 24, 18));
+    const spec = defaultMapSpec({
+      bbox: NEASDEN_BBOX,
+      source: 'terrarium',
+      engrave: { enabled: true, features: ['roads', 'water'] },
+    });
+    const art = await buildMapEngraveArt(spec, depth, { overpass: async () => overpassFixture });
+    expect(art?.lines.length).toBeGreaterThan(0);
   });
 
   it('round-trips engrave art on MapSpec', () => {

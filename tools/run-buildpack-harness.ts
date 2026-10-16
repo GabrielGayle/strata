@@ -56,10 +56,11 @@ function pacey(thickness: string, count: string) {
 }
 
 async function main() {
-  const thin = pacey('0.5', '94');
-  run('pacey-94-thin', thin.m, thin.p);
-  const thick = pacey('3', '48');
-  run('pacey-48-thick', thick.m, thick.p);
+  const full = process.env.STRATA_PACK_FUZZ === '1';
+  const thin = pacey('0.5', full ? '94' : '12');
+  run(full ? 'pacey-94-thin' : 'pacey-12-thin', thin.m, thin.p);
+  const thick = pacey('3', full ? '48' : '10');
+  run(full ? 'pacey-48-thick' : 'pacey-10-thick', thick.m, thick.p);
 
   const cliff = deserialize(readFileSync(fileURLToPath(new URL('../examples/image-cliff.strata.json', import.meta.url)), 'utf8'));
   run('image-cliff-preset', createPipeline()(cliff, assets), cliff);
@@ -74,89 +75,103 @@ async function main() {
   const top = grayFromRgba(new Uint8Array(32 * 32 * 4).map((_, i) => (i % 4 === 3 ? 255 : 200)), 32, 32);
   run('multi-face-image', createPipeline()(multi, { ...assets, sideImg: side, frontImg: front, topImg: top }), multi);
 
-  const tuned = newProject();
-  tuned.params.tuneOn = '1';
-  tuned.params.tuneMode = 'chord';
-  tuned.params.plateCount = '32';
-  run('tuned-chord-32', createPipeline()(tuned, assets), tuned);
+  if (full) {
+    const tuned = newProject();
+    tuned.params.tuneOn = '1';
+    tuned.params.tuneMode = 'chord';
+    tuned.params.plateCount = '32';
+    run('tuned-chord-32', createPipeline()(tuned, assets), tuned);
 
-  const speech = newProject();
-  speech.params.tuneOn = '1';
-  speech.params.tuneMode = 'speech';
-  speech.params.plateCount = '24';
-  run('tuned-speech-24', createPipeline()(speech, assets), speech);
+    const speech = newProject();
+    speech.params.tuneOn = '1';
+    speech.params.tuneMode = 'speech';
+    speech.params.plateCount = '24';
+    run('tuned-speech-24', createPipeline()(speech, assets), speech);
 
-  const waffle = newProject();
-  waffle.params.sliceMode = 'waffle';
-  waffle.params.plateCount = '10';
-  run('waffle-10', createPipeline()(waffle, assets), waffle);
+    const waffle = newProject();
+    waffle.params.sliceMode = 'waffle';
+    waffle.params.plateCount = '10';
+    run('waffle-10', createPipeline()(waffle, assets), waffle);
 
-  const radial = newProject();
-  radial.params.sliceMode = 'radial';
-  radial.params.radialCount = '18';
-  run('radial-18', createPipeline()(radial, assets), radial);
+    const radial = newProject();
+    radial.params.sliceMode = 'radial';
+    radial.params.radialCount = '18';
+    run('radial-18', createPipeline()(radial, assets), radial);
 
-  const flat = newProject();
-  flat.params.sliceMode = 'flat';
-  flat.params.plateCount = '28';
-  flat.params.flatGuides = '1';
-  run('flat-28', createPipeline()(flat, assets), flat);
+    const flat = newProject();
+    flat.params.sliceMode = 'flat';
+    flat.params.plateCount = '28';
+    flat.params.flatGuides = '1';
+    run('flat-28', createPipeline()(flat, assets), flat);
 
-  const holes = newProject();
-  holes.params.plateCount = '24';
-  holes.params.anchorHoles = '3';
-  holes.params.rodsOn = true;
-  holes.params.rodCount = '3';
-  holes.params.spacerMode = 'both';
-  run('row-rods-holes', createPipeline()(holes, assets), holes);
+    const holes = newProject();
+    holes.params.plateCount = '24';
+    holes.params.anchorHoles = '3';
+    holes.params.rodsOn = true;
+    holes.params.rodCount = '3';
+    holes.params.spacerMode = 'both';
+    run('row-rods-holes', createPipeline()(holes, assets), holes);
 
-  const round = newProject();
-  round.params.plateCount = '30';
-  round.params.edgeRound = '0.85';
-  round.params.edgeRoundIn = '0.4';
-  run('edge-round-islands', createPipeline()(round, assets), round);
+    const round = newProject();
+    round.params.plateCount = '30';
+    round.params.edgeRound = '0.85';
+    round.params.edgeRoundIn = '0.4';
+    run('edge-round-islands', createPipeline()(round, assets), round);
 
-  const embed = newProject();
-  embed.params.plateCount = '40';
-  embed.params.embedDepth = '35';
-  embed.params.stackHeight = '40';
-  embed.params.crest = '0';
-  embed.params.thickness = '0.5';
-  embed.params.pitch = '2';
-  run('embed-deep-thin-40', createPipeline()(embed, assets), embed);
+    const embed = newProject();
+    embed.params.plateCount = '40';
+    embed.params.embedDepth = '35';
+    embed.params.stackHeight = '40';
+    embed.params.crest = '0';
+    embed.params.thickness = '0.5';
+    embed.params.pitch = '2';
+    run('embed-deep-thin-40', createPipeline()(embed, assets), embed);
 
-  const ins = newProject();
-  ins.params.insShape = 'cone';
-  ins.params.plateCount = '36';
-  run('insert-cone-36', createPipeline()(ins, assets), ins);
+    const ins = newProject();
+    ins.params.insShape = 'cone';
+    ins.params.plateCount = '36';
+    run('insert-cone-36', createPipeline()(ins, assets), ins);
 
-  setMapTileFetcher(fixtureTileFetcher);
-  for (const budget of ['equal', 'quantile', 'jenks'] as const) {
-    const spec = defaultMapSpec({
-      bbox: NEASDEN_BBOX,
-      source: 'terrarium',
-      exaggeration: 18,
-      layerBudget: budget,
-      engrave: { enabled: false, features: [] },
-      sunkenFrame: { enabled: true },
-    });
-    const bundle = await buildMapBundle(spec, {
-      fetch: fixtureTileFetcher,
-      stack: { plateCount: 14, thicknessMm: 3, masterWidthMm: 480, layerBudget: budget },
-    });
-    const mp = newProject();
-    const preset = PRESETS.find((x) => x.name === 'Stamped stack');
-    if (!preset) throw new Error('preset');
-    mp.params = { ...mp.params, ...preset.params, plateCount: '14', topDepth: '40', sliceMode: 'flat' };
-    mp.images.top = bundle.asset;
-    const gray = depthToGray(bundle.depth);
-    run(`map-neasden-${budget}-sunken`, createPipeline()(mp, { ...assets, topImg: gray }), mp);
+    setMapTileFetcher(fixtureTileFetcher);
+    for (const budget of ['equal', 'quantile', 'jenks'] as const) {
+      const spec = defaultMapSpec({
+        bbox: NEASDEN_BBOX,
+        source: 'terrarium',
+        exaggeration: 18,
+        layerBudget: budget,
+        engrave: { enabled: false, features: [] },
+        sunkenFrame: { enabled: true },
+      });
+      const bundle = await buildMapBundle(spec, {
+        fetch: fixtureTileFetcher,
+        stack: { plateCount: 14, thicknessMm: 3, masterWidthMm: 480, layerBudget: budget },
+      });
+      const mp = newProject();
+      const preset = PRESETS.find((x) => x.name === 'Stamped stack');
+      if (!preset) throw new Error('preset');
+      mp.params = { ...mp.params, ...preset.params, plateCount: '14', topDepth: '40', sliceMode: 'flat' };
+      mp.images.top = bundle.asset;
+      const gray = depthToGray(bundle.depth);
+      run(`map-neasden-${budget}-sunken`, createPipeline()(mp, { ...assets, topImg: gray }), mp);
+    }
+  } else {
+    const waffle = newProject();
+    waffle.params.sliceMode = 'waffle';
+    waffle.params.plateCount = '6';
+    run('waffle-6', createPipeline()(waffle, assets), waffle);
+
+    const flat = newProject();
+    flat.params.sliceMode = 'flat';
+    flat.params.plateCount = '8';
+    run('flat-8', createPipeline()(flat, assets), flat);
   }
 
-  // Fuzz: random row configs — file-level misses only
-  for (let i = 0; i < 120; i++) {
+  // Default: a handful of fuzz configs so `npx tsx tools/run-buildpack-harness.ts` stays quick.
+  // Full 120: STRATA_PACK_FUZZ=1 npx tsx tools/run-buildpack-harness.ts
+  const fuzzN = full ? 120 : 8;
+  for (let i = 0; i < fuzzN; i++) {
     const p = newProject();
-    p.params.plateCount = String(8 + (i % 45));
+    p.params.plateCount = String(full ? 8 + (i % 45) : 6 + (i % 4));
     p.params.thickness = ['0.5', '1', '3', '6'][i % 4];
     p.params.pitch = String(2 + (i % 8) * 0.5);
     p.params.embedDepth = String((i % 10) * 3);
@@ -173,7 +188,7 @@ async function main() {
   const viewIssues = all.filter((i) => !fileIssues.includes(i));
 
   console.log('=== FILE / ZIP ISSUES (plate absent from fabrication) ===');
-  if (!fileIssues.length) console.log('(none across all scenarios + 120 fuzz runs)');
+  if (!fileIssues.length) console.log(`(none across all scenarios + ${fuzzN} fuzz runs)`);
   else console.log(JSON.stringify(fileIssues, null, 2));
 
   console.log('\n=== HTML VIEW ISSUES (schedule / angled / plan) ===');

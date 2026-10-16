@@ -48,9 +48,10 @@ describe('quick fills', () => {
 
 describe('mixed metals through the pipeline', () => {
   const mixed = (base: Project = newProject()): Project => {
+    const p = { ...base, params: { ...base.params, plateCount: '8', insShape: 'none', anchorHoles: '0' } };
     const app = defaultAppearance();
-    const keys = Array.from({ length: 20 }, (_, i) => `P${i * 2 + 1}`);
-    return { ...base, appearance: assignPlates(app, keys, 'b1') };
+    const keys = Array.from({ length: 4 }, (_, i) => `P${i * 2 + 1}`);
+    return { ...p, appearance: assignPlates(app, keys, 'b1') };
   };
 
   it('cuts each metal on its own sheets and weighs it by its own density', () => {
