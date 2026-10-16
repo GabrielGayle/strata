@@ -14,6 +14,7 @@
   "dependencies": {
     "@react-three/drei": "10.7",
     "@react-three/fiber": "9.8",
+    "98.css": "^0.1.21",
     "clipper-lib": "^6.4.2",
     "fflate": "^0.8.3",
     "react": "19.2",

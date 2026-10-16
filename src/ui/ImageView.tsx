@@ -151,8 +151,8 @@ export default function ImageView() {
             const asset = project.images[s.slot];
             const other = s.slot === 'top' ? project.images.front ?? project.images.side : null;
             return (
-              <div className="box" key={s.slot}>
-                <div className="box-head">
+              <div className="window box" key={s.slot}>
+                <div className="title-bar box-head">
                   <span>{s.title}</span>
                   <span className="mono" style={{ fontWeight: 400, textTransform: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
                     {asset ? asset.name : 'empty'}
@@ -184,15 +184,15 @@ export default function ImageView() {
                 {depthError?.slot === s.slot && <div className="note" style={{ color: 'var(--err)' }}>Depth from photo failed: {depthError.msg}</div>}
                 <div className="btnrow">
                   {sourceOf(s.slot) === 'compose' ? (
-                    <button className="btn primary" onClick={() => openComposer(s.slot)} onPointerEnter={preload(loadComposer)}>
+                    <button className="btn default" onClick={() => openComposer(s.slot)} onPointerEnter={preload(loadComposer)}>
                       {project.composition?.blocks.some((b) => b.surface === s.slot) ? 'Edit composition…' : 'Open composer…'}
                     </button>
                   ) : sourceOf(s.slot) === 'sound' ? (
-                    <button className="btn primary" onClick={() => setHearing(s.slot)} onPointerEnter={preload(loadSound)}>
+                    <button className="btn default" onClick={() => setHearing(s.slot)} onPointerEnter={preload(loadSound)}>
                       {asset?.sound ? 'Edit sound…' : 'Make from sound…'}
                     </button>
                   ) : sourceOf(s.slot) === 'graphic' ? (
-                    <button className="btn primary" onClick={() => setEditing(s.slot)} onPointerEnter={preload(loadPattern)}>
+                    <button className="btn default" onClick={() => setEditing(s.slot)} onPointerEnter={preload(loadPattern)}>
                       {asset?.pattern ? 'Edit pattern…' : 'Make pattern…'}
                     </button>
                   ) : (
@@ -222,7 +222,7 @@ export default function ImageView() {
                   </button>
                   {other && !asset && (
                     <button
-                      className="btn primary"
+                      className="btn default"
                       onClick={() => {
                         setAsset('image', 'top', other);
                         open(s.enable);
@@ -270,8 +270,8 @@ export default function ImageView() {
             );
           })}
         </div>
-        <div className="box">
-          <div className="box-head" style={{ flexWrap: 'wrap' }}>
+        <div className="window box">
+          <div className="title-bar box-head" style={{ flexWrap: 'wrap' }}>
             <span>Relief preview</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
               <label htmlFor="relief-tilt" className="mono">
@@ -302,7 +302,7 @@ export default function ImageView() {
                   Depth colour
                 </button>
               </span>
-              <button className="btn sm primary" onClick={() => useStore.getState().shuffleGentle()} title="Shuffle a soft, shallow, flowing impression (locked values stay)">
+              <button className="btn sm default" onClick={() => useStore.getState().shuffleGentle()} title="Shuffle a soft, shallow, flowing impression (locked values stay)">
                 Shuffle gentle
               </button>
             </span>

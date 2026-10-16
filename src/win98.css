@@ -1,0 +1,585 @@
+/* Chrome bridge for 98.css.
+   98.css (imported first) paints buttons, fields, windows, tabs and lists.
+   Strata's stylesheet still owns layout. Rules here only undo chrome paints
+   that would hide that look, and keep dense toolbars from growing to the
+   library's 75px command-button width. The 3D / SVG viewport keeps its own
+   colours (see .view and .svgwrap in styles.css). */
+
+.app > .title-bar {
+  grid-area: title;
+}
+.status-bar {
+  grid-area: status;
+}
+
+.topbar {
+  align-items: center;
+  background: #c0c0c0;
+  border-bottom: none;
+  gap: 3px;
+  min-height: 0;
+  padding: 2px 3px;
+}
+.topbar .group {
+  align-items: center;
+  border-right: none;
+  gap: 2px;
+  padding: 0 2px;
+}
+.topbar .spacer {
+  border-right: none;
+}
+.brand {
+  border-right: none;
+  color: #fff;
+  letter-spacing: 0;
+  padding: 0;
+}
+.brand .mark {
+  background: repeating-linear-gradient(0deg, #fff 0 2px, transparent 2px 4px);
+  border: 1px solid #fff;
+}
+
+.left,
+.right {
+  background: transparent;
+  border: none;
+}
+.left.window,
+.right.window {
+  background: #c0c0c0;
+  margin: 2px;
+  min-height: 0;
+  overflow: auto;
+}
+.left > .window-body,
+.right > .window-body {
+  flex: 1;
+  margin: 2px 1px 1px;
+  min-height: 0;
+  overflow: auto;
+}
+.main {
+  margin: 2px;
+}
+.main-head,
+.ws-head {
+  background: #c0c0c0;
+  border-bottom: none;
+}
+
+/* Raised / sunken button face, including toggles that Strata paints flat. */
+button.btn,
+button.tb,
+button.ibtn,
+button.tab,
+button.section-head,
+button.issue,
+button.theme-swatch,
+button.card,
+button.setup-name,
+button.setup-x,
+button.setup-add,
+button.ws-menu {
+  background: silver;
+  border: none;
+  border-radius: 0;
+  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
+  color: transparent;
+  text-shadow: 0 0 #222;
+}
+button.btn:hover:not(:disabled),
+button.tb:hover:not(:disabled),
+button.ibtn:hover:not(:disabled),
+button.tab:hover:not(:disabled),
+button.section-head:hover:not(:disabled),
+button.issue:hover:not(:disabled),
+button.theme-swatch:hover:not(:disabled),
+button.card:hover:not(:disabled),
+button.setup-name:hover:not(:disabled),
+button.setup-x:hover:not(:disabled),
+button.setup-add:hover:not(:disabled),
+button.ws-menu:hover:not(:disabled) {
+  background: silver;
+  color: transparent;
+  text-shadow: 0 0 #222;
+}
+button.btn:disabled,
+button.tb:disabled,
+button.ibtn:disabled,
+button.section-head:disabled {
+  background: silver;
+  color: grey;
+  text-shadow: 1px 1px 0 #fff;
+}
+button.btn.on,
+button.ibtn.on,
+button.tb.on,
+button.tab.active,
+button.theme-swatch.on,
+button.card.sel,
+button[aria-pressed='true'] {
+  background: silver;
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px grey;
+  color: transparent;
+  text-shadow: 1px 1px #222;
+}
+button.btn.default,
+button.tb.default,
+button.btn.primary,
+button.tb.primary {
+  background: silver;
+  box-shadow: inset -2px -2px #0a0a0a, inset 1px 1px #0a0a0a, inset 2px 2px #fff, inset -3px -3px grey, inset 3px 3px #dfdfdf;
+  color: transparent;
+  font-weight: bold;
+  text-shadow: 0 0 #222;
+}
+button.btn.default:hover:not(:disabled),
+button.tb.default:hover:not(:disabled),
+button.btn.primary:hover:not(:disabled),
+button.tb.primary:hover:not(:disabled) {
+  background: silver;
+  color: transparent;
+}
+
+button.btn.sm,
+button.tb,
+button.ibtn,
+.overlay button,
+.ws-tools button,
+button.setup-x,
+button.setup-add,
+button.section-head,
+.menu-pop button {
+  min-width: 0;
+}
+button.btn.sm,
+button.tb {
+  padding: 0 8px;
+}
+button.ibtn,
+button.setup-x {
+  min-height: 18px;
+  min-width: 18px;
+  padding: 0 4px;
+  width: auto;
+}
+button.card {
+  align-items: stretch;
+  height: auto;
+  min-width: 0;
+  padding: 4px;
+  white-space: normal;
+}
+button.theme-swatch {
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 4px 6px;
+}
+button.issue {
+  min-width: 0;
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+  display: grid;
+}
+
+/* Menu commands sit in a window and highlight like a Win98 menu. */
+.menu-pop {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+.menu-pop.window {
+  background: #c0c0c0;
+}
+.menu-pop .window-body {
+  margin: 4px;
+}
+.menu-pop .head {
+  background: transparent;
+  border: none;
+  color: #222;
+  letter-spacing: 0;
+  text-transform: none;
+}
+ul.tree-view > li > button,
+ul.tree-view ul button:not(.btn) {
+  background: transparent;
+  box-shadow: none;
+  color: #222;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  padding: 2px 4px;
+  text-align: left;
+  text-shadow: none;
+  width: 100%;
+}
+ul.tree-view > li > button:hover,
+ul.tree-view > li > button.on,
+ul.tree-view ul button:not(.btn):hover,
+ul.tree-view ul button:not(.btn).on {
+  background: #000080;
+  color: #fff;
+  text-shadow: none;
+}
+.menu-pop button.item,
+.menu-pop .tree-view button:not(.btn) {
+  background: transparent;
+  box-shadow: none;
+  color: #222;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 0;
+  min-width: 0;
+  padding: 3px 6px;
+  text-align: left;
+  text-shadow: none;
+  width: 100%;
+}
+.menu-pop button.item:hover,
+.menu-pop button.item:focus,
+.menu-pop .tree-view button:not(.btn):hover,
+.menu-pop .tree-view button:not(.btn):focus,
+.menu-pop .tree-view a:focus {
+  background: #000080;
+  color: #fff;
+  outline: none;
+  text-shadow: none;
+}
+.menu-pop button.item small,
+.menu-pop .tree-view button small {
+  color: inherit;
+}
+
+/* Sunken fields. Strata's flat borders would cover 98.css. */
+input.numbox,
+input.inp,
+input.exprbox,
+input.search,
+input.name-input,
+select.sel,
+textarea {
+  background-color: #fff;
+  border: none;
+  border-radius: 0;
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  color: #222;
+  outline: none;
+}
+.numbox:focus,
+.exprbox:focus,
+.inp:focus,
+.search:focus,
+.name-input:focus,
+select.sel:focus {
+  outline: none;
+}
+.exprbox.err,
+.numbox.err {
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #c0281f, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+}
+.name-input {
+  background-color: #fff;
+  border-right: none;
+  height: 21px;
+  padding: 3px 4px;
+}
+.name-input:focus {
+  background-color: #fff;
+}
+.search {
+  background-color: #fff;
+  border-bottom: none;
+  margin: 4px 6px;
+  width: calc(100% - 12px);
+}
+.save-mark {
+  border-right: none;
+  color: #222;
+  padding: 2px 6px;
+}
+.save-mark.failed {
+  color: #c0281f;
+}
+
+.prow.field-row-stacked {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+}
+.prow .field-row {
+  min-width: 0;
+  width: 100%;
+}
+.prow .ctrls {
+  margin-left: auto;
+}
+.prow input[type='range'],
+.pm-row input[type='range'],
+.field-row input[type='range'],
+.sunbar input[type='range'],
+.nv-ops input[type='range'],
+.appearance input[type='range'] {
+  accent-color: auto;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  flex: 1 1 auto;
+  height: 21px;
+  min-width: 36px;
+  width: auto;
+}
+
+/* Checkboxes wrapped by their label are not the input + label pair 98.css draws.
+   Give those a sunken box so they stay visible. The group switch keeps its hit target. */
+label:not(.gswitch) > input[type='checkbox'],
+label:not(.gswitch) > input[type='radio'] {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #fff;
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  flex: none;
+  height: 13px;
+  margin: 0 6px 0 0;
+  min-width: 13px;
+  opacity: 1;
+  padding: 0;
+  position: static;
+  width: 13px;
+}
+label:not(.gswitch) > input[type='checkbox']:checked {
+  background-color: #fff;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 7'><path d='M1 3.2 L2.6 5.2 L6 1' fill='none' stroke='%23000' stroke-width='1.2'/></svg>");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 7px 7px;
+}
+.gswitch .track,
+.gswitch .track::after {
+  border-radius: 0;
+}
+.gswitch .track {
+  background: #fff;
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  height: 13px;
+  width: 13px;
+}
+.gswitch .track::after {
+  background: transparent;
+  height: 7px;
+  left: 3px;
+  top: 3px;
+  width: 7px;
+}
+.gswitch.on .track {
+  background: #fff;
+}
+.gswitch.on .track::after {
+  background: #000;
+  left: 3px;
+}
+
+/* Group boxes and blue caption bars. */
+fieldset.section {
+  margin: 8px 6px;
+}
+.section {
+  border-bottom: none;
+}
+.section-head,
+.section-headrow {
+  background: transparent;
+  letter-spacing: 0;
+  text-transform: none;
+}
+button.section-head {
+  width: auto;
+}
+.panel-title.title-bar,
+.title-bar.box-head,
+.title-bar.vp-head {
+  background: linear-gradient(90deg, #000080, #1084d0);
+  border: none;
+  color: #fff;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0;
+  padding: 3px 2px 3px 3px;
+  text-transform: none;
+}
+.panel-title.title-bar,
+.title-bar.panel-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.title-bar.box-head span,
+.title-bar.panel-title span,
+.title-bar.vp-head,
+.title-bar.vp-head strong {
+  color: #fff;
+}
+.box,
+.window.box {
+  background: #c0c0c0;
+  border: none;
+}
+.pm {
+  background: transparent;
+  border: none;
+}
+.pm.window {
+  background: #c0c0c0;
+}
+.pm > .window-body.pm-body,
+.video-picker > .window-body {
+  margin: 6px;
+}
+.video-picker {
+  background: #c0c0c0;
+  border: none;
+  padding: 3px;
+}
+.pm-group {
+  letter-spacing: 0;
+  text-transform: none;
+}
+.pm-preview {
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px grey;
+  border: none;
+}
+
+/* Tabs: 98.css draws menu[role=tablist]. Don't flatten them. */
+.setup-tabs,
+.ws-tabs,
+.tabs {
+  background: transparent;
+  border: none;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.setup-tabs {
+  align-items: flex-end;
+}
+.setup-tab {
+  border-right: none;
+  max-width: 220px;
+}
+.setup-tab.active,
+.setup-tab.active .setup-name {
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+}
+button.setup-name,
+button.setup-x,
+button.setup-add {
+  background: transparent;
+  box-shadow: none;
+  color: #222;
+  text-shadow: none;
+}
+.ws-menu {
+  background: transparent;
+  border: none;
+  color: #222;
+}
+.ws-pick {
+  color: #222;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.ws-float {
+  background: #c0c0c0;
+  border: none;
+  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px grey, inset 2px 2px #fff;
+}
+.ws-float .title-bar {
+  cursor: move;
+}
+
+/* Lists and tables. */
+.split > .list.sunken-panel {
+  background: #fff;
+  border-right: none;
+}
+table.tbl tbody tr.sel td,
+table.tbl tbody tr.highlighted td {
+  background: #000080;
+  color: #fff;
+}
+.card,
+button.card {
+  background: silver;
+  border: none;
+}
+button.card.sel {
+  background: silver;
+}
+
+.stats {
+  border-bottom: none;
+}
+.stat {
+  border-color: #808080;
+}
+.note,
+.kv dt {
+  color: #444;
+}
+.toast {
+  background: transparent;
+  border: none;
+  color: #222;
+  padding: 0;
+}
+.toast.window {
+  background: #c0c0c0;
+  min-width: 240px;
+}
+.toast .window-body {
+  margin: 8px;
+}
+
+/* Viewport frame only. Grid, fills and the WebGL canvas are unchanged. */
+.view {
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px grey;
+}
+.overlay {
+  background: #c0c0c0;
+  border: none;
+  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
+  gap: 2px;
+  padding: 2px;
+}
+.overlay .btn,
+.overlay.col .btn {
+  border: none;
+}
+.overlay button {
+  min-width: 0;
+  padding: 0 6px;
+}
+.overlay.info {
+  background: #c0c0c0;
+  box-shadow: inset -1px -1px #dfdfdf, inset 1px 1px grey;
+  color: #222;
+}
+.movepanel .mp-row,
+.sunbar .sb-row {
+  border-bottom: none;
+}
+
+@media (max-width: 1000px) {
+  .app.window {
+    grid-template-areas: 'title' 'top' 'main' 'left' 'right' 'status';
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto auto auto auto;
+  }
+}

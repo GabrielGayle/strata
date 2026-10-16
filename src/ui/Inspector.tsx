@@ -12,15 +12,16 @@ import { PriceEstimate, loadRates } from './PriceEstimate';
 function Section({ title, count, children, open: initial = true }: { title: string; count?: React.ReactNode; children: React.ReactNode; open?: boolean }) {
   const [open, setOpen] = useState(initial);
   return (
-    <section className="section">
-      <button className="section-head" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span>
-          {open ? '−' : '+'} {title}
-        </span>
-        {count !== undefined && <span className="count">{count}</span>}
-      </button>
+    <fieldset className="section">
+      <legend>{title}</legend>
+      <div className="field-row">
+        <button className="section-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? 'Hide' : 'Show'}
+          {count !== undefined && <span className="count"> {count}</span>}
+        </button>
+      </div>
       {open && children}
-    </section>
+    </fieldset>
   );
 }
 
@@ -77,7 +78,7 @@ export default function Inspector() {
 
   return (
     <div>
-      <div className="panel-title">
+      <div className="title-bar panel-title">
         <span>Inspector</span>
         {model.stale && <span className="pill stale">updating</span>}
       </div>
@@ -201,7 +202,7 @@ export default function Inspector() {
       <Section title="Export">
         <div className="btnrow">
           <button
-            className="btn primary"
+            className="btn default"
             onClick={() => {
               const m = fullModel();
               download(`${base}-fabrication.zip`, buildZip(m, project), 'application/zip');

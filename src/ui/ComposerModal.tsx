@@ -76,7 +76,7 @@ function Thumb({ g, className = 'cm-thumb' }: { g: Gray | null; className?: stri
 
 function Num({ label, value, min, max, step = 0.01, onChange, onStart }: { label: string; value: number; min: number; max: number; step?: number; onChange: (v: number) => void; onStart?: () => void }) {
   return (
-    <label className="pm-row">
+    <label className="field-row pm-row">
       <span>{label}</span>
       <input type="range" min={min} max={max} step={step} value={value} onPointerDown={onStart} onChange={(e) => onChange(Number(e.target.value))} aria-label={label} />
       <span className="mono">{step >= 1 ? Math.round(value) : value.toFixed(2)}</span>
@@ -333,22 +333,23 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
 
   return (
     <div className="pm-back" onMouseDown={(e) => e.target === e.currentTarget && tryClose()}>
-      <div className="pm cm" role="dialog" aria-modal="true" aria-label="Image composer">
-        <div className="box-head cm-head">
-          <span>Composer</span>
-          <span className="seg" role="tablist" aria-label="Surface">
+      <div className="window pm cm" role="dialog" aria-modal="true" aria-label="Image composer">
+        <div className="title-bar">
+          <div className="title-bar-text">Composer</div>
+          <div className="title-bar-controls">
+            <button aria-label="Close" onClick={tryClose}></button>
+          </div>
+        </div>
+        <div className="cm-add btnrow">
+          <menu role="tablist" aria-label="Surface">
             {SURFACES.map((s) => {
               const n = comp.blocks.filter((b) => b.surface === s).length;
+              const on = view === 'canvas' && surface === s;
               return (
-                <button
+                <li
                   key={s}
                   role="tab"
-                  aria-selected={view === 'canvas' && surface === s}
-                  className={`btn sm ${view === 'canvas' && surface === s ? 'on' : ''}`}
-                  onClick={() => {
-                    setSurface(s);
-                    setView('canvas');
-                  }}
+                  aria-selected={on}
                   onDragOver={(e) => e.dataTransfer.types.includes('text/x-block') && e.preventDefault()}
                   onDrop={(e) => {
                     const id = e.dataTransfer.getData('text/x-block');
@@ -356,25 +357,38 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
                   }}
                   title={`${SURFACE_INFO[s].title}. Drop a block here to move it to this surface.`}
                 >
-                  {SURFACE_INFO[s].short} <span className="cm-count">{n}</span>
-                </button>
+                  <a
+                    href={`#${s}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSurface(s);
+                      setView('canvas');
+                    }}
+                  >
+                    {SURFACE_INFO[s].short} {n}
+                  </a>
+                </li>
               );
             })}
-            <button className={`btn sm ${view === 'nodes' ? 'on' : ''}`} onClick={() => setView('nodes')} title="See every block and wire it to a surface">
-              Nodes
-            </button>
-          </span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-            <button className="btn sm" onClick={undo} disabled={!past.current.length} title="Undo (Ctrl+Z)">
-              Undo
-            </button>
-            <button className="btn sm" onClick={redo} disabled={!future.current.length} title="Redo (Ctrl+Shift+Z)">
-              Redo
-            </button>
-            <button className="btn sm" onClick={tryClose} aria-label="Close">
-              ✕
-            </button>
-          </span>
+            <li role="tab" aria-selected={view === 'nodes'}>
+              <a
+                href="#nodes"
+                title="See every block and wire it to a surface"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setView('nodes');
+                }}
+              >
+                Nodes
+              </a>
+            </li>
+          </menu>
+          <button className="btn sm" onClick={undo} disabled={!past.current.length} title="Undo (Ctrl+Z)">
+            Undo
+          </button>
+          <button className="btn sm" onClick={redo} disabled={!future.current.length} title="Redo (Ctrl+Shift+Z)">
+            Redo
+          </button>
         </div>
 
         <div className="cm-add btnrow">
@@ -434,7 +448,7 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
             />
             <div className="cm-side">
               <div className="pm-group">Frame</div>
-              <div className="pm-row">
+              <div className="field-row pm-row">
                 <span>Proportions</span>
                 <select value={aspects.find((a) => Math.abs(a.value - frame.aspect) < 1e-3)?.value ?? frame.aspect} onChange={(e) => commit((c) => ({ ...c, frames: { ...c.frames, [surface]: { ...frame, aspect: Number(e.target.value) } } }))} aria-label="Frame proportions">
                   {aspects.map((a) => (
@@ -445,7 +459,7 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
                 </select>
               </div>
               {surface === 'top' && (
-                <div className="pm-row">
+                <div className="field-row pm-row">
                   <span />
                   <button className="btn sm" onClick={() => commit((c) => ({ ...c, frames: { ...c.frames, top: { ...frame, aspect: stackAspect } } }))} title="Match the plate stack's footprint">
                     Match stack footprint
@@ -453,7 +467,7 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
                 </div>
               )}
               <Num label="Background" value={frame.background} min={0} max={1} onStart={begin} onChange={(x) => change((c) => ({ ...c, frames: { ...c.frames, [surface]: { ...c.frames[surface], background: x } } }))} />
-              <div className="pm-row">
+              <div className="field-row pm-row">
                 <span>Swap with</span>
                 <span className="seg">
                   {SURFACES.filter((s) => s !== surface).map((s) => (
@@ -487,11 +501,11 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
               {selected && selected.surface === surface && (
                 <>
                   <div className="pm-group">Selected block</div>
-                  <label className="pm-row">
+                  <label className="field-row pm-row">
                     <span>Name</span>
                     <input value={selected.name} onFocus={begin} onChange={(e) => setBlock(selected.id, { name: e.target.value })} aria-label="Block name" style={{ flex: 1, minWidth: 0 }} />
                   </label>
-                  <div className="pm-row">
+                  <div className="field-row pm-row">
                     <span>Blend</span>
                     <span className="seg pm-seg">
                       {BLENDS.map((o) => (
@@ -505,11 +519,11 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
                   <Num label="Contrast" value={selected.contrast} min={0.2} max={4} onStart={begin} onChange={(x) => setBlock(selected.id, { contrast: x })} />
                   <Num label="Size" value={selected.scale} min={0.02} max={2} onStart={begin} onChange={(x) => setBlock(selected.id, { scale: x })} />
                   <Num label="Turn" value={selected.rotate} min={-180} max={180} step={1} onStart={begin} onChange={(x) => setBlock(selected.id, { rotate: x })} />
-                  <label className="pm-row">
+                  <label className="field-row pm-row">
                     <span>Invert</span>
                     <input type="checkbox" className="chk" checked={selected.invert} onChange={(e) => commit((c) => ({ ...c, blocks: c.blocks.map((b) => (b.id === selected.id ? { ...b, invert: e.target.checked } : b)) }))} />
                   </label>
-                  <div className="pm-row">
+                  <div className="field-row pm-row">
                     <span>Move to</span>
                     <span className="seg">
                       {SURFACES.filter((s) => s !== surface).map((s) => (
@@ -590,7 +604,7 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
           <button className="btn" onClick={() => apply(false)} disabled={!dirty}>
             Apply
           </button>
-          <button className="btn primary" onClick={() => apply(true)}>
+          <button className="btn default" onClick={() => apply(true)}>
             Apply and close
           </button>
         </div>

@@ -15,7 +15,7 @@ const CHIPS: { label: string; notes: string }[] = [
 
 function Num({ label, value, min, max, step = 0.01, onChange, unit = '' }: { label: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void }) {
   return (
-    <label className="pm-row">
+    <label className="field-row pm-row">
       <span>{label}</span>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={label} />
       <span className="mono">
@@ -28,7 +28,7 @@ function Num({ label, value, min, max, step = 0.01, onChange, unit = '' }: { lab
 
 function Seg<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
   return (
-    <div className="pm-row">
+    <div className="field-row pm-row">
       <span>{label}</span>
       <span className="seg pm-seg">
         {options.map((o) => (
@@ -93,14 +93,14 @@ export default function SoundModal({ title, initial, onApply, onClose }: { title
 
   return (
     <div className="pm-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="pm" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="box-head">
-          <span>{title}</span>
-          <button className="btn sm" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
+      <div className="window pm" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="title-bar">
+          <div className="title-bar-text">{title}</div>
+          <div className="title-bar-controls">
+            <button aria-label="Close" onClick={onClose}></button>
+          </div>
         </div>
-        <div className="pm-body">
+        <div className="window-body pm-body">
           <div className="pm-left">
             <div className="pm-preview">
               {preview ? <canvas ref={ref} style={{ aspectRatio: `${preview.w} / ${preview.h}` }} /> : <div className="empty">{missingFile ? 'Load a sound file' : 'Type some notes'}</div>}
@@ -114,7 +114,7 @@ export default function SoundModal({ title, initial, onApply, onClose }: { title
                 Stop
               </button>
             </div>
-            <div className="pm-row">
+            <div className="field-row pm-row">
               <span>Frame</span>
               <select value={aspects.find((a) => Math.abs(a.value - spec.aspect) < 1e-3)?.value ?? 1} onChange={(e) => set({ aspect: Number(e.target.value) })} aria-label="Frame proportions">
                 {aspects.map((a) => (
@@ -137,18 +137,20 @@ export default function SoundModal({ title, initial, onApply, onClose }: { title
             />
             {spec.source === 'tone' ? (
               <>
-                <label className="pm-row">
+                <label className="field-row pm-row">
                   <span>Notes</span>
                   <input className="inp" style={{ flex: 1, fontFamily: 'var(--mono)' }} value={spec.notes} onChange={(e) => set({ notes: e.target.value })} aria-label="Notes" />
                 </label>
                 {noteCount === 0 && <div className="note" style={{ color: 'var(--warn)' }}>Use note names like A3 C#4 E4 (A4 = 440 Hz).</div>}
-                <div className="pm-presets">
+                <ul className="tree-view">
                   {CHIPS.map((c) => (
-                    <button key={c.label} className={`btn sm ${spec.notes === c.notes ? 'on' : ''}`} onClick={() => set({ notes: c.notes })}>
-                      {c.label}
-                    </button>
+                    <li key={c.label}>
+                      <button className={spec.notes === c.notes ? 'on' : undefined} onClick={() => set({ notes: c.notes })}>
+                        {c.label}
+                      </button>
+                    </li>
                   ))}
-                </div>
+                </ul>
                 <Seg<Wave>
                   label="Wave"
                   value={spec.wave}
@@ -167,9 +169,9 @@ export default function SoundModal({ title, initial, onApply, onClose }: { title
                 <Num label="Fade out" value={spec.release} min={0} max={1} onChange={(v) => set({ release: v })} />
               </>
             ) : (
-              <div className="pm-row">
+              <div className="field-row pm-row">
                 <span>File</span>
-                <button className="btn sm primary" onClick={load}>
+                <button className="btn sm default" onClick={load}>
                   Load sound…
                 </button>
                 <span className="mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -193,7 +195,7 @@ export default function SoundModal({ title, initial, onApply, onClose }: { title
             />
             {spec.view === 'wave' && spec.source === 'tone' && <Num label="Cycles across" value={spec.cycles} min={0.5} max={20} step={0.5} onChange={(v) => set({ cycles: v })} />}
             {spec.view !== 'spectrum' && (
-              <label className="pm-row">
+              <label className="field-row pm-row">
                 <span>Draw it</span>
                 <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input type="checkbox" className="chk" checked={spec.drawn} onChange={(e) => set({ drawn: e.target.checked })} />
@@ -209,7 +211,7 @@ export default function SoundModal({ title, initial, onApply, onClose }: { title
             Cancel
           </button>
           <button
-            className="btn primary"
+            className="btn default"
             disabled={!audio}
             onClick={() => {
               const url = soundDataUrl(spec, audio);

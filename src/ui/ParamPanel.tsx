@@ -67,15 +67,17 @@ const NumberParam = memo(function NumberParam({
     const bySpacing = overrideSource(def.id) === 'spacing';
     const by = bySpacing ? 'Plates › Spacing' : 'Image › Fit stack to image';
     return (
-      <div className={`prow ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
-        <div className="plabel">
-          <span>{def.label}</span>
-          <span className="pid">{def.id}</span>
+      <div className={`prow field-row-stacked ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
+        <div className="field-row">
+          <div className="plabel">
+            <span>{def.label}</span>
+            <span className="pid">{def.id}</span>
+          </div>
+          <div className="ctrls">
+            <span className="pill" title={`Set by ${by}`}>{bySpacing ? 'fixed gap' : 'image fit'}</span>
+          </div>
         </div>
-        <div className="ctrls">
-          <span className="pill" title={`Set by ${by}`}>{bySpacing ? 'fixed gap' : 'image fit'}</span>
-        </div>
-        <div className="full">
+        <div className="field-row">
           <input className="exprbox" value={override} readOnly aria-label={`${def.label} (set by ${by})`} />
           <span className="evald">= {fmtVal(value, step)}</span>
           <span className="unit">{def.unit}</span>
@@ -84,20 +86,22 @@ const NumberParam = memo(function NumberParam({
     );
   }
   return (
-    <div className={`prow ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
-      <div className="plabel">
-        <span>{def.label}</span>
-        <span className="pid">{def.id}</span>
-      </div>
-      <div className="ctrls">
+    <div className={`prow field-row-stacked ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
+      <div className="field-row">
+        <div className="plabel">
+          <span>{def.label}</span>
+          <span className="pid">{def.id}</span>
+        </div>
+        <div className="ctrls">
         <button className={`ibtn ${exprMode ? 'on' : ''}`} title="Edit as expression (link to other parameters)" onClick={() => setExprMode(!exprMode)} aria-pressed={exprMode}>
           ƒ
         </button>
         <button className={`ibtn ${locked ? 'on' : ''}`} title={locked ? 'Locked: Randomise skips it' : 'Lock (Randomise skips it)'} onClick={() => toggleLock(def.id)} aria-pressed={locked}>
           {locked ? '■' : '□'}
         </button>
+        </div>
       </div>
-      <div className="full">
+      <div className="field-row">
         {exprMode ? (
           <>
             <input
@@ -166,7 +170,7 @@ const NumberParam = memo(function NumberParam({
 function OtherParam({ def, value }: { def: ParamDef; value: any }) {
   const setParam = useStore((s) => s.setParam);
   return (
-    <div className="prow" title={def.help ?? def.id}>
+    <div className="prow field-row" title={def.help ?? def.id}>
       <div className="plabel">
         <span>{def.label}</span>
       </div>
@@ -180,7 +184,12 @@ function OtherParam({ def, value }: { def: ParamDef; value: any }) {
             ))}
           </select>
         )}
-        {def.kind === 'toggle' && <input className="chk" type="checkbox" checked={!!value} onChange={(e) => setParam(def.id, e.target.checked)} aria-label={def.label} />}
+        {def.kind === 'toggle' && (
+          <span className="field-row">
+            <input id={`param-${def.id}`} type="checkbox" checked={!!value} onChange={(e) => setParam(def.id, e.target.checked)} />
+            <label htmlFor={`param-${def.id}`}>{value ? 'On' : 'Off'}</label>
+          </span>
+        )}
         {def.kind === 'color' && <input type="color" value={value} onChange={(e) => setParam(def.id, e.target.value)} aria-label={def.label} />}
         {def.kind === 'text' && <input className="inp" style={{ width: def.id === 'tuneNotes' ? 150 : String(def.def).length > 12 ? 170 : 90 }} value={value} onChange={(e) => setParam(def.id, e.target.value)} aria-label={def.label} />}
       </div>
@@ -192,8 +201,8 @@ function MasterButtons({ value }: { value: number }) {
   const setParam = useStore((s) => s.setParam);
   const sizes: [string, number][] = [['1:4', 0.25], ['1:3', 1 / 3], ['1:2', 0.5], ['3:4', 0.75], ['1:1', 1], ['1.5:1', 1.5], ['2:1', 2]];
   return (
-    <div className="prow">
-      <div className="full" style={{ flexWrap: 'wrap', gap: 0 }}>
+    <div className="prow field-row-stacked">
+      <div className="field-row" style={{ flexWrap: 'wrap' }}>
         {sizes.map(([label, k]) => (
           <button key={label} className={`btn sm ${Math.abs(value - k) < 0.005 ? 'on' : ''}`} style={{ marginRight: -1 }} onClick={() => setParam('masterScale', String(+k.toFixed(4)))}>
             {label}
@@ -242,11 +251,11 @@ export default function ParamPanel() {
 
   return (
     <div>
-      <div className="panel-title">
+      <div className="title-bar panel-title">
         <span>Parameters</span>
         <span className="pill" title="Every value regenerates everything downstream">live graph</span>
       </div>
-      <input className="search" placeholder="Filter parameters…" value={ui.filter} onChange={(e) => setUi({ filter: e.target.value })} aria-label="Filter parameters" />
+      <input className="search" type="search" placeholder="Filter parameters…" value={ui.filter} onChange={(e) => setUi({ filter: e.target.value })} aria-label="Filter parameters" />
       <label className="changed-only" title="Show only the parameters that differ from their defaults">
         <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
         <span>Changed only</span>
@@ -268,12 +277,11 @@ export default function ParamPanel() {
         const hideBody = (!on && !sw?.keepOpen) || !!idle;
         const errs = hideBody ? 0 : defs.filter((d) => model.ev.errors[d.id]).length;
         return (
-          <section className={`section ${on && !idle ? '' : 'off'}`} key={g} title={idle ?? undefined} data-group={g}>
-            <div className="section-headrow">
+          <fieldset className={`section ${on && !idle ? '' : 'off'}`} key={g} title={idle ?? undefined} data-group={g}>
+            <legend>{g}</legend>
+            <div className="section-headrow field-row">
               <button className="section-head" onClick={() => setUi({ collapsed: { ...ui.collapsed, [g]: open } })} aria-expanded={open}>
-                <span>
-                  {open ? '−' : '+'} {g}
-                </span>
+                <span>{open ? 'Hide' : 'Show'}</span>
                 <span className="count" style={errs ? { color: 'var(--err)' } : undefined}>
                   {nChanged > 0 && (
                     <span className="changed-badge" title={`${nChanged} changed from the default`}>
@@ -321,7 +329,7 @@ export default function ParamPanel() {
                 {g === 'Tuning' && !changedOnly && <TuningTable />}
               </div>
             )}
-          </section>
+          </fieldset>
         );
       })}
     </div>

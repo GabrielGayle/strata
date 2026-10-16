@@ -74,8 +74,8 @@ export default function GraphView() {
   return (
     <div className="scroll">
       <div className="pad" style={{ display: 'grid', gap: 12 }}>
-        <div className="box">
-          <div className="box-head">
+        <div className="window box">
+          <div className="title-bar box-head">
             <span>Regeneration pipeline</span>
             <span className="mono" style={{ fontWeight: 400, textTransform: 'none' }}>
               last change: {model.stages.filter((s) => !s.cached).length} stages rebuilt, {fmt(model.totalMs, 0)} ms
@@ -107,8 +107,8 @@ export default function GraphView() {
           <div className="note">Orange stages were rebuilt by the last edit. Hover a stage for its inputs. Exports run the same pipeline, so nothing is ever baked.</div>
         </div>
 
-        <div className="box">
-          <div className="box-head">
+        <div className="window box">
+          <div className="title-bar box-head">
             <span>Parameter graph · {layout.ids.length} nodes</span>
             <span className="seg">
               <button className={`btn sm ${!showAll ? 'on' : ''}`} onClick={() => setShowAll(false)}>

@@ -153,9 +153,17 @@ export default function App() {
   return (
     <FullModelContext.Provider value={getFull}>
     <ModelContext.Provider value={model}>
-      <div className="app">
+      <div className="app window">
+        <div className="title-bar">
+          <div className="title-bar-text">
+            <span className="brand">
+              <span className="mark" />
+              STRATA
+            </span>
+          </div>
+        </div>
         <Toolbar />
-        <aside className="left">
+        <aside className="left window">
           <ParamPanel />
         </aside>
         <main className="main">
@@ -165,21 +173,28 @@ export default function App() {
           </div>
           <WorkspaceArea />
         </main>
-        <aside className="right">
+        <aside className="right window">
           <Inspector />
         </aside>
-        <footer className="statusbar">
-          <span>{model.sliced.parts.length} parts</span>
-          <span>{model.bom.sheets} sheet{model.bom.sheets === 1 ? '' : 's'}</span>
-          <span style={{ color: errors ? 'var(--err)' : 'var(--ok)' }}>{errors} errors</span>
-          <span style={{ color: warns ? 'var(--warn)' : undefined }}>{warns} warnings</span>
-          <span>
+        <footer className="statusbar status-bar">
+          <p className="status-bar-field">{model.sliced.parts.length} parts</p>
+          <p className="status-bar-field">{model.bom.sheets} sheet{model.bom.sheets === 1 ? '' : 's'}</p>
+          <p className="status-bar-field" style={{ color: errors ? 'var(--err)' : 'var(--ok)' }}>{errors} errors</p>
+          <p className="status-bar-field" style={{ color: warns ? 'var(--warn)' : undefined }}>{warns} warnings</p>
+          <p className="status-bar-field">
             last edit rebuilt {work.current.stages} stage{work.current.stages === 1 ? '' : 's'} in {fmt(work.current.ms, 0)} ms{model.stale ? ' · updating checks…' : ''}
-          </span>
-          <span>mm</span>
+          </p>
+          <p className="status-bar-field">mm</p>
           <HelpButton />
         </footer>
-        {ui.toast && <div className="toast">{ui.toast}</div>}
+        {ui.toast && (
+          <div className="toast window" role="status">
+            <div className="title-bar">
+              <div className="title-bar-text">Strata</div>
+            </div>
+            <div className="window-body">{ui.toast}</div>
+          </div>
+        )}
         <DropOverlay />
         <HelpLayer />
       </div>

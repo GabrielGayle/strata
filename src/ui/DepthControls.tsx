@@ -15,7 +15,7 @@ function MetreSlider({ label, value, lo, hi, onChange, title }: { label: string;
   const b = Math.log(Math.max(hi, lo * 1.001));
   const t = Math.round(((Math.log(Math.max(value, 1e-3)) - a) / (b - a)) * SLIDER);
   return (
-    <label className="pm-row" title={title}>
+    <label className="field-row pm-row" title={title}>
       <span>{label}</span>
       <input type="range" min={0} max={SLIDER} step={1} value={Math.min(SLIDER, Math.max(0, t))} onChange={(e) => onChange(Math.exp(a + (Number(e.target.value) / SLIDER) * (b - a)))} aria-label={label} />
       <span className="mono">{metres(value)}</span>
@@ -29,7 +29,7 @@ function metres(m: number) {
 
 function Num({ label, value, min, max, step, onChange, title, show }: { label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void; title: string; show: string }) {
   return (
-    <label className="pm-row" title={title}>
+    <label className="field-row pm-row" title={title}>
       <span>{label}</span>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={label} />
       <span className="mono">{show}</span>
@@ -66,7 +66,7 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
       <MetreSlider label="Far" value={s.far} lo={lo} hi={hi} onChange={(m) => set({ far: Math.max(m, s.near * 1.02) })} title="Anything farther than this is background: white, left uncut" />
       <Num label="Curve" value={s.curve} min={0.3} max={3} step={0.05} show={s.curve.toFixed(2)} onChange={(v) => set({ curve: v })} title="Below 1 lifts the low parts, above 1 sinks them so only the nearest parts stand out" />
       <Num label="Flatten" value={s.flatten} min={0} max={1} step={0.05} show={`${Math.round(s.flatten * 100)}%`} onChange={(v) => set({ flatten: v })} title="Bas-relief squash: flattens the big shapes and keeps the fine detail, so it reads in a few millimetres" />
-      <div className="pm-row">
+      <div className="field-row pm-row">
         <span>Spacing</span>
         <span className="seg pm-seg">
           <button type="button" className={`btn sm ${s.spacing === 'perspective' ? 'on' : ''}`} onClick={() => set({ spacing: 'perspective' })} title="Even in 1/distance, like the eye sees: more height for near detail">
@@ -77,7 +77,7 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
           </button>
         </span>
       </div>
-      <div className="pm-row">
+      <div className="field-row pm-row">
         <span>Resolution</span>
         <span className="seg pm-seg">
           {DEPTH_RESOLUTIONS.filter((r) => r <= Math.max(depth.w, depth.h)).map((r) => (

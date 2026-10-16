@@ -62,7 +62,7 @@ export default function CompareView() {
   const options = [{ id: 'current', name: 'Current' }, ...project.variants.map((v) => ({ id: v.id, name: v.name }))];
   return (
     <div className="scroll">
-      <div className="panel-title">
+      <div className="title-bar panel-title">
         <span>
           A{' '}
           <select className="sel" value={ui.compareA} onChange={(e) => setUi({ compareA: e.target.value })} aria-label="Variant A">
@@ -90,8 +90,8 @@ export default function CompareView() {
         <MiniView model={mB} label={`B · ${B.name}`} />
       </div>
       <div className="pad grid2">
-        <div className="box">
-          <div className="box-head">Outputs</div>
+        <div className="window box">
+          <div className="title-bar box-head">Outputs</div>
           <table className="tbl">
             <thead>
               <tr>
@@ -123,8 +123,8 @@ export default function CompareView() {
             </tbody>
           </table>
         </div>
-        <div className="box">
-          <div className="box-head">Parameters that differ ({diffs.length})</div>
+        <div className="window box">
+          <div className="title-bar box-head">Parameters that differ ({diffs.length})</div>
           <table className="tbl">
             <thead>
               <tr>

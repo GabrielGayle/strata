@@ -144,12 +144,12 @@ const TOUR: { title: string; body: string; tab?: Tab; target: () => HTMLElement 
   {
     title: 'Shadow kitchen',
     body: 'Pictures that appear in the shadow at set times of day: the plates are carved so the sun draws each one on the wall.',
-    target: () => byText('.ws-tabs .tab', /^Shadow$/),
+    target: () => byText('.ws-tabs [role="tab"]', /^Shadow$/),
   },
   {
     title: 'Sun study',
     body: 'Switch Sun on to set the place and date, then scrub the sun across the day in 3D. Press ? any time for shortcuts or to see this tour again.',
-    target: () => document.querySelector<HTMLElement>('.left section[data-group="Sun"]'),
+    target: () => document.querySelector<HTMLElement>('.left .section[data-group="Sun"]'),
   },
 ];
 
