@@ -28,10 +28,12 @@ test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page
   // Toolbar Maps ▾ → Neasden auto-builds (~100 s live). There is no Build button.
   await pickNeasdenPreset(page);
   await assertPlateHeightMatchesRelief(page, 0.35);
-  // #85 live 3D caption was "plate height 232–264 mm" (strata). Map metres → ~4–120 mm.
-  await expect(page.getByTestId('plate-height-range')).not.toContainText(/232\s*[–-]\s*264/);
   const rangeMm = Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm'));
   expect(rangeMm).toBeGreaterThan(70);
+  // #85 live 3D caption was "plate height 232–264 mm" (strata). Map metres → ~4–120 mm.
+  await openWorkspaceTab(page, '3D');
+  await expect(page.getByTestId('plate-height-range')).toBeVisible();
+  await expect(page.getByTestId('plate-height-range')).not.toContainText(/232\s*[–-]\s*264/);
 
   await openWorkspaceTab(page, 'Map');
   await expect(page.locator('.map-terrain-status')).toContainText(/ready|Exaggeration/i, { timeout: 300_000 });
