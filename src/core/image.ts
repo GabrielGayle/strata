@@ -1,6 +1,7 @@
 // Image → plate data. Images are reduced to a small brightness grid; all the
 // processing here is pure so it can run (and be tested) anywhere.
 import type { Path } from './geom2d';
+import { blurImage, type BlurSpec } from './blur';
 
 export interface Gray {
   w: number;
@@ -14,6 +15,8 @@ export interface Gray {
 export interface ImageOpts {
   contrast: number;
   smooth: number;
+  /** Blur type and its settings; without it `smooth` is the plain soft blur. */
+  blur?: BlurSpec;
   invert: boolean;
   rotate: number; // 0 | 90 | 180 | 270
 }
@@ -105,7 +108,7 @@ export function boxBlur(g: Gray, r: number): Gray {
 
 export function processImage(g: Gray, o: ImageOpts): Gray {
   let r = rotate(g, o.rotate);
-  r = boxBlur(r, Math.round(o.smooth));
+  r = o.blur ? blurImage(r, { ...o.blur, size: o.smooth }) : boxBlur(r, Math.round(o.smooth));
   const data = new Float32Array(r.data.length);
   for (let i = 0; i < data.length; i++) {
     let v = r.data[i];

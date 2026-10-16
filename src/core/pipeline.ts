@@ -4,6 +4,7 @@
 import type * as THREE from 'three';
 import { evaluateParams, PARAMS, type EvalResult, type Values } from './params';
 import { buildForm, formSpec, meshVolume, toIndexedMesh, type Form, type IndexedMesh } from './forms';
+import { blurSpec } from './blur';
 import { processImage, rotate, silhouetteMask, type Gray } from './image';
 import { buildHeightField, type HeightField } from './heightfield';
 import { slice, type SliceResult } from './slicer';
@@ -83,7 +84,8 @@ const NON_SLICE = new Set([
 ]);
 const SLICE_KEYS = PARAMS.map((p) => p.id).filter((id) => !NON_SLICE.has(id));
 const STRATA_KEYS = ['baseLength', 'baseWidth', 'sliceMode', 'sliceAxis', 'pitch', 'stackHeight', 'erosionAmp', 'erosionScale', 'octaves', 'roughness', 'banding', 'bandHeight', 'coherence', 'crest', 'slope', 'seed', 'imgSideMode', 'imgMix', 'imgRange', 'stackSource'];
-const IMG_KEYS = ['imgContrast', 'imgSmooth', 'imgInvert', 'imgRotate'];
+const BLUR_KEYS = ['imgBlurType', 'imgBlurLength', 'imgBlurAngle', 'imgBlurSpin', 'imgBlurZoom', 'imgBlurX', 'imgBlurY', 'imgBlurFocus', 'imgBlurEdge'];
+const IMG_KEYS = ['imgContrast', 'imgSmooth', 'imgInvert', 'imgRotate', ...BLUR_KEYS];
 const BASE_KEYS = ['baseOn', 'baseLength', 'baseWidth', 'baseHeight', 'baseCornerChamfer', 'baseEdgeChamfer'];
 const CHECK_KEYS = ['minFeature', 'kerf', 'minPartSize', 'sheetW', 'sheetH', 'partSpacing', 'pitch', 'thickness', 'radialHub', 'radialCount', 'sliceMode', 'embedMode', ...BASE_KEYS];
 const MOULD_KEYS = [...PARAMS.filter((p) => p.group === 'Mould').map((p) => p.id), ...BASE_KEYS, 'embedDepth', 'thickness', 'insMaterial', 'insShape', 'clearance', 'sliceMode'];
@@ -197,7 +199,7 @@ export function createFrontPipeline() {
     const source = stage('Source form', [...pick(v, formKeys('src')), v.stackSource, assets.srcMesh], () =>
       v.stackSource === 'form' || v.unfoldTarget === 'source' ? mkForm('src', assets.srcMesh) : null,
     );
-    const opts = () => ({ contrast: v.imgContrast, smooth: v.imgSmooth, invert: v.imgInvert, rotate: Number(v.imgRotate) });
+    const opts = () => ({ contrast: v.imgContrast, smooth: v.imgSmooth, blur: blurSpec(v), invert: v.imgInvert, rotate: Number(v.imgRotate) });
     const sideImg = stage('Side image', [assets.sideImg, ...pick(v, IMG_KEYS)], () => (assets.sideImg ? processImage(assets.sideImg, opts()) : null));
     const frontImg = stage('Front image', [assets.frontImg, ...pick(v, IMG_KEYS)], () => (assets.frontImg ? processImage(assets.frontImg, opts()) : null));
     const topImg = stage('Top image', [assets.topImg ?? null, ...pick(v, IMG_KEYS)], () => (assets.topImg ? processImage(assets.topImg, opts()) : null));
