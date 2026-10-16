@@ -24,6 +24,9 @@ import { buildObjects, type ObjectBuild } from './objects';
 import { shelfCards } from './shelf';
 import { originFrame, toWorld, type Frame } from './origin';
 import { baseTop } from './slicer';
+import { basePlan } from './base';
+import { union } from './geom2d';
+import { buildMapSunkenFrameLayout, type SunkenFrameLayout } from './mapSunkenFrame';
 
 export interface Assets {
   sideImg: Gray | null;
@@ -71,6 +74,8 @@ export interface Model {
   mouldNest: NestResult;
   unfolded: UnfoldResult;
   pour: { rows: PourPlanRow[]; total: number; mismatch: number };
+  /** Cast tub the flat-stack plates sit in when Map › Sunken concrete frame is on. */
+  sunkenFrame: SunkenFrameLayout | null;
   bom: Bom;
   /** Free-free partials of the finished outlines, from the deferred worker. Null when tuning is not free-free. */
   sounding: SoundingMode[] | null;
@@ -278,7 +283,17 @@ export function createFrontPipeline() {
     const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
     const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
     const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: carved?.sliced ?? sliced, objects, origin, shadow: carved?.report ?? null, unfolded, pour, stages, totalMs: performance.now() - t0 };
+    const finalSliced = carved?.sliced ?? sliced;
+    const mapFrame = project.images.top?.map?.sunkenFrame;
+    const sunkenFrame = stage(
+      'Sunken frame',
+      [finalSliced, mapFrame, v.thickness, v.sliceMode, v.baseOn, v.baseLength, v.baseWidth, v.baseHeight, v.baseCornerChamfer],
+      () =>
+        v.sliceMode === 'flat'
+          ? buildMapSunkenFrameLayout(finalSliced, { sunkenFrame: mapFrame }, v.thickness, baseTop(v), v.baseOn ? union([basePlan(v)]) : undefined)
+          : null,
+    );
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, origin, shadow: carved?.report ?? null, unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
   };
 }
 

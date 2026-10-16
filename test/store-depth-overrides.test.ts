@@ -6,6 +6,7 @@ import { applyParamPatchRespectingOverrides, markUserParamOverrides } from '../s
 import { newProject } from '../src/core/project';
 import { mapGridToDepth, syntheticConeGrid } from '../src/core/mapToDepth';
 import { defaultMapSpec } from '../src/core/mapSpec';
+import { mapBuildKey } from '../src/core/mapBuildKey';
 import { useStore } from '../src/state/store';
 import { NEASDEN_FAST_BBOX } from './map-fixtures';
 
@@ -86,15 +87,17 @@ describe('store: near/far persist across map rebuild, auto-dimension and design 
     expect(useStore.getState().project.images.top?.depth?.settingsOverrides?.near).toBe(true);
 
     const { depth: rebuilt } = mapGridToDepth(syntheticConeGrid(24), { exaggeration: 15 });
+    const builtKey = mapBuildKey(map);
     useStore.getState().finishMapTerrainBuild({
       name: 'Map terrain',
       dataUrl: 'data:image/png;base64,abc',
-      map: { ...map, buildKey: 'k1', exaggerationFactor: 15 },
+      map: { ...map, buildKey: builtKey, exaggeration: 99, exaggerationFactor: 15 },
       depth: rebuilt,
     });
     const afterBuild = useStore.getState().project.images.top?.depth;
     expect(afterBuild?.settings.near).toBe(2.5);
     expect(afterBuild?.settings.far).toBe(40);
+    expect(useStore.getState().project.images.top?.map?.exaggeration).toBe(map.exaggeration);
 
     useStore.getState().setParam('baseWidth', '210');
     useStore.getState().setParam('baseLength', '297');

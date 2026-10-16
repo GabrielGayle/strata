@@ -3,32 +3,53 @@ import { PNG } from 'pngjs';
 
 const MAP_READY_MS = process.env.LIVE_MAP === '1' || process.env.LIVE_MAP_SCREENSHOTS === '1' ? 300_000 : 90_000;
 
-/** First-visit Help tour (1.5 s) covers the chrome and steals toolbar clicks. */
-export async function dismissTour(page: Page) {
+/** Must stay self-contained: Playwright serializes this into the browser. */
+export function seedAllTourSeenKeys() {
+  try {
+    const keys = new Set<string>(['strata:tour-seen']);
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && /tour-seen/i.test(k)) keys.add(k);
+    }
+    for (const k of keys) localStorage.setItem(k, '1');
+  } catch {
+    /* private window or blocked storage */
+  }
+}
+
+/**
+ * Skip every first-visit Tour: dialog. A second Composer tour can auto-start
+ * ~1.5 s after the first Skip (HelpLayer timeout does not re-check tour-seen).
+ * Pass a longer waitMs at startup; later calls only clear a leftover overlay.
+ */
+export async function dismissTour(page: Page, opts?: { waitMs?: number }) {
+  const waitMs = opts?.waitMs ?? 250;
   const dlg = page.getByRole('dialog', { name: /Tour:/ });
-  const visible = await dlg
-    .waitFor({ state: 'visible', timeout: 4_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (!visible) return;
-  await dlg.getByRole('button', { name: 'Skip' }).click();
-  await dlg.waitFor({ state: 'hidden', timeout: 5_000 });
+  for (let n = 0; n < 8; n++) {
+    const visible = await dlg
+      .waitFor({ state: 'visible', timeout: n === 0 ? waitMs : Math.max(waitMs, 1_800) })
+      .then(() => true)
+      .catch(() => false);
+    if (visible) {
+      await dlg.getByRole('button', { name: 'Skip' }).click();
+      await dlg.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+      continue;
+    }
+    const skip = page.getByRole('button', { name: 'Skip' });
+    if (await skip.isVisible().catch(() => false)) {
+      await skip.click();
+      continue;
+    }
+    return;
+  }
 }
 
 /** Fresh Playwright contexts have no tour-seen flag; the 1.5 s Composer tour steals clicks. */
 export async function openApp(page: Page) {
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem('strata:tour-seen', '1');
-    } catch {
-      /* ignore */
-    }
-  });
+  await page.addInitScript(seedAllTourSeenKeys);
   await page.goto('/');
   await page.waitForSelector('.app.window', { timeout: 60_000 });
-  await dismissTour(page);
-  const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await dismissTour(page, { waitMs: 2_000 });
 }
 
 export async function waitForMapReady(page: Page) {
