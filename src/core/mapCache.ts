@@ -25,10 +25,21 @@ export async function cachedTileFetch(dir: string | undefined, url: string, inne
   return cachedMapBytes(dir, 'terrarium', url, inner);
 }
 
-export type MapCacheKind = 'terrarium' | 'cog' | 'wms' | 'bytes';
+export type MapCacheKind = 'terrarium' | 'cog' | 'wms' | 'bytes' | 'nominatim' | 'overpass';
 
 function cacheFileName(kind: MapCacheKind, url: string): string {
-  const ext = kind === 'terrarium' ? 'terrarium.png' : kind === 'cog' ? 'cog.bin' : kind === 'wms' ? 'wms.bin' : 'bytes';
+  const ext =
+    kind === 'terrarium'
+      ? 'terrarium.png'
+      : kind === 'cog'
+        ? 'cog.bin'
+        : kind === 'wms'
+          ? 'wms.bin'
+          : kind === 'nominatim'
+            ? 'nominatim.json'
+            : kind === 'overpass'
+              ? 'overpass.json'
+              : 'bytes';
   return `${keyOf(url)}.${ext}`;
 }
 
@@ -58,5 +69,35 @@ export async function cachedMapBytes(
   if (hit) return hit;
   const data = await inner(url);
   writeMapCacheBytes(root, kind, url, data);
+  return data;
+}
+
+export function readMapCacheJson<T>(dir: string, kind: MapCacheKind, key: string): T | null {
+  try {
+    const raw = readFileSync(join(dir, cacheFileName(kind, key)), 'utf8');
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export function writeMapCacheJson(dir: string, kind: MapCacheKind, key: string, value: unknown): void {
+  const root = mapCacheRoot(dir);
+  writeFileSync(join(root, cacheFileName(kind, key)), JSON.stringify(value));
+}
+
+/** JSON cache for Nominatim / Overpass (ticket T7). */
+export async function cachedMapJson<T>(
+  dir: string | undefined,
+  kind: MapCacheKind,
+  key: string,
+  inner: () => Promise<T>,
+): Promise<T> {
+  if (!dir) return inner();
+  const root = mapCacheRoot(dir);
+  const hit = readMapCacheJson<T>(root, kind, key);
+  if (hit != null) return hit;
+  const data = await inner();
+  writeMapCacheJson(root, kind, key, data);
   return data;
 }
