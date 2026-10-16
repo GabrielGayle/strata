@@ -1,12 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { openWorkspaceTab, pickNeasdenPreset, assertMapPreviewNonUniform, assertPlateHeightMatchesRelief, setThemePreset, waitForViewportRelief } from './map-helpers';
+import { openApp, openWorkspaceTab, pickNeasdenPreset, assertMapPreviewNonUniform, assertPlateHeightMatchesRelief, setThemePreset, waitForViewportRelief } from './map-helpers';
 
 test('neasden map plates follow real elevation × exaggeration (fixture)', async ({ page }) => {
   test.setTimeout(240_000);
-  await page.goto('/');
-  await page.waitForSelector('.app.window', { timeout: 60_000 });
+  await openApp(page);
   await pickNeasdenPreset(page);
 
   const partsText = await page.locator('.status-bar-field').first().textContent();
@@ -24,8 +23,7 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
 
 test('neasden 3D and Plates screenshots in light and dark', async ({ page }) => {
   test.setTimeout(240_000);
-  await page.goto('/');
-  await page.waitForSelector('.app.window', { timeout: 60_000 });
+  await openApp(page);
   await pickNeasdenPreset(page);
   await openWorkspaceTab(page, '3D');
   await waitForViewportRelief(page);

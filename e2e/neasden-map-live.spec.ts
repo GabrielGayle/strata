@@ -1,12 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { pickNeasdenPreset, openWorkspaceTab, assertPlateHeightMatchesRelief } from './map-helpers';
+import { openApp, pickNeasdenPreset, openWorkspaceTab, assertPlateHeightMatchesRelief } from './map-helpers';
 
 test.skip(!process.env.LIVE_MAP, 'Set LIVE_MAP=1 to run live network map smoke tests');
 
 test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page }) => {
   test.setTimeout(420_000);
-  await page.goto('/');
-  await page.waitForSelector('.app.window', { timeout: 60_000 });
+  await openApp(page);
   // Toolbar Maps ▾ → Neasden auto-builds (~100 s live). There is no Build button.
   await pickNeasdenPreset(page);
   await assertPlateHeightMatchesRelief(page, 0.35);

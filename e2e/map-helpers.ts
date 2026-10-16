@@ -2,6 +2,21 @@ import { expect, type Page } from '@playwright/test';
 
 const MAP_READY_MS = 240_000;
 
+/** Fresh Playwright contexts have no tour-seen flag; the 1.5 s Composer tour steals clicks. */
+export async function openApp(page: Page) {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('strata:tour-seen', '1');
+    } catch {
+      /* ignore */
+    }
+  });
+  await page.goto('/');
+  await page.waitForSelector('.app.window', { timeout: 60_000 });
+  const skip = page.getByRole('button', { name: 'Skip' });
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+}
+
 export async function waitForMapReady(page: Page) {
   // Do not match leftover "Map terrain ready" via a loose "terrain" regex.
   await expect(page.locator('.status-bar')).toContainText(/Fetching|building|Queued|Map terrain ready/i, {

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { openWorkspaceTab, pickNeasdenPreset, plateHeightRangeMm, waitForMapReady } from './map-helpers';
+import { openApp, openWorkspaceTab, pickNeasdenPreset, plateHeightRangeMm, waitForMapReady } from './map-helpers';
 
 async function setRangeInput(locator: import('@playwright/test').Locator, t: number) {
   await locator.evaluate((el, value) => {
@@ -13,8 +13,7 @@ async function setRangeInput(locator: import('@playwright/test').Locator, t: num
 
 test('depth near/far sliders change plates and survive a map rebuild', async ({ page }) => {
   test.setTimeout(240_000);
-  await page.goto('/');
-  await page.waitForSelector('.app.window', { timeout: 60_000 });
+  await openApp(page);
   await pickNeasdenPreset(page);
 
   const rangeBefore = await plateHeightRangeMm(page);

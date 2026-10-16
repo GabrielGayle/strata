@@ -1,15 +1,14 @@
 import { test } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { openWorkspaceTab, pickNeasdenPreset, setThemePreset, waitForViewportRelief } from './map-helpers';
+import { openApp, openWorkspaceTab, pickNeasdenPreset, setThemePreset, waitForViewportRelief } from './map-helpers';
 
 const shotDir = join(process.cwd(), 'docs/screenshots/map-live');
 
 test.skip(!process.env.LIVE_MAP_SCREENSHOTS, 'Set LIVE_MAP_SCREENSHOTS=1 to capture docs/screenshots/map-live (real network)');
 
 test('capture live map UI screenshots', async ({ page }) => {
-  await page.goto('/');
-  await page.waitForSelector('.app.window', { timeout: 60_000 });
+  await openApp(page);
   await pickNeasdenPreset(page);
   await mkdir(shotDir, { recursive: true });
   await openWorkspaceTab(page, '3D');
