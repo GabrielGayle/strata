@@ -16,9 +16,9 @@ const BASE = `http://127.0.0.1:${PORT}/`;
 const INK_THEME = { id: 'ink', name: 'Ink', mode: 'dark', hue: 45, sat: 0.06, accent: '#ff6a2e' };
 
 const THEMES = [
-  { id: 'light', colorScheme: 'light', theme: { id: 'system' } },
-  { id: 'dark', colorScheme: 'dark', theme: { id: 'system' } },
-  { id: 'ink', colorScheme: 'dark', theme: INK_THEME },
+  { id: 'light', colorScheme: 'light', theme: { id: 'system' }, expectInk: '#141414', dataTheme: null },
+  { id: 'dark', colorScheme: 'dark', theme: { id: 'system' }, expectInk: '#ecebe6', dataTheme: null },
+  { id: 'ink', colorScheme: 'dark', theme: INK_THEME, expectInk: null, dataTheme: 'dark', expectAccent: '#ff6a2e' },
 ];
 
 function waitForUrl(url, ms = 90000) {
@@ -38,6 +38,31 @@ function waitForUrl(url, ms = 90000) {
   });
 }
 
+async function assertThemeApplied(page, theme) {
+  await page.waitForFunction(
+    (expected) => {
+      const root = document.documentElement;
+      const ink = getComputedStyle(root).getPropertyValue('--ink').trim().toLowerCase();
+      const paramBg = getComputedStyle(root).getPropertyValue('--param-bg').trim().toLowerCase();
+      const dataTheme = root.getAttribute('data-theme');
+      if (expected.dataTheme !== undefined && dataTheme !== expected.dataTheme) return false;
+      if (expected.expectInk && ink !== expected.expectInk) return false;
+      if (expected.expectAccent) {
+        const accent = getComputedStyle(root).getPropertyValue('--accent').trim().toLowerCase();
+        if (accent !== expected.expectAccent) return false;
+      }
+      if (paramBg !== '#c0c0c0') return false;
+      return true;
+    },
+    {
+      dataTheme: theme.dataTheme,
+      expectInk: theme.expectInk,
+      expectAccent: theme.expectAccent ?? null,
+    },
+    { timeout: 30000 },
+  );
+}
+
 async function captureTheme(browser, theme) {
   const context = await browser.newContext({
     colorScheme: theme.colorScheme,
@@ -49,18 +74,21 @@ async function captureTheme(browser, theme) {
   }, theme.theme);
 
   const page = await context.newPage();
+  await page.emulateMedia({ colorScheme: theme.colorScheme });
   await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForSelector('.app.window', { timeout: 120000 });
   await page.waitForFunction(() => document.querySelectorAll('.prow').length > 0, { timeout: 120000 });
+  await assertThemeApplied(page, theme);
 
   const dir = path.join(OUT, theme.id);
   await mkdir(dir, { recursive: true });
 
   const left = page.locator('.left.window');
   await left.screenshot({ path: path.join(dir, 'params-panel.png') });
-  await page.locator('.left.window input.numbox, .left.window input.inp').first().screenshot({
-    path: path.join(dir, 'param-field.png'),
-  });
+
+  const paramRow = page.locator('.left.window .prow.field-row-stacked').first();
+  await paramRow.waitFor({ state: 'visible', timeout: 15000 });
+  await paramRow.screenshot({ path: path.join(dir, 'param-field.png') });
 
   await page.keyboard.press('/');
   await page.waitForSelector('.design-box .design-input', { timeout: 15000 });
@@ -69,7 +97,9 @@ async function captureTheme(browser, theme) {
 
   await page.getByRole('tab', { name: /^Map$/i }).click();
   await page.waitForSelector('.map-view', { timeout: 60000 });
-  await page.locator('.map-view').screenshot({ path: path.join(dir, 'map-tab.png') });
+  await page.locator('.map-section').filter({ hasText: 'Source & bbox' }).screenshot({
+    path: path.join(dir, 'map-tab.png'),
+  });
 
   await page.getByRole('tab', { name: /Image/i }).click();
   await page.waitForTimeout(800);
@@ -79,7 +109,14 @@ async function captureTheme(browser, theme) {
 
   await page.getByRole('tab', { name: /Compare/i }).click();
   await page.waitForSelector('select.sel', { timeout: 30000 });
-  await page.locator('select.sel').first().screenshot({ path: path.join(dir, 'select-dropdown.png') });
+  const compareBar = page.locator('.scroll > .title-bar.panel-title');
+  await compareBar.waitFor({ state: 'visible', timeout: 15000 });
+  const compareSelect = compareBar.locator('select.sel').first();
+  await compareSelect.scrollIntoViewIfNeeded();
+  await compareSelect.focus();
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(250);
+  await compareBar.screenshot({ path: path.join(dir, 'select-dropdown.png') });
 
   const chop = page.locator('fieldset.section').filter({ hasText: 'Chop Chop price' });
   const head = chop.locator('.section-head');

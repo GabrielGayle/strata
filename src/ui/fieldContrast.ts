@@ -122,3 +122,9 @@ export const WCAG_AA_NORMAL = 4.5;
 export function meetsWcagAaNormal(fg: string, bg: string): boolean {
   return contrastRatio(fg, bg) >= WCAG_AA_NORMAL;
 }
+
+/** Map tab main column: labels/legends use themed ink on panel surfaces (not win98 chrome-fg). */
+export function mapTabLabelContrast(mode: keyof typeof THEME_SURFACES): { fg: string; panel: string; panel2: string } {
+  const t = THEME_SURFACES[mode];
+  return { fg: t.ink, panel: t.panel, panel2: t.panel2 };
+}
