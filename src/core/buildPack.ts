@@ -2,7 +2,8 @@
 // numbered plate layout, a plate schedule, the assembly order, rod and spacer
 // positions, the glue-up order for a flat stack, the pour plan and the
 // bought-in parts, all read off the model the pipeline already built. It opens
-// as a page; Print (or Save as PDF) gives clean A4 pages.
+// as a page; Print (or Save as PDF) gives clean A4 pages. The cover and the
+// Angled views page show the finished piece in orthographic 3D.
 import type { Model } from './pipeline';
 import type { Project } from './project';
 import type { Part, PlateInfo } from './slicer';
@@ -10,8 +11,8 @@ import { embedOf } from './slicer';
 import { stackFrame } from './heightfield';
 import { planeToWorld, type V3 } from './section';
 import type { Shape } from './geom2d';
-import { basePlan } from './base';
-import { bucketOf, finishOf, METAL_NAMES } from './appearance';
+import { baseChamfers, basePlan } from './base';
+import { bucketOf, finishOf, lookOf, METAL_NAMES } from './appearance';
 import { isIdentity } from './moves';
 import { DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from './price';
 import type { Rod, RodPlan } from './brace';
@@ -115,15 +116,21 @@ function fitBox(b: Box, maxW: number, maxH: number, m: [number, number, number, 
 }
 
 /** Polyline path data in px, dropping points that land on the same tenth of a pixel. */
-function pathD(pts: P2[], X: (x: number) => number, Y: (y: number) => number, close = true): string {
-  let d = '', last = '';
+function pathD(pts: P2[], X: (x: number) => number, Y: (y: number) => number, close = true, tol = 0): string {
+  let d = '', last = '', lx = NaN, ly = NaN, n = 0;
   for (const [x, y] of pts) {
-    const k = `${px(X(x))},${px(Y(y))}`;
+    const sx = X(x), sy = Y(y);
+    if (tol && Math.hypot(sx - lx, sy - ly) < tol) continue;
+    const k = `${px(sx)},${px(sy)}`;
     if (k === last) continue;
-    d += (d ? 'L' : 'M') + k;
+    d += (n ? 'L' : 'M') + k;
     last = k;
+    lx = sx;
+    ly = sy;
+    n++;
   }
-  return d + (close && d ? 'Z' : '');
+  // with a tolerance, anything that thins to less than a triangle is too small to see
+  return tol && n < 3 ? '' : d + (close && d ? 'Z' : '');
 }
 
 /** A round number for a scale bar about a fifth of `span`. */
@@ -361,6 +368,174 @@ function elevationSvg(m: Model, right: P2, title: string, opts: { labels?: boole
     });
   }
   return `<svg class="drawing" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="${esc(title)}">${out.join('')}${g.join('')}</svg>`;
+}
+
+// --- angled view ----------------------------------------------------------------------
+
+/** "#rrggbb" scaled by k (0 black, 1 as is). */
+function shade(hex: string, k: number): string {
+  const h = /^#?([0-9a-f]{6})$/i.exec(hex.trim())?.[1] ?? '888888';
+  const c = [0, 2, 4].map((i) => Math.max(0, Math.min(255, Math.round(parseInt(h.slice(i, i + 2), 16) * k))));
+  return `#${c.map((x) => x.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Cut a closed ring down to the part at or above the ground (y ≥ 0). */
+function aboveGround(ring: V3[]): V3[] {
+  const out: V3[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    if (a[1] >= 0) out.push(a);
+    if (a[1] >= 0 !== b[1] >= 0) {
+      const t = a[1] / (a[1] - b[1]);
+      out.push([a[0] + (b[0] - a[0]) * t, 0, a[2] + (b[2] - a[2]) * t]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The finished piece in an orthographic view from above one corner: every
+ * part in its metal and finish, the insert, and the concrete base. Drawn back
+ * to front, so parts that cross each other (a waffle, a radial star) can
+ * overlap a little wrongly where they meet; it is for seeing the design, not
+ * for measuring.
+ * `turn` is the camera's angle round from the front, in degrees (positive:
+ * from the right); `tilt` how far it looks down.
+ */
+function angledSvg(project: Project, m: Model, view: View, title: string, opts: { turn?: number; tilt?: number; maxW?: number; maxH?: number } = {}): string {
+  const v = m.v;
+  const th = ((opts.turn ?? 35) * Math.PI) / 180, ph = ((opts.tilt ?? 30) * Math.PI) / 180;
+  // camera axes in (right, back, up)
+  const cam: V3 = [Math.sin(th) * Math.cos(ph), -Math.cos(th) * Math.cos(ph), Math.sin(ph)];
+  const ex: V3 = [Math.cos(th), Math.sin(th), 0];
+  const ey: V3 = [-Math.sin(th) * Math.sin(ph), Math.cos(th) * Math.sin(ph), Math.cos(ph)];
+  const rbu = (w: V3): V3 => {
+    const [r, b] = view.plan(w);
+    return [r, b, w[1]];
+  };
+  const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const scr = (w: V3): P2 => {
+    const q = rbu(w);
+    return [dot(q, ex), dot(q, ey)];
+  };
+  const depth = (w: V3) => -dot(rbu(w), cam);
+  // light from above, front left
+  const light: V3 = (() => {
+    const l: V3 = [-0.45, -0.55, 0.7];
+    const k = Math.hypot(...l);
+    return [l[0] / k, l[1] / k, l[2] / k];
+  })();
+  const lit = (nRbu: V3) => 0.55 + 0.45 * Math.abs(dot(nRbu, light));
+  const nOf = (n: V3): V3 => {
+    const o = rbu([0, 0, 0]), q = rbu(n);
+    return [q[0] - o[0], q[1] - o[1], q[2] - o[2]];
+  };
+  const clip = v.baseOn;
+
+  type Item = { d: number; pts: P2[][]; fill: string; stroke: string; sw: number; tri?: boolean };
+  const items: Item[] = [];
+  const all: P2[] = [];
+
+  // the base: a convex block, so faces turned towards us are all that shows
+  const baseFaces: { pts: P2[]; fill: string }[] = [];
+  if (v.baseOn) {
+    const { edge } = baseChamfers(v);
+    const lo = basePlan(v).map(([x, pz]) => [x, -pz] as P2);
+    const hi = basePlan(v, edge).map(([x, pz]) => [x, -pz] as P2);
+    const h0 = v.baseHeight - edge, h1 = v.baseHeight;
+    const faces: V3[][] = [];
+    for (let i = 0; i < lo.length; i++) {
+      const j = (i + 1) % lo.length;
+      faces.push([[lo[i][0], 0, lo[i][1]], [lo[j][0], 0, lo[j][1]], [lo[j][0], h0, lo[j][1]], [lo[i][0], h0, lo[i][1]]]);
+      if (edge > 0) faces.push([[lo[i][0], h0, lo[i][1]], [lo[j][0], h0, lo[j][1]], [hi[j][0], h1, hi[j][1]], [hi[i][0], h1, hi[i][1]]]);
+    }
+    faces.push(hi.map(([x, z]) => [x, h1, z] as V3));
+    const tint = String(v.concreteTint ?? '#a39e96');
+    for (const f of faces) {
+      // Newell's normal: square corners repeat points, so any three in a row may be one
+      const n: V3 = [0, 0, 0];
+      f.forEach((a, i) => {
+        const b = f[(i + 1) % f.length];
+        n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+      });
+      if (Math.hypot(...n) < 1e-9) continue;
+      // outward: away from the block's middle
+      const mid = f.reduce((s, q) => [s[0] + q[0] / f.length, s[1] + q[1] / f.length, s[2] + q[2] / f.length] as V3, [0, 0, 0] as V3);
+      const out = n[0] * mid[0] + n[1] * (mid[1] - v.baseHeight / 2) + n[2] * mid[2] > 0 ? 1 : -1;
+      const nr = nOf([n[0] * out, n[1] * out, n[2] * out]);
+      const k = Math.hypot(...nr) || 1;
+      const nn: V3 = [nr[0] / k, nr[1] / k, nr[2] / k];
+      if (dot(nn, cam) <= 1e-6) continue;
+      const pts = f.map(scr);
+      all.push(...pts);
+      baseFaces.push({ pts, fill: shade(tint, 0.6 + 0.45 * Math.max(0, dot(nn, light))) });
+    }
+  }
+
+  // the parts
+  for (const p of m.sliced.parts) {
+    const metal = metalOf(project, m, p.plateKey);
+    const b = bucketOf(project.appearance, p.plateKey);
+    const look = lookOf(metal.material, b ? b.finish : project.appearance?.main?.finish, b ? b.color : project.appearance?.main?.color);
+    const nr = nOf(p.plane.normal);
+    const rings = p.shape.flatMap((ex2) => [ex2.outer, ...ex2.holes]).map((path) => {
+      const w = path.map(([a, c]) => planeToWorld(p.plane, a, c));
+      return clip ? aboveGround(w) : w;
+    }).filter((r) => r.length > 2);
+    if (!rings.length) continue;
+    const flatPts = rings[0];
+    const d = flatPts.reduce((s, q) => s + depth(q), 0) / flatPts.length;
+    const pts = rings.map((r) => r.map(scr));
+    all.push(...pts[0]);
+    items.push({ d, pts, fill: shade(look.color, lit(nr) * (p.family === 'S' ? 0.85 : 1)), stroke: shade(look.color, 1.6), sw: 0.6 });
+  }
+
+  // the insert, a triangle at a time (only the side facing us)
+  const ins = m.insert && v.insShape !== 'none' && v.insMaterial !== 'void' ? m.insert.mesh : null;
+  if (ins) {
+    const tint = v.insMaterial === 'metal' ? lookOf(String(v.plateMaterial), project.appearance?.main?.finish).color : String(v.insTint ?? '#6f6a64');
+    const P = ins.pos, I = ins.index;
+    for (let t = 0; t + 2 < I.length; t += 3) {
+      const tri = [0, 1, 2].map((k) => [P[I[t + k] * 3], P[I[t + k] * 3 + 1], P[I[t + k] * 3 + 2]] as V3);
+      const u: V3 = [tri[1][0] - tri[0][0], tri[1][1] - tri[0][1], tri[1][2] - tri[0][2]], w: V3 = [tri[2][0] - tri[0][0], tri[2][1] - tri[0][1], tri[2][2] - tri[0][2]];
+      const nr = nOf([u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]);
+      const k = Math.hypot(...nr);
+      if (k < 1e-9) continue;
+      const nn: V3 = [nr[0] / k, nr[1] / k, nr[2] / k];
+      if (dot(nn, cam) <= 0) continue;
+      const ring = clip ? aboveGround(tri) : tri;
+      if (ring.length < 3) continue;
+      const pts = ring.map(scr);
+      all.push(...pts);
+      // a few shades only, so neighbouring triangles merge into one path below
+      const col = shade(tint, 0.55 + Math.round(10 * Math.max(0, dot(nn, light))) / 20);
+      items.push({ d: ring.reduce((s, q) => s + depth(q), 0) / ring.length, pts: [pts], fill: col, stroke: col, sw: 0.5, tri: true });
+    }
+  }
+  if (!all.length) return '';
+
+  const bx = boxOf(all);
+  const f = fitBox(bx, opts.maxW ?? 690, opts.maxH ?? 520, [16, 16, 16, 16]);
+  const out: string[] = [];
+  for (const b of baseFaces) out.push(`<path d="${pathD(b.pts, f.X, f.Y)}" fill="${b.fill}" stroke="${shade(b.fill, 0.6)}" stroke-width="0.8" stroke-linejoin="round"/>`);
+  items.sort((a, b) => b.d - a.d);
+  // a little haze with distance, so plates standing one behind another read apart
+  const d0 = items.length ? items[items.length - 1].d : 0, d1 = items.length ? items[0].d : 1;
+  for (const it of items) {
+    if (it.tri) continue;
+    const k = 1 - 0.3 * ((it.d - d0) / Math.max(1e-6, d1 - d0));
+    it.fill = shade(it.fill, k);
+  }
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    let d = it.pts.map((r) => pathD(r, f.X, f.Y, true, 0.6)).join('');
+    // a run of insert triangles in one shade: one path (they don't overlap, so nonzero fill is right)
+    while (it.tri && items[i + 1]?.tri && items[i + 1].fill === it.fill) d += pathD(items[++i].pts[0], f.X, f.Y, true, 0.6);
+    if (d) out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"${it.tri ? '' : ' fill-rule="evenodd"'}/>`);
+  }
+  return `<svg class="drawing angled" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="${esc(title)}">${out.join('')}</svg>`;
 }
 
 // --- sections -----------------------------------------------------------------------
@@ -754,6 +929,11 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
     body: `<h3>Front elevation</h3><p class="note">Looking at the front. The grey block is the concrete; plates are drawn through it.</p><figure>${front}</figure>${side ? `<h3>Side elevation</h3><p class="note">From the right-hand side: front on the left, back on the right.${!flat ? ' Plate numbers along the top.' : ''}</p><figure>${side}</figure>` : ''}`,
   });
   sections.push({
+    id: 'views',
+    title: 'Angled views',
+    body: `<p class="note">Orthographic views from above two corners, to see the design whole. Not for measuring: the plan and elevations carry the sizes.</p><h3>From the front left</h3><figure class="full">${angledSvg(project, m, view, 'From the front left', { turn: -35, maxH: 420 })}</figure><h3>From the back right</h3><figure class="full">${angledSvg(project, m, view, 'From the back right', { turn: 145, maxH: 420 })}</figure>`,
+  });
+  sections.push({
     id: 'schedule',
     title: 'Plate schedule',
     body: `<table class="sched"><thead><tr><th>#</th><th>Part</th><th>Material, finish</th><th>Size (mm)</th><th>Thk</th><th>Position</th><th>Hand move</th><th>Outline</th></tr></thead><tbody>${scheduleRows(project, m, view, mainParts, tunes)}</tbody></table>${otherParts.length ? `<h3>Support and spacer parts</h3><table class="sched"><thead><tr><th>#</th><th>Part</th><th>Material, finish</th><th>Size (mm)</th><th>Thk</th><th>Position</th><th>Hand move</th><th>Outline</th></tr></thead><tbody>${scheduleRows(project, m, view, otherParts, tunes)}</tbody></table>` : ''}<p class="note">Sizes are the part's bounding box as cut (width × height). Positions are to the middle of the plate.</p>`,
@@ -777,7 +957,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
 <h1>${esc(project.name || 'Untitled')}</h1>
 <dl class="facts">${facts.map(([k, x]) => `<dt>${k}</dt><dd>${x}</dd>`).join('')}</dl>
 ${errors ? `<p class="warn">The design has ${plural(errors, 'check error')}: fix ${errors === 1 ? 'it' : 'them'} in Strata before cutting.</p>` : ''}
-<figure>${elevationSvg(m, view.right, 'Front elevation', { maxH: 300 })}</figure>
+<figure class="full">${angledSvg(project, m, view, 'The finished piece from the front right', { maxH: 400 })}<figcaption>From the front right, in the plates' metals and finishes. Orthographic: parallel edges stay parallel, so nothing shrinks with distance.</figcaption></figure>
 <h2>Contents</h2>
 <ol class="toc">${sections.map((s) => `<li><a href="#${s.id}">${s.title}</a></li>`).join('')}</ol>
 </section>`;
@@ -801,6 +981,7 @@ ${errors ? `<p class="warn">The design has ${plural(errors, 'check error')}: fix
   section + section { break-before: page; page-break-before: always; margin-top: 40px; border-top: 1px dashed #bbb; padding-top: 24px; }
   figure { margin: 6px 0 10px; } figure.full { text-align: center; } figcaption { font-size: 12px; margin-top: 4px; }
   svg.drawing { display: block; max-width: 100%; height: auto; margin: 0 auto; font-family: inherit; }
+  svg.angled { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   svg text { fill: #000; } .dim line { stroke: #000; stroke-width: 0.8; } .dim text { font-size: 11px; }
   table { border-collapse: collapse; width: 100%; margin: 4px 0 8px; }
   th, td { border-bottom: 1px solid #999; padding: 4px 6px; text-align: left; vertical-align: middle; }
