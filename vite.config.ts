@@ -38,8 +38,10 @@ function excludeNodeTerrarium(): Plugin {
       if (options?.ssr) return null;
       if (
         source === './mapTerrarium.node' ||
+        source === './mapTerrarium.node.js' ||
         source === './mapTerrarium.node.ts' ||
         source.endsWith('/mapTerrarium.node') ||
+        source.endsWith('/mapTerrarium.node.js') ||
         source.endsWith('/mapTerrarium.node.ts')
       ) {
         return '\0strata-terrarium-node-stub';
