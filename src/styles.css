@@ -387,6 +387,24 @@ input[type='number'],
   color: var(--muted);
   font-weight: 400;
 }
+.section-head-main {
+  flex: none;
+}
+.section-collapsed-summary {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--chrome-fg);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .section-body {
   padding: 4px 0 6px;
 }
