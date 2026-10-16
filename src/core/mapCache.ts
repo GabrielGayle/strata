@@ -14,24 +14,49 @@ function keyOf(url: string): string {
 }
 
 export function readMapCache(dir: string, url: string): Uint8Array | null {
+  return readMapCacheBytes(dir, 'terrarium', url);
+}
+
+export function writeMapCache(dir: string, url: string, data: Uint8Array): void {
+  writeMapCacheBytes(dir, 'terrarium', url, data);
+}
+
+export async function cachedTileFetch(dir: string | undefined, url: string, inner: (url: string) => Promise<Uint8Array>): Promise<Uint8Array> {
+  return cachedMapBytes(dir, 'terrarium', url, inner);
+}
+
+export type MapCacheKind = 'terrarium' | 'cog' | 'wms' | 'bytes';
+
+function cacheFileName(kind: MapCacheKind, url: string): string {
+  const ext = kind === 'terrarium' ? 'terrarium.png' : kind === 'cog' ? 'cog.bin' : kind === 'wms' ? 'wms.bin' : 'bytes';
+  return `${keyOf(url)}.${ext}`;
+}
+
+export function readMapCacheBytes(dir: string, kind: MapCacheKind, url: string): Uint8Array | null {
   try {
-    return readFileSync(join(dir, `${keyOf(url)}.terrarium.png`));
+    return readFileSync(join(dir, cacheFileName(kind, url)));
   } catch {
     return null;
   }
 }
 
-export function writeMapCache(dir: string, url: string, data: Uint8Array): void {
+export function writeMapCacheBytes(dir: string, kind: MapCacheKind, url: string, data: Uint8Array): void {
   const root = mapCacheRoot(dir);
-  writeFileSync(join(root, `${keyOf(url)}.terrarium.png`), data);
+  writeFileSync(join(root, cacheFileName(kind, url)), data);
 }
 
-export async function cachedTileFetch(dir: string | undefined, url: string, inner: (url: string) => Promise<Uint8Array>): Promise<Uint8Array> {
+/** Unified on-disk cache for map adapters (ticket T7 extends kinds; terrarium keeps compat). */
+export async function cachedMapBytes(
+  dir: string | undefined,
+  kind: MapCacheKind,
+  url: string,
+  inner: (url: string) => Promise<Uint8Array>,
+): Promise<Uint8Array> {
   if (!dir) return inner(url);
   const root = mapCacheRoot(dir);
-  const hit = readMapCache(root, url);
+  const hit = readMapCacheBytes(root, kind, url);
   if (hit) return hit;
   const data = await inner(url);
-  writeMapCache(root, url, data);
+  writeMapCacheBytes(root, kind, url, data);
   return data;
 }

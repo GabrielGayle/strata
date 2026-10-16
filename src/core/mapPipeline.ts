@@ -7,6 +7,7 @@ import { mapGridToDepth } from './mapToDepth';
 import { applyLayerBudget, computeLayerBreaks, type LayerBudgetMode } from './mapLayerBudget';
 import { resolveExaggerationFactor } from './mapExaggeration';
 import { simplifyMetricGrid } from './mapSimplify';
+import { fetchCop30Grid, type Cop30GridLoader } from './mapCopernicus';
 import { fetchRegionalLidarGrid, isRegionalLidarSource, type RegionalGridLoader } from './mapRegionalLidar';
 import { pickAutoMapSource, pickExplicitSource } from './mapSourcePick';
 import { sourceMeta } from './mapSourceRegistry';
@@ -28,7 +29,7 @@ export class MapSourceNotImplementedError extends Error {
   }
 }
 
-const STUB_SOURCES = new Set<MapSource>(['ea-dtm', 'ea-dsm', 'cop30']);
+const STUB_SOURCES = new Set<MapSource>(['ea-dtm', 'ea-dsm']);
 
 export interface ResolvedMapSource {
   requested: MapSource;
@@ -62,6 +63,7 @@ export interface BuildMapImageOptions {
   overpass?: OverpassFetcher;
   /** When true, Overpass may use the network if the cache misses (CLI default). */
   allowOverpassNetwork?: boolean;
+  cop30Loader?: Cop30GridLoader;
 }
 
 export interface MapBuildResult {
@@ -83,6 +85,13 @@ async function fetchElevationGrid(
   };
 
   if (effective === 'terrarium') {
+    return fetchTerrariumGrid(spec, { fetch });
+  }
+
+  if (effective === 'cop30') {
+    const grid = await fetchCop30Grid(spec, { loader: opts.cop30Loader });
+    if (grid) return grid;
+    warnings.push('cop30 COG tile unavailable for this bbox; falling back to terrarium (~30 m).');
     return fetchTerrariumGrid(spec, { fetch });
   }
 

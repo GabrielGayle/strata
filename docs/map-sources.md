@@ -79,7 +79,9 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 |---|---|
 | **Registry** | [registry.opendata.aws/copernicus-dem](https://registry.opendata.aws/copernicus-dem/) |
 | **Resolution** | 30 m — **too coarse for golf-scale maps**; used only as an explicit source or documented fallback |
-| **Strata status** | Not wired in wave 2 fetch path (stub warns + terrarium). |
+| **COG base URL** | `https://copernicus-dem-30m.s3.amazonaws.com/` (see `COPERNICUS_DEM30_BASE` in `src/core/mapCopernicus.ts`) |
+| **Licence** | [Copernicus DEM licence](https://registry.opendata.aws/copernicus-dem/) — attribute `Elevation © Copernicus DEM GLO-30` |
+| **Strata status** | Ticket **T5** reads COG range requests (cached as `.cog.bin` under `--map-cache`); offline tests use `test/fixtures/map/cop30-neasden.json`. |
 
 ## British National Grid (reprojection)
 
