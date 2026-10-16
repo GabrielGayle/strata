@@ -56,6 +56,12 @@ async function captureTheme(browser, theme) {
   const dir = path.join(OUT, theme.id);
   await mkdir(dir, { recursive: true });
 
+  const left = page.locator('.left.window');
+  await left.screenshot({ path: path.join(dir, 'params-panel.png') });
+  await page.locator('.left.window input.numbox, .left.window input.inp').first().screenshot({
+    path: path.join(dir, 'param-field.png'),
+  });
+
   await page.keyboard.press('/');
   await page.waitForSelector('.design-box .design-input', { timeout: 15000 });
   await page.locator('.design-box').screenshot({ path: path.join(dir, 'design-panel.png') });
