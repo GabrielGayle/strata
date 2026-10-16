@@ -1,0 +1,142 @@
+/* Win98 chrome + form fields: paired fg/bg tokens, isolated from :root color-scheme: dark. */
+
+body {
+  color: var(--chrome-fg);
+}
+
+.app.window,
+.status-bar,
+.statusbar,
+.window,
+.window-body,
+fieldset,
+legend,
+.menu-pop,
+.overlay,
+.toast,
+.map-window,
+.design-box,
+.help-sheet,
+.pm,
+.video-picker,
+.round-preview,
+ul.tree-view,
+table.tbl,
+.list.sunken-panel,
+.split > .list.sunken-panel {
+  color: var(--chrome-fg);
+  color-scheme: light;
+}
+
+.theme-surface,
+.nodes-view,
+.shadow-view,
+.lib-body,
+.nv-body,
+.cm-body,
+.pm-body,
+.appearance.overlay,
+.nd-node,
+.sf-row,
+.prow .plabel {
+  color: var(--ink);
+}
+
+/* All sunken text fields (98.css white inset) */
+:is(
+    input:not([type]),
+    input[type='text'],
+    input[type='search'],
+    input[type='email'],
+    input[type='url'],
+    input[type='tel'],
+    input[type='password'],
+    input[type='number'],
+    input[type='time'],
+    input[type='date'],
+    input[type='datetime-local'],
+    input[type='month'],
+    input[type='week'],
+    textarea,
+    select
+  ):not(.sf-name) {
+  color-scheme: light;
+  background-color: var(--field-bg);
+  color: var(--field-fg);
+}
+
+:is(input, textarea)::placeholder {
+  color: var(--field-placeholder);
+  opacity: 1;
+}
+
+:is(
+    input:not([type]),
+    input[type='text'],
+    input[type='search'],
+    input[type='email'],
+    input[type='url'],
+    input[type='tel'],
+    input[type='password'],
+    input[type='number'],
+    input[type='time'],
+    input[type='date'],
+    input[type='datetime-local'],
+    input[type='month'],
+    input[type='week'],
+    textarea,
+    select
+  ):disabled {
+  background-color: var(--field-disabled-bg);
+  color: var(--field-disabled-fg);
+}
+
+:is(
+    input:not([type]),
+    input[type='text'],
+    input[type='search'],
+    input[type='email'],
+    input[type='url'],
+    input[type='tel'],
+    input[type='password'],
+    input[type='number'],
+    textarea
+  ):read-only:not(.sf-name) {
+  background-color: var(--field-disabled-bg);
+  color: var(--field-readonly-fg);
+}
+
+select option {
+  background-color: var(--field-bg);
+  color: var(--field-fg);
+}
+
+ul.tree-view > li > button,
+ul.tree-view ul button:not(.btn),
+.menu-pop button.item,
+.menu-pop .tree-view button:not(.btn) {
+  color: var(--chrome-fg);
+}
+
+ul.tree-view > li > button:hover,
+ul.tree-view > li > button.on,
+ul.tree-view ul button:not(.btn):hover,
+ul.tree-view ul button:not(.btn).on {
+  color: var(--chrome-list-fg);
+  background: var(--chrome-list-bg);
+}
+
+table.tbl tbody tr.sel td,
+table.tbl tbody tr.highlighted td {
+  color: var(--chrome-list-fg);
+  background: var(--chrome-list-bg);
+}
+
+.note,
+.kv dt {
+  color: var(--chrome-muted);
+}
+
+.status-bar-field {
+  color: var(--chrome-fg);
+}

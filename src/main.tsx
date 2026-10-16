@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import '98.css/dist/98.css';
 import './styles.css';
 import './win98.css';
+import './form-chrome.css';
 import App from './ui/App';
 import { applyTheme, loadTheme } from './ui/theme';
 import { hydrate, useStore } from './state/store';
