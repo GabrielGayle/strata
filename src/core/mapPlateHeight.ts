@@ -25,16 +25,12 @@ export function mapReliefToPlateRangeMm(reliefM: number, exaggeration: number, s
   return Math.max(0, reliefM) * Math.max(0, exaggeration) * Math.max(0, scaleMmPerM);
 }
 
-export function mapMasterWidthMm(v: Pick<Values, 'baseLength' | 'baseWidth'>): number {
+export function mapMasterWidthMm(v: Values): number {
   return Math.max(Number(v.baseLength) || 0, Number(v.baseWidth) || 0);
 }
 
 /** True (max−min m) × exaggeration, scaled to mm at the current master outline. */
-export function mapTrueRangePlateMm(
-  depth: DepthData,
-  v: Pick<Values, 'baseLength' | 'baseWidth'>,
-  exaggeration: number,
-): number {
+export function mapTrueRangePlateMm(depth: DepthData, v: Values, exaggeration: number): number {
   const ortho = depth.mapOrtho;
   if (!ortho) return 0;
   const scale = mapScaleMmPerM(ortho.widthM, mapMasterWidthMm(v));
@@ -42,7 +38,7 @@ export function mapTrueRangePlateMm(
 }
 
 /** Plate-height span from the current near/far window (encoded metres already include exaggeration). */
-export function mapExpectedPlateRangeMm(depth: DepthData, v: Pick<Values, 'baseLength' | 'baseWidth'>): number {
+export function mapExpectedPlateRangeMm(depth: DepthData, v: Values): number {
   const ortho = depth.mapOrtho;
   if (!ortho) return 0;
   const near = Math.max(1e-6, Math.min(depth.settings.near, depth.settings.far - 1e-6));
