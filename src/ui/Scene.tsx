@@ -1,7 +1,10 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useThree, type ThreeEvent } from '@react-three/fiber';
-import { Edges, Grid } from '@react-three/drei';
+import { Edges } from '@react-three/drei';
+import ViewportGrid from './ViewportGrid';
+import { registerSceneMount } from './viewportSceneDebug';
+import { gridFloorY } from './viewportClip';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Model } from '../core/pipeline';
 import type { Part } from '../core/slicer';
@@ -81,9 +84,18 @@ const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selecte
   );
 });
 
-function Etches({ parts }: { parts: Part[] }) {
+function Etches({ parts, engraving = true, labels = true }: { parts: Part[]; engraving?: boolean; labels?: boolean }) {
   const geo = useMemo(() => {
-    const geos = parts.filter((p) => p.etch.length || p.labelPaths.length).map((p) => etchSegments([...p.etch, ...p.labelPaths], p.thickness, p.plane));
+    const geos = parts
+      .map((p) => {
+        const seg: typeof p.etch = [];
+        if (engraving) seg.push(...p.etch);
+        if (labels) seg.push(...p.labelPaths);
+        if (!seg.length) return null;
+        return etchSegments(seg, p.thickness, p.plane);
+      })
+      .filter(Boolean) as THREE.BufferGeometry[];
+    if (!geos.length) return new THREE.BufferGeometry();
     const n = geos.reduce((a, g) => a + g.getAttribute('position').count, 0);
     const pos = new Float32Array(n * 3);
     let o = 0;
@@ -95,8 +107,9 @@ function Etches({ parts }: { parts: Part[] }) {
     const out = new THREE.BufferGeometry();
     out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     return out;
-  }, [parts]);
+  }, [parts, engraving, labels]);
   useEffect(() => () => geo.dispose(), [geo]);
+  if (!engraving && !labels) return null;
   return (
     <lineSegments geometry={geo}>
       <lineBasicMaterial color="#1b1b1b" transparent opacity={0.75} />
@@ -327,6 +340,9 @@ function IssueMarkers({ model }: { model: Model }) {
 }
 
 export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }) {
+  useEffect(() => {
+    registerSceneMount();
+  }, []);
   const v = model.v;
   const appearance = useStore((st) => st.project.appearance);
   // one material per bucket; plates in no bucket wear the main metal
@@ -343,6 +359,8 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const selMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: cssVar('--accent', '#d4521c'), metalness: 0.2, roughness: 0.5, emissive: new THREE.Color('#5a1a00') }), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const platesLit = useStore((s) => s.ui.highlight === 'plates');
   useEffect(() => () => materials.forEach((m) => m.dispose()), [materials]);
+  const bounds = useMemo(() => modelBounds(model), [model]);
+  const gridY = useMemo(() => gridFloorY(bounds.size), [bounds.size]);
   const gridA = useMemo(() => cssVar('--grid-a', '#cfcbc2'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const gridB = useMemo(() => cssVar('--grid-b', '#a9a49a'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const preview = useRef<THREE.Group>(null);
@@ -353,11 +371,23 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       <ambientLight intensity={v.sunOn ? 0.28 : 0.35} />
       {v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
       <directionalLight position={[-900, 500, -600]} intensity={v.sunOn ? 0.18 : 0.45} />
-      <Grid args={[20000, 20000]} cellSize={10} sectionSize={100} cellColor={gridA} sectionColor={gridB} cellThickness={0.6} sectionThickness={1} fadeDistance={7000} fadeStrength={1.5} infiniteGrid position={[0, -0.05, 0]} />
+      <ViewportGrid
+          args={[20000, 20000]}
+          cellSize={10}
+          sectionSize={100}
+          cellColor={gridA}
+          sectionColor={gridB}
+          cellThickness={0.6}
+          sectionThickness={1}
+          fadeDistance={bounds.size * 12}
+          fadeStrength={0.85}
+          infiniteGrid
+          position={[0, gridY, 0]}
+        />
       {v.baseOn && <Base model={model} xray={opts.xray} />}
       {model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
         <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} />
-      ))}
+        ))}
       {/* the plate under the gizmo, carried rigidly while it is dragged */}
       <group ref={preview} matrixAutoUpdate={false}>
         {dragKey &&

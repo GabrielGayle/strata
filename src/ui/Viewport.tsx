@@ -6,13 +6,14 @@ import { useStore, type Snap } from '../state/store';
 import { stackFrame } from '../core/heightfield';
 import type { Model } from '../core/pipeline';
 import Scene, { modelBounds } from './Scene';
+import CameraClipSync from './CameraClipSync';
+import { clipPlanesForBounds } from './viewportClip';
 import { gizmoIsBusy, moveTarget, useGizmoClearance } from './PlateGizmo';
 import { useModel, fmt } from './model';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
 import { SunBar } from './SunStudy';
 import { MeasurePanel, MeasureTool, useMeasure } from './Measure';
-
 export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
   const up = new THREE.Vector3(0, 1, 0);
@@ -36,16 +37,22 @@ export function CameraRig({ model, snap, ortho }: { model: Model; snap: { dir: S
   const pending = useRef<{ n: number; model: Model } | null>(null);
   const frame = (m: Model) => {
     const { center, size: s } = modelBounds(m);
+    const { near, far, orthoSpan } = clipPlanesForBounds(s);
     const { dir, up } = snapDirection(m, snap.dir);
     const fov = 32;
     const dist = (s * 0.8) / Math.tan(((fov / 2) * Math.PI) / 180);
     camera.up.copy(up);
     camera.position.copy(center.clone().add(dir.clone().multiplyScalar(dist)));
     controls.target.copy(center);
-    if (camera.isOrthographicCamera) {
+    if (camera.isPerspectiveCamera) {
+      camera.near = near;
+      camera.far = far;
+    } else if (camera.isOrthographicCamera) {
+      camera.near = -orthoSpan;
+      camera.far = orthoSpan;
       camera.zoom = Math.min(size.width, size.height) / (s * 1.35);
-      camera.updateProjectionMatrix();
     }
+    camera.updateProjectionMatrix();
     controls.update();
   };
   useEffect(() => {
@@ -127,12 +134,20 @@ export default function Viewport() {
   const heights = model.sliced.parts.map((p) => p.bbox.maxY);
   const hMin = heights.length ? Math.min(...heights) : 0;
   const hMax = heights.length ? Math.max(...heights) : 0;
+  const clip = useMemo(() => clipPlanesForBounds(modelBounds(model).size), [model]);
   return (
     <>
-      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
-        <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={1} far={60000} position={[1500, 1100, 1800]} />
-        <OrthographicCamera makeDefault={ui.ortho} near={-50000} far={50000} position={[1500, 1100, 1800]} zoom={0.6} />
+      <Canvas
+        shadows="percentage"
+        dpr={[1, 2]}
+        gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true }}
+        onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })}
+        style={{ position: 'absolute', inset: 0 }}
+      >
+        <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={clip.near} far={clip.far} position={[1500, 1100, 1800]} />
+        <OrthographicCamera makeDefault={ui.ortho} near={-clip.orthoSpan} far={clip.orthoSpan} position={[1500, 1100, 1800]} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
+        <CameraClipSync model={model} />
         <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} />
         <Scene model={model} opts={opts} />
         <MeasureTool active={ui.measureMode} />
