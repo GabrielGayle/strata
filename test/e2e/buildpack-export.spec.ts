@@ -12,8 +12,15 @@ const neasdenProject = readFileSync(join(root, 'test/fixtures/projects/neasden-b
 async function injectProject(page: import('@playwright/test').Page, projectJson: string) {
   await page.addInitScript((json) => {
     localStorage.setItem('strata.project.v1', json);
+    localStorage.setItem('strata:tour-seen', '1');
   }, projectJson);
 }
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('strata:tour-seen', '1');
+  });
+});
 
 function unzipListing(buf: Buffer, inAppPlates: number): {
   names: string[];
@@ -45,14 +52,25 @@ async function inspectorPlateCount(page: import('@playwright/test').Page): Promi
   return Number(text.trim().match(/^\d+/)?.[0] ?? 0);
 }
 
+async function dismissTour(page: import('@playwright/test').Page) {
+  const tour = page.getByRole('dialog', { name: /Tour:/ });
+  if (await tour.isVisible().catch(() => false)) {
+    await page.getByRole('button', { name: 'Skip' }).click();
+    await expect(tour).toHaveCount(0);
+  }
+}
+
 async function waitForModel(page: import('@playwright/test').Page) {
   await page.waitForSelector('.app.window');
+  await dismissTour(page);
   await expect(page.locator('.status-bar-field').filter({ hasText: /plates/ })).toContainText(/\d+\s+plates/, { timeout: 90_000 });
   await expect(page.locator('[data-in-app-plates]')).toHaveAttribute('data-in-app-plates', /[1-9]\d*/, { timeout: 90_000 });
+  await dismissTour(page);
 }
 
 async function openPlatesTab(page: import('@playwright/test').Page) {
-  await page.getByRole('tab', { name: 'Plates' }).click();
+  await dismissTour(page);
+  await page.getByRole('tab', { name: /^Plates/ }).first().click();
   await expect(page.locator('.tbl.interactive, .cards, .empty')).toBeVisible({ timeout: 60_000 });
 }
 
@@ -151,7 +169,7 @@ test('browser-only paths: toolbar ZIP, inspector ZIP, and Build pack popup', asy
   expect(toolbar.manifestPlateCount).toBe(inApp);
   expect(toolbar.plateDxf).toBe(inApp);
 
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(700);
   const [inspectorDl] = await Promise.all([
     page.waitForEvent('download', { timeout: 300_000 }),
     page.getByRole('button', { name: 'Everything (ZIP)' }).click(),
@@ -168,6 +186,7 @@ test('browser-only paths: toolbar ZIP, inspector ZIP, and Build pack popup', asy
 
   await page.goto('/');
   await waitForModel(page);
+  await dismissTour(page);
   const popupPromise = page.waitForEvent('popup', { timeout: 30_000 });
   await page.locator('header.topbar').getByRole('button', { name: 'Build pack' }).click();
   const popup = await popupPromise;
