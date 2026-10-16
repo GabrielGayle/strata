@@ -14,6 +14,10 @@ import { MASTER_SIZE_CLI_CANONICAL } from './core/masterPresets';
 import { applyAutoDimensionPatch, previewAutoDimension, type DepthFace } from './core/autoDimension';
 import { applyProjectPatch, formatPatchDiff, masterSizePatch, parseDesign } from './core/design';
 import { serialize, deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
+import { buildMapBundle, MapSourceNotImplementedError, mapSpecFromCli } from './core/mapPipeline';
+import { renderVenueMockup } from './core/mapRender';
+import { parseBbox, parseEngraveFlag, parseExaggeration, parseLayerBudget, parseMapSource, type MapSpec } from './core/mapSpec';
+import { mapStackFromProject } from './core/mapPipeline';
 
 export interface CliIssue {
   level: 'error' | 'warning';
@@ -74,6 +78,11 @@ const USAGE = `Usage:
   npm run cli -- <project.json> --out <dir> [--preset <name>] [--size <id>] [--orientation portrait|landscape]
                  [--image side=path.jpg] [--auto-dimension side=top,front] [--relief-exaggeration <n>]
                  [--rates rates.json]
+                 [--map <title>] [--bbox west,south,east,north]
+                 [--map-source auto|ea-dtm|ea-dsm|cop30|terrarium]
+                 [--map-res <metres>] [--exaggeration auto|<n>] [--layer-budget equal|quantile|jenks]
+                 [--engrave on|off|roads,water,...]
+                 [--map-cache <dir>] [--render <out.png>]
   npm run cli -- say <project.json> "<instruction>"
   npm run cli -- <project.json> say [--apply] "<instruction>"
   npm run cli -- params
@@ -88,6 +97,9 @@ ratio sizes keep the current long edge. Only the outline changes (thickness and 
 --image replaces the side, front or top picture. --rates overrides price-estimate rates.
 --auto-dimension sets plate proportions from metric depth on each face (repeat or comma list:
 side, front, top). Needs depth data on that image. --relief-exaggeration scales relief (default 1).
+--map with --bbox fetches open terrain (terrarium in this release) into the top face DepthData.
+Non-terrarium sources are accepted but exit with a not-yet-implemented message. --engrave is stored
+on the MapSpec (default on); engraving is a no-op until a later release.
 say parses plain-language design instructions (same rules as the in-app Type a design box),
 prints the parameter diff and any unrecognised phrases. --apply writes the updated project JSON to stdout.
 Unknown parameters and formula errors exit 1 and write nothing. Clamped values are warnings.
@@ -106,12 +118,19 @@ interface Args {
   orientation?: string;
   sayText?: string;
   sayApply?: boolean;
+  render?: string;
   autoDimension: DepthFace[];
   reliefExaggeration: number;
-}
-
-function emptyExportArgs(): Pick<Args, 'images' | 'autoDimension' | 'reliefExaggeration'> {
-  return { images: {}, autoDimension: [], reliefExaggeration: 1 };
+  map?: {
+    title?: string;
+    bbox?: string;
+    source: MapSpec['source'];
+    resM: number;
+    exaggeration: MapSpec['exaggeration'];
+    engrave: MapSpec['engrave'];
+    cacheDir?: string;
+    layerBudget?: MapSpec['layerBudget'];
+  };
 }
 
 function take(argv: string[], i: number, flag: string): string {
@@ -131,14 +150,19 @@ function parseAutoDimension(spec: string, faces: DepthFace[]) {
   }
 }
 
-function parseImage(spec: string, images: Args['images']) {
-  const eq = spec.indexOf('=');
-  if (eq <= 0) throw new Error('--image expects side=path, front=path or top=path');
-  const slot = spec.slice(0, eq);
-  const path = spec.slice(eq + 1);
-  if (slot !== 'side' && slot !== 'front' && slot !== 'top') throw new Error(`unknown image slot '${slot}'`);
-  if (!path) throw new Error(`--image ${slot} is missing a path`);
-  images[slot] = path;
+function idleArgs(cmd: Args['cmd']): Args {
+  return { cmd, images: {}, autoDimension: [], reliefExaggeration: 1 };
+}
+
+function newExportArgs(project: string): Args {
+  return {
+    cmd: 'export',
+    project,
+    images: {},
+    autoDimension: [],
+    reliefExaggeration: 1,
+    map: { source: 'auto', resM: 8, exaggeration: 'auto', engrave: parseEngraveFlag(undefined, true) },
+  };
 }
 
 function parseSay(argv: string[]): Args {
@@ -155,18 +179,28 @@ function parseSay(argv: string[]): Args {
   }
   const sayText = textParts.join(' ').trim();
   if (!sayText) throw new Error(`missing instruction text\n\n${USAGE}`);
-  return { cmd: 'say', project, sayText, sayApply, ...emptyExportArgs() };
+  return { ...idleArgs('say'), project, sayText, sayApply };
+}
+
+function parseImage(spec: string, images: Args['images']) {
+  const eq = spec.indexOf('=');
+  if (eq <= 0) throw new Error('--image expects side=path, front=path or top=path');
+  const slot = spec.slice(0, eq);
+  const path = spec.slice(eq + 1);
+  if (slot !== 'side' && slot !== 'front' && slot !== 'top') throw new Error(`unknown image slot '${slot}'`);
+  if (!path) throw new Error(`--image ${slot} is missing a path`);
+  images[slot] = path;
 }
 
 function parseArgs(argv: string[]): Args {
   if (argv.length === 0) throw new Error(`missing project file\n\n${USAGE}`);
-  if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') return { cmd: 'help', ...emptyExportArgs() };
+  if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') return idleArgs('help');
   if (argv[0] === 'params' || argv[0] === 'presets') {
     if (argv.length > 1) throw new Error(`unexpected argument '${argv[1]}'`);
-    return { cmd: argv[0], ...emptyExportArgs() };
+    return idleArgs(argv[0]);
   }
   if (argv[0] === 'say' || (argv.length >= 2 && argv[1] === 'say')) return parseSay(argv);
-  const args: Args = { cmd: 'export', project: argv[0], ...emptyExportArgs() };
+  const args: Args = newExportArgs(argv[0]);
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--out') args.out = take(argv, ++i, a);
@@ -185,12 +219,34 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--auto-dimension=')) parseAutoDimension(a.slice(17), args.autoDimension);
     else if (a === '--relief-exaggeration') args.reliefExaggeration = Number(take(argv, ++i, a));
     else if (a.startsWith('--relief-exaggeration=')) args.reliefExaggeration = Number(a.slice(22));
-    else if (a === '--help' || a === '-h') return { cmd: 'help', ...emptyExportArgs() };
+    else if (a === '--map') args.map!.title = take(argv, ++i, a);
+    else if (a.startsWith('--map=')) args.map!.title = a.slice(6);
+    else if (a === '--bbox') args.map!.bbox = take(argv, ++i, a);
+    else if (a.startsWith('--bbox=')) args.map!.bbox = a.slice(7);
+    else if (a === '--map-source') args.map!.source = parseMapSource(take(argv, ++i, a));
+    else if (a.startsWith('--map-source=')) args.map!.source = parseMapSource(a.slice(13));
+    else if (a === '--map-res') args.map!.resM = Number(take(argv, ++i, a));
+    else if (a.startsWith('--map-res=')) args.map!.resM = Number(a.slice(10));
+    else if (a === '--exaggeration') args.map!.exaggeration = parseExaggeration(take(argv, ++i, a));
+    else if (a.startsWith('--exaggeration=')) args.map!.exaggeration = parseExaggeration(a.slice(15));
+    else if (a === '--layer-budget') args.map!.layerBudget = parseLayerBudget(take(argv, ++i, a));
+    else if (a.startsWith('--layer-budget=')) args.map!.layerBudget = parseLayerBudget(a.slice(15));
+    else if (a === '--engrave') args.map!.engrave = parseEngraveFlag(take(argv, ++i, a), true);
+    else if (a.startsWith('--engrave=')) args.map!.engrave = parseEngraveFlag(a.slice(10), true);
+    else if (a === '--map-cache') args.map!.cacheDir = take(argv, ++i, a);
+    else if (a.startsWith('--map-cache=')) args.map!.cacheDir = a.slice(12);
+    else if (a === '--render') args.render = take(argv, ++i, a);
+    else if (a.startsWith('--render=')) args.render = a.slice(9);
+    else if (a === '--help' || a === '-h') return idleArgs('help');
     else throw new Error(`unknown argument '${a}'`);
   }
   if (!args.out) throw new Error(`missing --out <dir>\n\n${USAGE}`);
+  if (args.map?.bbox == null && args.map?.title) throw new Error('--map requires --bbox west,south,east,north');
+  if (args.map?.bbox != null && !args.map.title) args.map.title = 'Map terrain';
   return args;
 }
+
+export { parseArgs as parseCliArgs };
 
 /** Project file plus preset / --preset. Explicit params win. Unknown ids are reported, not dropped. */
 export function loadProject(text: string, opts: { preset?: string } = {}): { project: Project; issues: CliIssue[] } {
@@ -231,6 +287,7 @@ export function loadProject(text: string, opts: { preset?: string } = {}): { pro
   return { project, issues };
 }
 
+/** Apply --size / --orientation after the project file and preset are merged. */
 /** Apply --auto-dimension for each face that has metric depth on the project image. */
 export function applyAutoDimensionCli(project: Project, faces: DepthFace[], reliefExaggeration = 1): CliIssue[] {
   const issues: CliIssue[] = [];
@@ -251,7 +308,6 @@ export function applyAutoDimensionCli(project: Project, faces: DepthFace[], reli
   return issues;
 }
 
-/** Apply --size / --orientation after the project file and preset are merged. */
 export function applyMasterSizeCli(
   project: Project,
   size: string,
@@ -444,6 +500,34 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
     if (issues.some((i) => i.level === 'error')) {
       report(issues, io);
       return 1;
+    }
+    if (args.map?.bbox) {
+      try {
+        const bbox = parseBbox(args.map.bbox);
+        const spec = mapSpecFromCli({
+          title: args.map.title,
+          bbox,
+          source: args.map.source,
+          resM: args.map.resM > 0 ? args.map.resM : 8,
+          exaggeration: args.map.exaggeration,
+          engrave: args.map.engrave,
+          cacheDir: args.map.cacheDir,
+          layerBudget: args.map.layerBudget,
+        });
+        const bundle = await buildMapBundle(spec, { stack: mapStackFromProject(project, args.map.layerBudget) });
+        project.images.top = bundle.asset;
+        if (args.map.title) project.name = args.map.title;
+        if (args.render) {
+          writeFileSync(args.render, renderVenueMockup({ elevation: bundle.elevation, depth: bundle.depth, title: spec.title }));
+        }
+      } catch (e) {
+        if (e instanceof MapSourceNotImplementedError) {
+          io.stderr(`error: ${e.message}\n`);
+          return 1;
+        }
+        io.stderr(`error: ${(e as Error).message}\n`);
+        return 1;
+      }
     }
     const assets = await loadAssets(project, args.images);
     const model = createPipeline()(project, assets);

@@ -5,8 +5,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { unzipSync } from 'fflate';
 import { PNG } from 'pngjs';
-import { afterEach, describe, expect, it } from 'vitest';
-import { applyMasterSizeCli, loadProject, main, type CliIo } from '../src/cli';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { applyMasterSizeCli, loadProject, main, parseCliArgs, type CliIo } from '../src/cli';
+import { MAP_RENDER_HEIGHT, MAP_RENDER_WIDTH } from '../src/core/mapRender';
+import { setMapTileFetcher } from '../src/core/mapTerrarium';
+import { fixtureTileFetcher } from './map-cli-fixtures';
+import { NEASDEN_BBOX } from './map-fixtures';
 import { evaluateParams } from '../src/core/params';
 import { buildZip } from '../src/core/exporters';
 import { createPipeline, type Assets } from '../src/core/pipeline';
@@ -300,6 +304,94 @@ describe('cli images', () => {
     };
     expect(part(outA)).toBe(part(outB));
     expect(part(outA)).not.toBe(part(outC));
+  });
+});
+
+describe('cli map', () => {
+  beforeEach(() => setMapTileFetcher(fixtureTileFetcher));
+  afterEach(() => setMapTileFetcher(null));
+
+  it('builds Neasden from fixtures offline with --map flags', async () => {
+    const dir = scratch();
+    const project = join(dir, 'base.json');
+    writeFileSync(
+      project,
+      JSON.stringify({
+        format: 'strata-project',
+        version: 1,
+        preset: 'Stamped stack',
+        params: { plateCount: '12', imgTopMode: 'carve', topDepth: '40' },
+      }),
+    );
+    const out = join(dir, 'neasden-out');
+    const io = capture();
+    const [w, s, e, n] = NEASDEN_BBOX;
+    const code = await main(
+      [
+        project,
+        '--out',
+        out,
+        '--map',
+        'Neasden, London',
+        '--bbox',
+        `${w},${s},${e},${n}`,
+        '--map-source',
+        'terrarium',
+        '--map-res',
+        '8',
+        '--exaggeration',
+        'auto',
+        '--engrave',
+        'roads,water,title,compass',
+      ],
+      io,
+    );
+    expect(io.err).toBe('');
+    expect(code).toBe(0);
+    const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
+    expect(back.images.top?.map?.bbox).toEqual(NEASDEN_BBOX);
+    expect(back.images.top?.depth?.w).toBeGreaterThan(32);
+    expect(back.images.top?.map?.engrave.enabled).toBe(true);
+    expect(walk(out).some((n) => n.startsWith('laser/parts/'))).toBe(true);
+    const hero = join(dir, 'neasden-hero.png');
+    const io2 = capture();
+    expect(
+      await main(
+        [project, '--out', join(dir, 'out2'), '--map', 'Neasden', '--bbox', `${w},${s},${e},${n}`, '--map-source', 'terrarium', '--render', hero],
+        io2,
+      ),
+    ).toBe(0);
+    const png = PNG.sync.read(readFileSync(hero));
+    expect(png.width).toBe(MAP_RENDER_WIDTH);
+    expect(png.height).toBe(MAP_RENDER_HEIGHT);
+  }, 45_000);
+
+  it('exits 1 on a bad bbox', async () => {
+    const dir = scratch();
+    const project = join(dir, 'p.json');
+    writeFileSync(project, JSON.stringify({ format: 'strata-project', version: 1 }));
+    const io = capture();
+    expect(await main([project, '--out', join(dir, 'out'), '--map', 'X', '--bbox', '0,0,0,1'], io)).toBe(1);
+    expect(io.err).toMatch(/invalid bbox/i);
+  });
+
+  it('accepts cop30 but reports not yet implemented', async () => {
+    const dir = scratch();
+    const project = join(dir, 'p.json');
+    writeFileSync(project, JSON.stringify({ format: 'strata-project', version: 1 }));
+    const io = capture();
+    const [w, s, e, n] = NEASDEN_BBOX;
+    expect(
+      await main([project, '--out', join(dir, 'out'), '--map', 'T', '--bbox', `${w},${s},${e},${n}`, '--map-source', 'cop30'],
+        io,
+      ),
+    ).toBe(1);
+    expect(io.err).toMatch(/not yet implemented/i);
+  });
+
+  it('defaults engraving on when --engrave is omitted', () => {
+    const args = parseCliArgs(['p.json', '--out', 'x', '--map', 'T', '--bbox', '0,0,1,1']);
+    expect(args.map?.engrave.enabled).toBe(true);
   });
 });
 
