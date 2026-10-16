@@ -10,6 +10,8 @@ import { applyMasterSizeCli, loadProject, main, parseCliArgs, type CliIo } from 
 import { MAP_RENDER_HEIGHT, MAP_RENDER_WIDTH } from '../src/core/mapRender';
 import { setOverpassFetcher } from '../src/core/mapOverpass';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
+import { setCop30GridLoader } from '../src/core/mapCopernicus';
+import { loadBuiltinCop30Fixture } from '../src/core/mapCopernicus.fixtures';
 import { fixtureTileFetcher } from './map-cli-fixtures';
 
 const overpassNeasdenFixture = JSON.parse(
@@ -349,10 +351,12 @@ describe.sequential('cli map', () => {
   beforeEach(() => {
     setMapTileFetcher(fixtureTileFetcher);
     setOverpassFetcher(async () => overpassNeasdenFixture);
+    setCop30GridLoader(async () => loadBuiltinCop30Fixture());
   });
   afterEach(() => {
     setMapTileFetcher(null);
     setOverpassFetcher(null);
+    setCop30GridLoader(null);
   });
 
   it('builds Neasden from fixtures offline with --map flags', async () => {
