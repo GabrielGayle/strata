@@ -2049,3 +2049,179 @@ canvas.thumb {
   height: 44px;
   border: 1px solid var(--line, #ccc);
 }
+
+/* ---------- projects library + share link ---------- */
+.pm.lib {
+  width: min(900px, 100%);
+}
+.pm.lib.narrow {
+  width: min(520px, 100%);
+}
+.lib-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  flex-wrap: wrap;
+}
+.lib-working small {
+  color: var(--muted);
+}
+.lib-head {
+  padding: 6px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--panel-2);
+}
+.lib-recent {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line-soft);
+}
+.lib-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-soft);
+  background: var(--panel);
+  padding: 3px 8px 3px 3px;
+  cursor: pointer;
+  max-width: 200px;
+  flex: none;
+}
+.lib-chip:hover:not(:disabled),
+.lib-chip.on {
+  border-color: var(--line);
+}
+.lib-chip img,
+.lib-chip .lib-nothumb {
+  width: 40px;
+  height: 28px;
+  object-fit: cover;
+  font-size: 12px;
+}
+.lib-chip span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lib-body {
+  overflow: auto;
+  min-height: 120px;
+  padding: 12px;
+}
+.lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+.lib-card {
+  border: 1px solid var(--line-soft);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.lib-card.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.lib-thumb {
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 0;
+  background: var(--viewport);
+  aspect-ratio: 16 / 11;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.lib-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.lib-nothumb {
+  display: grid;
+  place-items: center;
+  background: var(--viewport);
+  color: var(--muted);
+  font-size: 28px;
+  font-weight: 700;
+}
+.lib-thumb .lib-nothumb {
+  width: 100%;
+  height: 100%;
+}
+.lib-meta {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 2px;
+  min-width: 0;
+}
+.lib-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lib-meta small {
+  color: var(--muted);
+}
+.lib-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px 8px;
+}
+.lib-note {
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.lib-note.warn {
+  color: var(--warn);
+}
+.lib-note.err {
+  color: var(--err);
+}
+.lib-share {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lib-share p {
+  margin: 0;
+}
+.lib-share .lib-note {
+  padding: 0;
+}
+.lib-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.lib-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+}
+.lib-row.end {
+  justify-content: flex-end;
+  margin-top: 4px;
+}
