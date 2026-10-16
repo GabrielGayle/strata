@@ -22,12 +22,13 @@ export function chopChopCollapsedSummary(
   const head = `${gbp(est.total)} inc VAT`;
   if (!plates) return truncate(head, maxLen);
 
+  const platesBit = `${plates} plate${plates === 1 ? '' : 's'}`;
   const per = gbp(est.total / plates);
   const candidates = [
-    `${head} · ${plates} plate${plates === 1 ? '' : 's'} · ${per}/pc`,
-    `${head} · ${plates} plate${plates === 1 ? '' : 's'}`,
-    `${head} · ${per}/pc`,
+    `${head} · ${platesBit}`,
     head,
+    `${head} · ${platesBit} · ${per}/pc`,
+    `${head} · ${per}/pc`,
   ];
   return truncate(candidates.find((c) => c.length <= maxLen) ?? head, maxLen);
 }

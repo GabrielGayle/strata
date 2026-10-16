@@ -12,10 +12,12 @@ import {
   WCAG_AA_LARGE,
   WCAG_AA_NORMAL,
   contrastRatio,
+  mapTabLabelContrast,
   meetsWcagAaNormal,
 } from '../src/ui/fieldContrast';
 
 const STYLES = readFileSync(resolve(import.meta.dirname, '../src/styles.css'), 'utf8');
+const FORM_CHROME = readFileSync(resolve(import.meta.dirname, '../src/form-chrome.css'), 'utf8');
 
 function blockVars(css: string, selector: string): Record<string, string> {
   const re = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]+)\\}`, 's');
@@ -88,5 +90,22 @@ describe('form + chrome contrast (WCAG AA)', () => {
     expect(dark['--param-fg']).toBe(PARAM_PANEL.fg);
     expect(dark['--param-muted']).toBe(PARAM_PANEL.muted);
     expect(dark['--ink']).toBe(THEME_SURFACES.dark.ink);
+  });
+
+  it('map tab labels, fieldset legends, and notes meet contrast on themed panels', () => {
+    for (const mode of ['light', 'dark'] as const) {
+      const { fg, panel, panel2 } = mapTabLabelContrast(mode);
+      expect(meetsWcagAaNormal(fg, panel)).toBe(true);
+      expect(meetsWcagAaNormal(fg, panel2)).toBe(true);
+      const muted = mode === 'light' ? '#6a6862' : '#9b998f';
+      expect(meetsWcagAaNormal(muted, panel2)).toBe(true);
+    }
+    expect(meetsWcagAaNormal(CHROME.fg, THEME_SURFACES.dark.panel2)).toBe(false);
+    expect(FORM_CHROME).toContain('.map-view :is(fieldset, legend, label, h2, h3)');
+  });
+
+  it('map tab disabled controls keep field disabled tokens (not grey-on-grey)', () => {
+    expect(meetsWcagAaNormal(FIELD.disabledFg, FIELD.disabledBg)).toBe(true);
+    expect(FORM_CHROME).toContain('.map-view button:disabled');
   });
 });

@@ -42,6 +42,20 @@ table.tbl,
   color: var(--ink);
 }
 
+/* Map tab: fieldset/legend inherit win98 chrome-fg (#222) unless reset — unreadable on dark panels */
+.map-view :is(fieldset, legend, label, h2, h3) {
+  color: var(--ink);
+}
+.map-view .map-view-note,
+.map-view .map-window-status,
+.map-view .map-readout {
+  color: var(--muted);
+}
+.map-view button:disabled {
+  color: var(--field-disabled-fg);
+  text-shadow: none;
+}
+
 /* Parameters + Inspector side panels: Win98 silver, never themed --ink/--muted on labels */
 .left.window,
 .right.window {
@@ -94,8 +108,21 @@ table.tbl,
 .right.window .section-head .count {
   color: var(--param-muted);
 }
-.right.window .section-collapsed-summary {
+.right.window .section-head[aria-expanded='false'] {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px;
+}
+.right.window .section-head[aria-expanded='false'] .section-collapsed-summary {
   color: var(--param-fg);
+  flex: 1 1 100%;
+  margin-left: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  line-height: 1.25;
+  word-break: break-word;
+  text-align: left;
 }
 .right.window .note {
   color: var(--param-muted);
