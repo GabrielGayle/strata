@@ -10,6 +10,7 @@ import { simplifyMetricGrid } from './mapSimplify';
 import { fetchRegionalLidarGrid, isRegionalLidarSource, type RegionalGridLoader } from './mapRegionalLidar';
 import { pickAutoMapSource, pickExplicitSource } from './mapSourcePick';
 import { sourceMeta } from './mapSourceRegistry';
+import { commemorativeFitWarning } from './mapBackPlateEtch';
 import { buildMapEngraveArt } from './mapEngraveBuild';
 import { serializeMapEngraveArt } from './mapOsmEngrave';
 import type { OverpassFetcher } from './mapOverpass';
@@ -116,6 +117,9 @@ export async function buildMapTopAsset(spec: MapSpec, opts: BuildMapImageOptions
 export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions = {}): Promise<MapBuildResult> {
   const resolved = resolveMapSource(spec);
   const warnings = [...resolved.warnings];
+  const faceW = opts.stack?.masterWidthMm ?? 520;
+  const commWarn = spec.commemorativeText ? commemorativeFitWarning(spec.commemorativeText, faceW) : null;
+  if (commWarn) warnings.push(commWarn);
   const elev = await fetchElevationGrid(spec, resolved.effective, warnings, opts);
   let metric = reprojectResample(elev, spec);
   const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
@@ -179,6 +183,7 @@ export function mapSpecFromCli(parts: {
   layerBudget?: LayerBudgetMode;
   editionNumber?: number;
   archetypeCard?: Record<string, unknown>;
+  commemorativeText?: string;
 }): MapSpec {
   return defaultMapSpec({
     bbox: parts.bbox,
@@ -191,6 +196,7 @@ export function mapSpecFromCli(parts: {
     layerBudget: parts.layerBudget,
     editionNumber: parts.editionNumber,
     archetypeCard: parts.archetypeCard,
+    commemorativeText: parts.commemorativeText,
   });
 }
 

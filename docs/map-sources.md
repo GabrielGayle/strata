@@ -128,6 +128,8 @@ Strata stores the attribution line on `MapSpec.attribution` and in `MapEngraveAr
 
 **Edition + archetype card (T25):** `--map-edition N` etches `Edition N` on the back plate; `--archetype-card path.json` is copied to `map/archetype-card.json` in the fabrication bundle.
 
+**Commemorative text (T26):** `--commemorative "…"` etches on the back plate when it fits at the computed cap height; otherwise a warning is stored on `MapSpec.sourceWarnings`.
+
 ## Excluded in this product
 
 Google, Cesium, and Mapbox terrain products are **not** used (licence / ToS).
