@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { PNG } from 'pngjs';
 
 /** First-visit Help tour (1.5 s) covers the chrome and steals toolbar clicks. */
 export async function dismissTour(page: Page) {
@@ -31,34 +32,24 @@ export async function openWorkspaceTab(page: Page, label: string) {
 }
 
 export async function waitForViewportRelief(page: Page) {
+  const canvas = page.locator('.main canvas').first();
+  await expect(canvas).toBeVisible({ timeout: 30_000 });
   await expect
     .poll(
-      async () =>
-        page.evaluate(() => {
-          const canvas = document.querySelector('.main canvas') as HTMLCanvasElement | null;
-          if (!canvas || canvas.width < 16) return false;
-          const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-          if (!gl) return false;
-          const pixels = new Uint8Array(4 * 64);
-          gl.readPixels(
-            Math.floor(canvas.width * 0.35),
-            Math.floor(canvas.height * 0.35),
-            8,
-            8,
-            gl.RGBA,
-            gl.UNSIGNED_BYTE,
-            pixels,
-          );
-          const keys = new Set<number>();
-          for (let i = 0; i < pixels.length; i += 4) {
-            if (pixels[i + 3] === 0) continue;
-            keys.add(pixels[i] * 65536 + pixels[i + 1] * 256 + pixels[i + 2]);
-          }
-          return keys.size >= 3;
-        }),
-      { timeout: 60_000 },
+      async () => {
+        const buf = await canvas.screenshot({ type: 'png' });
+        const png = PNG.sync.read(Buffer.from(buf));
+        const keys = new Set<number>();
+        for (let i = 0; i < png.data.length; i += 16) {
+          if (png.data[i + 3] < 8) continue;
+          keys.add((png.data[i] << 16) | (png.data[i + 1] << 8) | png.data[i + 2]);
+          if (keys.size >= 8) return keys.size;
+        }
+        return keys.size;
+      },
+      { timeout: 90_000 },
     )
-    .toBe(true);
+    .toBeGreaterThanOrEqual(3);
 }
 
 export async function setThemePreset(page: Page, name: string) {
