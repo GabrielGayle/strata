@@ -137,10 +137,11 @@ export default function Viewport() {
   const clip = useMemo(() => clipPlanesForBounds(modelBounds(model).size), [model]);
   return (
     <>
+      {/* Linear clip + ViewportGrid depthWrite. logarithmicDepthBuffer writes gl_FragDepth (kills early-Z) and drei Grid has no logdepthbuf chunks. */}
       <Canvas
         shadows="percentage"
         dpr={[1, 2]}
-        gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true }}
+        gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
         onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })}
         style={{ position: 'absolute', inset: 0 }}
       >

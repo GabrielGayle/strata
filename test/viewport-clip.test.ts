@@ -6,6 +6,7 @@ describe('viewport clip planes', () => {
     const { near, far } = clipPlanesForBounds(800);
     expect(near).toBeGreaterThanOrEqual(1);
     expect(far).toBeGreaterThan(near * 8);
+    // Old cameras used near=1 / far=60000 (~1:60k). Tight clip is enough; skip logarithmicDepthBuffer.
     expect(far / near).toBeLessThan(5000);
   });
 

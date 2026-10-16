@@ -202,7 +202,7 @@ export default function MapView() {
             disabled={!existing}
           >
             <option value="auto">auto</option>
-            {[4, 8, 12, 16, 21, 28, 36].map((n) => (
+            {[4, 8, 12, 16, 18, 21, 28, 36].map((n) => (
               <option key={n} value={n}>×{n}</option>
             ))}
           </select>
