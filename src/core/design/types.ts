@@ -1,5 +1,6 @@
 import type { DepthFace } from '../autoDimension';
 import type { MasterOrientation, MasterPresetId } from '../masterPresets';
+import type { MapSpec } from '../mapSpec';
 import type { Project } from '../project';
 import type { RawValue } from '../params';
 
@@ -16,6 +17,8 @@ export interface ProjectPatch {
   name?: string;
   /** Run auto-dimension on faces after other patch fields (needs metric depth on that image). */
   autoDimension?: { faces: DepthFace[]; reliefExaggeration?: number };
+  /** Map function spec for the top face (ticket T18). */
+  map?: Partial<MapSpec> & { bbox?: MapSpec['bbox'] };
 }
 
 export interface ParseContext {

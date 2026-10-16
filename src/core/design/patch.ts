@@ -4,7 +4,12 @@ import { masterSizePresetPatch, parseMasterOrientation, resolveMasterSizeCli } f
 import { type RawValue } from '../params';
 import { applyPreset, PRESETS, type Project } from '../project';
 import { speechParamPatch } from '../speechTuning';
+import { defaultMapSpec } from '../mapSpec';
+import { unionMapBbox } from '../mapPresets';
 import type { ProjectPatch } from './types';
+
+const MAP_TOP_PLACEHOLDER =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 /** Expand tuning side effects (same as the param panel). */
 export function enrichParamPatch(params: Record<string, RawValue>): Record<string, RawValue> {
@@ -46,6 +51,12 @@ export function mergePatches(...parts: ProjectPatch[]): ProjectPatch {
         reliefExaggeration: p.autoDimension.reliefExaggeration ?? prev.reliefExaggeration,
       };
     }
+    if (p.map) {
+      const prev = out.map;
+      const bbox =
+        prev?.bbox && p.map.bbox ? unionMapBbox(prev.bbox, p.map.bbox) : (p.map.bbox ?? prev?.bbox);
+      out.map = { ...prev, ...p.map, ...(bbox ? { bbox } : {}) };
+    }
   }
   return out;
 }
@@ -77,6 +88,20 @@ export function applyProjectPatch(project: Project, patch: ProjectPatch): Projec
     }
   }
   if (patch.name) p = { ...p, name: patch.name };
+  if (patch.map) {
+    const prev = p.images.top?.map;
+    const bbox = patch.map.bbox ?? prev?.bbox;
+    if (!bbox) throw new Error('Map patch requires a bbox');
+    const spec = defaultMapSpec({ ...prev, ...patch.map, bbox });
+    const title = spec.title?.trim() || 'Map terrain';
+    p = {
+      ...p,
+      images: {
+        ...p.images,
+        top: { name: title, dataUrl: MAP_TOP_PLACEHOLDER, map: spec },
+      },
+    };
+  }
   return { ...p, params };
 }
 
