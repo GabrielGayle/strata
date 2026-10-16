@@ -38,7 +38,7 @@ export interface DepthSettings {
   resolution: number;
   /** near = light instead of dark (the side profile reads bright as high). */
   invert: boolean;
-  /** How the background plate is chosen. Missing = feature off (legacy saves). */
+  /** How the background plate is chosen. Missing or `off` = feature off (the default). */
   flatLevelMode?: FlatLevelMode;
   /** Depth in metres of the background plate, when the user (or eyedropper) set it. */
   flatLevel?: number;

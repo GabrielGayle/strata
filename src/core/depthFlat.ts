@@ -5,8 +5,10 @@
 
 import type { DepthData, DepthSettings } from './depth';
 
-export const FLAT_LEVEL_MODES = ['auto', 'plateau', 'percentile', 'eyedropper'] as const;
+export const FLAT_LEVEL_MODES = ['off', 'auto', 'plateau', 'percentile', 'eyedropper'] as const;
 export type FlatLevelMode = (typeof FLAT_LEVEL_MODES)[number];
+export const ENGAGED_FLAT_MODES = ['auto', 'plateau', 'percentile', 'eyedropper'] as const;
+export type EngagedFlatMode = (typeof ENGAGED_FLAT_MODES)[number];
 
 export const DEFAULT_FLAT_PERCENTILE = 85;
 export const DEFAULT_EDGE_EASE = 0;
@@ -16,8 +18,12 @@ export function isMapDepthFace(d: Pick<DepthData, 'mapOrtho'>): boolean {
   return d.mapOrtho?.source === 'map';
 }
 
-export function isFlatLevelMode(v: unknown): v is FlatLevelMode {
+export function isEngagedFlatMode(v: unknown): v is EngagedFlatMode {
   return v === 'auto' || v === 'plateau' || v === 'percentile' || v === 'eyedropper';
+}
+
+export function isFlatLevelMode(v: unknown): v is FlatLevelMode {
+  return v === 'off' || isEngagedFlatMode(v);
 }
 
 /** Fill missing flat-level keys only. Present values (including 0 / false) stay put. */
@@ -33,8 +39,37 @@ export function fillFlatDefaults(s: DepthSettings): DepthSettings {
   };
 }
 
+/** Missing mode (legacy saves) and explicit Off both leave the depth map alone. */
 export function isFlatEngaged(s: DepthSettings): boolean {
-  return isFlatLevelMode(s.flatLevelMode) || s.flatLevelOverride === true;
+  if (s.flatLevelMode === 'off') return false;
+  return isEngagedFlatMode(s.flatLevelMode) || s.flatLevelOverride === true;
+}
+
+/** Clear every flat-level field and land on Auto with factory extras. */
+export function resetFlatToAuto(s: DepthSettings): DepthSettings {
+  return {
+    ...s,
+    flatLevelMode: 'auto',
+    flatLevelOverride: false,
+    flatLevel: undefined,
+    flatPercentile: DEFAULT_FLAT_PERCENTILE,
+    edgeEase: DEFAULT_EDGE_EASE,
+    stepLimit: DEFAULT_STEP_LIMIT,
+    flatNegative: false,
+  };
+}
+
+export function isFlatDirty(s: DepthSettings): boolean {
+  const f = fillFlatDefaults(s);
+  if (!isFlatEngaged(f)) return false;
+  return (
+    f.flatLevelOverride === true ||
+    (f.edgeEase ?? 0) > 0 ||
+    (f.stepLimit ?? 0) > 0 ||
+    f.flatNegative === true ||
+    (f.flatPercentile ?? DEFAULT_FLAT_PERCENTILE) !== DEFAULT_FLAT_PERCENTILE ||
+    (isEngagedFlatMode(f.flatLevelMode) && f.flatLevelMode !== 'auto')
+  );
 }
 
 function validMetres(metres: Float32Array): number[] {
@@ -43,12 +78,23 @@ function validMetres(metres: Float32Array): number[] {
   return out;
 }
 
+/**
+ * Percentile of the sample depth *span* (min–max metres), not pixel count.
+ * A photo backdrop is often most of the pixels, so a count-quantile at 60 and
+ * 85 both sat on the same far wall (~38 mm plate) and the slider looked dead.
+ * Walking the span makes 60 vs 85 different plates.
+ */
 export function percentileMetres(vals: number[], p: number): number {
   if (!vals.length) return NaN;
-  const sorted = [...vals].sort((a, b) => a - b);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const m of vals) {
+    if (m < lo) lo = m;
+    if (m > hi) hi = m;
+  }
+  if (!(hi > lo)) return lo;
   const t = Math.min(100, Math.max(0, p)) / 100;
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.round(t * (sorted.length - 1))));
-  return sorted[idx];
+  return lo + t * (hi - lo);
 }
 
 /** Near edge of the strongest far-ish histogram plateau (metres). */
@@ -111,8 +157,9 @@ export function resolveFlatLevel(
 ): ResolvedFlatLevel {
   const filled = fillFlatDefaults(s);
   const overridden = filled.flatLevelOverride === true && Number.isFinite(filled.flatLevel);
-  const mode: FlatLevelMode = isFlatLevelMode(filled.flatLevelMode) ? filled.flatLevelMode : 'auto';
-  if (overridden) {
+  const rawMode = filled.flatLevelMode;
+  const mode: FlatLevelMode = isFlatLevelMode(rawMode) ? rawMode : overridden ? 'auto' : 'off';
+  if (overridden && mode !== 'off') {
     return { levelM: clampLevel(filled.flatLevel as number, d.minM, d.maxM), mode, overridden: true };
   }
   const vals = validMetres(metres);
@@ -120,7 +167,8 @@ export function resolveFlatLevel(
   if (mode === 'plateau') levelM = plateauMetres(vals, d.minM, d.maxM);
   else if (mode === 'percentile') levelM = percentileMetres(vals, filled.flatPercentile ?? DEFAULT_FLAT_PERCENTILE);
   else if (mode === 'eyedropper' && Number.isFinite(filled.flatLevel)) levelM = filled.flatLevel as number;
-  else levelM = autoFlatLevel(vals, d.minM, d.maxM, d.farM);
+  else if (mode === 'auto') levelM = autoFlatLevel(vals, d.minM, d.maxM, d.farM);
+  else levelM = d.farM;
   if (!Number.isFinite(levelM)) levelM = d.farM;
   return { levelM: clampLevel(levelM, d.minM, d.maxM), mode, overridden: false };
 }
@@ -172,15 +220,18 @@ export function flattenBackgroundToPlate(
   const n = height.length;
   for (let i = 0; i < n; i++) {
     const m = metres[i];
-    if (!(m > 0) || !Number.isFinite(m)) continue;
-    let t = 0;
-    if (m >= levelM) t = 1;
-    else if (easeM > 0 && m > levelM - easeM) t = smoothstep(levelM - easeM, levelM, m);
-    if (t > 0) {
-      height[i] = height[i] * (1 - t) + plateH * t;
-      keep[i] = Math.max(keep[i], t);
+    const valid = m > 0 && Number.isFinite(m);
+    if (valid) {
+      let t = 0;
+      if (m >= levelM) t = 1;
+      else if (easeM > 0 && m > levelM - easeM) t = smoothstep(levelM - easeM, levelM, m);
+      if (t > 0) {
+        height[i] = height[i] * (1 - t) + plateH * t;
+        keep[i] = Math.max(keep[i], t);
+      }
     }
-    if (filled.flatNegative && height[i] < plateH) {
+    // Floor dips under the plate (squash, holes with keep, nearer samples pulled down).
+    if (filled.flatNegative && height[i] < plateH && (keep[i] > 0 || valid)) {
       height[i] = plateH;
       keep[i] = Math.max(keep[i], 1);
     }
@@ -201,7 +252,7 @@ export function limitHeightSteps(data: Float32Array, w: number, h: number, maxSt
     out[j] -= s * extra;
     return true;
   };
-  const passes = Math.min(64, Math.max(w, h));
+  const passes = Math.min(256, Math.max(32, (w + h) * 4));
   for (let pass = 0; pass < passes; pass++) {
     let changed = false;
     for (let y = 0; y < h; y++) {
@@ -237,25 +288,25 @@ export function applyFlatCliPatch(settings: DepthSettings, patch: FlatCliPatch):
   if (typeof patch.flatLevel === 'number' && Number.isFinite(patch.flatLevel)) {
     next.flatLevel = patch.flatLevel;
     next.flatLevelOverride = true;
-    if (!isFlatLevelMode(next.flatLevelMode)) next.flatLevelMode = 'auto';
+    if (!isEngagedFlatMode(next.flatLevelMode)) next.flatLevelMode = 'auto';
   } else if (isFlatLevelMode(patch.flatLevel)) {
     if (patch.flatLevel === 'eyedropper') {
       throw new Error('--flat-level eyedropper needs a metre value; use --flat-level <metres>');
     }
     next.flatLevelMode = patch.flatLevel;
-    if (patch.flatLevel === 'auto') next.flatLevelOverride = false;
+    if (patch.flatLevel === 'auto' || patch.flatLevel === 'off') next.flatLevelOverride = false;
   }
   if (patch.edgeEase != null && Number.isFinite(patch.edgeEase)) {
     next.edgeEase = Math.min(1, Math.max(0, patch.edgeEase));
-    if (!isFlatLevelMode(next.flatLevelMode)) next.flatLevelMode = 'auto';
+    if (!isEngagedFlatMode(next.flatLevelMode)) next.flatLevelMode = 'auto';
   }
   if (patch.stepLimit != null && Number.isFinite(patch.stepLimit)) {
     next.stepLimit = Math.min(1, Math.max(0, patch.stepLimit));
-    if (!isFlatLevelMode(next.flatLevelMode)) next.flatLevelMode = 'auto';
+    if (!isEngagedFlatMode(next.flatLevelMode)) next.flatLevelMode = 'auto';
   }
   if (patch.flatNegative != null) {
     next.flatNegative = patch.flatNegative;
-    if (!isFlatLevelMode(next.flatLevelMode)) next.flatLevelMode = 'auto';
+    if (!isEngagedFlatMode(next.flatLevelMode)) next.flatLevelMode = 'auto';
   }
   return next;
 }
@@ -264,7 +315,7 @@ export function parseFlatLevelFlag(raw: string): number | FlatLevelMode {
   const v = raw.trim().toLowerCase();
   if (isFlatLevelMode(v)) return v;
   const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) throw new Error(`--flat-level expects a metre value or auto|plateau|percentile (got '${raw}')`);
+  if (!Number.isFinite(n) || n <= 0) throw new Error(`--flat-level expects a metre value or off|auto|plateau|percentile (got '${raw}')`);
   return n;
 }
 

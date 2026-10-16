@@ -5,23 +5,28 @@ import { join } from 'node:path';
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const SHOT = join(process.cwd(), 'docs/screenshots/flat-level');
 
-function u16(metres: (number | null)[], lo: number, hi: number): string {
+function u16(metres: number[], lo: number, hi: number): string {
   const b = new Uint8Array(metres.length * 2);
   metres.forEach((m, i) => {
-    const q = m === null ? 0 : 1 + Math.round(((m - lo) / (hi - lo)) * 65534);
+    const q = 1 + Math.round(((m - lo) / (hi - lo)) * 65534);
     b[i * 2] = q & 255;
     b[i * 2 + 1] = q >> 8;
   });
   return btoa(String.fromCharCode(...b));
 }
 
+/** Dome 1.5–3 m in front of a 7–9 m backdrop. */
 function depthProject() {
-  const w = 16;
-  const h = 16;
+  const w = 24;
+  const h = 24;
   const metres: number[] = [];
+  const cx = 11.5;
+  const cy = 11.5;
+  const rad = 7;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      metres.push(Math.hypot(x - 7.5, y - 7.5) < 5 ? 1.2 : 8);
+      const r = Math.hypot(x - cx, y - cy) / rad;
+      metres.push(r < 1 ? 1.5 + r * r * 1.5 : 7 + (2 * ((x + y) % 7)) / 6);
     }
   }
   const depth = {
@@ -63,22 +68,17 @@ function depthProject() {
       baseWidth: '90',
     },
     images: {
-      side: { name: 'depth-side', dataUrl: PNG, depth },
+      side: { name: 'dome-side', dataUrl: PNG, depth },
     },
   });
 }
 
-async function seed(page: Page, colorScheme: 'light' | 'dark' = 'light') {
-  await page.addInitScript(
-    ({ project, colorScheme }) => {
-      localStorage.setItem('strata:tour-seen', '1');
-      localStorage.setItem('strata.project.v1', project);
-      localStorage.setItem('strata.ui.v1', JSON.stringify({ tab: '3d', collapsed: { Image: false }, ortho: true }));
-      localStorage.setItem('strata.theme.v1', JSON.stringify({ id: 'system' }));
-      document.documentElement.style.colorScheme = colorScheme;
-    },
-    { project: depthProject(), colorScheme },
-  );
+async function seed(page: Page) {
+  await page.addInitScript((project) => {
+    localStorage.setItem('strata:tour-seen', '1');
+    localStorage.setItem('strata.project.v1', project);
+    localStorage.setItem('strata.ui.v1', JSON.stringify({ tab: '3d', collapsed: { Image: false }, ortho: true }));
+  }, depthProject());
 }
 
 async function waitReady(page: Page) {
@@ -91,17 +91,13 @@ async function openTab(page: Page, name: string) {
   await page.locator('.ws-tabs').getByRole('tab', { name }).click();
 }
 
-async function setFlatLevelNear(page: Page) {
-  const slider = page.getByRole('slider', { name: 'Flat level' });
-  await expect(slider).toBeVisible({ timeout: 30_000 });
-  await slider.fill('0');
-  await slider.evaluate((el) => {
-    const input = el as HTMLInputElement;
-    input.value = '0';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  await expect(page.getByTestId('flat-plate')).toHaveAttribute('data-override', '1', { timeout: 10_000 });
+async function chooseAppearance(page: Page, name: 'Paper' | 'Dusk' | 'Ink') {
+  await page.getByRole('button', { name: /^Appearance/ }).click();
+  await page.getByRole('button', { name, exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect
+    .poll(async () => page.evaluate(() => document.documentElement.getAttribute('data-theme')), { timeout: 10_000 })
+    .toBe(name === 'Paper' ? 'light' : 'dark');
 }
 
 function parseRange(text: string | null) {
@@ -109,64 +105,192 @@ function parseRange(text: string | null) {
   return m ? { lo: Number(m[1]), hi: Number(m[2]) } : { lo: 0, hi: 0 };
 }
 
+async function plateRange(page: Page) {
+  return parseRange(await page.getByTestId('plate-height-range').textContent());
+}
+
+async function viewportLum(page: Page) {
+  return page.locator('.view').evaluate((el) => {
+    const c = getComputedStyle(el).backgroundColor;
+    const m = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (!m) return 0;
+    return 0.2126 * Number(m[1]) + 0.7152 * Number(m[2]) + 0.0722 * Number(m[3]);
+  });
+}
+
+async function fieldsetContrast(page: Page) {
+  return page.getByTestId('flat-plate').evaluate((el) => {
+    const cs = getComputedStyle(el);
+    const parse = (value: string) => {
+      const m = value.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      if (!m) return { r: 0, g: 0, b: 0, a: 1 };
+      return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: 1 };
+    };
+    const lin = (c: number) => {
+      const x = c / 255;
+      return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+    };
+    const lum = (c: { r: number; g: number; b: number }) => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+    const fg = parse(cs.color);
+    const bg = parse(cs.backgroundColor);
+    const l1 = lum(fg);
+    const l2 = lum(bg);
+    const lighter = Math.max(l1, l2);
+    const darker = Math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+  });
+}
+
+async function assertFitsCard(page: Page) {
+  const card = page.getByTestId('face-card-side');
+  const fieldset = page.getByTestId('flat-plate');
+  const box = await card.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, right: r.right, width: r.width };
+  });
+  const flat = await fieldset.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, right: r.right, overflow: el.scrollWidth - el.clientWidth };
+  });
+  expect(flat.overflow).toBeLessThanOrEqual(1);
+  expect(flat.left).toBeGreaterThanOrEqual(box.left - 1);
+  expect(flat.right).toBeLessThanOrEqual(box.right + 1);
+}
+
+/** Mid-ground plate: behind the 1.5–3 m dome, in front of the 7–9 m backdrop. */
+async function setFlatLevelMetres(page: Page, metres: number) {
+  const slider = page.getByRole('slider', { name: 'Flat level' });
+  await expect(slider).toBeVisible();
+  const t = Math.round(((Math.log(metres) - Math.log(1)) / (Math.log(10) - Math.log(1))) * 1000);
+  await slider.fill(String(t));
+  await slider.evaluate((el, value) => {
+    const input = el as HTMLInputElement;
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    set?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, String(t));
+  await expect(page.getByTestId('flat-plate')).toHaveAttribute('data-override', '1', { timeout: 10_000 });
+  await expect(page.getByTestId('flat-plate').locator('.mono').first()).toContainText(/5\.0\d* m/);
+}
+
 test.describe('flat level', () => {
-  test('sets Flat level, changes plates, and persists (light + screenshots)', async ({ page }, testInfo) => {
+  test('Off default, Auto keeps the dome and raises the backdrop (Paper + clip)', async ({ page }, testInfo) => {
     await mkdir(SHOT, { recursive: true });
-    await page.emulateMedia({ colorScheme: 'light' });
-    await seed(page, 'light');
+    await seed(page);
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/');
     await waitReady(page);
+    await chooseAppearance(page, 'Paper');
+    expect(await viewportLum(page)).toBeGreaterThan(140);
 
     await page.locator('.view').screenshot({ path: join(SHOT, '3d-before-light.png') });
-    const before = parseRange(await page.getByTestId('plate-height-range').textContent());
-    expect(before.hi).toBeGreaterThan(before.lo);
+    const before = await plateRange(page);
+    expect(before.hi).toBeGreaterThan(before.lo + 20);
 
     await openTab(page, 'Image / Graphic');
-    await expect(page.getByTestId('flat-plate')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('flat-plate').screenshot({ path: join(SHOT, 'controls-before-light.png') });
+    const plate = page.getByTestId('flat-plate');
+    await expect(plate).toBeVisible({ timeout: 30_000 });
+    await expect(plate).toHaveAttribute('data-mode', 'off');
+    await plate.screenshot({ path: join(SHOT, 'controls-before-light.png') });
+    expect(await fieldsetContrast(page)).toBeGreaterThanOrEqual(4.5);
+    await assertFitsCard(page);
 
-    await setFlatLevelNear(page);
-    await expect(page.getByRole('button', { name: 'Reset to auto' })).toBeVisible();
-    await page.getByTestId('flat-plate').screenshot({ path: join(SHOT, 'controls-after-light.png') });
+    await plate.getByRole('button', { name: 'Auto', exact: true }).click();
+    await expect(plate).toHaveAttribute('data-mode', 'auto');
+    await expect(page.getByRole('slider', { name: 'Flat level' })).toBeVisible();
+    await setFlatLevelMetres(page, 5);
+    await plate.screenshot({ path: join(SHOT, 'controls-after-light.png') });
+    await assertFitsCard(page);
 
     await openTab(page, '3D');
-    await expect(page.getByTestId('plate-height-range')).toBeVisible({ timeout: 60_000 });
     await expect
-      .poll(async () => parseRange(await page.getByTestId('plate-height-range').textContent()), { timeout: 30_000 })
+      .poll(async () => plateRange(page), { timeout: 30_000 })
       .not.toEqual(before);
-    const after = parseRange(await page.getByTestId('plate-height-range').textContent());
-    expect(after.lo !== before.lo || after.hi !== before.hi).toBe(true);
+    const after = await plateRange(page);
+    expect(after.lo, `min should rise (before ${before.lo}–${before.hi} after ${after.lo}–${after.hi})`).toBeGreaterThan(before.lo + 2);
+    expect(after.hi, 'subject peak kept').toBeGreaterThan(before.hi * 0.85);
+    expect(after.hi).toBeGreaterThan(after.lo + 15);
     await page.locator('.view').screenshot({ path: join(SHOT, '3d-after-light.png') });
+
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await openTab(page, 'Image / Graphic');
+    await page.getByTestId('flat-plate').scrollIntoViewIfNeeded();
+    await assertFitsCard(page);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByTestId('flat-plate').scrollIntoViewIfNeeded();
+    await assertFitsCard(page);
+
+    await plate.getByRole('slider', { name: 'Edge ease' }).fill('0.4');
+    await plate.getByRole('slider', { name: 'Step limit' }).fill('0.1');
+    await plate.getByRole('checkbox', { name: 'Flatten the negative side' }).check();
+    await expect(page.getByRole('button', { name: 'Reset to auto' })).toBeVisible();
+    await page.getByRole('button', { name: 'Reset to auto' }).click();
+    await expect(plate).toHaveAttribute('data-mode', 'auto');
+    expect(Number(await plate.getByRole('slider', { name: 'Edge ease' }).inputValue())).toBe(0);
+    expect(Number(await plate.getByRole('slider', { name: 'Step limit' }).inputValue())).toBe(0);
+    await expect(plate.getByRole('checkbox', { name: 'Flatten the negative side' })).not.toBeChecked();
+    await expect(page.getByRole('button', { name: 'Reset to auto' })).toHaveCount(0);
 
     await page.waitForTimeout(1800);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitReady(page);
     await openTab(page, 'Image / Graphic');
-    await expect(page.getByTestId('flat-plate')).toHaveAttribute('data-override', '1', { timeout: 30_000 });
-    await expect(page.getByRole('button', { name: 'Reset to auto' })).toBeVisible();
+    await expect(page.getByTestId('flat-plate')).toHaveAttribute('data-mode', 'auto', { timeout: 30_000 });
+    await expect(page.getByRole('button', { name: 'Reset to auto' })).toHaveCount(0);
     await openTab(page, '3D');
-    const persisted = parseRange(await page.getByTestId('plate-height-range').textContent());
-    expect(persisted).toEqual(after);
+    const persisted = await plateRange(page);
+    expect(persisted.hi).toBeGreaterThan(before.hi * 0.85);
+
+    await openTab(page, 'Image / Graphic');
+    await page.getByTestId('flat-plate').getByRole('button', { name: 'Off', exact: true }).click();
+    await expect(page.getByTestId('flat-plate')).toHaveAttribute('data-mode', 'off');
+    await openTab(page, '3D');
+    await expect.poll(async () => plateRange(page).then((r) => r.lo), { timeout: 30_000 }).toBeLessThan(after.lo);
     testInfo.annotations.push({ type: 'note', description: `plate height before ${before.lo}–${before.hi} after ${after.lo}–${after.hi}` });
   });
 
-  test('dark theme 3D before/after and controls screenshots', async ({ page }) => {
+  test('Dusk and Ink themes via Appearance, with before/after shots', async ({ page }) => {
     await mkdir(SHOT, { recursive: true });
-    await page.emulateMedia({ colorScheme: 'dark' });
-    await seed(page, 'dark');
+    await seed(page);
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/');
     await waitReady(page);
-    await page.locator('.view').screenshot({ path: join(SHOT, '3d-before-dark.png') });
 
-    await openTab(page, 'Image / Graphic');
-    await expect(page.getByTestId('flat-plate')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('flat-plate').screenshot({ path: join(SHOT, 'controls-before-dark.png') });
-    await setFlatLevelNear(page);
-    await page.getByTestId('flat-plate').screenshot({ path: join(SHOT, 'controls-after-dark.png') });
+    for (const theme of [
+      { name: 'Dusk' as const, tag: 'dark', accent: null as string | null },
+      { name: 'Ink' as const, tag: 'ink', accent: '#ff6a2e' },
+    ]) {
+      await chooseAppearance(page, theme.name);
+      expect(await viewportLum(page)).toBeLessThan(80);
+      if (theme.accent) {
+        const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim().toLowerCase());
+        expect(accent).toBe(theme.accent);
+      }
 
-    await openTab(page, '3D');
-    await expect.poll(async () => (await page.getByTestId('plate-height-range').textContent()) ?? '', { timeout: 30_000 }).toMatch(/plate height/);
-    await page.waitForTimeout(800);
-    await page.locator('.view').screenshot({ path: join(SHOT, '3d-after-dark.png') });
+      await openTab(page, 'Image / Graphic');
+      const plate = page.getByTestId('flat-plate');
+      await expect(plate).toBeVisible();
+      await plate.getByRole('button', { name: 'Off', exact: true }).click();
+      await expect(plate).toHaveAttribute('data-mode', 'off');
+      await plate.screenshot({ path: join(SHOT, `controls-before-${theme.tag}.png`) });
+      expect(await fieldsetContrast(page)).toBeGreaterThanOrEqual(4.5);
+
+      await openTab(page, '3D');
+      await expect.poll(async () => plateRange(page).then((r) => r.lo), { timeout: 30_000 }).toBeTruthy();
+      const before = await plateRange(page);
+      await page.locator('.view').screenshot({ path: join(SHOT, `3d-before-${theme.tag}.png`) });
+
+      await openTab(page, 'Image / Graphic');
+      await plate.getByRole('button', { name: 'Auto', exact: true }).click();
+      await expect(plate).toHaveAttribute('data-mode', 'auto');
+      await setFlatLevelMetres(page, 5);
+      await plate.screenshot({ path: join(SHOT, `controls-after-${theme.tag}.png`) });
+
+      await openTab(page, '3D');
+      await expect.poll(async () => plateRange(page).then((r) => r.lo), { timeout: 30_000 }).toBeGreaterThan(before.lo);
+      await page.waitForTimeout(600);
+      await page.locator('.view').screenshot({ path: join(SHOT, `3d-after-${theme.tag}.png`) });
+    }
   });
 });

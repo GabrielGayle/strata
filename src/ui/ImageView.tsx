@@ -221,7 +221,7 @@ export default function ImageView() {
         {board === 'nodes' ? (
           <LayerNodes live={live} onOpenSurface={() => setBoard('cards')} />
         ) : (
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+        <div className="img-face-grid">
           {slots.map((s) => {
             const asset = project.images[s.slot];
             const other = s.slot === 'top' ? project.images.front ?? project.images.side : null;
@@ -229,6 +229,7 @@ export default function ImageView() {
               <div
                 className="window box"
                 key={s.slot}
+                data-testid={`face-card-${s.slot}`}
                 onDragOver={(e) => e.dataTransfer.types.includes('text/x-block') && e.preventDefault()}
                 onDrop={(e) => {
                   const id = e.dataTransfer.getData('text/x-block');

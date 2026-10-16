@@ -79,7 +79,7 @@ const SIZE_HELP = MASTER_SIZE_CLI_CANONICAL.join(', ');
 const USAGE = `Usage:
   npm run cli -- <project.json> --out <dir> [--preset <name>] [--size <id>] [--orientation portrait|landscape]
                  [--image side=path.jpg] [--auto-dimension side=top,front] [--relief-exaggeration <n>]
-                 [--flat-level auto|plateau|percentile|<metres>] [--edge-ease <0..1>] [--step-limit <0..1>]
+                 [--flat-level off|auto|plateau|percentile|<metres>] [--edge-ease <0..1>] [--step-limit <0..1>]
                  [--flat-negative] [--rates rates.json]
                  [--map <title>] [--bbox west,south,east,north]
                  [--map-source auto|scot-dtm|wales-dtm|ni-dtm|ea-dtm|ea-dsm|cop30|terrarium]
@@ -102,7 +102,7 @@ ratio sizes keep the current long edge. Only the outline changes (thickness and 
 side, front, top). Needs depth data on that image. --relief-exaggeration scales relief (default 1).
 --flat-level / --edge-ease / --step-limit / --flat-negative shape IMAGE depth maps only (never map
 faces): flatten everything at or beyond a background level onto a plate, with optional edge falloff
-and a max step between adjacent plates. Map faces stay real metres × exaggeration.
+and a max step between adjacent plates. Default is off. Map faces stay real metres × exaggeration.
 --map with --bbox fetches open terrain into the top face DepthData (auto picks UK LiDAR where catalogued).
 Regional LiDAR adapters use offline fixtures in tests; production COG/WMS reads are stubbed until later tickets.
 Unimplemented explicit sources fall back to terrarium with a warning. --engrave is stored

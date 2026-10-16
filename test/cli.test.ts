@@ -460,6 +460,7 @@ describe('cli flat-level', () => {
     const args = parseCliArgs(['p.json', '--out', 'x', '--flat-level', '3.25', '--edge-ease', '0.2', '--step-limit', '0.05', '--flat-negative']);
     expect(args.flat).toEqual({ flatLevel: 3.25, edgeEase: 0.2, stepLimit: 0.05, flatNegative: true });
     expect(parseCliArgs(['p.json', '--out', 'x', '--flat-level=plateau']).flat).toEqual({ flatLevel: 'plateau' });
+    expect(parseCliArgs(['p.json', '--out', 'x', '--flat-level=off']).flat).toEqual({ flatLevel: 'off' });
   });
 
   it('mentions the flags in help', async () => {
