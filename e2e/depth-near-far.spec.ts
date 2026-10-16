@@ -1,8 +1,18 @@
 import { test, expect } from '@playwright/test';
-import { openWorkspaceTab, pickNeasdenPreset, plateHeightRangeMm } from './map-helpers';
+import { openWorkspaceTab, pickNeasdenPreset, plateHeightRangeMm, waitForMapReady } from './map-helpers';
+
+async function setRangeInput(locator: import('@playwright/test').Locator, t: number) {
+  await locator.evaluate((el, value) => {
+    const input = el as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, String(Math.round(value * Number(input.max || 1000))));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, t);
+}
 
 test('depth near/far sliders change plates and survive a map rebuild', async ({ page }) => {
-  test.setTimeout(420_000);
+  test.setTimeout(240_000);
   await page.goto('/');
   await page.waitForSelector('.app.window', { timeout: 60_000 });
   await pickNeasdenPreset(page);
@@ -14,19 +24,15 @@ test('depth near/far sliders change plates and survive a map rebuild', async ({ 
   const topCard = page.locator('.window.box').filter({ hasText: 'Top surface image' }).first();
   await topCard.getByRole('button', { name: 'Image', exact: true }).click();
   const nearRow = topCard.getByRole('slider', { name: 'Near' });
-  await nearRow.waitFor({ state: 'visible', timeout: 120_000 });
+  await nearRow.waitFor({ state: 'visible', timeout: 30_000 });
 
   const nearMono = () => topCard.locator('label.pm-row:has([aria-label="Near"]) .mono');
   const farRow = topCard.getByRole('slider', { name: 'Far' });
   const nearBefore = await nearMono().textContent();
-  const nearBox = await nearRow.boundingBox();
-  const farBox = await farRow.boundingBox();
-  if (!nearBox || !farBox) throw new Error('near/far sliders missing');
-  await page.mouse.click(nearBox.x + nearBox.width * 0.35, nearBox.y + nearBox.height / 2);
-  await page.mouse.click(farBox.x + farBox.width * 0.65, farBox.y + farBox.height / 2);
-  await page.waitForTimeout(600);
+  await setRangeInput(nearRow, 0.35);
+  await setRangeInput(farRow, 0.65);
+  await expect.poll(async () => nearMono().textContent(), { timeout: 15_000 }).not.toBe(nearBefore);
   const nearTuned = await nearMono().textContent();
-  expect(nearTuned).not.toBe(nearBefore);
 
   await expect
     .poll(async () => plateHeightRangeMm(page), { timeout: 30_000 })
@@ -36,7 +42,7 @@ test('depth near/far sliders change plates and survive a map rebuild', async ({ 
 
   await openWorkspaceTab(page, 'Map');
   await page.locator('.map-preset-row').getByRole('button', { name: 'Neasden', exact: true }).click();
-  await expect(page.locator('.status-bar')).toContainText(/ready/i, { timeout: 240_000 });
+  await waitForMapReady(page);
 
   await openWorkspaceTab(page, 'Image / Graphic');
   const topAgain = page.locator('.window.box').filter({ hasText: 'Top surface image' }).first();

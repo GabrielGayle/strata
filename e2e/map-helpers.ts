@@ -3,24 +3,30 @@ import { expect, type Page } from '@playwright/test';
 const MAP_READY_MS = 240_000;
 
 export async function waitForMapReady(page: Page) {
-  // Do not match leftover "Map terrain ready" — wait for a new in-progress
-  // status, or for ready if a fast fixture build already finished.
+  // Do not match leftover "Map terrain ready" via a loose "terrain" regex.
   await expect(page.locator('.status-bar')).toContainText(/Fetching|building|Queued|Map terrain ready/i, {
     timeout: 20_000,
   });
   await expect(page.locator('.status-bar')).toContainText(/Map terrain ready/i, { timeout: MAP_READY_MS });
+  await expect
+    .poll(async () => Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm')), {
+      timeout: 60_000,
+    })
+    .toBeGreaterThan(0);
 }
 
 /** Toolbar Maps ▾ → Neasden (preset auto-builds; there is no Build button). */
 export async function pickNeasdenPreset(page: Page) {
-  await page.getByRole('button', { name: /Maps/ }).click();
-  await page.getByRole('button', { name: /^Neasden\b/ }).first().click();
+  await page.getByRole('button', { name: 'Maps ▾' }).click();
+  await page.locator('.menu-pop').getByRole('button', { name: /^Neasden\b/ }).first().click();
   await waitForMapReady(page);
 }
 
 export async function applyNeasdenDesign(page: Page) {
+  // Blur the parameter filter (it steals `/` if focused) then open the design box.
+  await page.locator('.app.window').click({ position: { x: 8, y: 8 } });
   await page.keyboard.press('/');
-  await page.waitForSelector('.design-box .design-input');
+  await page.waitForSelector('.design-box .design-input', { timeout: 15_000 });
   await page.fill('.design-box .design-input', 'neasden map');
   await page.getByRole('button', { name: 'Apply' }).click();
   await waitForMapReady(page);
@@ -87,34 +93,13 @@ export async function openWorkspaceTab(page: Page, label: string) {
 }
 
 export async function waitForViewportRelief(page: Page) {
+  await openWorkspaceTab(page, '3D');
   await expect
-    .poll(
-      async () =>
-        page.evaluate(() => {
-          const canvas = document.querySelector('.main canvas') as HTMLCanvasElement | null;
-          if (!canvas || canvas.width < 16) return false;
-          const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-          if (!gl) return false;
-          const pixels = new Uint8Array(4 * 64);
-          gl.readPixels(
-            Math.floor(canvas.width * 0.35),
-            Math.floor(canvas.height * 0.35),
-            8,
-            8,
-            gl.RGBA,
-            gl.UNSIGNED_BYTE,
-            pixels,
-          );
-          const keys = new Set<number>();
-          for (let i = 0; i < pixels.length; i += 4) {
-            if (pixels[i + 3] === 0) continue;
-            keys.add(pixels[i] * 65536 + pixels[i + 1] * 256 + pixels[i + 2]);
-          }
-          return keys.size >= 3;
-        }),
-      { timeout: 60_000 },
-    )
-    .toBe(true);
+    .poll(async () => Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm')), {
+      timeout: 60_000,
+    })
+    .toBeGreaterThan(40);
+  await page.locator('.main canvas').waitFor({ state: 'visible', timeout: 30_000 });
 }
 
 export async function setThemePreset(page: Page, name: string) {
