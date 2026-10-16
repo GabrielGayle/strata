@@ -70,8 +70,11 @@ const near = (g: { data: Float32Array }) => Array.from(g.data, (v) => +v.toFixed
 
 describe('depth shaping', () => {
   it('reads the metric depth from the service reply', () => {
-    const r = parseDepthResponse({ png: PNG, depth: { w: 4, h: 1, min_m: 1, max_m: 5, near_m: 1, far_m: 4, data: RAW.data, mask: null } });
-    expect(r.depth).toMatchObject({ w: 4, h: 1, minM: 1, maxM: 5, nearM: 1, farM: 4 });
+    const r = parseDepthResponse({
+      png: PNG,
+      depth: { w: 4, h: 1, min_m: 1, max_m: 5, near_m: 1, far_m: 4, data: RAW.data, mask: null, focal_length_px: 512 },
+    });
+    expect(r.depth).toMatchObject({ w: 4, h: 1, minM: 1, maxM: 5, nearM: 1, farM: 4, focalLengthPx: 512 });
     expect(r.depth?.mask).toBeUndefined();
     expect(parseDepthResponse({ png: PNG }).depth).toBeUndefined();
   });
