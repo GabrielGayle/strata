@@ -11,6 +11,7 @@ import type { Composition, Surface } from '../core/compose';
 import { moveBlock } from '../core/compose';
 import { isLayered, LayerNodes, SurfaceLayers, useLiveLayers } from './SurfaceLayers';
 import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, invertDataUrl, wakeDepth } from '../core/depth';
+import { exifFocalFromDataUrl } from '../core/exifFocal';
 
 function GrayCanvas({ g }: { g: Gray | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -43,6 +44,7 @@ const ComposerModal = lazy(loadComposer);
 const PatternModal = lazy(loadPattern);
 const SoundModal = lazy(loadSound);
 const DepthControls = lazy(() => import('./DepthControls'));
+const AutoDimensionControls = lazy(() => import('./AutoDimensionControls'));
 const preload = (load: () => Promise<unknown>) => () => {
   load().catch(() => {});
 };
@@ -92,7 +94,12 @@ export default function ImageView() {
       const name = `depth · ${photo.name}`;
       if (depth) {
         // keep the real depth so near / far / curve can be changed here; side profile reads bright as high
-        const d = { ...depth, settings: defaultDepthSettings(depth, slot === 'side') };
+        const exifFocal = exifFocalFromDataUrl(photo.dataUrl, depth.w);
+        const d = {
+          ...depth,
+          ...(exifFocal ? { exifFocalLengthPx: exifFocal } : {}),
+          settings: defaultDepthSettings(depth, slot === 'side'),
+        };
         setAsset('image', slot, { name, dataUrl: grayDataUrl(depthToGray(d)), depth: d });
       } else {
         // older service: only the finished grey picture
@@ -240,6 +247,7 @@ export default function ImageView() {
                 {asset?.depth && sourceOf(s.slot) === 'image' && (
                   <Suspense fallback={null}>
                     <DepthControls slot={s.slot} depth={asset.depth} />
+                    <AutoDimensionControls slot={s.slot} depth={asset.depth} />
                   </Suspense>
                 )}
                 {depthError?.slot === s.slot && <div className="note" style={{ color: 'var(--err)' }}>Depth from photo failed: {depthError.msg}</div>}
