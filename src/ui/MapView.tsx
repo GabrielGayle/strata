@@ -330,7 +330,7 @@ export default function MapView() {
         </label>
       </section>
     </div>
-      <MapPreviewPane bbox={previewBbox} title={existing?.title ?? title} />
+      <MapPreviewPane bbox={previewBbox} title={existing?.title ?? title} depth={project.images.top?.depth} />
     </div>
   );
 }

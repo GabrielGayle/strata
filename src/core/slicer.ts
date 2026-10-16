@@ -97,6 +97,26 @@ export interface FrontWindow {
   v1: number;
 }
 
+/** Span of plate top edges above the concrete line (mm). */
+export function plateTopHeightRangeMm(plates: PlateInfo[]): number {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const pl of plates) {
+    if (pl.def.family !== 'P' && pl.def.family !== 'R') continue;
+    for (const part of pl.parts) {
+      for (const ex of part.shape) {
+        for (const p of ex.outer) {
+          if (p[1] > 0.5) {
+            lo = Math.min(lo, p[1]);
+            hi = Math.max(hi, p[1]);
+          }
+        }
+      }
+    }
+  }
+  return Number.isFinite(hi) && Number.isFinite(lo) ? hi - lo : 0;
+}
+
 export interface SliceResult {
   plates: PlateInfo[];
   parts: Part[];
@@ -133,6 +153,8 @@ export interface SliceInput {
   materialFor?: (key: string) => string;
   /** Placed objects (postcards, boxes…) cut out of every plate they pass through, each with its own clearance. */
   objects?: { mesh: IndexedMesh; clearance: number; seat?: number; shoulder?: number }[];
+  /** Map terrain: skip image impression / strata-flow flatten; heights come from the map field. */
+  mapTerrain?: boolean;
 }
 
 const UP: V3 = [0, 1, 0];
@@ -1081,7 +1103,8 @@ export function partLabel(v: Values, family: Family, index: number, count: numbe
 }
 
 export function slice(input: SliceInput): SliceResult {
-  const { v, hf } = input;
+  const hf = input.hf;
+  const v = input.mapTerrain ? { ...input.v, edgeFlow: 0 } : input.v;
   const warnings: string[] = [];
   const round: { spots: RoundSpot[] } = { spots: [] };
   const roundSplits: string[] = [];
@@ -1112,7 +1135,7 @@ export function slice(input: SliceInput): SliceResult {
 
   // 1. outlines
   const isFlat = v.sliceMode === 'flat';
-  const topWin = input.top && v.imgTopMode !== 'off' ? topWindow(v, input.top, homeDefs) : null;
+  const topWin = !input.mapTerrain && input.top && v.imgTopMode !== 'off' ? topWindow(v, input.top, homeDefs) : null;
   const topField = topWin && input.top ? topProfileField(v, input.top, topWin) : null;
 
   // flat stack: one sampled surface (strata top, stamped by the image) serves every layer

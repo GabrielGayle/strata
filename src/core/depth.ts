@@ -30,13 +30,19 @@ export interface DepthSettings {
   invert: boolean;
 }
 
+export type DepthSettingKey = keyof DepthSettings;
+export type DepthSettingsOverrides = Partial<Record<DepthSettingKey, true>>;
+
 /** Metric depth as sent by the service: uint16 per pixel, 0 = no depth, 1..65535 linear over minM..maxM. */
 /** Orthographic map terrain metadata (ticket T17) — exact ground metres, no pinhole back-projection. */
 export interface MapOrthoMeta {
   source: 'map';
   widthM: number;
   heightM: number;
+  /** True max−min elevation in metres (not a percentile window). */
   reliefM: number;
+  zMinM?: number;
+  zMaxM?: number;
   bboxKm: string;
 }
 
@@ -57,6 +63,8 @@ export interface DepthData {
   /** EXIF focal length in pixels on the source photo, when known. */
   exifFocalLengthPx?: number;
   settings: DepthSettings;
+  /** Fields the user set manually; automatic rebuilds must not overwrite them. */
+  settingsOverrides?: DepthSettingsOverrides;
   mapOrtho?: MapOrthoMeta;
 }
 
@@ -70,8 +78,18 @@ export interface DepthResult {
   depth?: Omit<DepthData, 'settings'>;
 }
 
-export function defaultDepthSettings(d: Pick<DepthData, 'nearM' | 'farM'>, invert = false): DepthSettings {
-  return { near: d.nearM, far: d.farM, spacing: 'perspective', curve: 1, flatten: 0, matte: true, resolution: 256, invert };
+export function defaultDepthSettings(d: Pick<DepthData, 'nearM' | 'farM' | 'mapOrtho'>, invert = false): DepthSettings {
+  const map = d.mapOrtho?.source === 'map';
+  return {
+    near: d.nearM,
+    far: d.farM,
+    spacing: map ? 'linear' : 'perspective',
+    curve: 1,
+    flatten: 0,
+    matte: !map,
+    resolution: map ? 384 : 256,
+    invert,
+  };
 }
 
 function parseDepthData(raw: unknown): Omit<DepthData, 'settings'> | undefined {

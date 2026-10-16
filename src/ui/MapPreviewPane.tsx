@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import type { DepthData } from '../core/depth';
+import { decodeDepthBuffers } from '../core/depth';
 import type { MapSpec } from '../core/mapSpec';
 
 const OSM_TILE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -22,14 +24,72 @@ function pickZoom(bbox: MapSpec['bbox']): number {
   return 15;
 }
 
-export default function MapPreviewPane({ bbox, title }: { bbox: MapSpec['bbox'] | undefined; title?: string }) {
+function paintHillshade(ctx: CanvasRenderingContext2D, w: number, h: number, depth: DepthData, title?: string) {
+  const { metres } = decodeDepthBuffers(depth);
+  const near = Math.max(1e-6, Math.min(depth.settings.near, depth.settings.far - 1e-6));
+  const far = Math.max(near + 1e-6, depth.settings.far);
+  const span = far - near;
+  const img = ctx.createImageData(w, h);
+  const px = img.data;
+  for (let y = 0; y < h; y++) {
+    const gy = ((y + 0.5) / h) * (depth.h - 1);
+    const y0 = Math.floor(gy);
+    const y1 = Math.min(depth.h - 1, y0 + 1);
+    const ty = gy - y0;
+    for (let x = 0; x < w; x++) {
+      const gx = ((x + 0.5) / w) * (depth.w - 1);
+      const x0 = Math.floor(gx);
+      const x1 = Math.min(depth.w - 1, x0 + 1);
+      const tx = gx - x0;
+      const at = (ix: number, iy: number) => metres[iy * depth.w + ix];
+      const a = at(x0, y0);
+      const b = at(x1, y0);
+      const c = at(x0, y1);
+      const d = at(x1, y1);
+      const m =
+        (Number.isFinite(a) ? a : far) * (1 - tx) * (1 - ty) +
+        (Number.isFinite(b) ? b : far) * tx * (1 - ty) +
+        (Number.isFinite(c) ? c : far) * (1 - tx) * ty +
+        (Number.isFinite(d) ? d : far) * tx * ty;
+      const t = Math.min(1, Math.max(0, (m - near) / span));
+      const elev = 1 - t;
+      const shade = 40 + Math.round(elev * 195);
+      const i = (y * w + x) * 4;
+      px[i] = shade;
+      px[i + 1] = Math.round(shade * 0.92);
+      px[i + 2] = Math.round(36 + elev * 80);
+      px[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  ctx.strokeStyle = 'rgba(255,200,80,0.9)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, w - 2, h - 2);
+  if (title) {
+    ctx.font = '11px sans-serif';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(4, h - 22, Math.min(w - 8, ctx.measureText(title).width + 12), 18);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(title, 8, h - 8);
+  }
+}
+
+export default function MapPreviewPane({
+  bbox,
+  title,
+  depth,
+}: {
+  bbox: MapSpec['bbox'] | undefined;
+  title?: string;
+  depth?: DepthData;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const host = hostRef.current;
-    if (!canvas || !host || !bbox) return;
+    if (!canvas || !host) return;
 
     const paint = () => {
       const rect = host.getBoundingClientRect();
@@ -42,6 +102,12 @@ export default function MapPreviewPane({ bbox, title }: { bbox: MapSpec['bbox'] 
       if (!ctx) return;
       ctx.fillStyle = '#1a2332';
       ctx.fillRect(0, 0, w, h);
+
+      if (depth?.mapOrtho) {
+        paintHillshade(ctx, w, h, depth, title);
+        return;
+      }
+      if (!bbox) return;
 
       const [west, south, east, north] = bbox;
       const z = pickZoom(bbox);
@@ -113,11 +179,11 @@ export default function MapPreviewPane({ bbox, title }: { bbox: MapSpec['bbox'] 
       ro.disconnect();
       vis.disconnect();
     };
-  }, [bbox, title]);
+  }, [bbox, title, depth]);
 
   return (
     <div className="map-preview-pane" ref={hostRef} aria-label="Map preview">
-      {bbox ? (
+      {bbox || depth ? (
         <>
           <canvas ref={canvasRef} className="map-preview-canvas" />
           <a className="map-preview-attrib" href="https://www.openstreetmap.org/copyright" rel="noopener noreferrer">

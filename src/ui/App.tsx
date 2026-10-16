@@ -16,6 +16,8 @@ import HelpLayer, { HelpButton } from './Help';
 import DesignBox from './DesignBox';
 import { designShortcutFromKey } from './designShortcut';
 import { useMapTerrainBuild } from './useMapTerrainBuild';
+import { isMapDepth, mapMasterWidthMm, mapScaleMmPerM, mapTrueRangePlateMm } from '../core/mapPlateHeight';
+import { plateTopHeightRangeMm } from '../core/slicer';
 
 
 export default function App() {
@@ -161,11 +163,25 @@ export default function App() {
   const mapTerrain = useStore((s) => s.mapTerrain);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
+  const topDepth = project.images.top?.depth;
+  const mapFace = isMapDepth(topDepth) && !!project.images.top?.map;
+  const mapEx = Number(project.images.top?.map?.exaggerationFactor) || 0;
+  const mapRelief = topDepth?.mapOrtho?.reliefM;
+  const mapScale = topDepth?.mapOrtho ? mapScaleMmPerM(topDepth.mapOrtho.widthM, mapMasterWidthMm(model.v)) : 0;
+  const expectedMm = mapFace && topDepth ? mapTrueRangePlateMm(topDepth, model.v, mapEx || 1) : 0;
+  const plateRangeMm = mapFace ? plateTopHeightRangeMm(model.sliced.plates) : 0;
 
   return (
     <FullModelContext.Provider value={getFull}>
     <ModelContext.Provider value={model}>
-      <div className="app window">
+      <div
+        className="app window"
+        data-strata-map-relief-m={mapFace && mapRelief != null ? String(mapRelief) : undefined}
+        data-strata-map-exaggeration={mapFace && mapEx ? String(mapEx) : undefined}
+        data-strata-map-scale-mm-per-m={mapFace && mapScale ? String(mapScale) : undefined}
+        data-strata-map-expected-height-mm={mapFace ? String(expectedMm) : undefined}
+        data-strata-plate-height-range-mm={mapFace ? String(plateRangeMm) : undefined}
+      >
         <div className="title-bar">
           <div className="title-bar-text">
             <span className="brand">

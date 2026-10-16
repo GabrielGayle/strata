@@ -190,7 +190,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       notices.push(mapInfo('No bathymetry for this bbox; falling back to flat water surface.'));
     }
   }
-  if (spec.water === 'flat' || spec.water === 'raw' || (spec.water === 'bathy' && !bathyApplied)) {
+  if (spec.water === 'flat' || (spec.water === 'bathy' && !bathyApplied)) {
     try {
       const osm = await fetchOverpass(spec.bbox, {
         cacheDir: spec.cacheDir ?? opts.cacheDir,
