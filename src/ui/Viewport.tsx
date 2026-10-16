@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
 import { useStore, type Snap } from '../state/store';
 import { stackFrame } from '../core/heightfield';
 import type { Model } from '../core/pipeline';
-import Scene, { modelBounds } from './Scene';
+import Scene, { cssVar, modelBounds } from './Scene';
+import CameraClipSync from './CameraClipSync';
+import { clipPlanesForBounds } from './viewportClip';
 import { gizmoIsBusy, moveTarget, useGizmoClearance } from './PlateGizmo';
 import { useModel, fmt } from './model';
 import { isMapDepth } from '../core/mapPlateHeight';
@@ -14,6 +16,14 @@ import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
 import { SunBar } from './SunStudy';
 import { MeasurePanel, MeasureTool, useMeasure } from './Measure';
+import {
+  VIEWPORT_CAM_POS,
+  VIEWPORT_DPR,
+  VIEWPORT_GL,
+  VIEWPORT_RESIZE,
+  VIEWPORT_STYLE,
+  ViewportParkedContext,
+} from './viewportKeepAlive';
 
 export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
@@ -32,22 +42,36 @@ export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up
   }
 }
 
+function ResumeWhenVisible({ parked }: { parked: boolean }) {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    if (!parked) invalidate();
+  }, [parked, invalidate]);
+  return null;
+}
+
 export function CameraRig({ model, snap, ortho }: { model: Model; snap: { dir: Snap; n: number; follow?: boolean }; ortho: boolean }) {
   const { camera, controls, size } = useThree() as any;
   // a "follow" snap (preset load) frames again once the new model arrives a frame later
   const pending = useRef<{ n: number; model: Model } | null>(null);
   const frame = (m: Model) => {
     const { center, size: s } = modelBounds(m);
+    const { near, far, orthoSpan } = clipPlanesForBounds(s);
     const { dir, up } = snapDirection(m, snap.dir);
     const fov = 32;
     const dist = (s * 0.8) / Math.tan(((fov / 2) * Math.PI) / 180);
     camera.up.copy(up);
     camera.position.copy(center.clone().add(dir.clone().multiplyScalar(dist)));
     controls.target.copy(center);
-    if (camera.isOrthographicCamera) {
+    if (camera.isPerspectiveCamera) {
+      camera.near = near;
+      camera.far = far;
+    } else if (camera.isOrthographicCamera) {
+      camera.near = -orthoSpan;
+      camera.far = orthoSpan;
       camera.zoom = Math.min(size.width, size.height) / (s * 1.35);
-      camera.updateProjectionMatrix();
     }
+    camera.updateProjectionMatrix();
     controls.update();
   };
   useEffect(() => {
@@ -69,29 +93,34 @@ export function CameraRig({ model, snap, ortho }: { model: Model; snap: { dir: S
 
 export default function Viewport() {
   const model = useModel();
+  const modelRef = useRef(model);
+  modelRef.current = model;
+  const parked = useContext(ViewportParkedContext);
   const ui = useStore((s) => s.ui);
   const setUi = useStore((s) => s.setUi);
   const v = model.v;
   const snapTo = (dir: Snap) => setUi({ snap: { dir, n: ui.snap.n + 1 } });
+  const onSelect = useCallback((id: string | null) => setUi({ selected: id }), [setUi]);
+  const onPaint = useCallback((key: string, shift: boolean) => paintClick(modelRef.current, key, shift), []);
   const opts = useMemo(
     () => ({
       selected: ui.selected,
-      onSelect: ui.measureMode ? undefined : (id: string | null) => setUi({ selected: id }),
+      onSelect: ui.measureMode ? undefined : onSelect,
       showMoulds: ui.showMoulds,
       explode: ui.explode,
       xray: ui.xray,
       showIssues: ui.showIssues,
       showSource: ui.showSource,
       moveMode: ui.moveMode && !ui.paintMode && !ui.measureMode,
-      onPaint: ui.paintMode && !ui.measureMode ? (key: string, shift: boolean) => paintClick(model, key, shift) : undefined,
+      onPaint: ui.paintMode && !ui.measureMode ? onPaint : undefined,
     }),
-    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.moveMode, ui.paintMode, ui.measureMode, model, setUi],
+    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.moveMode, ui.paintMode, ui.measureMode, onSelect, onPaint],
   );
   const bucketed = Object.keys(useStore((s) => s.project.appearance?.assign) ?? {}).length;
   const movedCount = Object.keys(useStore((s) => s.project.moves) ?? {}).length;
   const objectCount = useStore((s) => s.project.objects?.length ?? 0);
   useEffect(() => {
-    if (!ui.moveMode) return;
+    if (parked || !ui.moveMode) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (e.metaKey || e.ctrlKey || e.altKey || el.closest('input, textarea, select, [contenteditable="true"]')) return;
@@ -106,9 +135,10 @@ export default function Viewport() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ui.moveMode, setUi]);
+  }, [parked, ui.moveMode, setUi]);
   // measuring tape: M toggles it, Esc drops a half-made measurement and then leaves, Delete removes the latest
   useEffect(() => {
+    if (parked) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (e.metaKey || e.ctrlKey || e.altKey || el.closest('input, textarea, select, [contenteditable="true"]')) return;
@@ -125,18 +155,34 @@ export default function Viewport() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setUi]);
+  }, [parked, setUi]);
   const heights = model.sliced.parts.map((p) => p.bbox.maxY);
   const hMin = heights.length ? Math.min(...heights) : 0;
   const hMax = heights.length ? Math.max(...heights) : 0;
+  const boundSize = modelBounds(model).size;
+  const clip = useMemo(() => clipPlanesForBounds(boundSize), [boundSize]);
   const mapFace = useStore((s) => isMapDepth(s.project.images.top?.depth) && !!s.project.images.top?.map);
   const terrainY = mapFace ? plateOutlineYRangeMm(model.sliced.plates) : null;
   return (
     <>
-      <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })} style={{ position: 'absolute', inset: 0 }}>
-        <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={1} far={60000} position={[1500, 1100, 1800]} />
-        <OrthographicCamera makeDefault={ui.ortho} near={-50000} far={50000} position={[1500, 1100, 1800]} zoom={0.6} />
+      {/* Linear clip + ViewportGrid depthWrite. logarithmicDepthBuffer writes gl_FragDepth (kills early-Z) and drei Grid has no logdepthbuf chunks. */}
+      <Canvas
+        shadows="percentage"
+        dpr={VIEWPORT_DPR}
+        gl={VIEWPORT_GL}
+        frameloop={parked ? 'never' : 'always'}
+        resize={VIEWPORT_RESIZE}
+        onCreated={({ gl }) => {
+          gl.setClearColor(cssVar('--viewport', '#e6e3dc'), 1);
+        }}
+        onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })}
+        style={VIEWPORT_STYLE}
+      >
+        <ResumeWhenVisible parked={parked} />
+        <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={clip.near} far={clip.far} position={VIEWPORT_CAM_POS} />
+        <OrthographicCamera makeDefault={ui.ortho} near={-clip.orthoSpan} far={clip.orthoSpan} position={VIEWPORT_CAM_POS} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
+        <CameraClipSync boundSize={boundSize} />
         <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} />
         <Scene model={model} opts={opts} />
         <MeasureTool active={ui.measureMode} />

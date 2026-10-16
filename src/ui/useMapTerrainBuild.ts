@@ -5,15 +5,13 @@ import { useStore } from '../state/store';
 
 /** When the top face has a MapSpec without matching DepthData, build terrain in the browser. */
 export function useMapTerrainBuild() {
-  const project = useStore((s) => s.project);
+  const spec = useStore((s) => s.project.images.top?.map);
+  const depth = useStore((s) => s.project.images.top?.depth);
   const setMapTerrain = useStore((s) => s.setMapTerrain);
   const finishMapTerrainBuild = useStore((s) => s.finishMapTerrainBuild);
   const token = useRef(0);
   const failedKey = useRef<string | null>(null);
 
-  const top = project.images.top;
-  const spec = top?.map;
-  const depth = top?.depth;
   const buildKey = spec ? mapBuildKey(spec) : '';
   const stale = spec && !mapTerrainIsCurrent(spec, depth);
 
@@ -33,6 +31,9 @@ export function useMapTerrainBuild() {
     const key = buildKey;
     setMapTerrain({ phase: 'working', message: 'Fetching elevation and building depth…', error: undefined });
 
+    // Read the project at kickoff so param / override edits during the fetch
+    // do not restart it, and finishMapTerrainBuild merges into the latest store.
+    const project = useStore.getState().project;
     void buildMapTerrainAsset(project, { ...spec, buildKey: key })
       .then((asset) => {
         if (token.current !== id) return;
@@ -51,5 +52,5 @@ export function useMapTerrainBuild() {
           error: e.message || String(e),
         });
       });
-  }, [stale, spec, depth, buildKey, project, setMapTerrain, finishMapTerrainBuild]);
+  }, [stale, spec, depth, buildKey, setMapTerrain, finishMapTerrainBuild]);
 }
