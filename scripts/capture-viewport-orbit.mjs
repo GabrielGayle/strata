@@ -95,6 +95,11 @@ async function setupPage(page, presetId) {
   await expectStatusReady(page);
 
   if (presetId === 'map-x18-frame') {
+    console.log('map: Presets › Stamped stack (flat layers + top carve)');
+    await page.getByRole('button', { name: /Presets/i }).click();
+    await page.getByRole('button', { name: /Stamped stack/i }).click();
+    await expectStatusReady(page, 120000);
+
     console.log('map: opening Map tab');
     await page.getByRole('button', { name: /Maps/i }).click();
     await page.getByRole('button', { name: /Open Map tab/i }).click();
@@ -110,14 +115,15 @@ async function setupPage(page, presetId) {
     console.log('map: back to 3D');
     await show3dTab(page);
     await waitForViewportCanvas(page);
-    await expectStatusReady(page, 180000);
     await page.waitForFunction(
       () => {
         const t = document.querySelector('.overlay.bl.info')?.textContent ?? '';
-        return t.includes('plates') && !t.includes('800 × 300');
+        return /layers/i.test(t) && /face to face/i.test(t);
       },
+      undefined,
       { timeout: 180000 },
     );
+    await page.getByRole('button', { name: 'Iso', exact: true }).click().catch(() => {});
     await page.waitForTimeout(2500);
     return;
   }
