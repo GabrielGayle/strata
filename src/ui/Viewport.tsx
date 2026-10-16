@@ -10,6 +10,8 @@ import CameraClipSync from './CameraClipSync';
 import { clipPlanesForBounds } from './viewportClip';
 import { gizmoIsBusy, moveTarget, useGizmoClearance } from './PlateGizmo';
 import { useModel, fmt } from './model';
+import { isMapDepth } from '../core/mapPlateHeight';
+import { plateOutlineYRangeMm } from '../core/slicer';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
 import { SunBar } from './SunStudy';
@@ -159,6 +161,8 @@ export default function Viewport() {
   const hMax = heights.length ? Math.max(...heights) : 0;
   const boundSize = modelBounds(model).size;
   const clip = useMemo(() => clipPlanesForBounds(boundSize), [boundSize]);
+  const mapFace = useStore((s) => isMapDepth(s.project.images.top?.depth) && !!s.project.images.top?.map);
+  const terrainY = mapFace ? plateOutlineYRangeMm(model.sliced.plates) : null;
   return (
     <>
       {/* Linear clip + ViewportGrid depthWrite. logarithmicDepthBuffer writes gl_FragDepth (kills early-Z) and drei Grid has no logdepthbuf chunks. */}
@@ -233,8 +237,19 @@ export default function Viewport() {
         <span>
           {model.sliced.plates.length} {v.sliceMode === 'flat' ? 'layers' : 'plates'} × {fmt(v.thickness, 1)} mm {v.sliceMode === 'flat' ? 'face to face' : v.sliceMode !== 'radial' ? `@ ${fmt(v.pitch, 2)} pitch` : 'radial'}
         </span>
-        <span data-testid="plate-height-range">
-          {v.sliceMode === 'flat' ? `stack height ${fmt(model.sliced.plates.length * v.thickness, 0)} mm` : `plate height ${fmt(hMin, 0)}–${fmt(hMax, 0)} mm`}
+        <span
+          data-testid="plate-height-range"
+          title={
+            terrainY
+              ? 'Lowest to highest terrain on the cut outlines, above the concrete. A plate’s bounding-box top can sit higher than a valley on the same plate.'
+              : undefined
+          }
+        >
+          {v.sliceMode === 'flat'
+            ? `stack height ${fmt(model.sliced.plates.length * v.thickness, 0)} mm`
+            : terrainY
+              ? `terrain ${fmt(terrainY.lo, 0)}–${fmt(terrainY.hi, 0)} mm`
+              : `plate height ${fmt(hMin, 0)}–${fmt(hMax, 0)} mm`}
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
       </div>

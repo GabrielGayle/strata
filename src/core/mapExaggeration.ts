@@ -30,6 +30,21 @@ export function exaggerationReadout(factor: number): string {
   return `×${n}`;
 }
 
+/**
+ * Map-tab stack line. Uses the same true (max − min) m as plate maths, not p98−p2
+ * and not plateCount × thickness.
+ */
+export function formatExaggerationStackReadout(
+  factor: number,
+  reliefM: number,
+  mapWidthM: number,
+  masterWidthMm: number,
+): string {
+  const scale = mapWidthM > 0 && masterWidthMm > 0 ? masterWidthMm / mapWidthM : 0;
+  const stackMm = Math.max(0, reliefM) * Math.max(0, factor) * scale;
+  return `${exaggerationReadout(factor)} · ${Math.round(reliefM)} m relief → ${Math.round(stackMm)} mm stack on ${Math.round(masterWidthMm)} mm`;
+}
+
 function percentile(vals: number[], p: number): number {
   if (!vals.length) return 0;
   const sorted = [...vals].sort((a, b) => a - b);
@@ -37,6 +52,7 @@ function percentile(vals: number[], p: number): number {
   return sorted[idx];
 }
 
+/** Robust relief (p98 − p2). Used only to pick the auto exaggeration *factor*. */
 export function reliefMetres(grid: Float32Grid): number {
   const finite: number[] = [];
   for (const v of grid.data) if (Number.isFinite(v)) finite.push(v);
@@ -44,22 +60,46 @@ export function reliefMetres(grid: Float32Grid): number {
   return Math.max(0, percentile(finite, 98) - percentile(finite, 2));
 }
 
+/** True (max − min) metres — same measure as `mapOrtho.reliefM` / plate heights. */
+export function trueReliefMetres(grid: Float32Grid): number {
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  for (const v of grid.data) {
+    if (!Number.isFinite(v)) continue;
+    if (v < zMin) zMin = v;
+    if (v > zMax) zMax = v;
+  }
+  if (!(zMax >= zMin) || !Number.isFinite(zMin)) return 0;
+  return zMax - zMin;
+}
+
 export function resolveExaggerationFactor(
   spec: { exaggeration: number | 'auto' },
   grid: Float32Grid,
   stack: { plateCount: number; thicknessMm: number; masterWidthMm: number },
 ): { factor: number; readout: string; auto: boolean } {
-  if (typeof spec.exaggeration === 'number' && spec.exaggeration > 0) {
-    const factor = Math.min(EXAGGERATION_MAX, Math.max(EXAGGERATION_MIN, spec.exaggeration));
-    return { factor, readout: exaggerationReadout(factor), auto: false };
-  }
   const { widthM } = gridMetricWidthHeight(grid);
   const mapWidthM = Math.max(widthM, 1);
+  if (typeof spec.exaggeration === 'number' && spec.exaggeration > 0) {
+    const factor = Math.min(EXAGGERATION_MAX, Math.max(EXAGGERATION_MIN, spec.exaggeration));
+    return {
+      factor,
+      readout: formatExaggerationStackReadout(factor, trueReliefMetres(grid), mapWidthM, stack.masterWidthMm),
+      auto: false,
+    };
+  }
+  const robustRelief = Math.max(1, reliefMetres(grid));
+  const stackHeightMm = stack.plateCount * stack.thicknessMm;
   const factor = computeAutoExaggeration({
-    reliefM: Math.max(1, reliefMetres(grid)),
-    stackHeightMm: stack.plateCount * stack.thicknessMm,
+    reliefM: robustRelief,
+    stackHeightMm,
     mapWidthM,
     masterWidthMm: stack.masterWidthMm,
   });
-  return { factor, readout: exaggerationReadout(factor), auto: true };
+  // ×18–21 is the A3 / 30×3 mm plan number (420 mm, ~35 m, ~3.25 km). Default
+  // Vermilion 40 is 800 mm × 40×3 mm — the same formula lands near ×11 for
+  // live EA 1 m relief on the full Neasden bbox. Factor from p98−p2; readout
+  // and plates use true max − min.
+  const readout = formatExaggerationStackReadout(factor, trueReliefMetres(grid), mapWidthM, stack.masterWidthMm);
+  return { factor, readout, auto: true };
 }

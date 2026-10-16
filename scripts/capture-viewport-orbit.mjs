@@ -2,9 +2,9 @@
  * Orbit the 3D viewport and save PNG frames (no video).
  * Usage:
  *   npm run build && node scripts/capture-viewport-orbit.mjs after default
- *   npm run build && node scripts/capture-viewport-orbit.mjs after map-x18-frame
- * map-x18-frame uses the live network (no VITE_E2E_MAP_FIXTURES). Build without that env.
- * preset: default | map-x18-frame
+ *   npm run build && node scripts/capture-viewport-orbit.mjs after map-x21-frame
+ * map-x21-frame uses the live network (no VITE_E2E_MAP_FIXTURES). Build without that env.
+ * preset: default | map-x21-frame | map-x18-frame (alias of map-x21-frame)
  */
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
@@ -16,7 +16,8 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 4174;
 const BASE = `http://127.0.0.1:${PORT}/`;
 const phase = process.argv[2] === 'after' ? 'after' : 'before';
-const preset = process.argv[3] ?? 'default';
+const presetArg = process.argv[3] ?? 'default';
+const preset = presetArg === 'map-x18-frame' ? 'map-x21-frame' : presetArg;
 const OUT = path.join(root, 'docs/screenshots/viewport', phase, preset);
 
 async function expectStatusReady(page, timeout = 240000) {
@@ -46,9 +47,38 @@ function waitForUrl(url, ms = 120000) {
   });
 }
 
+function seedAllTourSeenKeys() {
+  try {
+    const keys = new Set(['strata:tour-seen']);
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && /tour-seen/i.test(k)) keys.add(k);
+    }
+    for (const k of keys) localStorage.setItem(k, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
 async function dismissTour(page) {
-  const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible().catch(() => false)) await skip.click();
+  const dlg = page.getByRole('dialog', { name: /Tour:/ });
+  for (let n = 0; n < 8; n++) {
+    const visible = await dlg
+      .waitFor({ state: 'visible', timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (visible) {
+      await dlg.getByRole('button', { name: 'Skip' }).click();
+      await dlg.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+      continue;
+    }
+    const skip = page.getByRole('button', { name: 'Skip' });
+    if (await skip.isVisible().catch(() => false)) {
+      await skip.click();
+      continue;
+    }
+    return;
+  }
 }
 
 async function waitForViewportCanvas(page) {
@@ -97,7 +127,7 @@ async function setupPage(page, presetId) {
   await dismissTour(page);
   await expectStatusReady(page);
 
-  if (presetId === 'map-x18-frame') {
+  if (presetId === 'map-x21-frame' || presetId === 'map-x18-frame') {
     console.log('map: Presets › Stamped stack (flat layers + top carve)');
     await page.getByRole('button', { name: /Presets/i }).click();
     await page.getByRole('button', { name: /Stamped stack/i }).click();
@@ -110,11 +140,11 @@ async function setupPage(page, presetId) {
     console.log('map: Neasden preset');
     await page.locator('.map-view').getByRole('button', { name: 'Neasden', exact: true }).click();
     await waitMapReady(page, 'Exaggeration');
-    console.log('map: set ×18 + sunken frame');
-    await page.getByLabel('Vertical exaggeration').selectOption('18');
-    await waitMapReady(page, '×18');
+    console.log('map: set ×21 + sunken frame');
+    await page.getByLabel('Vertical exaggeration').selectOption('21');
+    await waitMapReady(page, '×21');
     await page.locator('label').filter({ hasText: 'Sunken concrete frame' }).locator('input[type=checkbox]').check({ force: true });
-    await waitMapReady(page, '×18');
+    await waitMapReady(page, '×21');
     console.log('map: back to 3D');
     await show3dTab(page);
     await waitForViewportCanvas(page);
@@ -174,6 +204,9 @@ async function orbitFrames(page, outDir) {
     await page.waitForTimeout(400);
     await clipScreenshot(page, path.join(outDir, `orbit-${String(i + 1).padStart(2, '0')}.jpg`));
   }
+  await page.getByRole('button', { name: 'Top', exact: true }).click();
+  await page.waitForTimeout(1200);
+  await clipScreenshot(page, path.join(outDir, 'top-down.jpg'));
 }
 
 async function main() {
@@ -189,9 +222,7 @@ async function main() {
     const context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
     });
-    await context.addInitScript(() => {
-      localStorage.setItem('strata:tour-seen', '1');
-    });
+    await context.addInitScript(seedAllTourSeenKeys);
     const page = await context.newPage();
     await setupPage(page, preset);
     await orbitFrames(page, OUT);

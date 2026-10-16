@@ -1,13 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
+import { dismissTour, seedAllTourSeenKeys } from './map-helpers';
 
 type MountWin = Window & { __STRATA_SCENE_MOUNT_COUNT?: number };
 
 async function dismissTourAndWait(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem('strata:tour-seen', '1');
-  });
+  await page.addInitScript(seedAllTourSeenKeys);
   await page.goto('/');
   await page.waitForSelector('.app.window', { timeout: 120_000 });
+  await dismissTour(page, { waitMs: 2_000 });
   await page.waitForSelector('[data-testid="viewport-3d"] canvas', { timeout: 120_000 });
   await page.waitForFunction(() => ((window as MountWin).__STRATA_SCENE_MOUNT_COUNT ?? 0) >= 1, {
     timeout: 120_000,
