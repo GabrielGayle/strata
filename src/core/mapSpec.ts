@@ -1,4 +1,5 @@
 // Map input: open elevation and engraving spec stored on an ImageAsset (like pattern / sound / depth).
+import type { SerializedMapEngraveArt } from './mapOsmEngrave';
 export type MapSource =
   | 'auto'
   | 'scot-dtm'
@@ -13,7 +14,7 @@ export type MapWater = 'flat' | 'bathy' | 'raw';
 export type LayerBudgetMode = 'equal' | 'quantile' | 'jenks';
 
 export interface EngraveSpec {
-  /** Gabriel 16 Oct 2026: engraving on by default; no-op in the pipeline until OSM engrave lands. */
+  /** Engraving on by default when map mode is used. */
   enabled: boolean;
   /** Feature groups: roads, water, title, compass, contours, … */
   features: string[];
@@ -54,6 +55,8 @@ export interface MapSpec {
   resolvedSource?: MapSource;
   /** Non-fatal fetch / resolution warnings for the UI or CLI. */
   sourceWarnings?: string[];
+  /** OSM vector engrave linework in depth-image pixel space (ticket 13). */
+  engraveArt?: SerializedMapEngraveArt;
 }
 
 export const TERRARIUM_ATTRIBUTION = [
@@ -168,6 +171,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   const sourceWarnings = Array.isArray(o.sourceWarnings)
     ? o.sourceWarnings.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
     : undefined;
+  const engraveArt = cleanEngraveArt(o.engraveArt);
   return {
     kind: 'map',
     bbox,
@@ -189,7 +193,47 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(simplifyLostFeatures != null && simplifyLostFeatures >= 0 ? { simplifyLostFeatures } : {}),
     ...(resolvedSource ? { resolvedSource } : {}),
     ...(sourceWarnings?.length ? { sourceWarnings } : {}),
+    ...(engraveArt ? { engraveArt } : {}),
   };
+}
+
+function cleanEngraveArt(raw: unknown): SerializedMapEngraveArt | undefined {
+  const o = (raw ?? null) as Record<string, unknown> | null;
+  if (!o || typeof o !== 'object') return undefined;
+  const imageW = num(o.imageW);
+  const imageH = num(o.imageH);
+  if (imageW == null || imageH == null || imageW < 1 || imageH < 1) return undefined;
+  const lines: SerializedMapEngraveArt['lines'] = [];
+  if (Array.isArray(o.lines)) {
+    for (const ln of o.lines) {
+      if (!ln || typeof ln !== 'object') continue;
+      const rec = ln as Record<string, unknown>;
+      const kind = rec.kind === 'road' || rec.kind === 'water' || rec.kind === 'rail' || rec.kind === 'other' ? rec.kind : 'other';
+      const path: [number, number][] = [];
+      if (Array.isArray(rec.path)) {
+        for (const pt of rec.path) {
+          if (!Array.isArray(pt) || pt.length < 2) continue;
+          const x = num(pt[0]);
+          const y = num(pt[1]);
+          if (x != null && y != null) path.push([x, y]);
+        }
+      }
+      if (path.length >= 2) lines.push({ kind, path });
+    }
+  }
+  const texts: SerializedMapEngraveArt['texts'] = [];
+  if (Array.isArray(o.texts)) {
+    for (const t of o.texts) {
+      if (!t || typeof t !== 'object') continue;
+      const rec = t as Record<string, unknown>;
+      const text = typeof rec.text === 'string' ? rec.text : '';
+      const nx = num(rec.nx);
+      const ny = num(rec.ny);
+      if (text && nx != null && ny != null) texts.push({ text, nx, ny });
+    }
+  }
+  const osmAttribution = typeof o.osmAttribution === 'string' ? o.osmAttribution : '© OpenStreetMap contributors (ODbL)';
+  return { imageW, imageH, lines, texts, osmAttribution };
 }
 
 export function parseLayerBudget(text: string): LayerBudgetMode {

@@ -50,7 +50,7 @@ describe('map source auto-pick (T23)', () => {
   it('buildMapBundle uses regional fixture grid when loader supplies data', async () => {
     const regionalLoader = async (source: string) => loadBuiltinRegionalFixture(source as 'scot-dtm');
     const bundle = await buildMapBundle(
-      defaultMapSpec({ bbox: KINGSBARNS_BBOX, source: 'auto', resM: 12 }),
+      defaultMapSpec({ bbox: KINGSBARNS_BBOX, source: 'auto', resM: 12, engrave: { enabled: false, features: [] } }),
       { regionalLoader },
     );
     expect(bundle.asset.map?.resolvedSource).toBe('scot-dtm');

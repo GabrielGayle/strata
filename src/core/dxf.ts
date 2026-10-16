@@ -11,6 +11,8 @@ export interface Layer {
 export const LAYERS = {
   CUT: { name: 'CUT', color: 1 },
   ETCH: { name: 'ETCH', color: 5 },
+  /** Map / OSM vector engraving (ticket 13+). */
+  ENGRAVE: { name: 'ENGRAVE', color: 4 },
   BEND: { name: 'BEND', color: 3 },
   SHEET: { name: 'SHEET', color: 8 },
   NOTE: { name: 'NOTE', color: 2 },

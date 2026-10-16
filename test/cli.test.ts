@@ -8,8 +8,13 @@ import { PNG } from 'pngjs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { applyMasterSizeCli, loadProject, main, parseCliArgs, type CliIo } from '../src/cli';
 import { MAP_RENDER_HEIGHT, MAP_RENDER_WIDTH } from '../src/core/mapRender';
+import { setOverpassFetcher } from '../src/core/mapOverpass';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
 import { fixtureTileFetcher } from './map-cli-fixtures';
+
+const overpassNeasdenFixture = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./fixtures/map/overpass-neasden.json', import.meta.url)), 'utf8'),
+);
 import { NEASDEN_BBOX, NEASDEN_FAST_BBOX } from './map-fixtures';
 import { evaluateParams } from '../src/core/params';
 import { buildZip } from '../src/core/exporters';
@@ -341,8 +346,14 @@ function mapCop30CliArgs(project: string, out: string, bbox: [number, number, nu
 
 // Module-level tile fetcher override is shared; run map CLI cases sequentially.
 describe.sequential('cli map', () => {
-  beforeEach(() => setMapTileFetcher(fixtureTileFetcher));
-  afterEach(() => setMapTileFetcher(null));
+  beforeEach(() => {
+    setMapTileFetcher(fixtureTileFetcher);
+    setOverpassFetcher(async () => overpassNeasdenFixture);
+  });
+  afterEach(() => {
+    setMapTileFetcher(null);
+    setOverpassFetcher(null);
+  });
 
   it('builds Neasden from fixtures offline with --map flags', async () => {
     const dir = scratch();

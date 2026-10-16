@@ -515,7 +515,10 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
           cacheDir: args.map.cacheDir,
           layerBudget: args.map.layerBudget,
         });
-        const bundle = await buildMapBundle(spec, { stack: mapStackFromProject(project, args.map.layerBudget) });
+        const bundle = await buildMapBundle(spec, {
+          stack: mapStackFromProject(project, args.map.layerBudget),
+          allowOverpassNetwork: true,
+        });
         project.images.top = bundle.asset;
         if (args.map.title) project.name = args.map.title;
         if (args.render) {

@@ -106,6 +106,20 @@ Browser fetches to `environment.data.gov.uk`, `remotesensingdata.gov.scot`, `dat
 
 Resolved source and warnings are stored on `MapSpec.resolvedSource` and `MapSpec.sourceWarnings`.
 
+## OpenStreetMap — map engraving (ticket T13+)
+
+| Field | Value |
+|---|---|
+| **API** | [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) (`https://overpass-api.de/api/interpreter`) |
+| **User-Agent** | `StrataMap/0.1` (see `STRATA_OVERPASS_UA` in `src/core/mapOverpass.ts`) |
+| **Licence** | [Open Database Licence (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
+| **Attribution (required)** | **© OpenStreetMap contributors** — link [openstreetmap.org/copyright](https://www.openstreetmap.org/copyright) |
+| **Produced work** | Laser-engraved linework on plates is a *produced work*; the engraved product must carry ODbL attribution (etched on the back plate and listed in the build pack / BOM). |
+| **Share-alike** | If you redistribute OSM-derived databases built from our extracts, ODbL share-alike may apply; the physical map product attribution requirement is separate from SA on databases. |
+| **Cache** | `--map-cache <dir>` stores `{sha256}.overpass.json` tiles; tests use `test/fixtures/map/overpass-*.json` only. |
+
+Strata stores the attribution line on `MapSpec.attribution` and in `MapEngraveArt.osmAttribution` when OSM linework is fetched.
+
 ## Excluded in this product
 
 Google, Cesium, and Mapbox terrain products are **not** used (licence / ToS).

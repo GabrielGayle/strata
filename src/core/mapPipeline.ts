@@ -10,6 +10,9 @@ import { simplifyMetricGrid } from './mapSimplify';
 import { fetchRegionalLidarGrid, isRegionalLidarSource, type RegionalGridLoader } from './mapRegionalLidar';
 import { pickAutoMapSource, pickExplicitSource } from './mapSourcePick';
 import { sourceMeta } from './mapSourceRegistry';
+import { buildMapEngraveArt } from './mapEngraveBuild';
+import { serializeMapEngraveArt } from './mapOsmEngrave';
+import type { OverpassFetcher } from './mapOverpass';
 import type { MapSource } from './mapSpec';
 import type { DepthData } from './depth';
 import type { ImageAsset, Project } from './project';
@@ -55,6 +58,9 @@ export interface BuildMapImageOptions {
   fetch?: TileFetcher;
   stack?: MapStackContext;
   regionalLoader?: RegionalGridLoader;
+  overpass?: OverpassFetcher;
+  /** When true, Overpass may use the network if the cache misses (CLI default). */
+  allowOverpassNetwork?: boolean;
 }
 
 export interface MapBuildResult {
@@ -123,11 +129,23 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   metric = simplified.grid;
   const { factor, readout } = resolveExaggerationFactor(spec, metric, stack);
   const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384 });
+  let engraveArt: MapSpec['engraveArt'];
+  if (spec.engrave?.enabled) {
+    try {
+      const art = await buildMapEngraveArt(spec, depth, {
+        cacheDir: spec.cacheDir ?? opts.cacheDir,
+        overpass: opts.overpass,
+        allowNetwork: opts.allowOverpassNetwork,
+      });
+      if (art) engraveArt = serializeMapEngraveArt(art);
+    } catch (e) {
+      warnings.push(`OSM engrave skipped: ${(e as Error).message}`);
+    }
+  }
   const stored: MapSpec = {
     ...spec,
     crs: metric.crs,
     fetchedAt: new Date().toISOString(),
-    attribution: mergeAttribution(spec, resolved.effective),
     layerBudget: budgetMode,
     layerBreaksM: budget.breaksM,
     exaggerationFactor: factor,
@@ -136,6 +154,10 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     simplifyLostFeatures: simplified.lostFeatures,
     resolvedSource: resolved.effective,
     sourceWarnings: warnings.length ? warnings : undefined,
+    ...(engraveArt ? { engraveArt } : {}),
+    attribution: mergeAttribution(spec, resolved.effective).concat(
+      engraveArt ? ['Map features © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), ODbL'] : [],
+    ),
   };
   const asset: ImageAsset = {
     name: spec.title?.trim() || 'Map terrain',
