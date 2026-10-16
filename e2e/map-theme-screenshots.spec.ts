@@ -6,6 +6,7 @@ import { applyNeasdenDesign, openWorkspaceTab, setThemePreset, waitForViewportRe
 const shotDir = join(process.cwd(), 'docs/screenshots/map');
 
 test('capture map UI screenshots in light and dark themes', async ({ page }) => {
+  test.setTimeout(420_000);
   await page.goto('/');
   await page.waitForSelector('.app.window', { timeout: 60_000 });
   await applyNeasdenDesign(page);

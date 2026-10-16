@@ -5,7 +5,7 @@ import { applyNeasdenDesign, openWorkspaceTab, setThemePreset, waitForViewportRe
 
 const shotDir = join(process.cwd(), 'docs/screenshots/map-live');
 
-test.skip(!!process.env.VITE_E2E_MAP_FIXTURES, 'Live screenshots require real network (no VITE_E2E_MAP_FIXTURES)');
+test.skip(!process.env.LIVE_MAP_SCREENSHOTS, 'Set LIVE_MAP_SCREENSHOTS=1 to capture docs/screenshots/map-live (real network)');
 
 test('capture live map UI screenshots', async ({ page }) => {
   await page.goto('/');
