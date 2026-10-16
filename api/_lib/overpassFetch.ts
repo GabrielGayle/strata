@@ -78,14 +78,15 @@ export async function postOverpassEndpoint(
  */
 export async function fetchOverpassWithMirrors(
   query: string,
-  opts: { fetchImpl?: typeof fetch; timeoutMs?: number; mirrors?: readonly string[] } = {},
+  opts: { fetchImpl?: typeof fetch; timeoutMs?: number; mirrors?: readonly string[]; backoffMs?: readonly number[] } = {},
 ): Promise<unknown> {
   const mirrors = opts.mirrors ?? OVERPASS_MIRRORS;
+  const backoff = opts.backoffMs ?? BACKOFF_MS;
   let last: Error | null = null;
   let attempt = 0;
   for (let pass = 0; pass < 2; pass++) {
     for (const endpoint of mirrors) {
-      const wait = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)] ?? 0;
+      const wait = backoff[Math.min(attempt, backoff.length - 1)] ?? 0;
       if (wait) await sleep(wait);
       attempt += 1;
       try {
