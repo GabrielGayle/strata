@@ -134,6 +134,33 @@ export function formatExtentReadout(e: DepthExtent): string {
   return `~${w} wide, ${dep} relief range, ${ratio}`;
 }
 
+export const MAP_ORTHO_NOTE = 'Extents from map ortho grid (exact ground metres on the bbox).';
+
+export function measureMapOrthoExtent(depth: DepthData): DepthExtent | null {
+  const m = depth.mapOrtho;
+  if (!m || m.source !== 'map') return null;
+  const widthM = Math.max(1e-6, m.widthM);
+  const heightM = Math.max(1e-6, m.heightM);
+  const deltaZM = Math.max(1e-6, m.reliefM);
+  return {
+    widthM,
+    heightM,
+    deltaZM,
+    aspectWH: widthM / heightM,
+    reliefToWidth: deltaZM / widthM,
+    focalPx: depth.w,
+    focalSource: 'fov60',
+    sampleCount: depth.w * depth.h,
+  };
+}
+
+export function formatMapOrthoReadout(depth: DepthData): string {
+  const m = depth.mapOrtho;
+  if (!m) return '';
+  const ext = measureMapOrthoExtent(depth)!;
+  return `${m.bboxKm}, ${formatMetres(ext.deltaZM)} relief`;
+}
+
 function rotSwap(deg: number): boolean {
   return ((Math.round(deg / 90) % 2) + 2) % 2 === 1;
 }
@@ -189,10 +216,49 @@ export function previewAutoDimension(
   raw: Record<string, RawValue>,
   opts: AutoDimensionOptions = {},
 ): AutoDimensionPreview {
-  const note = PERSPECTIVE_NOTE;
   if (!depth) {
-    return { extent: null as unknown as DepthExtent, readout: '', patch: {}, diff: [], clamped: [], note, ok: false, reason: 'No metric depth on this image' };
+    return {
+      extent: null as unknown as DepthExtent,
+      readout: '',
+      patch: {},
+      diff: [],
+      clamped: [],
+      note: PERSPECTIVE_NOTE,
+      ok: false,
+      reason: 'No metric depth on this image',
+    };
   }
+  const mapOrtho = measureMapOrthoExtent(depth);
+  if (mapOrtho) {
+    const note = MAP_ORTHO_NOTE;
+    const exaggeration = opts.reliefExaggeration ?? 1;
+    const ev = evaluateParams(raw);
+    const v = ev.values;
+    const readout = formatMapOrthoReadout(depth);
+    const patch: Record<string, RawValue> = {};
+    const diff: ParamDiffLine[] = [];
+    const clamped: string[] = [];
+    const alongWidth = v.sliceMode !== 'radial' && v.sliceAxis === 'width';
+    const runKey = alongWidth ? 'baseWidth' : 'baseLength';
+    const acrossKey = alongWidth ? 'baseLength' : 'baseWidth';
+    const runMm = v[runKey as keyof Values] as number;
+    const aspect = mapOrtho.aspectWH;
+    const setNum = (id: string, val: number) => {
+      const { v: clampedVal, clamped: was } = clampNum(id, val);
+      if (was) clamped.push(id);
+      const before = strVal(v, id);
+      patch[id] = String(clampedVal);
+      if (before !== String(clampedVal)) diff.push(diffLine(id, before, String(clampedVal), was));
+    };
+    if (face === 'top') {
+      if (v.imgTopMode === 'off') patch.imgTopMode = 'carve';
+      patch.imgFit = 'width';
+      setNum(acrossKey, runMm * aspect);
+      setNum('topDepth', reliefMm(mapOrtho, Math.max(runMm, v[acrossKey as keyof Values] as number), exaggeration));
+    }
+    return { extent: mapOrtho, readout, patch, diff, clamped, note, ok: true };
+  }
+  const note = PERSPECTIVE_NOTE;
   const extent = measureDepthExtent(depth, opts);
   if (!extent) {
     return { extent: null as unknown as DepthExtent, readout: '', patch: {}, diff: [], clamped: [], note, ok: false, reason: 'Too few depth samples (need a subject mask or nearer depth)' };

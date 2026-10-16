@@ -31,6 +31,15 @@ export interface DepthSettings {
 }
 
 /** Metric depth as sent by the service: uint16 per pixel, 0 = no depth, 1..65535 linear over minM..maxM. */
+/** Orthographic map terrain metadata (ticket T17) — exact ground metres, no pinhole back-projection. */
+export interface MapOrthoMeta {
+  source: 'map';
+  widthM: number;
+  heightM: number;
+  reliefM: number;
+  bboxKm: string;
+}
+
 export interface DepthData {
   w: number;
   h: number;
@@ -48,6 +57,7 @@ export interface DepthData {
   /** EXIF focal length in pixels on the source photo, when known. */
   exifFocalLengthPx?: number;
   settings: DepthSettings;
+  mapOrtho?: MapOrthoMeta;
 }
 
 export const DEPTH_RESOLUTIONS = [128, 256, 384, 512];

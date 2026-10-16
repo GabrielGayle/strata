@@ -1,5 +1,5 @@
 // Elevation grid (metres AMSL) → DepthData for the existing image / slicer pipeline.
-import type { DepthData, DepthSettings } from './depth';
+import type { DepthData, DepthSettings, MapOrthoMeta } from './depth';
 import { defaultDepthSettings } from './depth';
 import type { Float32Grid } from './mapGrid';
 import { gridMetricWidthHeight } from './mapProject';
@@ -29,6 +29,7 @@ export interface MapToDepthOptions {
   /** Vertical exaggeration factor (1 = true scale in depth encoding). */
   exaggeration?: number;
   resolution?: number;
+  bbox?: [number, number, number, number];
 }
 
 /**
@@ -78,6 +79,19 @@ export function mapGridToDepth(grid: Float32Grid, opts: MapToDepthOptions = {}):
     resolution: opts.resolution ?? 384,
     matte: false,
   };
+  let mapOrtho: MapOrthoMeta | undefined;
+  if (opts.bbox) {
+    let zMin = finite[0];
+    for (const z of finite) if (z < zMin) zMin = z;
+    const reliefM = Math.max(0, zTop - zMin);
+    mapOrtho = {
+      source: 'map',
+      widthM,
+      heightM,
+      reliefM,
+      bboxKm: `${(widthM / 1000).toFixed(2)} × ${(heightM / 1000).toFixed(2)} km`,
+    };
+  }
   const depth: DepthData = {
     w: grid.w,
     h: grid.h,
@@ -87,6 +101,7 @@ export function mapGridToDepth(grid: Float32Grid, opts: MapToDepthOptions = {}):
     farM,
     data: b64FromU16(words),
     settings,
+    ...(mapOrtho ? { mapOrtho } : {}),
   };
   return {
     depth,
