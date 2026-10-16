@@ -48,10 +48,9 @@ describe('quick fills', () => {
 
 describe('mixed metals through the pipeline', () => {
   const mixed = (base: Project = newProject()): Project => {
-    const p = { ...base, params: { ...base.params, plateCount: '8', insShape: 'none', anchorHoles: '0' } };
     const app = defaultAppearance();
-    const keys = Array.from({ length: 4 }, (_, i) => `P${i * 2 + 1}`);
-    return { ...p, appearance: assignPlates(app, keys, 'b1') };
+    const keys = Array.from({ length: 20 }, (_, i) => `P${i * 2 + 1}`);
+    return { ...base, appearance: assignPlates(app, keys, 'b1') };
   };
 
   it('cuts each metal on its own sheets and weighs it by its own density', () => {
@@ -71,7 +70,9 @@ describe('mixed metals through the pipeline', () => {
   });
 
   it('puts each metal in its own folder in the ZIP', () => {
-    const p = mixed();
+    const small = newProject();
+    small.params = { ...small.params, plateCount: '8', insShape: 'none', anchorHoles: '0' };
+    const p = mixed(small);
     const m = createPipeline()(p, assets);
     const files = Object.keys(unzipSync(buildZip(m, p)));
     expect(files.some((f) => f.startsWith('laser/parts/aluminium/'))).toBe(true);
@@ -79,8 +80,8 @@ describe('mixed metals through the pipeline', () => {
     expect(files).toContain('laser/sheets/aluminium/sheet-01.dxf');
     expect(files).toContain('laser/sheets/corten/sheet-01.dxf');
     // one metal keeps the old flat layout
-    const plain = createPipeline()(newProject(), assets);
-    expect(Object.keys(unzipSync(buildZip(plain, newProject())))).toContain('laser/sheets/sheet-01.dxf');
+    const plain = createPipeline()(small, assets);
+    expect(Object.keys(unzipSync(buildZip(plain, small)))).toContain('laser/sheets/sheet-01.dxf');
   });
 
   it('prices each metal on its own rates with one order minimum', () => {
