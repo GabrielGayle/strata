@@ -1,0 +1,16 @@
+{
+  "version": 0.6,
+  "generator": "Strata fixture",
+  "elements": [
+    {
+      "type": "way",
+      "id": 10,
+      "tags": { "golf": "fairway" },
+      "geometry": [
+        { "lat": 51.552, "lon": -0.258 },
+        { "lat": 51.554, "lon": -0.252 },
+        { "lat": 51.556, "lon": -0.255 }
+      ]
+    }
+  ]
+}
