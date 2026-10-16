@@ -81,7 +81,7 @@ const USAGE = `Usage:
   npm run cli -- <project.json> --out <dir> [--preset <name>] [--size <id>] [--orientation portrait|landscape]
                  [--image side=path.jpg] [--rates rates.json]
                  [--map <title>] [--bbox west,south,east,north]
-                 [--map-source auto|ea-dtm|ea-dsm|cop30|terrarium]
+                 [--map-source auto|scot-dtm|wales-dtm|ni-dtm|ea-dtm|ea-dsm|cop30|terrarium]
                  [--map-res <metres>] [--exaggeration auto|<n>] [--layer-budget equal|quantile|jenks]
                  [--engrave on|off|roads,water,...]
                  [--map-cache <dir>] [--render <out.png>]
@@ -95,8 +95,9 @@ A project may set "preset"; parameters in the file override the preset. --preset
 ratio sizes keep the current long edge. Only the outline changes (thickness and plate count stay).
 --orientation is portrait (default) or landscape. Applied after the project file and --preset.
 --image replaces the side, front or top picture. --rates overrides price-estimate rates.
---map with --bbox fetches open terrain (terrarium in this release) into the top face DepthData.
-Non-terrarium sources are accepted but exit with a not-yet-implemented message. --engrave is stored
+--map with --bbox fetches open terrain into the top face DepthData (auto picks UK LiDAR where catalogued).
+Regional LiDAR adapters use offline fixtures in tests; production COG/WMS reads are stubbed until later tickets.
+--engrave is stored
 on the MapSpec (default on); engraving is a no-op until a later release.
 Unknown parameters and formula errors exit 1 and write nothing. Clamped values are warnings.
 `;

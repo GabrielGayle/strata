@@ -1,5 +1,13 @@
 // Map input: open elevation and engraving spec stored on an ImageAsset (like pattern / sound / depth).
-export type MapSource = 'auto' | 'ea-dtm' | 'ea-dsm' | 'cop30' | 'terrarium';
+export type MapSource =
+  | 'auto'
+  | 'scot-dtm'
+  | 'wales-dtm'
+  | 'ni-dtm'
+  | 'ea-dtm'
+  | 'ea-dsm'
+  | 'cop30'
+  | 'terrarium';
 export type MapModel = 'dtm' | 'dsm' | 'dtm+buildings';
 export type MapWater = 'flat' | 'bathy' | 'raw';
 export type LayerBudgetMode = 'equal' | 'quantile' | 'jenks';
@@ -42,6 +50,10 @@ export interface MapSpec {
   layerBreaksM?: number[];
   /** Features dropped by auto-simplify (islands/holes below min area). */
   simplifyLostFeatures?: number;
+  /** Source actually used after auto-pick / fallbacks. */
+  resolvedSource?: MapSource;
+  /** Non-fatal fetch / resolution warnings for the UI or CLI. */
+  sourceWarnings?: string[];
 }
 
 export const TERRARIUM_ATTRIBUTION = [
@@ -93,7 +105,16 @@ function bboxOf(raw: unknown): MapSpec['bbox'] | null {
   return [w, s, e, n];
 }
 
-const SOURCES = new Set<MapSource>(['auto', 'ea-dtm', 'ea-dsm', 'cop30', 'terrarium']);
+const SOURCES = new Set<MapSource>([
+  'auto',
+  'scot-dtm',
+  'wales-dtm',
+  'ni-dtm',
+  'ea-dtm',
+  'ea-dsm',
+  'cop30',
+  'terrarium',
+]);
 const MODELS = new Set<MapModel>(['dtm', 'dsm', 'dtm+buildings']);
 const WATERS = new Set<MapWater>(['flat', 'bathy', 'raw']);
 const BUDGETS = new Set<LayerBudgetMode>(['equal', 'quantile', 'jenks']);
@@ -142,6 +163,11 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ? o.layerBreaksM.map((x) => Number(x)).filter((x) => Number.isFinite(x))
     : undefined;
   const simplifyLostFeatures = num(o.simplifyLostFeatures);
+  const resolvedSource =
+    typeof o.resolvedSource === 'string' && SOURCES.has(o.resolvedSource as MapSource) ? (o.resolvedSource as MapSource) : undefined;
+  const sourceWarnings = Array.isArray(o.sourceWarnings)
+    ? o.sourceWarnings.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
+    : undefined;
   return {
     kind: 'map',
     bbox,
@@ -161,6 +187,8 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(exaggerationReadout ? { exaggerationReadout } : {}),
     ...(layerBreaksM?.length ? { layerBreaksM } : {}),
     ...(simplifyLostFeatures != null && simplifyLostFeatures >= 0 ? { simplifyLostFeatures } : {}),
+    ...(resolvedSource ? { resolvedSource } : {}),
+    ...(sourceWarnings?.length ? { sourceWarnings } : {}),
   };
 }
 

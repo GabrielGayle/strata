@@ -375,18 +375,18 @@ describe('cli map', () => {
     expect(io.err).toMatch(/invalid bbox/i);
   });
 
-  it('accepts cop30 but reports not yet implemented', async () => {
+  it('accepts cop30 and falls back to terrarium with a warning on MapSpec', async () => {
     const dir = scratch();
     const project = join(dir, 'p.json');
     writeFileSync(project, JSON.stringify({ format: 'strata-project', version: 1 }));
+    const out = join(dir, 'out');
     const io = capture();
     const [w, s, e, n] = NEASDEN_BBOX;
     expect(
-      await main([project, '--out', join(dir, 'out'), '--map', 'T', '--bbox', `${w},${s},${e},${n}`, '--map-source', 'cop30'],
-        io,
-      ),
-    ).toBe(1);
-    expect(io.err).toMatch(/not yet implemented/i);
+      await main([project, '--out', out, '--map', 'T', '--bbox', `${w},${s},${e},${n}`, '--map-source', 'cop30'], io),
+    ).toBe(0);
+    const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
+    expect(back.images.top?.map?.sourceWarnings?.some((line) => /falling back to terrarium/i.test(line))).toBe(true);
   });
 
   it('defaults engraving on when --engrave is omitted', () => {
