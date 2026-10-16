@@ -17,7 +17,8 @@ import {
   resolveMasterSizeCli,
 } from './core/masterPresets';
 import { deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
-import { buildMapTopAsset, MapSourceNotImplementedError, mapSpecFromCli } from './core/mapPipeline';
+import { buildMapBundle, MapSourceNotImplementedError, mapSpecFromCli } from './core/mapPipeline';
+import { renderVenueMockup } from './core/mapRender';
 import { parseBbox, parseEngraveFlag, parseExaggeration, parseMapSource, type MapSpec } from './core/mapSpec';
 
 export interface CliIssue {
@@ -81,7 +82,7 @@ const USAGE = `Usage:
                  [--map <title>] [--bbox west,south,east,north]
                  [--map-source auto|ea-dtm|ea-dsm|cop30|terrarium]
                  [--map-res <metres>] [--exaggeration auto|<n>] [--engrave on|off|roads,water,...]
-                 [--map-cache <dir>]
+                 [--map-cache <dir>] [--render <out.png>]
   npm run cli -- params
   npm run cli -- presets
 
@@ -109,6 +110,7 @@ interface Args {
   rates?: string;
   size?: string;
   orientation?: string;
+  render?: string;
   map?: {
     title?: string;
     bbox?: string;
@@ -177,6 +179,8 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--engrave=')) args.map!.engrave = parseEngraveFlag(a.slice(10), true);
     else if (a === '--map-cache') args.map!.cacheDir = take(argv, ++i, a);
     else if (a.startsWith('--map-cache=')) args.map!.cacheDir = a.slice(12);
+    else if (a === '--render') args.render = take(argv, ++i, a);
+    else if (a.startsWith('--render=')) args.render = a.slice(9);
     else if (a === '--help' || a === '-h') return { cmd: 'help', images: {} };
     else throw new Error(`unknown argument '${a}'`);
   }
@@ -405,8 +409,12 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
           engrave: args.map.engrave,
           cacheDir: args.map.cacheDir,
         });
-        project.images.top = await buildMapTopAsset(spec);
+        const bundle = await buildMapBundle(spec);
+        project.images.top = bundle.asset;
         if (args.map.title) project.name = args.map.title;
+        if (args.render) {
+          writeFileSync(args.render, renderVenueMockup({ elevation: bundle.elevation, depth: bundle.depth, title: spec.title }));
+        }
       } catch (e) {
         if (e instanceof MapSourceNotImplementedError) {
           io.stderr(`error: ${e.message}\n`);

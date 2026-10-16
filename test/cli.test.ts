@@ -7,6 +7,7 @@ import { unzipSync } from 'fflate';
 import { PNG } from 'pngjs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { applyMasterSizeCli, loadProject, main, parseCliArgs, type CliIo } from '../src/cli';
+import { MAP_RENDER_HEIGHT, MAP_RENDER_WIDTH } from '../src/core/mapRender';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
 import { fixtureTileFetcher } from './map-cli-fixtures';
 import { NEASDEN_BBOX } from './map-fixtures';
@@ -352,6 +353,17 @@ describe('cli map', () => {
     expect(back.images.top?.depth?.w).toBeGreaterThan(32);
     expect(back.images.top?.map?.engrave.enabled).toBe(true);
     expect(walk(out).some((n) => n.startsWith('laser/parts/'))).toBe(true);
+    const hero = join(dir, 'neasden-hero.png');
+    const io2 = capture();
+    expect(
+      await main(
+        [project, '--out', join(dir, 'out2'), '--map', 'Neasden', '--bbox', `${w},${s},${e},${n}`, '--map-source', 'terrarium', '--render', hero],
+        io2,
+      ),
+    ).toBe(0);
+    const png = PNG.sync.read(readFileSync(hero));
+    expect(png.width).toBe(MAP_RENDER_WIDTH);
+    expect(png.height).toBe(MAP_RENDER_HEIGHT);
   });
 
   it('exits 1 on a bad bbox', async () => {
