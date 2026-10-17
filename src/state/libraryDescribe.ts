@@ -16,7 +16,9 @@ export function projectKind(p: Project): ProjectKind {
   const top = p.images.top;
   if (top?.map || top?.depth?.mapOrtho) return 'Map';
   if (p.params.sliceMode === 'flat') return 'Stamped';
-  if (p.images.side || p.images.front || top) return 'Image';
+  const sideOn = !!p.images.side || String(p.params.imgSideMode ?? 'off') !== 'off';
+  const frontOn = !!p.images.front || String(p.params.imgFrontMode ?? 'off') !== 'off';
+  if (sideOn || frontOn) return 'Image';
   return 'Vermilion';
 }
 

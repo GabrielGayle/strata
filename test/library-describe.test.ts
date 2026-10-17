@@ -15,6 +15,13 @@ describe('library describe', () => {
       }),
     ).toBe('Map');
     expect(projectKind({ ...newProject(), images: { side: { name: 's.png', dataUrl: 'data:image/png;base64,AA' } } })).toBe('Image');
+    expect(
+      projectKind({
+        ...newProject(),
+        images: { top: { name: 'cliff.png', dataUrl: 'data:image/png;base64,AA' } },
+      }),
+    ).toBe('Vermilion');
+    expect(projectKind({ ...newProject(), params: { ...newProject().params, imgSideMode: 'heightmap' } })).toBe('Image');
   });
 
   it('filters by search and folder, sorts by plates', () => {
