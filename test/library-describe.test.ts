@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newProject } from '../src/core/project';
-import { filterLibrary, foldersOf, plateCountOf, projectKind, rebuildPlateCount, sortLibrary } from '../src/state/libraryDescribe';
+import { filterLibrary, foldersOf, libraryThumbFromProject, plateCountOf, projectKind, rebuildPlateCount, sortLibrary } from '../src/state/libraryDescribe';
 import { memoryLibrary, openEntry, saveAs, type LibraryMeta } from '../src/state/library';
 import { recordLibrarySave } from '../src/state/recordLibrary';
 
@@ -34,6 +34,19 @@ describe('library describe', () => {
     expect(filterLibrary(list, '', 'Show').map((m) => m.id)).toEqual(['a']);
     expect(sortLibrary(list, 'plates').map((m) => m.id)).toEqual(['a', 'b']);
     expect(foldersOf(list)).toEqual(['Show']);
+  });
+
+  it('builds a distinct thumbnail from each project, not the live canvas', () => {
+    const coarse = { ...newProject(), params: { ...newProject().params, plateCount: '6' } };
+    const medium = { ...newProject(), params: { ...newProject().params, plateCount: '17', plateGap: '6' } };
+    const fine = { ...newProject(), params: { ...newProject().params, plateCount: '41' } };
+    const a = libraryThumbFromProject(coarse);
+    const b = libraryThumbFromProject(medium);
+    const c = libraryThumbFromProject(fine);
+    expect(a?.startsWith('data:image/svg+xml')).toBe(true);
+    expect(b).not.toBe(a);
+    expect(c).not.toBe(b);
+    expect(c).not.toBe(a);
   });
 
   it('records rebuilt plate count, not a leftover params.plateCount', () => {

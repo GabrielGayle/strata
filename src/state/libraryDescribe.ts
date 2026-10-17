@@ -10,6 +10,36 @@ export function rebuildPlateCount(p: Project, assets: Assets = EMPTY_ASSETS): nu
   return createPipeline()(p, assets).sliced.plates.length;
 }
 
+/** SVG thumbnail of this project's plate stack, so imports don't all share the live 3D canvas. */
+export function libraryThumbFromProject(p: Project, assets: Assets = EMPTY_ASSETS, w = 320, h = 220): string | undefined {
+  try {
+    const model = createPipeline()(p, assets);
+    const plates = model.sliced.plates.filter((pl) => pl.parts.length);
+    if (!plates.length) return undefined;
+    let maxH = 1;
+    const heights = plates.map((pl) => {
+      let hi = 0;
+      for (const part of pl.parts) hi = Math.max(hi, part.bbox.maxY - part.bbox.minY, part.bbox.maxX - part.bbox.minX);
+      maxH = Math.max(maxH, hi);
+      return hi;
+    });
+    const gap = 1.2;
+    const barW = Math.max(1.2, (w - 24) / plates.length - gap);
+    const bars = heights
+      .map((hi, i) => {
+        const bh = Math.max(4, (hi / maxH) * (h - 28));
+        const x = 12 + i * (barW + gap);
+        const y = h - 12 - bh;
+        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="0.8" fill="#c45a2a" stroke="#2a1810" stroke-width="0.6"/>`;
+      })
+      .join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#ece8e1"/>${bars}</svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  } catch {
+    return undefined;
+  }
+}
+
 export type LibrarySort = 'updated' | 'name' | 'plates' | 'kind';
 
 export function projectKind(p: Project): ProjectKind {

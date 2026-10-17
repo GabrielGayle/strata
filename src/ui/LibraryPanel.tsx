@@ -17,6 +17,7 @@ import { isOneOffAddress, MAIN_HOST } from '../state/persist';
 import { download } from '../core/exporters';
 import { isProjectZipName, projectFromZip } from '../core/projectZip';
 import { LibraryBrowser } from './LibraryBrowser';
+import { libraryThumbFromProject } from '../state/libraryDescribe';
 import { recordLibrarySave } from '../state/recordLibrary';
 
 const host = () => (typeof location !== 'undefined' ? location.host : '');
@@ -59,7 +60,7 @@ export async function keepOpenedInLibrary(project: Project, sourceName: string, 
   try {
     const names = (await store.list()).map((m) => m.name);
     const name = uniqueName(project.name, names);
-    const { meta, project: saved } = await saveAs(store, project, name, grabThumb(), Date.now(), {
+    const { meta, project: saved } = await saveAs(store, project, name, libraryThumbFromProject(project) ?? grabThumb(), Date.now(), {
       source: 'import',
       ...(plates != null ? { plateCount: plates } : {}),
     });
@@ -299,7 +300,7 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
         const names = (list ?? []).map((m) => m.name);
         const meta = await recordLibrarySave(opened.project, {
           source: 'import',
-          thumb: grabThumb(),
+          thumb: libraryThumbFromProject(opened.project) ?? grabThumb(),
           name: uniqueName(opened.project.name, names),
           plates: opened.plateCount,
         });
