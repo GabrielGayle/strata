@@ -81,23 +81,36 @@ function bboxOfPath(path: Path, holes: Path[] = []): WaterRing {
   return { west, south, east, north };
 }
 
-function classifyWater(tags: Record<string, string>, path: Path): WaterKind | null {
-  const natural = tags.natural;
-  const water = tags.water;
-  const waterway = tags.waterway;
+const STREAM_WATER = new Set(['stream', 'river', 'canal', 'rapids', 'ditch', 'drain', 'brook', 'beck']);
+const STREAM_WATERWAY = new Set(['stream', 'river', 'canal', 'rapids', 'ditch', 'drain', 'riverbank']);
+
+/** Bbox length/width; long thin water polygons follow terrain like streams. */
+export function pathElongation(path: Path): number {
+  const b = bboxOfPath(path);
+  const w = Math.max(1e-6, b.east - b.west);
+  const h = Math.max(1e-6, b.north - b.south);
+  return Math.max(w, h) / Math.min(w, h);
+}
+
+export function classifyWater(tags: Record<string, string>, path: Path): WaterKind | null {
+  const natural = (tags.natural ?? '').toLowerCase();
+  const water = (tags.water ?? '').toLowerCase();
+  const waterway = (tags.waterway ?? '').toLowerCase();
+  if (STREAM_WATER.has(water) || STREAM_WATERWAY.has(waterway)) return 'stream';
   const lakeish =
     natural === 'water' ||
     water === 'lake' ||
     water === 'pond' ||
     water === 'reservoir' ||
     water === 'oxbow' ||
-    waterway === 'riverbank' ||
     waterway === 'dock';
-  if (lakeish) return isClosed(path) || path.length >= 4 ? 'lake' : null;
-  if (waterway === 'river' || waterway === 'stream' || waterway === 'canal' || waterway === 'drain' || waterway === 'ditch') {
-    return isClosed(path) ? 'lake' : 'stream';
+  if (lakeish && (isClosed(path) || path.length >= 4)) {
+    return pathElongation(path) >= 5 ? 'stream' : 'lake';
   }
-  if (waterway || water) return isClosed(path) ? 'lake' : 'stream';
+  if (waterway || water) {
+    if (!isClosed(path)) return 'stream';
+    return pathElongation(path) >= 5 ? 'stream' : 'lake';
+  }
   return null;
 }
 
@@ -125,9 +138,15 @@ function bodiesFromElement(el: OverpassEl, crs: string): WaterBody[] {
     const out: WaterBody[] = [];
     for (const outer of outers) {
       const kind = classifyWater(tags, outer);
-      if (kind !== 'lake') continue;
-      const ownHoles = holes.filter((h) => h.some((pt) => pointInPath(pt, outer)));
-      out.push({ kind, path: outer, ...(ownHoles.length ? { holes: ownHoles } : {}), bbox: bboxOfPath(outer, ownHoles), ...named });
+      if (!kind) continue;
+      const ownHoles = kind === 'lake' ? holes.filter((h) => h.some((pt) => pointInPath(pt, outer))) : [];
+      out.push({
+        kind,
+        path: outer,
+        ...(ownHoles.length ? { holes: ownHoles } : {}),
+        bbox: bboxOfPath(outer, ownHoles),
+        ...named,
+      });
     }
     return out;
   }
@@ -288,7 +307,10 @@ export function applyLocalWater(grid: Float32Grid, bodies: WaterBody[]): Float32
         const { x, y } = cellCentre(out, col, row);
         if (!pointInWaterBody([x, y], lake)) continue;
         const i = row * out.w + col;
-        out.data[i] = surface;
+        const raw = grid.data[i];
+        if (!Number.isFinite(raw)) continue;
+        // Never raise a cell above the DEM — steep becks mis-tagged as lakes must not step up.
+        out.data[i] = Math.min(raw, surface);
         lakeMask[i] = 1;
       }
     }
@@ -298,12 +320,14 @@ export function applyLocalWater(grid: Float32Grid, bodies: WaterBody[]): Float32
   for (const stream of streams) {
     const pad = { west: stream.bbox.west - half, south: stream.bbox.south - half, east: stream.bbox.east + half, north: stream.bbox.north + half };
     const { c0, c1, r0, r1 } = gridWindow(out, pad);
+    const closed = isClosed(stream.path);
     for (let row = r0; row <= r1; row++) {
       for (let col = c0; col <= c1; col++) {
         const i = row * out.w + col;
         if (lakeMask[i]) continue;
         const { x, y } = cellCentre(out, col, row);
-        if (distToPath(x, y, stream.path) > half) continue;
+        const inside = closed && pointInPath([x, y], stream.path);
+        if (!inside && distToPath(x, y, stream.path) > half) continue;
         const z = out.data[i];
         if (Number.isFinite(z)) out.data[i] = z - STREAM_INSET_M;
       }

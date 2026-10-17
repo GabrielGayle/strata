@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyFlatWater,
   applyLocalWater,
+  classifyWater,
   estimateBodySurfaceM,
   estimateWaterSurfaceM,
   pointInWaterBody,
@@ -160,6 +161,123 @@ describe('per-water-body flattening', () => {
     const orig = grid.data[origRow * grid.w + 20];
     const now = local.data[origRow * grid.w + 20];
     expect(orig - now).toBeCloseTo(STREAM_INSET_M, 3);
+  });
+
+  it('treats water=stream / riverbank / long-thin polygons as streams', () => {
+    const streamPoly = rect(0, 0, 40, 400);
+    expect(classifyWater({ natural: 'water', water: 'stream', name: 'Dry Gill' }, streamPoly)).toBe('stream');
+    expect(classifyWater({ natural: 'water', water: 'river' }, streamPoly)).toBe('stream');
+    expect(classifyWater({ natural: 'water', water: 'canal' }, streamPoly)).toBe('stream');
+    expect(classifyWater({ natural: 'water', water: 'rapids' }, streamPoly)).toBe('stream');
+    expect(classifyWater({ waterway: 'riverbank', name: 'Dodsgill Beck' }, streamPoly)).toBe('stream');
+    expect(classifyWater({ natural: 'water' }, streamPoly), 'long thin untagged water').toBe('stream');
+    expect(classifyWater({ natural: 'water', name: 'Crummock Water' }, rect(0, 0, 400, 300))).toBe('lake');
+  });
+
+  it('lets a water=stream area follow the DEM instead of flattening to a step', () => {
+    const w = 40;
+    const h = 20;
+    const pixel = 10;
+    const data = new Float32Array(w * h);
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) data[row * w + col] = 180 + col * 8;
+    }
+    const grid: Float32Grid = {
+      w,
+      h,
+      data,
+      crs: 'EPSG:27700',
+      transform: { originX: 0, originY: h * pixel, pixelW: pixel, pixelH: -pixel },
+    };
+    const osm = {
+      elements: [
+        {
+          type: 'way',
+          tags: { natural: 'water', water: 'stream', name: 'Dry Gill' },
+          geometry: [
+            { lon: -3.30, lat: 54.54 },
+            { lon: -3.299, lat: 54.54 },
+            { lon: -3.299, lat: 54.55 },
+            { lon: -3.30, lat: 54.55 },
+            { lon: -3.30, lat: 54.54 },
+          ],
+        },
+      ],
+    };
+    const bodies = waterBodiesFromOverpass(osm, { bbox: BUTTERMERE_BBOX });
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].kind).toBe('stream');
+
+    const gill: WaterBody = {
+      kind: 'stream',
+      path: rect(30, 50, 80, 180),
+      bbox: { west: 30, south: 50, east: 80, north: 180 },
+      name: 'Dry Gill',
+    };
+    const local = applyLocalWater(grid, [gill]);
+    const zs: number[] = [];
+    const raws: number[] = [];
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) {
+        const x = grid.transform.originX + col * pixel;
+        const y = grid.transform.originY + row * -pixel;
+        if (!pointInPath([x, y], gill.path)) continue;
+        zs.push(local.data[row * w + col]);
+        raws.push(grid.data[row * w + col]);
+      }
+    }
+    expect(zs.length).toBeGreaterThan(4);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(20);
+    for (let i = 0; i < zs.length; i++) {
+      expect(raws[i] - zs[i]).toBeCloseTo(STREAM_INSET_M, 3);
+    }
+  });
+
+  it('never raises a water cell above its raw DEM height', () => {
+    const w = 40;
+    const h = 20;
+    const pixel = 10;
+    const data = new Float32Array(w * h);
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) data[row * w + col] = 200 + col * 6;
+    }
+    const grid: Float32Grid = {
+      w,
+      h,
+      data,
+      crs: 'EPSG:27700',
+      transform: { originX: 0, originY: h * pixel, pixelW: pixel, pixelH: -pixel },
+    };
+    const lake: WaterBody = {
+      kind: 'lake',
+      path: rect(40, 40, 320, 160),
+      bbox: { west: 40, south: 40, east: 320, north: 160 },
+      name: 'Slope pond',
+    };
+    const local = applyLocalWater(grid, [lake]);
+    let inside = 0;
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) {
+        const raw = grid.data[row * w + col];
+        const now = local.data[row * w + col];
+        expect(now).toBeLessThanOrEqual(raw + 1e-6);
+        const x = grid.transform.originX + col * pixel;
+        const y = grid.transform.originY + row * -pixel;
+        if (pointInWaterBody([x, y], lake)) {
+          inside++;
+          expect(now).toBeLessThanOrEqual(raw + 1e-6);
+        }
+      }
+    }
+    expect(inside).toBeGreaterThan(8);
+    const surface = estimateBodySurfaceM(grid, lake);
+    const lowCol = 5;
+    const row = 10;
+    const x = grid.transform.originX + lowCol * pixel;
+    const y = grid.transform.originY + row * -pixel;
+    if (pointInWaterBody([x, y], lake)) {
+      expect(local.data[row * w + lowCol]).toBeLessThan(surface - 5);
+    }
   });
 
   it('flattens the lake polygon, not land that only sits in the water bbox', () => {
