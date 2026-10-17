@@ -31,8 +31,9 @@ export function exaggerationReadout(factor: number): string {
 }
 
 /**
- * Map-tab stack line. Uses the same true (max − min) m as plate maths, not p98−p2
- * and not plateCount × thickness.
+ * Plan-scale estimate at map-build time (relief × factor × master/mapWidth).
+ * The Map tab live line is `formatLiveMapReadout` so it matches the 3D model
+ * (flat: n×thickness; upright: cut-outline lo–hi), not a stale master width.
  */
 export function formatExaggerationStackReadout(
   factor: number,

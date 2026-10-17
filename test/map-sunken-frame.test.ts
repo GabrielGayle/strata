@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildMapSunkenFrameLayout, buildMapSunkenFrameMould, DEFAULT_FRAME_CAST_TOLERANCE_MM } from '../src/core/mapSunkenFrame';
+import {
+  buildMapSunkenFrameLayout,
+  buildMapSunkenFrameMould,
+  DEFAULT_FRAME_CAST_TOLERANCE_MM,
+  SUNKEN_FRAME_FLAT_ONLY_HINT,
+  sunkenFrameApplies,
+} from '../src/core/mapSunkenFrame';
 import { extrudeSunkenFrame } from '../src/core/geometry3d';
 import { rect, shapeArea, shapeBBox, type BBox, type Shape } from '../src/core/geom2d';
 import { createPipeline } from '../src/core/pipeline';
@@ -112,5 +118,26 @@ describe('map sunken concrete frame (T28)', () => {
     expect(m.sunkenFrame!.ring.length).toBeGreaterThan(0);
     expect(m.sunkenFrame!.rimY).toBeGreaterThan(m.sunkenFrame!.floorMm);
     expect(m.sunkenFrame!.plateLiftMm).toBeLessThan(0);
+  });
+
+  it('does not build a pit on Vermilion (upright slats) even when the map flag is on', () => {
+    const preset = PRESETS.find((x) => x.name === 'Vermilion 40')!;
+    let p = newProject();
+    p.params = { ...p.params, ...preset.params, plateCount: '6' };
+    p = projectWithTopMapSpec(
+      p,
+      defaultMapSpec({
+        bbox: [-0.26, 51.545, -0.23, 51.565],
+        sunkenFrame: { enabled: true, wallMm: 12 },
+        title: 'Neasden',
+      }),
+    );
+    const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null });
+    expect(m.v.sliceMode).toBe('parallel');
+    expect(sunkenFrameApplies(m.v.sliceMode)).toBe(false);
+    expect(sunkenFrameApplies('flat')).toBe(true);
+    expect(m.sunkenFrame).toBeNull();
+    expect(SUNKEN_FRAME_FLAT_ONLY_HINT).toMatch(/Stamped stack/);
+    expect(SUNKEN_FRAME_FLAT_ONLY_HINT).toMatch(/Vermilion/);
   });
 });

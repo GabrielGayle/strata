@@ -22,8 +22,15 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
   expect(parts).toBeGreaterThan(4);
 
   await assertPlateHeightMatchesRelief(page, 0.3);
+  await openWorkspaceTab(page, '3D');
+  const caption = (await page.getByTestId('plate-height-range').textContent())?.trim() ?? '';
+  expect(caption).toMatch(/terrain \d+[–-]\d+ mm/);
+
   await openWorkspaceTab(page, 'Map');
   await expect(page.locator('.map-view h2')).toBeVisible();
+  await expect(page.getByTestId('map-readout')).toContainText(caption);
+  await expect(page.getByTestId('sunken-frame-checkbox')).toBeDisabled();
+  await expect(page.locator('#map-sunken-frame-hint')).toContainText(/Stamped stack \(flat layers\)/);
   const dtm = page.locator('#map-model-dtm');
   await expect(dtm).toBeChecked();
   await expect.poll(async () => dtm.evaluate((el) => el.nextElementSibling?.getAttribute('for'))).toBe('map-model-dtm');
@@ -34,6 +41,20 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
   await mkdir(join(process.cwd(), 'docs/screenshots'), { recursive: true });
   await page.screenshot({ path: join(process.cwd(), 'docs/screenshots/neasden-map-3d.png'), fullPage: false });
   await page.locator('.map-view').screenshot({ path: join(process.cwd(), 'docs/screenshots/map-tab.png') });
+});
+
+test('Stamped stack map readout matches stack height; sunken frame is enabled', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Presets ▾' }).click();
+  await page.locator('.menu-pop').getByRole('button', { name: /Stamped stack/ }).click();
+  await pickNeasdenPreset(page);
+  await openWorkspaceTab(page, '3D');
+  const caption = (await page.getByTestId('plate-height-range').textContent())?.trim() ?? '';
+  expect(caption).toMatch(/stack height \d+ mm/);
+  await openWorkspaceTab(page, 'Map');
+  await expect(page.getByTestId('map-readout')).toContainText(caption);
+  await expect(page.getByTestId('sunken-frame-checkbox')).toBeEnabled();
+  await expect(page.locator('#map-sunken-frame-hint')).toHaveCount(0);
 });
 
 test('re-clicking Neasden keeps user vertical exaggeration ×21', async ({ page }) => {

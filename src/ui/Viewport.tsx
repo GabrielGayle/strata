@@ -12,6 +12,7 @@ import { gizmoIsBusy, moveTarget, useGizmoClearance } from './PlateGizmo';
 import { useModel, fmt } from './model';
 import { isMapDepth } from '../core/mapPlateHeight';
 import { plateOutlineYRangeMm } from '../core/slicer';
+import { formatMapHeightCaption } from '../core/mapGeometryReadout';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
 import { SunBar } from './SunStudy';
@@ -245,11 +246,14 @@ export default function Viewport() {
               : undefined
           }
         >
-          {v.sliceMode === 'flat'
-            ? `stack height ${fmt(model.sliced.plates.length * v.thickness, 0)} mm`
-            : terrainY
-              ? `terrain ${fmt(terrainY.lo, 0)}–${fmt(terrainY.hi, 0)} mm`
-              : `plate height ${fmt(hMin, 0)}–${fmt(hMax, 0)} mm`}
+          {formatMapHeightCaption({
+            sliceMode: v.sliceMode,
+            plates: model.sliced.plates,
+            thicknessMm: v.thickness,
+            mapFace,
+            bboxMin: hMin,
+            bboxMax: hMax,
+          })}
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
       </div>
