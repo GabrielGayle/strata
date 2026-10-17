@@ -38,6 +38,7 @@ import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type Sup
 import { buildSpacers, planRods, rodHardware, rodHoles, type BraceIssue, type HardwareRow, type RodPlan, type SpacerResult } from './brace';
 import { finishPlatePieces, type FragmentEvent } from './fragments';
 import { movePlane, type PartMoves } from './moves';
+import { orientMapPlatePlane } from './mapPlateHeight';
 
 export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T';
 
@@ -1127,6 +1128,12 @@ export function slice(input: SliceInput): SliceResult {
   // design-side work (outlines, image cuts) happens where each plate was designed;
   // fit-side work (cavities, slots, tenons) where it has been moved to
   const homeDefs = plateDefs(v);
+  if (input.mapTerrain) {
+    for (const d of homeDefs) {
+      if (d.family !== 'P') continue;
+      d.plane = orientMapPlatePlane(d.plane);
+    }
+  }
   const defs = placeDefs(homeDefs, input.moves);
   const t = v.thickness;
   const e = embedOf(v);
