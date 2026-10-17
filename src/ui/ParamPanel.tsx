@@ -13,6 +13,7 @@ import {
   type MasterOrientation,
   type MasterPresetId,
 } from '../core/masterPresets';
+import { SavesPanel } from './LibraryPanel';
 
 function fmtVal(x: number, step = 1): string {
   if (!Number.isFinite(x)) return '–';
@@ -362,12 +363,22 @@ export default function ParamPanel() {
     useStore.getState().toast(`${g}: ${n} value${n === 1 ? '' : 's'} back to default · Ctrl+Z to undo`);
   };
 
+  const leftPane = ui.leftPane ?? 'params';
   return (
     <div>
-      <div className="title-bar panel-title">
-        <span>Parameters</span>
-        <span className="pill" title="Every value regenerates everything downstream">live graph</span>
+      <div className="title-bar panel-title left-panes">
+        <button type="button" className={leftPane === 'params' ? 'on' : ''} onClick={() => setUi({ leftPane: 'params' })} data-testid="left-params-tab">
+          Parameters
+        </button>
+        <button type="button" className={leftPane === 'saves' ? 'on' : ''} onClick={() => setUi({ leftPane: 'saves' })} data-testid="left-saves-tab">
+          Saves
+        </button>
+        {leftPane === 'params' && <span className="pill" title="Every value regenerates everything downstream">live graph</span>}
       </div>
+      {leftPane === 'saves' ? (
+        <SavesPanel />
+      ) : (
+        <>
       <input className="search" type="search" placeholder="Filter parameters…" value={ui.filter} onChange={(e) => setUi({ filter: e.target.value })} aria-label="Filter parameters" />
       <label className="changed-only" title="Show only the parameters that differ from their defaults">
         <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
@@ -450,6 +461,8 @@ export default function ParamPanel() {
           </fieldset>
         );
       })}
+        </>
+      )}
     </div>
   );
 }

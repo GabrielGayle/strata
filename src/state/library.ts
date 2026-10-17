@@ -1,9 +1,12 @@
-// The project library: named saves kept in this browser, each with a small
-// picture of the 3D view. It lives in its own IndexedDB database beside the
-// autosave (persist.ts), so the autosave stays the "working copy" and the
-// library holds the copies you chose to keep. Listing reads only the small
-// records in `meta`; the full project (images and all) is in `data`.
+// The project library: named saves, each with a small picture of the 3D view.
+// This browser keeps a copy in IndexedDB (`strata-library`, origin-scoped — see
+// persist.ts). Cloud copies live in Vercel Blob via /api/projects so preview
+// URLs and production share one list (hybridLibrary.ts).
 import { deserialize, serialize, type Project } from '../core/project';
+import { describeProject } from './libraryDescribe';
+
+export type ProjectKind = 'Vermilion' | 'Stamped' | 'Map' | 'Image';
+export type LibrarySource = 'save' | 'export' | 'import' | 'library';
 
 export interface LibraryMeta {
   id: string;
@@ -16,6 +19,16 @@ export interface LibraryMeta {
   thumb?: string;
   /** Size of the stored project text, in characters. */
   size: number;
+  /** ms since epoch; cloud last-write. Falls back to savedAt on older local records. */
+  updatedAt?: number;
+  kind?: ProjectKind;
+  plateCount?: number;
+  material?: string;
+  tags?: string[];
+  folder?: string;
+  source?: LibrarySource;
+  /** projectFingerprint of the stored JSON, for de-duplicating auto-adds. */
+  print?: string;
 }
 
 export interface LibraryStore {
@@ -30,13 +43,29 @@ export interface LibraryStore {
 
 export const RECENT_COUNT = 5;
 
+const changeListeners = new Set<() => void>();
+
+/** Projects dialog / Saves panel re-read after Save, Export ZIP, or a cloud flush. */
+export function subscribeLibraryChange(fn: () => void): () => void {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+
+export function notifyLibraryChange(): void {
+  for (const fn of [...changeListeners]) fn();
+}
+
 export function newEntryId(now = Date.now()): string {
   return `p${now.toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 }
 
-/** Newest saves first. */
+export function updatedAtOf(m: LibraryMeta): number {
+  return m.updatedAt ?? m.savedAt;
+}
+
+/** Newest writes first. */
 export function sortEntries(list: LibraryMeta[]): LibraryMeta[] {
-  return [...list].sort((a, b) => b.savedAt - a.savedAt);
+  return [...list].sort((a, b) => updatedAtOf(b) - updatedAtOf(a));
 }
 
 /** The last few opened, most recent first. */
@@ -44,12 +73,12 @@ export function recentEntries(list: LibraryMeta[], n = RECENT_COUNT): LibraryMet
   return [...list].sort((a, b) => b.openedAt - a.openedAt).slice(0, n);
 }
 
-/** `name`, or "name 2", "name 3"… so it doesn't clash with an existing entry. */
+/** `name`, or "name (2)", "name (3)"… so it doesn't clash with an existing entry. */
 export function uniqueName(name: string, taken: string[]): string {
   const base = name.trim() || 'Untitled';
   const set = new Set(taken.map((t) => t.toLowerCase()));
   if (!set.has(base.toLowerCase())) return base;
-  for (let i = 2; ; i++) if (!set.has(`${base} ${i}`.toLowerCase())) return `${base} ${i}`;
+  for (let i = 2; ; i++) if (!set.has(`${base} (${i})`.toLowerCase())) return `${base} (${i})`;
 }
 
 /** A quick fingerprint of the project text, to tell whether the working copy has moved on from its library entry. */
@@ -67,20 +96,43 @@ export function fingerprint(text: string): string {
 export const projectFingerprint = (p: Project) => fingerprint(serialize(p));
 
 /** Save the project as a new entry under `name` (the project takes that name too). */
-export async function saveAs(store: LibraryStore, p: Project, name: string, thumb?: string, now = Date.now()): Promise<{ meta: LibraryMeta; project: Project }> {
+export async function saveAs(store: LibraryStore, p: Project, name: string, thumb?: string, now = Date.now(), fields?: Partial<LibraryMeta>): Promise<{ meta: LibraryMeta; project: Project }> {
   const project = { ...p, name };
   const data = serialize(project);
-  const meta: LibraryMeta = { id: newEntryId(now), name, savedAt: now, openedAt: now, size: data.length, ...(thumb ? { thumb } : {}) };
+  const extra = describeProject(project);
+  const meta: LibraryMeta = {
+    id: newEntryId(now),
+    name,
+    savedAt: now,
+    openedAt: now,
+    updatedAt: now,
+    size: data.length,
+    ...extra,
+    print: projectFingerprint(project),
+    ...(thumb ? { thumb } : {}),
+    ...fields,
+  };
   await store.put(meta, data);
   return { meta, project };
 }
 
 /** Overwrite an entry with the project. Keeps the old picture when no new one is given. */
-export async function saveOver(store: LibraryStore, id: string, p: Project, thumb?: string, now = Date.now()): Promise<LibraryMeta> {
+export async function saveOver(store: LibraryStore, id: string, p: Project, thumb?: string, now = Date.now(), fields?: Partial<LibraryMeta>): Promise<LibraryMeta> {
   const old = await store.getMeta(id);
   if (!old) throw new Error('That project is no longer in the library');
   const data = serialize(p);
-  const meta: LibraryMeta = { ...old, name: p.name, savedAt: now, size: data.length, ...(thumb ? { thumb } : {}) };
+  const extra = describeProject(p);
+  const meta: LibraryMeta = {
+    ...old,
+    name: p.name,
+    savedAt: now,
+    updatedAt: now,
+    size: data.length,
+    ...extra,
+    print: projectFingerprint(p),
+    ...(thumb ? { thumb } : {}),
+    ...fields,
+  };
   await store.put(meta, data);
   return meta;
 }
@@ -101,7 +153,7 @@ export async function renameEntry(store: LibraryStore, id: string, name: string)
   if (!old || data == null) throw new Error('That project is no longer in the library');
   const project = { ...deserialize(data), name };
   const text = serialize(project);
-  const meta = { ...old, name, size: text.length };
+  const meta = { ...old, name, size: text.length, updatedAt: Date.now(), print: fingerprint(text), ...describeProject(project) };
   await store.put(meta, text);
   return meta;
 }
@@ -111,8 +163,19 @@ export async function duplicateEntry(store: LibraryStore, id: string, now = Date
   const [old, data, all] = await Promise.all([store.getMeta(id), store.getData(id), store.list()]);
   if (!old || data == null) throw new Error('That project is no longer in the library');
   const name = uniqueName(`${old.name} copy`, all.map((m) => m.name));
-  const text = serialize({ ...deserialize(data), name });
-  const meta: LibraryMeta = { ...old, id: newEntryId(now), name, savedAt: now, openedAt: 0, size: text.length };
+  const project = { ...deserialize(data), name };
+  const text = serialize(project);
+  const meta: LibraryMeta = {
+    ...old,
+    id: newEntryId(now),
+    name,
+    savedAt: now,
+    openedAt: 0,
+    updatedAt: now,
+    size: text.length,
+    print: fingerprint(text),
+    ...describeProject(project),
+  };
   await store.put(meta, text);
   return meta;
 }
@@ -170,13 +233,25 @@ export async function importLibrary(store: LibraryStore, text: string, now = Dat
       name = unique;
       data = serialize({ ...project, name });
     }
+    const savedAt = Number.isFinite(m.savedAt) ? (m.savedAt as number) : now;
+    const described = describeProject({ ...project, name });
+    const tags = Array.isArray(m.tags) ? (m.tags as unknown[]).filter((t): t is string => typeof t === 'string') : undefined;
     const meta: LibraryMeta = {
       id,
       name,
-      savedAt: Number.isFinite(m.savedAt) ? (m.savedAt as number) : now,
+      savedAt,
       openedAt: Number.isFinite(m.openedAt) ? (m.openedAt as number) : 0,
+      updatedAt: Number.isFinite(m.updatedAt) ? (m.updatedAt as number) : savedAt,
       size: data.length,
+      ...described,
+      print: fingerprint(data),
       ...(typeof m.thumb === 'string' ? { thumb: m.thumb } : {}),
+      ...(typeof m.kind === 'string' ? { kind: m.kind as LibraryMeta['kind'] } : {}),
+      ...(typeof m.plateCount === 'number' ? { plateCount: m.plateCount } : {}),
+      ...(typeof m.material === 'string' ? { material: m.material } : {}),
+      ...(tags?.length ? { tags } : {}),
+      ...(typeof m.folder === 'string' && m.folder.trim() ? { folder: m.folder.trim() } : {}),
+      ...(typeof m.source === 'string' ? { source: m.source as LibraryMeta['source'] } : { source: 'import' }),
     };
     await store.put(meta, data);
     prints.set(id, fingerprint(data));

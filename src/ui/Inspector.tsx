@@ -22,6 +22,8 @@ import type { Issue } from '../core/checks';
 import { PriceEstimate, loadRates } from './PriceEstimate';
 import { chopChopCollapsedSummary } from './chopChopSummary';
 import { formatFragment } from '../core/fragments';
+import { activeLibraryLinkId, grabThumb, linkActive } from './LibraryPanel';
+import { recordLibrarySave } from '../state/recordLibrary';
 
 function Section({
   title,
@@ -269,6 +271,9 @@ export default function Inspector() {
                 const ran = withExportLock(() => {
                   const m = fullModel();
                   download(`${base}-fabrication.zip`, buildZip(m, project), 'application/zip');
+                  void recordLibrarySave(project, { source: 'export', plates: m.sliced.plates.length, thumb: grabThumb(), linkId: activeLibraryLinkId() })
+                    .then((meta) => linkActive(meta.id, project))
+                    .catch((err) => toast(`Exported, but Projects failed: ${(err as Error).message}`));
                 });
                 if (!ran.ok) toast('Export already running');
                 else toast('Fabrication ZIP exported');

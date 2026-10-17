@@ -50,6 +50,55 @@ export function parseMesh(asset: MeshAsset): THREE.BufferGeometry {
   return prepareMesh(geo);
 }
 
+async function decodeImg(a?: ImageAsset): Promise<Gray | null> {
+  if (a?.depth) {
+    if (!depthCache.has(a.depth)) {
+      try {
+        depthCache.set(a.depth, a.map ? mapDepthToGray(a.depth) : depthToGray(a.depth));
+      } catch {
+        return null;
+      }
+    }
+    return depthCache.get(a.depth)!;
+  }
+  const url = a?.dataUrl;
+  if (!url) return null;
+  if (!imgCache.has(url)) {
+    try {
+      imgCache.set(url, await decodeImage(url));
+    } catch {
+      return null;
+    }
+  }
+  return imgCache.get(url)!;
+}
+
+function decodeMesh(a?: MeshAsset): THREE.BufferGeometry | null {
+  if (!a) return null;
+  const key = a.data.length + ':' + a.data.slice(0, 64) + a.data.slice(-64);
+  if (!meshCache.has(key)) {
+    try {
+      meshCache.set(key, parseMesh(a));
+    } catch {
+      return null;
+    }
+  }
+  return meshCache.get(key)!;
+}
+
+export async function decodeProjectAssets(project: Project): Promise<Assets> {
+  const frames = project.shadow?.frames;
+  const shadowFrames = frames?.length ? await Promise.all(frames.map((f) => decodeImg({ name: f.name, dataUrl: f.dataUrl }))) : undefined;
+  return {
+    sideImg: await decodeImg(project.images.side),
+    frontImg: await decodeImg(project.images.front),
+    topImg: await decodeImg(project.images.top),
+    insMesh: decodeMesh(project.meshes.ins),
+    srcMesh: decodeMesh(project.meshes.src),
+    shadowFrames,
+  };
+}
+
 export function useAssets(project: Project): Assets {
   const [assets, setAssets] = useState<Assets>({ sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null });
   const side = project.images.side;
@@ -65,42 +114,7 @@ export function useAssets(project: Project): Assets {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const img = async (a?: ImageAsset) => {
-        if (a?.depth) {
-          if (!depthCache.has(a.depth)) {
-            try {
-              depthCache.set(a.depth, a.map ? mapDepthToGray(a.depth) : depthToGray(a.depth));
-            } catch {
-              return null;
-            }
-          }
-          return depthCache.get(a.depth)!;
-        }
-        const url = a?.dataUrl;
-        if (!url) return null;
-        if (!imgCache.has(url)) {
-          try {
-            imgCache.set(url, await decodeImage(url));
-          } catch {
-            return null;
-          }
-        }
-        return imgCache.get(url)!;
-      };
-      const mesh = (a?: MeshAsset) => {
-        if (!a) return null;
-        const key = a.data.length + ':' + a.data.slice(0, 64) + a.data.slice(-64);
-        if (!meshCache.has(key)) {
-          try {
-            meshCache.set(key, parseMesh(a));
-          } catch {
-            return null;
-          }
-        }
-        return meshCache.get(key)!;
-      };
-      const shadowFrames = frames?.length ? await Promise.all(frames.map((f) => img({ name: f.name, dataUrl: f.dataUrl }))) : undefined;
-      const next: Assets = { sideImg: await img(side), frontImg: await img(front), topImg: await img(top), insMesh: mesh(insData), srcMesh: mesh(srcData), shadowFrames };
+      const next = await decodeProjectAssets(project);
       const sameFrames = (a?: (Gray | null)[], b?: (Gray | null)[]) => a === b || (!!a && !!b && a.length === b.length && a.every((g, i) => g === b[i]));
       if (alive)
         setAssets((prev) =>
