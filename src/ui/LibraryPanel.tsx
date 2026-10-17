@@ -15,6 +15,7 @@ import {
 import { readOwnerToken, writeOwnerToken } from '../state/ownerToken';
 import { isOneOffAddress, MAIN_HOST } from '../state/persist';
 import { download } from '../core/exporters';
+import { isProjectZipName, projectFromZip } from '../core/projectZip';
 
 const host = () => (typeof location !== 'undefined' ? location.host : '');
 
@@ -35,6 +36,25 @@ const link = (setup: string, l: LibraryLink | null) => writeLink(setup, l, ls())
 /** Forget which library entry the active tab came from (e.g. after opening a project file over it). */
 export function unlinkActive() {
   link(useStore.getState().activeSetup, null);
+}
+
+/** After opening a zip/JSON, offer to keep it in the (cloud) library. */
+export async function keepOpenedInLibrary(project: Project, sourceName: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (!window.confirm(`Save “${project.name}” from ${sourceName} to Projects so it appears on other builds?`)) return;
+  const store = defaultProjectLibrary();
+  const { toast, setName } = useStore.getState();
+  try {
+    const names = (await store.list()).map((m) => m.name);
+    const name = uniqueName(project.name, names);
+    const { meta, project: saved } = await saveAs(store, project, name, grabThumb());
+    setName(saved.name);
+    link(useStore.getState().activeSetup, { id: meta.id, print: projectFingerprint(saved) });
+    const warn = takeCloudWarning();
+    toast(warn ?? `Saved “${meta.name}” to Projects`);
+  } catch (e) {
+    toast(`Could not save to Projects: ${(e as Error).message}`);
+  }
 }
 
 /** A small picture of the 3D view: the largest three.js canvas on screen, scaled down. Undefined when there is none (or it reads blank). */
@@ -261,9 +281,16 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
       toast(`Exported ${count} project${count === 1 ? '' : 's'}`);
     });
   const doImport = async () => {
-    const file = await pickFile('.json,application/json');
+    const file = await pickFile('.json,.zip,application/json,application/zip');
     if (!file) return;
     void run(async () => {
+      if (isProjectZipName(file.name, file.type)) {
+        const { project: opened } = projectFromZip(new Uint8Array(await file.arrayBuffer()));
+        const names = (list ?? []).map((m) => m.name);
+        const { meta } = await saveAs(store, opened, uniqueName(opened.name, names), grabThumb());
+        toast(`Added “${meta.name}” from ${file.name}`);
+        return;
+      }
       const { added, skipped } = await importLibrary(store, await file.text());
       const already = skipped ? ` (${skipped} already here)` : '';
       toast(added.length ? `Added ${added.length} project${added.length === 1 ? '' : 's'} to the library${already}` : `Nothing new to add${already}`);

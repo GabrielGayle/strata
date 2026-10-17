@@ -16,6 +16,7 @@ const MESH_EXT = /\.(stl|obj|step|stp)$/i;
 /** A dropped file's kind from its name and type (null: nothing here takes it). */
 export function fileKind(name: string, type = ''): DropKind | null {
   if (/\.json$/i.test(name) || type === 'application/json') return 'project';
+  if (/\.zip$/i.test(name) || type === 'application/zip' || type === 'application/x-zip-compressed') return 'project';
   if (MESH_EXT.test(name)) return 'mesh';
   if (type.startsWith('image/') || IMAGE_EXT.test(name)) return 'image';
   if (type.startsWith('video/') || VIDEO_EXT.test(name)) return 'video';
@@ -31,7 +32,7 @@ export function dragKinds(types: string[]): Set<DropKind> {
   for (const t of types) {
     if (t.startsWith('image/')) out.add('image');
     else if (t.startsWith('video/')) out.add('video');
-    else if (t === 'application/json') out.add('project');
+    else if (t === 'application/json' || t === 'application/zip' || t === 'application/x-zip-compressed') out.add('project');
     else if (t === '' || t.startsWith('model/') || t === 'application/sla' || t === 'application/octet-stream' || t === 'application/vnd.ms-pki.stl') {
       out.add('mesh');
       out.add('project'); // some systems hand .json over untyped too
@@ -59,7 +60,7 @@ export function dropTargets(kinds: Set<DropKind>, shadowOpen: boolean): DropTarg
       { id: 'ins', kind: 'mesh', label: 'Insert', hint: 'STL / OBJ as the cavity cutter' },
       { id: 'src', kind: 'mesh', label: 'Source form', hint: 'STL / OBJ to slice into plates' },
     );
-  if (kinds.has('project')) out.push({ id: 'open', kind: 'project', label: 'Open project', hint: '.strata.json, replaces the working copy' });
+  if (kinds.has('project')) out.push({ id: 'open', kind: 'project', label: 'Open project', hint: '.strata.json or fabrication zip, replaces the working copy' });
   if (kinds.has('video')) out.push({ id: 'video', kind: 'video', label: 'Shadow video', hint: 'pull stills from a clip for the shadow kitchen' });
   return out;
 }

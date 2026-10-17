@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../state/store';
-import { PRESETS, deserialize, serialize } from '../core/project';
+import { PRESETS, deserialize, serialize, type Project } from '../core/project';
 import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
 import { SOUND_PRESETS } from '../core/soundPresets';
 import { soundDataUrl } from './audio';
@@ -9,7 +9,8 @@ import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
 import { loadRates } from './PriceEstimate';
 import { randomTheme, themeTokens, THEME_PRESETS, type ThemeSeed } from './theme';
-import { CloudSyncMark, ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
+import { CloudSyncMark, keepOpenedInLibrary, ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
+import { isProjectZipName, projectFromZip } from '../core/projectZip';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -89,13 +90,20 @@ export async function importMeshInto(slot: 'ins' | 'src', dropped?: File) {
   }
 }
 
-/** Replace the working copy with a saved .strata.json (undo brings the old one back). */
-export async function openProjectFile(f: File) {
+/** Replace the working copy with a saved .strata.json or a fabrication zip (undo brings the old one back). */
+export async function openProjectFile(f: File, opts: { offerKeep?: boolean } = {}) {
   const { replaceProject, toast } = useStore.getState();
   try {
-    replaceProject(deserialize(await f.text()));
+    let project: Project;
+    if (isProjectZipName(f.name, f.type)) {
+      project = projectFromZip(new Uint8Array(await f.arrayBuffer())).project;
+    } else {
+      project = deserialize(await f.text());
+    }
+    replaceProject(project);
     unlinkActive();
     toast(`Opened ${f.name}`);
+    if (opts.offerKeep !== false && isProjectZipName(f.name, f.type)) await keepOpenedInLibrary(project, f.name);
   } catch (e) {
     toast(`Could not open: ${(e as Error).message}`);
   }
@@ -222,7 +230,7 @@ export default function Toolbar() {
 
   const save = () => download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}.strata.json`, serialize(project), 'application/json');
   const open = async () => {
-    const f = await pickFile('.json');
+    const f = await pickFile('.json,.zip,application/json,application/zip');
     if (f) openProjectFile(f);
   };
   const exportZip = () => {
