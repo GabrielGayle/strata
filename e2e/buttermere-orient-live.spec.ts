@@ -49,6 +49,9 @@ test('live Buttermere 500×500: 3D Top north matches Map preview', async ({ page
   const top3d = page.getByTestId('viewport-3d');
   await expect(top3d.getByRole('button', { name: 'Top' })).toHaveClass(/on/);
   await expect(page.getByTestId('plate-height-range')).toContainText(/terrain/i);
+  const waterBtn = top3d.getByRole('button', { name: 'Water' });
+  if (!(await waterBtn.getAttribute('class'))?.includes('on')) await waterBtn.click();
+  await page.waitForTimeout(1500);
   const threeBuf = Buffer.from(await top3d.screenshot({ type: 'png' }));
 
   await openWorkspaceTab(page, 'Map');
