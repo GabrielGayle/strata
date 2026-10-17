@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { defaultMapSpec, type MapModel, type MapSource, type MapSpec, type MapWater, type LayerBudgetMode } from '../core/mapSpec';
 import { MAP_ENGRAVE_PRESETS, type MapEngravePresetId } from '../core/mapEngravePresets';
 import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
+import { engraveHasLabels } from '../core/quickMap';
 import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/mapNominatim';
 import { MAP_SOURCE_REGISTRY } from '../core/mapSourceRegistry';
 import { noticesWithoutStaleEngraveSkip } from '../core/mapNotices';
@@ -71,6 +72,7 @@ function patchMap(existing: MapSpec | undefined, patch: Partial<MapSpec>): MapSp
 export default function MapView() {
   const project = useStore((s) => s.project);
   const setTopMap = useStore((s) => s.setTopMap);
+  const applyQuickMap = useStore((s) => s.applyQuickMap);
   const mapTerrain = useStore((s) => s.mapTerrain);
   const geom = useModel();
   const existing = project.images.top?.map;
@@ -197,6 +199,23 @@ export default function MapView() {
 
       <section className="map-section">
         <h3>Presets</h3>
+        <button
+          type="button"
+          className="btn default"
+          data-testid="quick-map"
+          onClick={() => {
+            applyQuickMap();
+            const spec = useStore.getState().project.images.top?.map;
+            if (spec) {
+              setTitle(spec.title ?? title);
+              applyBbox(spec.bbox);
+            }
+          }}
+          title="Dense plates and pitch so contours read, landscape, no insert, OSM engrave with Survey fonts, bathymetry, labels. Your exaggeration, frame, near/far, sizes and tuning stay if you set them."
+        >
+          Quick map
+        </button>
+        <p className="map-view-note">One click: plate options a map can actually show. Undo brings the last settings back.</p>
         <div className="map-preset-row">
           {MAP_PRESET_CATALOG.map((p) => (
             <button key={p.id} type="button" className="btn sm" onClick={() => loadPreset(p.id)} title={p.note}>
@@ -315,12 +334,32 @@ export default function MapView() {
         <h3>Engraving</h3>
         <label>
           <input
+            id="map-engrave-on"
             type="checkbox"
             checked={engraveOn}
             disabled={!existing}
             onChange={(e) => commit({ engrave: { ...(existing?.engrave ?? { features: ['roads', 'water', 'title'] }), enabled: e.target.checked } })}
           />
           OSM engrave on top face
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            data-testid="map-engrave-labels"
+            checked={engraveHasLabels(existing?.engrave?.features)}
+            disabled={!existing || !engraveOn}
+            onChange={(e) => {
+              const prev = existing?.engrave ?? { enabled: true, features: ['roads', 'water', 'title'] };
+              const next = new Set(prev.features);
+              if (e.target.checked) next.add('labels');
+              else {
+                next.delete('labels');
+                next.delete('label');
+              }
+              commit({ engrave: { ...prev, enabled: true, features: [...next] } });
+            }}
+          />
+          Place labels
         </label>
         <label>
           Preset &amp; font pairing

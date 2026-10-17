@@ -3,8 +3,8 @@ import { handleProjectsApi } from '../api/_lib/projectsApi';
 import { memoryProjectStore } from '../api/_lib/projectStore';
 import { newProject, serialize } from '../src/core/project';
 import { createCloudLibrary } from '../src/state/cloudLibrary';
-import { cloudSyncLabel, getCloudSync, setCloudSync } from '../src/state/cloudSync';
-import { flushPendingUploads, hybridLibrary, resetHybridSyncers } from '../src/state/hybridLibrary';
+import { cloudSyncLabel, getCloudSync, setCloudSync, subscribeCloudWarning, takeCloudWarning } from '../src/state/cloudSync';
+import { flushPendingUploads, hybridLibrary, resetHybridSyncers, startPendingRetry } from '../src/state/hybridLibrary';
 import { fingerprint, memoryLibrary, openEntry, saveAs, saveOver } from '../src/state/library';
 import { memoryStorage, readPending, writePending } from '../src/state/pendingUploads';
 
@@ -123,7 +123,13 @@ describe('pending cloud uploads', () => {
     expect(readPending(storage).length).toBe(1);
 
     gate.fail = false;
+    const seen: string[] = [];
+    const stopWarn = subscribeCloudWarning(() => {
+      const w = takeCloudWarning();
+      if (w) seen.push(w);
+    });
     await flushPendingUploads();
+    stopWarn();
     expect(readPending(storage)).toEqual([]);
     expect(JSON.parse((await blob.getData(meta.id))!).params.plateCount).toBe('17');
     const names = (await blob.list()).map((m) => m.name).sort();
@@ -131,6 +137,7 @@ describe('pending cloud uploads', () => {
     expect(names.length).toBe(2);
     const other = (await blob.list()).find((m) => m.id !== meta.id)!;
     expect(JSON.parse((await blob.getData(other.id))!).params.plateCount).toBe('23');
+    expect(seen.some((s) => /Kept it as/.test(s))).toBe(true);
   });
 
   it('does not clobber a pending local copy when listing or opening from the cloud', async () => {
@@ -151,5 +158,43 @@ describe('pending cloud uploads', () => {
     expect(opened.project.params.plateCount).toBe('17');
     expect(JSON.parse((await blob.getData(meta.id))!).params.plateCount).toBe('40');
     writePending([], storage);
+  });
+
+  it('arms backoff after a failed put without an online or focus event', async () => {
+    const blob = memoryProjectStore();
+    const local = memoryLibrary();
+    const storage = memoryStorage();
+    const gate = { fail: false };
+    const cloud = createCloudLibrary({ fetch: gatedFetch(blob, gate), token: () => TOKEN });
+    const hybrid = hybridLibrary(local, cloud, () => TOKEN, { storage });
+
+    const queued: Array<() => void> = [];
+    const target = {
+      addEventListener() {},
+      removeEventListener() {},
+      setTimeout(fn: () => void) {
+        queued.push(fn);
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      },
+      clearTimeout() {},
+    };
+    const stop = startPendingRetry(target as unknown as Window);
+    const first = { ...newProject(), name: 'Backoff', params: { ...newProject().params, plateCount: '11' } };
+    const { meta } = await saveAs(hybrid, first, 'Backoff', undefined, 10);
+    expect(queued).toHaveLength(0);
+
+    gate.fail = true;
+    await saveOver(hybrid, meta.id, { ...first, params: { ...first.params, plateCount: '17' } }, undefined, 20);
+    expect(readPending(storage).length).toBe(1);
+    expect(queued.length).toBeGreaterThan(0);
+
+    gate.fail = false;
+    const run = queued[0];
+    queued.length = 0;
+    run();
+    await flushPendingUploads();
+    expect(readPending(storage)).toEqual([]);
+    expect(JSON.parse((await blob.getData(meta.id))!).params.plateCount).toBe('17');
+    stop();
   });
 });

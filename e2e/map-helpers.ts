@@ -86,6 +86,31 @@ export async function clickMapPreset(page: Page, label: string) {
   await page.locator('.map-preset-row').getByRole('button', { name: label, exact: true }).click();
 }
 
+export async function clickQuickMap(page: Page) {
+  await dismissTour(page);
+  await openWorkspaceTab(page, 'Map');
+  await page.getByTestId('quick-map').click();
+}
+
+/** Toolbar Maps ▾ → named place (preset auto-builds). */
+export async function pickMapPreset(page: Page, label: string) {
+  await dismissTour(page);
+  await page.getByRole('button', { name: 'Maps ▾' }).click();
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await page.locator('.menu-pop').getByRole('button', { name: new RegExp(`^${escaped}\\b`) }).first().click();
+  await waitForMapReady(page);
+}
+
+export async function assertNoThin2mmWarnings(page: Page) {
+  await expect(page.locator('.statusbar')).not.toContainText(/updating checks/i);
+  await expect(page.locator('.issue').filter({ hasText: /narrower than 2 mm/ })).toHaveCount(0);
+}
+
+export async function assertZeroFitErrors(page: Page) {
+  await expect(page.locator('.statusbar')).not.toContainText(/updating checks/i);
+  await expect(page.locator('.status-bar-field').filter({ hasText: /errors/ })).toHaveText('0 errors');
+}
+
 export async function applyNeasdenDesign(page: Page) {
   await dismissTour(page);
   // Blur the parameter filter (it steals `/` if focused) then open the design box.

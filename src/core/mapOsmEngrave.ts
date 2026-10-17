@@ -79,6 +79,36 @@ function lonLatToNorm(lon: number, lat: number, bbox: MapSpec['bbox']): Vec2 {
   return [nx, ny];
 }
 
+function labelsFromOsm(
+  elements: OsmWay[],
+  bbox: MapSpec['bbox'],
+  want: Set<string>,
+): OsmEngraveText[] {
+  if (!want.has('labels') && !want.has('label')) return [];
+  const cands: { text: string; nx: number; ny: number; score: number }[] = [];
+  for (const el of elements) {
+    const name = el.tags?.name?.trim();
+    if (!name || name.length > 22) continue;
+    const geom = el.geometry;
+    if (!geom?.length) continue;
+    const kind = kindOf(el.tags);
+    if (kind === 'other' && !el.tags?.place) continue;
+    const mid = geom[Math.floor(geom.length / 2)];
+    const [nx, ny] = lonLatToNorm(mid.lon, mid.lat, bbox);
+    if (nx < 0.06 || nx > 0.94 || ny < 0.12 || ny > 0.9) continue;
+    cands.push({ text: name, nx, ny, score: geom.length + (kind === 'water' ? 6 : 0) });
+  }
+  cands.sort((a, b) => b.score - a.score);
+  const texts: OsmEngraveText[] = [];
+  for (const c of cands) {
+    if (texts.some((t) => t.text === c.text)) continue;
+    if (texts.some((t) => Math.hypot(t.nx - c.nx, t.ny - c.ny) < 0.12)) continue;
+    texts.push({ text: c.text, nx: c.nx, ny: c.ny });
+    if (texts.length >= 16) break;
+  }
+  return texts;
+}
+
 /** Convert Overpass JSON with `out geom` into normalised engrave linework. */
 export function osmToEngraveArt(
   raw: unknown,
@@ -114,7 +144,7 @@ export function osmToEngraveArt(
     imageW,
     imageH,
     lines,
-    texts: [],
+    texts: labelsFromOsm(resp.elements ?? [], bbox, want),
     osmAttribution: '© OpenStreetMap contributors (ODbL)',
   };
 }

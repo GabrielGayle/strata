@@ -87,6 +87,29 @@ describe('map OSM engrave (T13)', () => {
     expect(art.lines.some((l) => l.kind === 'road')).toBe(true);
     expect(art.lines.some((l) => l.kind === 'water')).toBe(true);
     expect(art.osmAttribution).toMatch(/OpenStreetMap/);
+    expect(art.texts).toEqual([]);
+  });
+
+  it('places named way labels when the labels feature is on', () => {
+    const named = {
+      ...overpassFixture,
+      elements: [
+        ...overpassFixture.elements,
+        {
+          type: 'way',
+          id: 9,
+          tags: { highway: 'residential', name: 'Neasden Lane' },
+          geometry: [
+            { lat: 51.56, lon: -0.26 },
+            { lat: 51.562, lon: -0.255 },
+          ],
+        },
+      ],
+    };
+    const off = osmToEngraveArt(named, NEASDEN_BBOX, 128, 96, ['roads', 'water']);
+    expect(off.texts).toEqual([]);
+    const on = osmToEngraveArt(named, NEASDEN_BBOX, 128, 96, ['roads', 'water', 'labels']);
+    expect(on.texts.some((t) => t.text === 'Neasden Lane')).toBe(true);
   });
 
   it('exposes grouped typographic presets', () => {
