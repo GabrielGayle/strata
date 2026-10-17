@@ -1,10 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
-import { e2eOrigin, e2ePreviewCommand } from './playwright.env';
+import { e2eCloudEnv, e2eOrigin, e2ePreviewCommand } from './playwright.env';
 
 const origin = e2eOrigin();
 
 function webServerEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
+  const env = e2eCloudEnv(process.env);
   delete env.VITE_E2E_MAP_FIXTURES;
   return env;
 }

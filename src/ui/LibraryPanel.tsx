@@ -1,14 +1,24 @@
-// Projects library (named saves kept in this browser) and share links.
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+// Projects library (named saves) and share links. Cloud copy is /api/projects.
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import { useStore } from '../state/store';
 import type { Project } from '../core/project';
 import { decodeShare, LONG_LINK, projectFromShare, shareCodeFromHash, shareLink, type ShareState } from '../core/share';
 import {
-  defaultLibrary, duplicateEntry, exportLibrary, hasUnsavedChanges, importLibrary, openEntry, projectFingerprint, readLinks, recentEntries, renameEntry, saveAs, saveOver, sortEntries, uniqueName, writeLink,
+  defaultLibrary, duplicateEntry, exportLibrary, hasUnsavedChanges, importLibrary, openEntry, projectFingerprint, readLinks, recentEntries, renameEntry, saveAs, saveOver, subscribeLibraryChange, uniqueName, writeLink,
   type LibraryLink, type LibraryMeta,
 } from '../state/library';
+import { defaultCloudLibrary, probeCloud } from '../state/cloudLibrary';
+import { cloudSyncLabel, getCloudSync, subscribeCloudSync, subscribeCloudWarning, takeCloudWarning } from '../state/cloudSync';
+import {
+  defaultProjectLibrary, flushPendingUploads, hasMigrated, localProjectsPendingMigration, markMigrated, migrateLocalToCloud, migrateSkippedThisSession, skipMigrateThisSession, startPendingRetry,
+} from '../state/hybridLibrary';
+import { readOwnerToken, writeOwnerToken } from '../state/ownerToken';
 import { isOneOffAddress, MAIN_HOST } from '../state/persist';
 import { download } from '../core/exporters';
+import { isProjectZipName, projectFromZip } from '../core/projectZip';
+import { LibraryBrowser } from './LibraryBrowser';
+import { libraryThumbFromProject } from '../state/libraryDescribe';
+import { recordLibrarySave } from '../state/recordLibrary';
 
 const host = () => (typeof location !== 'undefined' ? location.host : '');
 
@@ -29,6 +39,38 @@ const link = (setup: string, l: LibraryLink | null) => writeLink(setup, l, ls())
 /** Forget which library entry the active tab came from (e.g. after opening a project file over it). */
 export function unlinkActive() {
   link(useStore.getState().activeSetup, null);
+}
+
+/** Mark the working copy as the library entry we just auto-saved. */
+export function linkActive(id: string, project: Project) {
+  link(useStore.getState().activeSetup, { id, print: projectFingerprint(project) });
+}
+
+/** The library entry this tab is linked to, if Save/Export should overwrite it. */
+export function activeLibraryLinkId(): string | undefined {
+  return linkOf(useStore.getState().activeSetup)?.id;
+}
+
+/** After opening a zip/JSON, offer to keep it in the (cloud) library. */
+export async function keepOpenedInLibrary(project: Project, sourceName: string, plates?: number): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (!window.confirm(`Save “${project.name}” from ${sourceName} to Projects so it appears on other builds?`)) return;
+  const store = defaultProjectLibrary();
+  const { toast, setName } = useStore.getState();
+  try {
+    const names = (await store.list()).map((m) => m.name);
+    const name = uniqueName(project.name, names);
+    const { meta, project: saved } = await saveAs(store, project, name, libraryThumbFromProject(project) ?? grabThumb(), Date.now(), {
+      source: 'import',
+      ...(plates != null ? { plateCount: plates } : {}),
+    });
+    setName(saved.name);
+    link(useStore.getState().activeSetup, { id: meta.id, print: projectFingerprint(saved) });
+    const warn = takeCloudWarning();
+    toast(warn ?? `Saved “${meta.name}” to Projects`);
+  } catch (e) {
+    toast(`Could not save to Projects: ${(e as Error).message}`);
+  }
 }
 
 /** A small picture of the 3D view: the largest three.js canvas on screen, scaled down. Undefined when there is none (or it reads blank). */
@@ -61,15 +103,6 @@ export function grabThumb(w = 320, h = 220): string | undefined {
   }
 }
 
-function ago(t: number): string {
-  const s = (Date.now() - t) / 1000;
-  if (s < 45) return 'just now';
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  if (s < 86400 * 7) return `${Math.round(s / 86400)} d ago`;
-  return new Date(t).toLocaleDateString();
-}
-
 function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -78,7 +111,7 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
   }, [onClose]);
   return (
     <div className="pm-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`window pm lib ${wide ? '' : 'narrow'}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`window pm lib ${wide ? '' : 'narrow'}`} role="dialog" aria-modal="true" aria-label={title} data-testid={title === 'Projects' ? 'projects-dialog' : undefined}>
         <div className="title-bar">
           <div className="title-bar-text">{title}</div>
           <div className="title-bar-controls">
@@ -99,13 +132,20 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
   const project = useStore((s) => s.project);
   const setup = useStore((s) => s.activeSetup);
   const { replaceProject, setName, toast } = useStore.getState();
-  const store = defaultLibrary();
+  const store = defaultProjectLibrary();
+  const local = defaultLibrary();
+  const cloud = defaultCloudLibrary();
+  const sync = useSyncExternalStore(subscribeCloudSync, getCloudSync, getCloudSync);
   const [list, setList] = useState<LibraryMeta[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [token, setToken] = useState(() => readOwnerToken() ?? '');
+  const [tokenDraft, setTokenDraft] = useState('');
+  const [migrate, setMigrate] = useState<LibraryMeta[] | null>(null);
   const [lnk, setLnk] = useState(() => linkOf(setup));
   const current = lnk && list?.find((m) => m.id === lnk.id);
   const dirty = useMemo(() => hasUnsavedChanges(project, current ? lnk : undefined), [project, current, lnk]);
+  const unlocked = !!token;
 
   const refresh = useCallback(async () => {
     try {
@@ -116,8 +156,28 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
       setList([]);
     }
   }, [store]);
+  useEffect(() => subscribeLibraryChange(() => void refresh()), [refresh]);
+
+  const considerMigrate = useCallback(async () => {
+    if (!readOwnerToken() || hasMigrated() || migrateSkippedThisSession()) {
+      setMigrate(null);
+      return;
+    }
+    try {
+      const [localList, cloudList] = await Promise.all([local.list(), cloud.list()]);
+      const pending = localProjectsPendingMigration(localList, cloudList);
+      setMigrate(pending.length ? pending : null);
+      if (!pending.length && localList.length) markMigrated();
+    } catch {
+      /* cloud probe already reported */
+    }
+  }, [cloud, local]);
+
   useEffect(() => void refresh(), [refresh]);
   useEffect(() => setLnk(linkOf(setup)), [setup]);
+  useEffect(() => {
+    if (unlocked) void considerMigrate();
+  }, [unlocked, considerMigrate]);
 
   const relink = (l: LibraryLink | null) => {
     link(setup, l);
@@ -130,16 +190,47 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
     } catch (e) {
       toast(`Library: ${(e as Error).message}`);
     } finally {
+      const warn = takeCloudWarning();
+      if (warn) toast(warn);
       setBusy(false);
       void refresh();
     }
   };
 
+  const unlock = (e: FormEvent) => {
+    e.preventDefault();
+    const next = tokenDraft.trim();
+    if (!next) return;
+    writeOwnerToken(next);
+    setToken(next);
+    void probeCloud();
+    void run(async () => {
+      await considerMigrate();
+    });
+  };
+
+  const forgetToken = () => {
+    writeOwnerToken(null);
+    setToken('');
+    setTokenDraft('');
+    setMigrate(null);
+    void probeCloud();
+    void refresh();
+  };
+
+  const doMigrate = () =>
+    void run(async () => {
+      const r = await migrateLocalToCloud(local, cloud);
+      markMigrated();
+      setMigrate(null);
+      toast(r.added.length ? `Uploaded ${r.added.length} project${r.added.length === 1 ? '' : 's'} to the cloud` : 'Nothing new to upload');
+    });
+
   const doSaveAs = () => {
     const name = window.prompt('Save to the library as', uniqueName(project.name, (list ?? []).map((m) => m.name)));
     if (!name?.trim()) return;
     void run(async () => {
-      const r = await saveAs(store, project, name.trim(), grabThumb());
+      const r = await saveAs(store, project, name.trim(), grabThumb(), Date.now(), { source: 'save' });
       if (r.project.name !== project.name) setName(r.project.name);
       relink({ id: r.meta.id, print: projectFingerprint(r.project) });
       toast(`Saved "${r.meta.name}" to the library`);
@@ -189,6 +280,10 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
       toast(`Deleted "${m.name}"`);
     });
   };
+  const doPatch = (m: LibraryMeta, patch: Partial<LibraryMeta>) =>
+    void run(async () => {
+      await store.put({ ...m, ...patch, updatedAt: Date.now() });
+    });
 
   const doExport = () =>
     void run(async () => {
@@ -198,16 +293,27 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
       toast(`Exported ${count} project${count === 1 ? '' : 's'}`);
     });
   const doImport = async () => {
-    const file = await pickFile('.json,application/json');
+    const file = await pickFile('.json,.zip,application/json,application/zip');
     if (!file) return;
     void run(async () => {
+      if (isProjectZipName(file.name, file.type)) {
+        const opened = projectFromZip(new Uint8Array(await file.arrayBuffer()));
+        const names = (list ?? []).map((m) => m.name);
+        const meta = await recordLibrarySave(opened.project, {
+          source: 'import',
+          thumb: libraryThumbFromProject(opened.project) ?? grabThumb(),
+          name: uniqueName(opened.project.name, names),
+          plates: opened.plateCount,
+        });
+        toast(`Added “${meta.name}” from ${file.name}`);
+        return;
+      }
       const { added, skipped } = await importLibrary(store, await file.text());
       const already = skipped ? ` (${skipped} already here)` : '';
       toast(added.length ? `Added ${added.length} project${added.length === 1 ? '' : 's'} to the library${already}` : `Nothing new to add${already}`);
     });
   };
 
-  const sorted = list ? sortEntries(list) : [];
   const here = host();
   const recent = list ? recentEntries(list.filter((m) => m.openedAt > 0)) : [];
   return (
@@ -216,9 +322,18 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
         <div className="lib-working">
           <b>Working copy:</b> {project.name}
           <small>
-            {current ? (dirty ? ` · changed since saved to "${current.name}"` : ` · saved as "${current.name}"`) : ' · not in the library yet'} · kept in this browser as you work
+            {current ? (dirty ? ` · changed since saved to "${current.name}"` : ` · saved as "${current.name}"`) : ' · not in the library yet'}
+            {unlocked ? ' · cloud + this browser' : ' · this browser only until you unlock the cloud'}
           </small>
         </div>
+        <span
+          className={`lib-sync ${sync.status}`}
+          data-testid="projects-sync"
+          data-sync-status={sync.status}
+          title={sync.detail ?? cloudSyncLabel(sync.status)}
+        >
+          {cloudSyncLabel(sync.status)}
+        </span>
         <span className="seg">
           <button className="btn sm" disabled={busy || !current} onClick={doSave} title={current ? `Overwrite "${current.name}" in the library` : 'Use Save as first'}>
             Save
@@ -236,10 +351,58 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
           </button>
         </span>
       </div>
+      {!unlocked && (
+        <form className="lib-gate" onSubmit={unlock} data-testid="projects-token-form">
+          <label>
+            <span>Access token</span>
+            <input
+              type="password"
+              autoComplete="off"
+              value={tokenDraft}
+              onChange={(e) => setTokenDraft(e.target.value)}
+              aria-label="Access token"
+              data-testid="projects-token"
+              placeholder="STRATA_OWNER_TOKEN"
+            />
+          </label>
+          <button className="btn sm primary" type="submit" disabled={busy || !tokenDraft.trim()}>
+            Unlock cloud
+          </button>
+          <small>Without it this address cannot read or write cloud projects.</small>
+        </form>
+      )}
+      {unlocked && (
+        <div className="lib-note">
+          Cloud unlocked.{' '}
+          <button className="btn sm" type="button" onClick={forgetToken}>
+            Forget token
+          </button>
+        </div>
+      )}
+      {migrate && migrate.length > 0 && (
+        <div className="lib-note warn" data-testid="projects-migrate">
+          This browser has {migrate.length} project{migrate.length === 1 ? '' : 's'} that only live here. Upload them to the cloud so they appear on other builds?
+          <span className="seg">
+            <button className="btn sm primary" disabled={busy} onClick={doMigrate}>
+              Upload
+            </button>
+            <button
+              className="btn sm"
+              disabled={busy}
+              onClick={() => {
+                skipMigrateThisSession();
+                setMigrate(null);
+              }}
+            >
+              Not now
+            </button>
+          </span>
+        </div>
+      )}
       {isOneOffAddress(here) && (
         <div className="lib-note warn">
-          This is a one-off build address ({here}). Projects saved here stay at this address only and won't appear at{' '}
-          <a href={`https://${MAIN_HOST}`}>{MAIN_HOST}</a>. Use Export all here and Import… there to move them.
+          This is a one-off build address ({here}). Named projects go to the cloud once you enter the access token, so they appear at{' '}
+          <a href={`https://${MAIN_HOST}`}>{MAIN_HOST}</a> and other previews. This browser still keeps a local copy.
         </div>
       )}
       {error && <div className="lib-note err">{error}</div>}
@@ -256,50 +419,52 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
           </div>
         </>
       )}
-      <div className="lib-head">All projects{list ? ` (${list.length})` : ''}</div>
-      <div className="lib-body">
-        {!list ? (
-          <div className="empty">Loading…</div>
-        ) : !list.length ? (
-          <div className="lib-note">Nothing saved yet. Save as… keeps the working copy here with a picture of the 3D view, so you can come back to it.</div>
-        ) : (
-          <div className="lib-grid">
-            {sorted.map((m) => (
-              <div key={m.id} className={`lib-card ${current?.id === m.id ? 'on' : ''}`}>
-                <button className="lib-thumb" onClick={() => doOpen(m)} disabled={busy} title={`Open "${m.name}"`}>
-                  <Thumb m={m} />
-                </button>
-                <div className="lib-meta">
-                  <span className="lib-name" title={m.name}>
-                    {m.name}
-                  </span>
-                  <small title={new Date(m.savedAt).toLocaleString()}>
-                    saved {ago(m.savedAt)} · {m.size > 1e6 ? `${(m.size / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(m.size / 1e3))} kB`}
-                  </small>
-                </div>
-                <div className="lib-actions">
-                  <button className="btn sm" disabled={busy} onClick={() => doOpen(m)}>
-                    Open
-                  </button>
-                  <button className="btn sm" disabled={busy} onClick={() => doRename(m)}>
-                    Rename
-                  </button>
-                  <button className="btn sm" disabled={busy} onClick={() => doDuplicate(m)}>
-                    Duplicate
-                  </button>
-                  <button className="btn sm" disabled={busy} onClick={() => doDelete(m)} aria-label={`Delete ${m.name}`}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <div className="lib-head">All saves{list ? ` (${list.length})` : ''}</div>
+      <LibraryBrowser
+        store={store}
+        list={list}
+        currentId={current?.id}
+        busy={busy}
+        onOpen={doOpen}
+        onRename={doRename}
+        onDuplicate={doDuplicate}
+        onDelete={doDelete}
+        onPatch={doPatch}
+        onError={(msg) => toast(msg)}
+      />
       <div className="lib-note">
-        Kept in this browser{here ? ` at ${here}` : ''} only: another address, browser or computer has its own separate library. Export all makes a backup you can Import anywhere.
+        {unlocked
+          ? `Cloud projects are shared across builds. This browser${here ? ` at ${here}` : ''} still keeps a local copy if you go offline.`
+          : `Kept in this browser${here ? ` at ${here}` : ''} only until you unlock the cloud. Export all still makes a backup you can Import anywhere.`}
       </div>
     </Modal>
+  );
+}
+
+export function CloudSyncMark() {
+  const sync = useSyncExternalStore(subscribeCloudSync, getCloudSync, getCloudSync);
+  useEffect(() => {
+    void probeCloud().then(() => void flushPendingUploads());
+    const stopRetry = startPendingRetry(window);
+    const stopWarn = subscribeCloudWarning(() => {
+      const w = takeCloudWarning();
+      if (w) useStore.getState().toast(w);
+    });
+    return () => {
+      stopRetry();
+      stopWarn();
+    };
+  }, []);
+  return (
+    <span
+      className={`save-mark cloud ${sync.status}`}
+      data-testid="cloud-sync"
+      data-sync-status={sync.status}
+      role="status"
+      title={sync.detail ?? (sync.status === 'locked' ? 'Enter the access token in Projects to read and write cloud saves.' : 'Named projects in the cloud, shared across builds.')}
+    >
+      {cloudSyncLabel(sync.status)}
+    </span>
   );
 }
 
@@ -307,11 +472,97 @@ export function ProjectsButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="tb" onClick={() => setOpen(true)} title="Projects kept in this browser: save, open, rename, duplicate">
+      <button className="tb" onClick={() => setOpen(true)} title="Saves browser: cloud and local projects">
         Projects
       </button>
       {open && <LibraryPanel onClose={() => setOpen(false)} />}
     </>
+  );
+}
+
+/** Compact saves browser for the left side panel. */
+export function SavesPanel() {
+  const setup = useStore((s) => s.activeSetup);
+  const { replaceProject, setName, toast } = useStore.getState();
+  const store = defaultProjectLibrary();
+  const [list, setList] = useState<LibraryMeta[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [lnk, setLnk] = useState(() => linkOf(setup));
+  const current = lnk && list?.find((m) => m.id === lnk.id);
+
+  const refresh = useCallback(async () => {
+    try {
+      setList(await store.list());
+    } catch {
+      setList([]);
+    }
+  }, [store]);
+  useEffect(() => void refresh(), [refresh]);
+  useEffect(() => subscribeLibraryChange(() => void refresh()), [refresh]);
+  useEffect(() => setLnk(linkOf(setup)), [setup]);
+
+  const relink = (l: LibraryLink | null) => {
+    link(setup, l);
+    setLnk(l ?? undefined);
+  };
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      toast(`Library: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+      void refresh();
+    }
+  };
+  const doOpen = (m: LibraryMeta) =>
+    void run(async () => {
+      const { project: p, meta } = await openEntry(store, m.id);
+      replaceProject(p);
+      relink({ id: meta.id, print: projectFingerprint(p) });
+    });
+  const doRename = (m: LibraryMeta) => {
+    const name = window.prompt('Rename project', m.name);
+    if (!name?.trim() || name.trim() === m.name) return;
+    void run(async () => {
+      await renameEntry(store, m.id, name.trim());
+      if (current?.id === m.id) setName(name.trim());
+    });
+  };
+  const doDuplicate = (m: LibraryMeta) =>
+    void run(async () => {
+      const d = await duplicateEntry(store, m.id);
+      toast(`Duplicated as "${d.name}"`);
+    });
+  const doDelete = (m: LibraryMeta) => {
+    if (!window.confirm(`Delete "${m.name}" from the library? This can't be undone.`)) return;
+    void run(async () => {
+      await store.remove(m.id);
+      if (lnk?.id === m.id) relink(null);
+    });
+  };
+  const doPatch = (m: LibraryMeta, patch: Partial<LibraryMeta>) =>
+    void run(async () => {
+      await store.put({ ...m, ...patch, updatedAt: Date.now() });
+    });
+
+  return (
+    <div className="saves-panel" data-testid="saves-panel">
+      <LibraryBrowser
+        store={store}
+        list={list}
+        currentId={current?.id}
+        busy={busy}
+        compact
+        onOpen={doOpen}
+        onRename={doRename}
+        onDuplicate={doDuplicate}
+        onDelete={doDelete}
+        onPatch={doPatch}
+        onError={(msg) => toast(msg)}
+      />
+    </div>
   );
 }
 

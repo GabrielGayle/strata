@@ -7,6 +7,8 @@ describe('window drop targets', () => {
     expect(fileKind('FIN.OBJ')).toBe('mesh');
     expect(fileKind('part.step')).toBe('mesh');
     expect(fileKind('Vermilion.strata.json', 'application/json')).toBe('project');
+    expect(fileKind('Vermilion-fabrication.zip', 'application/zip')).toBe('project');
+    expect(fileKind('old-coarse.zip')).toBe('project');
     expect(fileKind('cliff.jpg', 'image/jpeg')).toBe('image');
     expect(fileKind('scan', 'image/png')).toBe('image');
     expect(fileKind('clip.mov', 'video/quicktime')).toBe('video');
@@ -17,6 +19,7 @@ describe('window drop targets', () => {
     expect([...dragKinds(['image/png', 'image/jpeg'])]).toEqual(['image']);
     expect(dragKinds(['']).has('mesh')).toBe(true);
     expect(dragKinds(['application/json']).has('project')).toBe(true);
+    expect(dragKinds(['application/zip']).has('project')).toBe(true);
     expect(dragKinds([]).size).toBe(4);
   });
 

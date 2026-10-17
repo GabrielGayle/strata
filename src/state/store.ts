@@ -48,6 +48,8 @@ export interface UiState {
   collapsed: Record<string, boolean>;
   theme: ThemeChoice;
   filter: string;
+  /** Left column: parameters or the saves browser. */
+  leftPane: 'params' | 'saves';
   focusParam: string | null;
   reliefTilt: number;
   reliefTint: boolean;
@@ -181,7 +183,7 @@ function loadUi(): Partial<UiState> {
     const s = localStorage.getItem(UI_KEY);
     if (s) {
       const u = JSON.parse(s);
-      return { tab: u.tab, collapsed: u.collapsed ?? {}, ortho: !!u.ortho };
+      return { tab: u.tab, collapsed: u.collapsed ?? {}, ortho: !!u.ortho, leftPane: u.leftPane === 'saves' ? 'saves' : 'params' };
     }
   } catch {
     /* ignore */
@@ -275,6 +277,7 @@ export const useStore = create<Store>((set, get) => {
       showSource: true,
       collapsed: { 'Source form': true, Concrete: true, Mould: true, Unfold: true, Fabrication: true, Image: true },
       filter: '',
+      leftPane: 'params',
       focusParam: null,
       theme: loadTheme(),
       reliefTilt: 0,
@@ -604,9 +607,9 @@ useStore.subscribe((s, prev) => {
       void saver.save(STORAGE_KEY, JSON.stringify(s.project));
     }
   }
-  if (s.ui.tab !== prev.ui.tab || s.ui.collapsed !== prev.ui.collapsed || s.ui.ortho !== prev.ui.ortho) {
+  if (s.ui.tab !== prev.ui.tab || s.ui.collapsed !== prev.ui.collapsed || s.ui.ortho !== prev.ui.ortho || s.ui.leftPane !== prev.ui.leftPane) {
     try {
-      localStorage.setItem(UI_KEY, JSON.stringify({ tab: s.ui.tab, collapsed: s.ui.collapsed, ortho: s.ui.ortho }));
+      localStorage.setItem(UI_KEY, JSON.stringify({ tab: s.ui.tab, collapsed: s.ui.collapsed, ortho: s.ui.ortho, leftPane: s.ui.leftPane }));
     } catch {
       /* ignore */
     }

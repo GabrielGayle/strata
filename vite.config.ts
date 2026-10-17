@@ -5,6 +5,7 @@ import { join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handleEaProxyHttp } from './src/server/eaProxyHttp';
 import { handleOverpassProxyHttp } from './src/server/overpassProxyHttp';
+import { handleProjectsHttp } from './src/server/projectsHttp';
 
 // Strata's own geometry code (and the mesh loaders it uses) needs only three's
 // core: maths, geometry, shapes. Point those imports straight at three.core.js,
@@ -27,6 +28,14 @@ function attachApiMiddleware(server: { middlewares: { use: Function } }) {
       void handleOverpassProxyHttp(req, res).catch((e) => {
         res.statusCode = 500;
         res.end((e as Error).message);
+      });
+      return;
+    }
+    if (url === '/api/projects') {
+      void handleProjectsHttp(req, res).catch((e) => {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: (e as Error).message }));
       });
       return;
     }
