@@ -10,6 +10,7 @@ import {
   fingerprint,
   importLibrary,
   saveAs,
+  notifyLibraryChange,
   uniqueName,
   type LibraryMeta,
   type LibraryStore,
@@ -117,6 +118,9 @@ async function pushPut(local: LibraryStore, cloud: CloudLibrary, item: PendingUp
   const { meta: cloudMeta, data: cloudData } = await snapshotCloud(cloud, item.id);
   if (cloudData != null && fingerprint(cloudData) === localPrint) {
     lastCloudPrint.set(item.id, localPrint);
+    // Same project JSON still needs a meta write (source save → export, plate count, thumb).
+    cloud.lastOverwrittenNewer = false;
+    await cloud.put(meta, data);
     return;
   }
   const expected = item.expectedCloudPrint ?? lastCloudPrint.get(item.id);
@@ -187,7 +191,9 @@ export function hybridLibrary(
         const removed = new Set(pending.filter((p) => p.op === 'remove').map((p) => p.id));
         const byId = new Map(cloudList.map((m) => [m.id, m]));
         for (const m of localList) {
-          if (puts.has(m.id)) byId.set(m.id, m);
+          const cur = byId.get(m.id);
+          const localNewer = !cur || (m.updatedAt ?? m.savedAt) >= (cur.updatedAt ?? cur.savedAt);
+          if (puts.has(m.id) || localNewer) byId.set(m.id, m);
         }
         for (const id of removed) byId.delete(id);
         if (pending.length) {
@@ -233,6 +239,7 @@ export function hybridLibrary(
     },
     async put(meta, data) {
       await local.put(meta, data);
+      notifyLibraryChange();
       if (!authed()) {
         setCloudSync('locked', 'Saved in this browser only');
         return;
@@ -259,6 +266,7 @@ export function hybridLibrary(
     },
     async remove(id) {
       await local.remove(id);
+      notifyLibraryChange();
       if (!authed()) return;
       upsertPending({ id, op: 'remove', queuedAt: now() }, storage);
       setCloudSync('syncing');

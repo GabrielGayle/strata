@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newProject } from '../src/core/project';
-import { filterLibrary, foldersOf, libraryThumbFromProject, plateCountOf, projectKind, rebuildPlateCount, sortLibrary } from '../src/state/libraryDescribe';
+import { filterLibrary, foldersOf, libraryThumbFromProject, plateCountOf, projectKind, rebuildPlateCount, sortLibrary, sourceLabel } from '../src/state/libraryDescribe';
 import { memoryLibrary, openEntry, saveAs, type LibraryMeta } from '../src/state/library';
 import { recordLibrarySave } from '../src/state/recordLibrary';
 
@@ -76,8 +76,10 @@ describe('library describe', () => {
     const b = await recordLibrarySave(p, { source: 'export', plates: 40 }, store);
     expect(b.id).toBe(a.id);
     expect(b.source).toBe('export');
+    expect(sourceLabel(b.source)).toBe('Export');
     expect(b.plateCount).toBe(40);
     expect((await store.list()).length).toBe(1);
+    expect((await store.list())[0].source).toBe('export');
   });
 
   it('does not replace a 19-plate Vermilion 40 with a same-name 17-plate export', async () => {

@@ -43,6 +43,18 @@ export interface LibraryStore {
 
 export const RECENT_COUNT = 5;
 
+const changeListeners = new Set<() => void>();
+
+/** Projects dialog / Saves panel re-read after Save, Export ZIP, or a cloud flush. */
+export function subscribeLibraryChange(fn: () => void): () => void {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+
+export function notifyLibraryChange(): void {
+  for (const fn of [...changeListeners]) fn();
+}
+
 export function newEntryId(now = Date.now()): string {
   return `p${now.toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 }

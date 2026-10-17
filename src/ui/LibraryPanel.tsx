@@ -4,7 +4,7 @@ import { useStore } from '../state/store';
 import type { Project } from '../core/project';
 import { decodeShare, LONG_LINK, projectFromShare, shareCodeFromHash, shareLink, type ShareState } from '../core/share';
 import {
-  defaultLibrary, duplicateEntry, exportLibrary, hasUnsavedChanges, importLibrary, openEntry, projectFingerprint, readLinks, recentEntries, renameEntry, saveAs, saveOver, uniqueName, writeLink,
+  defaultLibrary, duplicateEntry, exportLibrary, hasUnsavedChanges, importLibrary, openEntry, projectFingerprint, readLinks, recentEntries, renameEntry, saveAs, saveOver, subscribeLibraryChange, uniqueName, writeLink,
   type LibraryLink, type LibraryMeta,
 } from '../state/library';
 import { defaultCloudLibrary, probeCloud } from '../state/cloudLibrary';
@@ -156,6 +156,7 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
       setList([]);
     }
   }, [store]);
+  useEffect(() => subscribeLibraryChange(() => void refresh()), [refresh]);
 
   const considerMigrate = useCallback(async () => {
     if (!readOwnerToken() || hasMigrated() || migrateSkippedThisSession()) {
@@ -497,6 +498,7 @@ export function SavesPanel() {
     }
   }, [store]);
   useEffect(() => void refresh(), [refresh]);
+  useEffect(() => subscribeLibraryChange(() => void refresh()), [refresh]);
   useEffect(() => setLnk(linkOf(setup)), [setup]);
 
   const relink = (l: LibraryLink | null) => {

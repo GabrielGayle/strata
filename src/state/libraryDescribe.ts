@@ -42,6 +42,14 @@ export function libraryThumbFromProject(p: Project, assets: Assets = EMPTY_ASSET
 
 export type LibrarySort = 'updated' | 'name' | 'plates' | 'kind';
 
+export function sourceLabel(source?: LibraryMeta['source']): string | undefined {
+  if (source === 'export') return 'Export';
+  if (source === 'save') return 'Save';
+  if (source === 'import') return 'Import';
+  if (source === 'library') return 'Library';
+  return undefined;
+}
+
 export function projectKind(p: Project): ProjectKind {
   const top = p.images.top;
   if (top?.map || top?.depth?.mapOrtho) return 'Map';

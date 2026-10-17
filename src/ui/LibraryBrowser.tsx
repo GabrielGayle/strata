@@ -3,7 +3,7 @@ import { deserialize } from '../core/project';
 import { buildZip, download, exportFailureMessage, FitCheckExportError } from '../core/exporters';
 import { createPipeline } from '../core/pipeline';
 import { decodeProjectAssets } from '../state/assets';
-import { filterLibrary, foldersOf, sortLibrary, type LibrarySort } from '../state/libraryDescribe';
+import { filterLibrary, foldersOf, sortLibrary, sourceLabel, type LibrarySort } from '../state/libraryDescribe';
 import { updatedAtOf, type LibraryMeta, type LibraryStore } from '../state/library';
 
 const VIEW_KEY = 'strata.library.view';
@@ -32,7 +32,7 @@ function Thumb({ m }: { m: LibraryMeta }) {
 }
 
 function bits(m: LibraryMeta): string {
-  const parts = [m.kind, m.plateCount != null ? `${m.plateCount} plates` : null, m.material, m.folder, ...(m.tags ?? [])].filter(Boolean);
+  const parts = [m.kind, sourceLabel(m.source), m.plateCount != null ? `${m.plateCount} plates` : null, m.material, m.folder, ...(m.tags ?? [])].filter(Boolean);
   return parts.join(' · ');
 }
 
@@ -178,6 +178,7 @@ export function LibraryBrowser({
                 key={m.id}
                 className={`lib-line ${currentId === m.id ? 'on' : ''}`}
                 data-testid={`saves-row-${m.id}`}
+                data-source={m.source ?? ''}
                 onContextMenu={(e) => onMenu(e, m)}
               >
                 <button className="lib-line-main" onClick={() => onOpen(m)} disabled={busy} title={`Open "${m.name}"`}>
@@ -199,6 +200,7 @@ export function LibraryBrowser({
                 key={m.id}
                 className={`lib-card ${currentId === m.id ? 'on' : ''}`}
                 data-testid={`saves-card-${m.id}`}
+                data-source={m.source ?? ''}
                 onContextMenu={(e) => onMenu(e, m)}
               >
                 <button className="lib-thumb" onClick={() => onOpen(m)} disabled={busy} title={`Open "${m.name}"`}>

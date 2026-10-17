@@ -6,6 +6,7 @@ import { createCloudLibrary } from '../src/state/cloudLibrary';
 import { cloudSyncLabel, getCloudSync, setCloudSync, subscribeCloudWarning, takeCloudWarning } from '../src/state/cloudSync';
 import { flushPendingUploads, hybridLibrary, resetHybridSyncers, startPendingRetry } from '../src/state/hybridLibrary';
 import { fingerprint, memoryLibrary, openEntry, saveAs, saveOver } from '../src/state/library';
+import { recordLibrarySave } from '../src/state/recordLibrary';
 import { memoryStorage, readPending, writePending } from '../src/state/pendingUploads';
 
 const TOKEN = 'hybrid-token';
@@ -196,5 +197,19 @@ describe('pending cloud uploads', () => {
     expect(readPending(storage)).toEqual([]);
     expect(JSON.parse((await blob.getData(meta.id))!).params.plateCount).toBe('17');
     stop();
+  });
+
+  it('list shows export after overwriting a save', async () => {
+    const blob = memoryProjectStore();
+    const local = memoryLibrary();
+    const storage = memoryStorage();
+    const cloud = createCloudLibrary({ fetch: fakeFetch(blob), token: () => TOKEN });
+    const hybrid = hybridLibrary(local, cloud, () => TOKEN, { storage });
+    const p = { ...newProject(), name: 'Once' };
+    const a = await recordLibrarySave(p, { source: 'save', plates: 11 }, hybrid);
+    expect((await hybrid.list()).find((m) => m.id === a.id)?.source).toBe('save');
+    await recordLibrarySave(p, { source: 'export', plates: 11, linkId: a.id }, hybrid);
+    expect((await hybrid.list()).find((m) => m.id === a.id)?.source).toBe('export');
+    expect(((await blob.getMeta(a.id)) as { source?: string } | undefined)?.source).toBe('export');
   });
 });

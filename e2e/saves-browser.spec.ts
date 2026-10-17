@@ -31,7 +31,16 @@ test('Save and Export ZIP land in the saves browser', async ({ page }) => {
   await expect(dlg.getByTestId('saves-browser')).toBeVisible();
   await expect(dlg.getByText('Vermilion 40').first()).toBeVisible({ timeout: 20_000 });
   await expect(dlg.getByText(/Vermilion/).first()).toBeVisible();
+  await expect(dlg.locator('[data-source="save"]').first()).toBeVisible({ timeout: 20_000 });
   await shot(page, 'saves-browser-grid');
+
+  await dlg.getByRole('button', { name: 'Close' }).click();
+  const zipDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export ZIP' }).click();
+  await zipDownload;
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await expect(page.getByTestId('projects-dialog').locator('[data-source="export"]').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('projects-dialog').getByText(/Export ·/).first()).toBeVisible();
 
   await dlg.getByTestId('saves-view-list').click();
   await expect(dlg.getByTestId('saves-view-list')).toHaveClass(/on/);
