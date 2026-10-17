@@ -113,6 +113,9 @@ const hasSpacers = (v: Values) => hasCross(v) || hasTemplate(v);
 const strataSource = (v: Values) => v.stackSource === 'strata';
 const isTuned = (v: Values) => strataSource(v) && (v.sliceMode === 'parallel' || v.sliceMode === 'radial') && v.tuneMode !== 'off';
 
+/** Chop Chop CR4 mild steel. Cut list, BOM and price all read this default. */
+export const DEFAULT_PLATE_MATERIAL = 'steel';
+
 export const PARAMS: ParamDef[] = [
   // Master
   num('masterScale', 'Master size', 'Master', 1, 0.05, 4, {
@@ -189,7 +192,8 @@ export const PARAMS: ParamDef[] = [
   num('braceCover', 'Concrete cover', 'Bracing', 10, 0, 100, { show: (v) => hasRods(v) || hasCross(v), help: 'Least concrete wanted around rods, nuts and cast-in cross pieces' }),
 
   // Plates
-  choice('plateMaterial', 'Material', 'Plates', 'corten', [
+  // Chop Chop CR4 mild steel — cut list and price share this default.
+  choice('plateMaterial', 'Material', 'Plates', DEFAULT_PLATE_MATERIAL, [
     { value: 'steel', label: 'Mild steel' },
     { value: 'aluminium', label: 'Aluminium' },
     { value: 'corten', label: 'Corten' },

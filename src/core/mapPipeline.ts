@@ -22,7 +22,7 @@ import {
 import { commemorativeFitWarning } from './mapBackPlateEtch';
 import { fetchOverpass } from './mapOverpass';
 import { applySoundingsToGrid, loadWelshHarpSampleSoundings } from './mapBathymetry';
-import { applyFlatWater, estimateWaterSurfaceM, waterRingsFromOverpass } from './mapWater';
+import { applyLocalWater, estimateWaterSurfaceM, waterBodiesFromOverpass } from './mapWater';
 import { buildMapEngraveArt } from './mapEngraveBuild';
 import { serializeMapEngraveArt } from './mapOsmEngrave';
 import type { OverpassFetcher } from './mapOverpass';
@@ -191,7 +191,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       metric = applySoundingsToGrid(metric, soundings, surface);
       bathyApplied = true;
     } else {
-      notices.push(mapInfo('No bathymetry for this bbox; falling back to flat water surface.'));
+      notices.push(mapInfo('No bathymetry for this bbox; falling back to per-lake water surface.'));
     }
   }
   if (spec.water === 'flat' || (spec.water === 'bathy' && !bathyApplied)) {
@@ -202,11 +202,8 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
         allowNetwork: opts.allowOverpassNetwork,
         features: ['water'],
       });
-      const rings = waterRingsFromOverpass(osm as Parameters<typeof waterRingsFromOverpass>[0], spec, metric.crs ?? 'EPSG:27700');
-      if (rings.length) {
-        const surface = estimateWaterSurfaceM(metric);
-        metric = applyFlatWater(metric, rings, surface);
-      }
+      const bodies = waterBodiesFromOverpass(osm as Parameters<typeof waterBodiesFromOverpass>[0], spec, metric.crs ?? 'EPSG:27700');
+      if (bodies.length) metric = applyLocalWater(metric, bodies);
     } catch (e) {
       notices.push(mapWarn(`Water flatten skipped: ${(e as Error).message}`));
     }

@@ -65,6 +65,7 @@ export function overpassQueryForBbox(bbox: [number, number, number, number], fea
   const blocks = [
     `  way["highway"](${s},${w},${n},${e});`,
     `  way["natural"="water"](${s},${w},${n},${e});`,
+    `  relation["natural"="water"](${s},${w},${n},${e});`,
     `  way["waterway"](${s},${w},${n},${e});`,
     `  way["railway"](${s},${w},${n},${e});`,
   ];

@@ -10,7 +10,7 @@ export interface OsmEngraveLine {
 
 export interface OsmEngraveText {
   text: string;
-  /** Normalised 0..1 on depth image (x east, y north-up as image row 0 = north). */
+  /** Normalised 0..1 on the depth image (nx west→east, ny north-up / row 0 = north). Plate mapping flips nx so east sits at part minX. */
   nx: number;
   ny: number;
 }
