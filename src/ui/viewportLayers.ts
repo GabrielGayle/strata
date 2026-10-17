@@ -44,8 +44,8 @@ export function showRodsLayerToggle(
   sliced?: { brace?: { rods?: { rods?: { length: number } } | null } | null; stackRods?: { rods?: { length: number } } | null } | null,
 ): boolean {
   if (sliceMode === 'flat') return true;
-  if ((sliced?.brace?.rods?.rods.length ?? 0) > 0) return true;
-  if ((sliced?.stackRods?.rods.length ?? 0) > 0) return true;
+  if ((sliced?.brace?.rods?.rods?.length ?? 0) > 0) return true;
+  if ((sliced?.stackRods?.rods?.length ?? 0) > 0) return true;
   return false;
 }
 

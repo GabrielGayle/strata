@@ -114,7 +114,6 @@ describe('support poles on a stamped two-peak stack', { timeout: 60_000 }, () =>
     expect(m.sliced.stackRods!.rods.length).toBe(2);
     expect(m.sliced.stackRods!.hole).toBeCloseTo(6.5, 5);
 
-    const rod = m.sliced.stackRods!.rods[0];
     const part = m.sliced.parts.find((q) => q.family === 'P' && q.index === 0);
     expect(part).toBeTruthy();
     const dxf = partDxf(part!, m.v);
