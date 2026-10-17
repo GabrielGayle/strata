@@ -95,6 +95,8 @@ describe('cli export', () => {
     expect(onDisk).toContain('price-estimate.txt');
     expect(onDisk).toContain('price-estimate.json');
     expect(onDisk).toContain('build-pack.html');
+    expect(onDisk).toContain('manifest.json');
+    expect(onDisk.some((n) => n.startsWith('plates/') && n.endsWith('.dxf'))).toBe(true);
     expect(onDisk).toContain('project.strata.json');
     const dxf = readFileSync(join(out, onDisk.find((n) => n.startsWith('laser/parts/') && n.endsWith('.dxf'))!), 'utf8');
     expect(dxf).toContain('AC1009');

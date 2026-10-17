@@ -74,7 +74,9 @@ describe('mixed metals through the pipeline', () => {
   });
 
   it('puts each metal in its own folder in the ZIP', () => {
-    const p = mixed();
+    const small = newProject();
+    small.params = { ...small.params, plateCount: '8', insShape: 'none', anchorHoles: '0' };
+    const p = mixed(small);
     const m = createPipeline()(p, assets);
     const files = Object.keys(unzipSync(buildZip(m, p)));
     expect(files.some((f) => f.startsWith('laser/parts/aluminium/'))).toBe(true);

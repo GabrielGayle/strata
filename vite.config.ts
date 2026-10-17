@@ -52,6 +52,32 @@ function attachMapFixtureMiddleware(server: { middlewares: { use: Function } }) 
 /** Serve offline map tiles / grids for Playwright (`/map-fixtures/...`). */
 const mapCacheClient = join(fileURLToPath(new URL('.', import.meta.url)), 'src/core/mapCache.client.ts');
 
+/** Keep pngjs / Buffer out of the browser bundle (Node-only terrarium decode). */
+function excludeNodeTerrarium(): Plugin {
+  return {
+    name: 'strata-exclude-node-terrarium',
+    apply: 'build',
+    enforce: 'pre',
+    resolveId(source, _importer, options) {
+      if (options?.ssr) return null;
+      if (
+        source === './mapTerrarium.node' ||
+        source === './mapTerrarium.node.js' ||
+        source === './mapTerrarium.node.ts' ||
+        source.endsWith('/mapTerrarium.node') ||
+        source.endsWith('/mapTerrarium.node.js') ||
+        source.endsWith('/mapTerrarium.node.ts')
+      ) {
+        return '\0strata-terrarium-node-stub';
+      }
+    },
+    load(id) {
+      if (id !== '\0strata-terrarium-node-stub') return null;
+      return 'export function decodeTerrariumPng() { throw new Error("mapTerrarium.node is Node-only"); }';
+    },
+  };
+}
+
 /** Browser bundle uses in-memory fetch only (CLI keeps on-disk `mapCache.ts`). */
 function mapCacheBrowser(): Plugin {
   return {
@@ -98,7 +124,7 @@ function vendorChunk(id: string): string | undefined {
 
 export default defineConfig({
   base: './',
-  plugins: [react(), threeCore(), mapCacheBrowser(), mapFixtures()],
+  plugins: [react(), threeCore(), excludeNodeTerrarium(), mapCacheBrowser(), mapFixtures()],
   define: {
     'process.env': {},
   },
