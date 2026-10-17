@@ -8,7 +8,7 @@ import {
   type LibraryLink, type LibraryMeta,
 } from '../state/library';
 import { defaultCloudLibrary, probeCloud } from '../state/cloudLibrary';
-import { cloudSyncLabel, getCloudSync, subscribeCloudSync, takeCloudWarning } from '../state/cloudSync';
+import { cloudSyncLabel, getCloudSync, subscribeCloudSync, subscribeCloudWarning, takeCloudWarning } from '../state/cloudSync';
 import {
   defaultProjectLibrary, flushPendingUploads, hasMigrated, localProjectsPendingMigration, markMigrated, migrateLocalToCloud, migrateSkippedThisSession, skipMigrateThisSession, startPendingRetry,
 } from '../state/hybridLibrary';
@@ -430,8 +430,13 @@ export function CloudSyncMark() {
   useEffect(() => {
     void probeCloud().then(() => void flushPendingUploads());
     const stopRetry = startPendingRetry(window);
+    const stopWarn = subscribeCloudWarning(() => {
+      const w = takeCloudWarning();
+      if (w) useStore.getState().toast(w);
+    });
     return () => {
       stopRetry();
+      stopWarn();
     };
   }, []);
   return (
