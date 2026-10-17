@@ -61,12 +61,12 @@ export function recentEntries(list: LibraryMeta[], n = RECENT_COUNT): LibraryMet
   return [...list].sort((a, b) => b.openedAt - a.openedAt).slice(0, n);
 }
 
-/** `name`, or "name 2", "name 3"… so it doesn't clash with an existing entry. */
+/** `name`, or "name (2)", "name (3)"… so it doesn't clash with an existing entry. */
 export function uniqueName(name: string, taken: string[]): string {
   const base = name.trim() || 'Untitled';
   const set = new Set(taken.map((t) => t.toLowerCase()));
   if (!set.has(base.toLowerCase())) return base;
-  for (let i = 2; ; i++) if (!set.has(`${base} ${i}`.toLowerCase())) return `${base} ${i}`;
+  for (let i = 2; ; i++) if (!set.has(`${base} (${i})`.toLowerCase())) return `${base} (${i})`;
 }
 
 /** A quick fingerprint of the project text, to tell whether the working copy has moved on from its library entry. */

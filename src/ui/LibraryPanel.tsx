@@ -45,6 +45,11 @@ export function linkActive(id: string, project: Project) {
   link(useStore.getState().activeSetup, { id, print: projectFingerprint(project) });
 }
 
+/** The library entry this tab is linked to, if Save/Export should overwrite it. */
+export function activeLibraryLinkId(): string | undefined {
+  return linkOf(useStore.getState().activeSetup)?.id;
+}
+
 /** After opening a zip/JSON, offer to keep it in the (cloud) library. */
 export async function keepOpenedInLibrary(project: Project, sourceName: string): Promise<void> {
   if (typeof window === 'undefined') return;

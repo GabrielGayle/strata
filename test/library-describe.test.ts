@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { newProject } from '../src/core/project';
 import { filterLibrary, foldersOf, projectKind, sortLibrary } from '../src/state/libraryDescribe';
-import { memoryLibrary, saveAs, type LibraryMeta } from '../src/state/library';
+import { memoryLibrary, openEntry, saveAs, type LibraryMeta } from '../src/state/library';
 import { recordLibrarySave } from '../src/state/recordLibrary';
 
 describe('library describe', () => {
@@ -48,5 +48,33 @@ describe('library describe', () => {
     expect(b.source).toBe('export');
     expect(b.plateCount).toBe(40);
     expect((await store.list()).length).toBe(1);
+  });
+
+  it('does not replace a 19-plate Vermilion 40 with a same-name 17-plate export', async () => {
+    const store = memoryLibrary();
+    const nineteen = { ...newProject(), name: 'Vermilion 40', params: { ...newProject().params, plateCount: '19' } };
+    const a = await recordLibrarySave(nineteen, { source: 'save', plates: 19 }, store);
+    const medium = {
+      ...newProject(),
+      name: 'Vermilion 40',
+      params: { ...newProject().params, plateCount: '17', plateGap: '6', spacingMode: 'gap' },
+    };
+    const b = await recordLibrarySave(medium, { source: 'export', plates: 17 }, store);
+    expect(b.id).not.toBe(a.id);
+    expect(b.name).toBe('Vermilion 40 (2)');
+    expect(b.plateCount).toBe(17);
+    expect((await openEntry(store, a.id)).project.params.plateCount).toBe('19');
+    expect((await store.list()).length).toBe(2);
+  });
+
+  it('overwrites the linked project even when the fingerprint moved on', async () => {
+    const store = memoryLibrary();
+    const first = { ...newProject(), name: 'Vermilion 40', params: { ...newProject().params, plateCount: '19' } };
+    const a = await recordLibrarySave(first, { source: 'save', plates: 19 }, store);
+    const edited = { ...first, params: { ...first.params, plateCount: '21' } };
+    const b = await recordLibrarySave(edited, { source: 'save', plates: 21, linkId: a.id }, store);
+    expect(b.id).toBe(a.id);
+    expect((await store.list()).length).toBe(1);
+    expect((await openEntry(store, a.id)).project.params.plateCount).toBe('21');
   });
 });

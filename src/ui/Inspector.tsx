@@ -22,7 +22,7 @@ import type { Issue } from '../core/checks';
 import { PriceEstimate, loadRates } from './PriceEstimate';
 import { chopChopCollapsedSummary } from './chopChopSummary';
 import { formatFragment } from '../core/fragments';
-import { grabThumb, linkActive } from './LibraryPanel';
+import { activeLibraryLinkId, grabThumb, linkActive } from './LibraryPanel';
 import { recordLibrarySave } from '../state/recordLibrary';
 
 function Section({
@@ -271,7 +271,7 @@ export default function Inspector() {
                 const ran = withExportLock(() => {
                   const m = fullModel();
                   download(`${base}-fabrication.zip`, buildZip(m, project), 'application/zip');
-                  void recordLibrarySave(project, { source: 'export', plates: m.sliced.plates.length, thumb: grabThumb() })
+                  void recordLibrarySave(project, { source: 'export', plates: m.sliced.plates.length, thumb: grabThumb(), linkId: activeLibraryLinkId() })
                     .then((meta) => linkActive(meta.id, project))
                     .catch((err) => toast(`Exported, but Projects failed: ${(err as Error).message}`));
                 });
