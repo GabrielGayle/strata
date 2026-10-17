@@ -4,8 +4,7 @@ import { PRESETS, deserialize, serialize } from '../core/project';
 import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
 import { SOUND_PRESETS } from '../core/soundPresets';
 import { soundDataUrl } from './audio';
-import { buildZip, download, openHtml } from '../core/exporters';
-import { buildPackHtml } from '../core/buildPack';
+import { buildPackHtmlChecked, buildZip, download, openHtml, withExportLock, BuildPackIntegrityError } from '../core/exporters';
 import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
 import { loadRates } from './PriceEstimate';
@@ -228,20 +227,29 @@ export default function Toolbar() {
   };
   const exportZip = () => {
     try {
-      const model = fullModel();
-      const zip = buildZip(model, project, loadRates());
-      download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}-fabrication.zip`, zip, 'application/zip');
-      toast(`Exported ${model.sliced.parts.length} plate DXFs, ${model.nested.sheets.length} sheets, ${model.moulds.parts.length} mould parts`);
+      const ran = withExportLock(() => {
+        const model = fullModel();
+        const zip = buildZip(model, project, loadRates());
+        download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}-fabrication.zip`, zip, 'application/zip');
+        return model;
+      });
+      if (!ran.ok) toast('Export already running');
+      else toast(`Exported ${ran.value.sliced.parts.length} plate DXFs, ${ran.value.nested.sheets.length} sheets, ${ran.value.moulds.parts.length} mould parts`);
     } catch (e) {
-      toast(`Export failed: ${(e as Error).message}`);
+      const msg = e instanceof BuildPackIntegrityError ? `Fabrication zip integrity: ${e.message}` : (e as Error).message;
+      toast(`Export failed: ${msg}`);
     }
   };
 
   const buildPack = () => {
     try {
-      openHtml(buildPackHtml(project, fullModel(), { rates: loadRates() }));
+      const ran = withExportLock(() => {
+        openHtml(buildPackHtmlChecked(project, fullModel(), { rates: loadRates() }));
+      });
+      if (!ran.ok) toast('Build pack already opening');
     } catch (e) {
-      toast(`Build pack failed: ${(e as Error).message}`);
+      const msg = e instanceof BuildPackIntegrityError ? `Build pack integrity: ${e.message}` : (e as Error).message;
+      toast(`Build pack failed: ${msg}`);
     }
   };
 

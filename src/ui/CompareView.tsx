@@ -7,11 +7,12 @@ import { createPipeline, type Model } from '../core/pipeline';
 import { PARAMS, PARAM_MAP } from '../core/params';
 import { applyVariant, type Project } from '../core/project';
 import Scene from './Scene';
+import { DEFAULT_VIEWPORT_LAYERS } from './viewportLayers';
 import { CameraRig } from './Viewport';
 import { fmt } from './model';
 
 function MiniView({ model, label }: { model: Model; label: string }) {
-  const opts = { selected: null, showMoulds: false, explode: false, xray: false, showIssues: false, showSource: false };
+  const opts = { selected: null, showMoulds: false, explode: false, xray: false, showIssues: false, showSource: false, viewportLayers: DEFAULT_VIEWPORT_LAYERS };
   return (
     <div style={{ position: 'relative', minHeight: 280, borderRight: '1px solid var(--line)', background: 'var(--viewport)' }}>
       <Canvas shadows="percentage" dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: 'absolute', inset: 0 }}>

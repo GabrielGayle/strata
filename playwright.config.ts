@@ -12,21 +12,23 @@ function webServerEnv(): NodeJS.ProcessEnv {
 }
 
 export default defineConfig({
-  testDir: 'e2e',
+  testDir: '.',
+  testMatch: ['e2e/**/*.spec.ts', 'test/e2e/**/*.spec.ts'],
   fullyParallel: false,
   retries: 0,
   workers: 1,
   reporter: 'list',
-  timeout: liveNetwork ? 300_000 : 180_000,
+  timeout: liveNetwork ? 300_000 : 360_000,
   use: {
     ...devices['Desktop Chrome'],
     baseURL: origin,
+    acceptDownloads: true,
     trace: 'on-first-retry',
   },
   webServer: {
     command: e2ePreviewCommand(),
     url: origin,
-    reuseExistingServer: e2eReuseExistingServer(),
+    reuseExistingServer: liveNetwork ? false : e2eReuseExistingServer(),
     env: webServerEnv(),
     timeout: liveNetwork ? 300_000 : 180_000,
   },

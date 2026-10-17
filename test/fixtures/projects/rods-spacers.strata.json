@@ -1,0 +1,13 @@
+{
+  "format": "strata-project",
+  "version": 1,
+  "name": "Rods and spacers",
+  "params": {
+    "plateCount": "12",
+    "rodsOn": true,
+    "rodCount": "2",
+    "spacerMode": "both",
+    "anchorHoles": "0",
+    "insShape": "none"
+  }
+}

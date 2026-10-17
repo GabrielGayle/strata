@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { E2E_PORT_DEFAULT, e2eOrigin, e2ePort, e2ePreviewCommand, e2eReuseExistingServer } from '../playwright.env';
 
 describe('Playwright e2e port and CI reuse', () => {
-  it('defaults to 4173 and reuses a local server only when CI is unset', () => {
+  it('defaults to 4173 and reuses a local fixture server only when CI is unset', () => {
     expect(e2ePort({})).toBe(E2E_PORT_DEFAULT);
     expect(e2eOrigin({})).toBe('http://127.0.0.1:4173');
     expect(e2eReuseExistingServer({})).toBe(true);

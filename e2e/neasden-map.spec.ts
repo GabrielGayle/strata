@@ -17,7 +17,7 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
   await openApp(page);
   await pickNeasdenPreset(page);
 
-  const partsText = await page.locator('.status-bar-field').first().textContent();
+  const partsText = await page.locator('.status-bar-field').filter({ hasText: /parts/ }).first().textContent();
   const parts = Number(partsText?.match(/(\d+)\s+parts/)?.[1] ?? 0);
   expect(parts).toBeGreaterThan(4);
 

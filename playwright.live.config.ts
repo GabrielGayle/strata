@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import { e2eOrigin, e2ePreviewCommand, e2eReuseExistingServer } from './playwright.env';
+import { e2eOrigin, e2ePreviewCommand } from './playwright.env';
 
 const origin = e2eOrigin();
 
@@ -25,7 +25,7 @@ export default defineConfig({
   webServer: {
     command: e2ePreviewCommand(),
     url: origin,
-    reuseExistingServer: e2eReuseExistingServer(),
+    reuseExistingServer: false,
     env: webServerEnv(),
     timeout: 300_000,
   },

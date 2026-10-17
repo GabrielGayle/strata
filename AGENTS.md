@@ -4,6 +4,10 @@
 
 These rules are non-negotiable. Regressions are guarded by unit tests and Playwright e2e.
 
+### Fabrication build pack contains every plate
+
+The fabrication build pack must contain **every plate** in the model (`sliced.plates`), including empty or zero-area layers. Zip `plates/*.dxf` count, `manifest.json` `plateCount`, the HTML cover legend (`data-plate-count`), and the Every plate gallery (`data-plate-key` per plate) must equal `sliced.plates.length`. Cuttable plates also have laser part DXFs. Filename sanitisation must not overwrite another plate. Enforced by `buildPackIntegrity` and `test/build-pack-integrity.test.ts`. On mismatch the UI shows an error and the CLI exits with code 1.
+
 ### Map faces use real elevation, not the image pipeline
 
 Map terrain on a face is **metric elevation in metres × vertical exaggeration**, converted to millimetres at the map’s plan scale (`masterWidthMm / mapWidthM`) and applied **directly as plate-top heights**.
@@ -45,4 +49,4 @@ Vite dev and preview serve `/api/ea-proxy` and `/api/overpass` so browser map bu
 
 ### Playwright e2e port and CI
 
-`playwright.config.ts` and `playwright.live.config.ts` share `playwright.env.ts`. When `CI` is set, `webServer.reuseExistingServer` is **false** so a leftover preview on 4173 (another branch, or a dummy) is never reused. The listen port is **`STRATA_E2E_PORT`** (default **4173**) for both `baseURL` and `webServer` (`vite preview --strictPort`). Occupied default port: `CI=1 STRATA_E2E_PORT=4199 npm run e2e`. Live: `LIVE_MAP=1 npm run e2e:live` (same port / CI reuse rules).
+`playwright.config.ts` and `playwright.live.config.ts` share `playwright.env.ts` for **`STRATA_E2E_PORT`** (default **4173**) on both `baseURL` and `webServer` (`vite preview --strictPort`). Fixture e2e: `reuseExistingServer` is **false when `CI` is set** (a leftover preview on 4173 is never reused). Live (`LIVE_MAP=1 npm run e2e:live`, and `LIVE_MAP=1` on the fixture config): **never** reuses an existing server, CI or not. Occupied default port: `CI=1 STRATA_E2E_PORT=4199 npm run e2e`.
