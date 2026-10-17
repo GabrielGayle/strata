@@ -68,6 +68,8 @@ export interface UiState {
   /** Placed objects panel in the 3D view, and which object it is editing. */
   objectsMode: boolean;
   objectSel: string | null;
+  /** Postcard shelf: Unobstructed view (dev) section is expanded. */
+  shelfViewDevOpen: boolean;
   /** What the node view is pointing at, lit up in the 3D view (origin, cards, objects, plates). */
   highlight: string | null;
   /** Sun study: clock time of day in hours, and whether the day is playing. Not part of the undo history. */
@@ -293,6 +295,7 @@ export const useStore = create<Store>((set, get) => {
       measureMode: false,
       objectsMode: false,
       objectSel: null,
+      shelfViewDevOpen: false,
       highlight: null,
       sunTime: 12,
       sunPlaying: false,

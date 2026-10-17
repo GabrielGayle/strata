@@ -1,7 +1,15 @@
 import { useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, type ShelfLayout, type ShelfSpec } from '../core/shelf';
+import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, SHELF_SOLVE_KEYS, withShelfOverride, type ShelfLayout, type ShelfSolveKey, type ShelfSpec } from '../core/shelf';
+import {
+  DEFAULT_FLEX_MM,
+  DEFAULT_MAX_HIDDEN_PCT,
+  DEFAULT_MAX_OVERLAP_MM,
+  viewSettings,
+  withViewDefaults,
+} from '../core/shelfView';
+import { getLiveView } from './liveView';
 import { defaultAppearance, rainbowBuckets, type Appearance } from '../core/appearance';
 import type { Model } from '../core/pipeline';
 import type { RawValue } from '../core/params';
@@ -163,6 +171,7 @@ export default function ShelfPanel() {
 
   const s = stored;
   const edit = (patch: Partial<ShelfSpec>, key?: string) => setShelf({ ...s, ...patch }, key);
+  const editOverride = (patch: Partial<ShelfSpec>, keys: ShelfSolveKey[], key?: string) => setShelf(withShelfOverride(s, patch, keys), key);
   const { cards, bad } = parseCards(s.cards);
   const help = (h: string) => ({
     onMouseEnter: () => setHint(h),
@@ -232,18 +241,16 @@ export default function ShelfPanel() {
               value={+s[f.key].toFixed(2)}
               onChange={(e) => {
                 const x = parseFloat(e.target.value);
-                if (Number.isFinite(x))
-                  edit(
-                    {
-                      [f.key]: f.key === 'rows' ? Math.max(1, Math.round(x)) : x,
-                    },
-                    `shelf:${f.key}`,
-                  );
+                if (!Number.isFinite(x)) return;
+                const value = f.key === 'rows' ? Math.max(1, Math.round(x)) : x;
+                if ((SHELF_SOLVE_KEYS as string[]).includes(f.key)) editOverride({ [f.key]: value }, [f.key as ShelfSolveKey], `shelf:${f.key}`);
+                else edit({ [f.key]: value }, `shelf:${f.key}`);
               }}
             />
           </label>
         ))}
       </div>
+      <UnobstructedDev spec={s} edit={edit} setHint={setHint} />
       <div className="mp-info">
         {hint ??
           (s.on
@@ -251,5 +258,108 @@ export default function ShelfPanel() {
             : 'The shelf is off.')}
       </div>
     </>
+  );
+}
+
+function UnobstructedDev({ spec, edit, setHint }: { spec: ShelfSpec; edit: (patch: Partial<ShelfSpec>, key?: string) => void; setHint: (h: string | null) => void }) {
+  const vis = useModel().cardVisibility;
+  const open = useStore((st) => st.ui.shelfViewDevOpen);
+  const setUi = useStore((st) => st.setUi);
+  const live = getLiveView();
+  const view = viewSettings(spec);
+  const az = spec.viewAzimuth ?? live.azimuth;
+  const el = spec.viewElevation ?? live.elevation;
+  const overlap = spec.maxOverlapMm ?? DEFAULT_MAX_OVERLAP_MM;
+  const hiddenPct = spec.maxHiddenPct ?? DEFAULT_MAX_HIDDEN_PCT;
+  const flex = spec.flexMm ?? DEFAULT_FLEX_MM;
+  const hidden = vis?.hiddenCount ?? 0;
+  const help = (h: string) => ({
+    onMouseEnter: () => setHint(h),
+    onMouseLeave: () => setHint(null),
+    title: h,
+  });
+  const num = (label: string, aria: string, hint: string, value: number, step: number, patch: (x: number) => Partial<ShelfSpec>) => (
+    <label className="ob-num" {...help(hint)}>
+      <span>{label}</span>
+      <input
+        type="number"
+        step={step}
+        aria-label={aria}
+        value={+value.toFixed(2)}
+        onChange={(e) => {
+          const x = parseFloat(e.target.value);
+          if (Number.isFinite(x)) edit(withViewDefaults({ ...spec, ...patch(x) }, live), 'shelf:view');
+        }}
+      />
+    </label>
+  );
+  return (
+    <div className="shelf-dev" data-testid="shelf-unobstructed-dev">
+      <button
+        className="btn sm"
+        aria-expanded={open}
+        aria-controls="shelf-unobstructed-body"
+        onClick={() => setUi({ shelfViewDevOpen: !open })}
+        {...help('Developer controls: a viewing angle and how much of a card face may be hidden before it counts.')}
+      >
+        {open ? 'Hide' : 'Show'} Unobstructed view (dev)
+      </button>
+      {open && (
+        <div id="shelf-unobstructed-body" className="shelf-dev-body">
+          <label className="ob-num" {...help('When on, the layout solver opens the gap, eases the lean and the other arc numbers just enough that every postcard face is fully visible from the viewing angle. Numbers you typed stay put.')}>
+            <input
+              type="checkbox"
+              aria-label="Unobstructed view"
+              checked={!!spec.unobstructed}
+              onChange={(e) => {
+                const liveNow = getLiveView();
+                edit({ ...withViewDefaults(spec, liveNow), unobstructed: e.target.checked }, 'shelf:unobstructed');
+              }}
+            />
+            <span>Unobstructed view</span>
+          </label>
+          <div className="mp-row ap-edit ob-edit">
+            {num('Azimuth', 'Viewing azimuth', 'Horizontal viewing angle in degrees. 0 looks from +Z, the usual front of the shelf.', az, 1, (x) => ({ viewAzimuth: x }))}
+            {num('Elevation', 'Viewing elevation', 'Vertical viewing angle in degrees. 0 is looking horizontally, 90 from above.', el, 1, (x) => ({ viewElevation: x }))}
+            <button
+              className="btn sm"
+              onClick={() => {
+                const now = getLiveView();
+                edit({ ...withViewDefaults(spec, now), viewAzimuth: now.azimuth, viewElevation: now.elevation }, 'shelf:view');
+              }}
+              {...help('Copy the 3D camera’s current azimuth and elevation into these fields.')}
+            >
+              Use current camera
+            </button>
+          </div>
+          <div className="mp-row ap-edit ob-edit">
+            {num('Overlap', 'Maximum corner overlap', 'How much a neighbouring card may cover a corner, in millimetres, before it counts as hidden.', overlap, 0.1, (x) => ({ maxOverlapMm: Math.max(0, x) }))}
+            <span className="ap-label">mm</span>
+            {num('Hidden', 'Maximum hidden face', 'How much of a card’s face may be covered, as a percent of its area.', hiddenPct, 0.1, (x) => ({ maxHiddenPct: Math.max(0, x) }))}
+            <span className="ap-label">%</span>
+            {num('Flex', 'Allowed flex', 'Extra millimetres for card stock that can bend, so a corner may touch or catch a neighbour.', flex, 0.1, (x) => ({ flexMm: Math.max(0, x) }))}
+            <span className="ap-label">mm</span>
+          </div>
+          <label className="ob-num" {...help('While this section is open, paint the hidden part of each card so you can see what the angle covers.')}>
+            <input
+              type="checkbox"
+              aria-label="Tint hidden regions"
+              checked={!!spec.tintHidden}
+              onChange={(e) => edit({ ...withViewDefaults(spec, getLiveView()), tintHidden: e.target.checked }, 'shelf:view')}
+            />
+            <span>Tint hidden regions</span>
+          </label>
+          <div className="shelf-dev-readout" data-testid="shelf-unobstructed-readout">
+            {spec.on
+              ? hidden
+                ? `${hidden} card${hidden === 1 ? '' : 's'} hidden from this angle (${view.unobstructed ? 'error' : 'info'} in Fit checks).`
+                : vis?.cards.length
+                  ? 'Every postcard face is visible from this angle.'
+                  : 'No cards on the shelf yet.'
+              : 'The shelf is off.'}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

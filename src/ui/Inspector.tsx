@@ -72,7 +72,7 @@ export function IssueList({ issues, limit = 60 }: { issues: Issue[]; limit?: num
   return (
     <>
       {sorted.slice(0, limit).map((i, k) => (
-        <button key={k} className="issue" onClick={() => i.partId && setUi({ selected: i.partId, tab: 'plates' })}>
+        <button key={k} className="issue" data-issue-type={i.type} data-issue-severity={i.severity} onClick={() => i.partId && setUi({ selected: i.partId, tab: 'plates' })}>
           <span className={`dot ${i.severity}`} />
           <span>
             {i.partId && <span className="pid">{i.partId}</span>}
@@ -179,7 +179,9 @@ export default function Inspector() {
       )}
 
       <Section title="Fit checks" count={<span style={{ color: errors.length ? 'var(--err)' : 'var(--ok)' }}>{errors.length} err · {warns.length} warn</span>}>
-        <IssueList issues={[...errors, ...warns, ...infos.filter((i) => i.type === 'fragment')]} />
+        <div data-testid="fit-checks">
+          <IssueList issues={[...errors, ...warns, ...infos.filter((i) => i.type === 'fragment' || i.type === 'hidden')]} />
+        </div>
         <div className="note">
           Edges: 0 non-90° — every part is a 2D outline extruded straight.
           {bevelMax > 0.01 && ` Largest bevel avoided: ${fmt(bevelMax, 2)} mm (cavities use the ${v.cavityMode} section + ${fmt(v.clearance, 1)} mm clearance).`}

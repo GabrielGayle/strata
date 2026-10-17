@@ -13,7 +13,7 @@ export type Severity = 'error' | 'warn' | 'info';
 export interface Issue {
   partId: string | null;
   plateKey?: string;
-  type: 'thin' | 'gap' | 'small' | 'collision' | 'island' | 'unanchored' | 'hole' | 'sheet' | 'bevel' | 'label' | 'fragment' | 'general';
+  type: 'thin' | 'gap' | 'small' | 'collision' | 'island' | 'unanchored' | 'hole' | 'sheet' | 'bevel' | 'label' | 'fragment' | 'hidden' | 'general';
   severity: Severity;
   message: string;
   at?: Vec2;

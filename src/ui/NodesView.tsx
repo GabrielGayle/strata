@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, type ShelfLayout, type ShelfSpec } from '../core/shelf';
+import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, SHELF_SOLVE_KEYS, withShelfOverride, type ShelfLayout, type ShelfSolveKey, type ShelfSpec } from '../core/shelf';
 import { DEFAULT_ORIGIN, ORIGIN_NAMES, type OriginRef, type WorldOrigin } from '../core/origin';
 import { FIELDS, fitShelf, rainbowPlates, type NumKey } from './ShelfPanel';
 
@@ -169,7 +169,10 @@ export default function NodesView() {
           value={+s[key].toFixed(2)}
           onChange={(e) => {
             const x = parseFloat(e.target.value);
-            if (Number.isFinite(x)) editShelf({ [key]: key === 'rows' ? Math.max(1, Math.round(x)) : x }, `shelf:${key}`);
+            if (!Number.isFinite(x)) return;
+            const value = key === 'rows' ? Math.max(1, Math.round(x)) : x;
+            if ((SHELF_SOLVE_KEYS as string[]).includes(key)) editShelf(withShelfOverride(s, { [key]: value }, [key as ShelfSolveKey]), `shelf:${key}`);
+            else editShelf({ [key]: value }, `shelf:${key}`);
           }}
         />
       </label>

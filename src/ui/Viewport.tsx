@@ -27,6 +27,7 @@ import {
 } from './viewportKeepAlive';
 import ViewportLayersToolbar from './ViewportLayersToolbar';
 import { DEFAULT_VIEWPORT_LAYERS } from './viewportLayers';
+import { setLiveViewFromOffset } from './liveView';
 
 export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
@@ -98,6 +99,22 @@ export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; sn
     frame(model);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model]);
+  return null;
+}
+
+function LiveViewTracker() {
+  const { camera, controls } = useThree() as { camera: THREE.Camera; controls?: { target: THREE.Vector3; addEventListener: (t: string, fn: () => void) => void; removeEventListener: (t: string, fn: () => void) => void } };
+  useEffect(() => {
+    const sync = () => {
+      if (!controls) return;
+      const p = camera.position;
+      const t = controls.target;
+      setLiveViewFromOffset(p.x - t.x, p.y - t.y, p.z - t.z);
+    };
+    sync();
+    controls?.addEventListener('change', sync);
+    return () => controls?.removeEventListener('change', sync);
+  }, [camera, controls]);
   return null;
 }
 
@@ -211,6 +228,7 @@ export default function Viewport() {
         <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={clip.near} far={clip.far} position={VIEWPORT_CAM_POS} />
         <OrthographicCamera makeDefault={ui.ortho} near={-clip.orthoSpan} far={clip.orthoSpan} position={VIEWPORT_CAM_POS} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
+        <LiveViewTracker />
         <CameraClipSync boundSize={boundSize} />
         <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} mapNorthUp={mapFace} />
         <Scene model={model} opts={opts} />

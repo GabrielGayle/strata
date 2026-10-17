@@ -88,6 +88,14 @@ export function cleanObjects(raw: unknown): CutObject[] | undefined {
   return out.length ? out : undefined;
 }
 
+/** World transform: yaw, pitch, roll (YXZ), then the centre. Matches the 3D mesh. */
+export function objectMatrix(o: CutObject): THREE.Matrix4 {
+  const r = (deg: number) => (deg * Math.PI) / 180;
+  const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(r(o.rx), r(o.ry), r(o.rz), 'YXZ'));
+  m.setPosition(o.x, o.y, o.z);
+  return m;
+}
+
 /** The object's solid, placed in the world. */
 export function objectGeometry(o: CutObject): THREE.BufferGeometry {
   let g: THREE.BufferGeometry;
@@ -96,10 +104,7 @@ export function objectGeometry(o: CutObject): THREE.BufferGeometry {
     g = new THREE.SphereGeometry(0.5, 40, 24);
     g.scale(o.w, o.h, o.d);
   } else g = new THREE.BoxGeometry(o.w, o.h, o.d);
-  const r = (deg: number) => (deg * Math.PI) / 180;
-  const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(r(o.rx), r(o.ry), r(o.rz), 'YXZ'));
-  m.setPosition(o.x, o.y, o.z);
-  g.applyMatrix4(m);
+  g.applyMatrix4(objectMatrix(o));
   g.computeVertexNormals();
   g.computeBoundingBox();
   return g;

@@ -3157,6 +3157,23 @@ kbd {
 .objects .ap-edit .ap-nth input {
   width: 42px;
 }
+.objects .shelf-dev {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 2px;
+  border-top: 1px solid var(--line);
+}
+.objects .shelf-dev-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.objects .shelf-dev-readout {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
 
 /* ---------- nodes: the postcard shelf as a node tree ---------- */
 .nodes-view {
