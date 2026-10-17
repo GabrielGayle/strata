@@ -7,7 +7,7 @@ export default function ViewportLayersToolbar() {
   const layers = useStore((s) => s.ui.viewportLayers);
   const toggle = useStore((s) => s.toggleViewportLayer);
   return (
-    <div className="viewport-layers overlay bc" role="toolbar" aria-label="Viewport visibility">
+    <div className="viewport-layers overlay bc" role="toolbar" aria-label="Viewport visibility" data-testid="viewport-layers">
       {ORDER.map((id) => (
         <button
           key={id}

@@ -2076,22 +2076,29 @@ canvas.thumb {
 /* sun study: time bar and labels in the 3D view */
 .viewport-layers {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-width: min(96vw, 720px);
-  padding: 4px 6px;
+  flex-wrap: nowrap;
+  gap: 2px;
+  max-width: calc(100% - 16px);
+  padding: 2px 4px;
   background: var(--surface);
+  white-space: nowrap;
   /* 98.css raised window bevel, same as .btn */
   box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
 }
 .viewport-layers .btn {
   font-size: 11px;
-  padding: 2px 8px;
+  padding: 0 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .overlay.bc {
   bottom: 48px;
   left: 50%;
   transform: translateX(-50%);
+}
+/* One row, above the 3-line bottom-left size caption so it cannot cover it at 1280. */
+.viewport-layers.overlay.bc {
+  bottom: 88px;
 }
 .sunbar {
   flex-direction: column;
