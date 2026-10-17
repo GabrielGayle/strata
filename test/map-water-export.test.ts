@@ -112,7 +112,9 @@ function twoLakeDem(): { grid: Float32Grid; boxes: { crummock: Box; buttermere: 
   };
 }
 
-function osmFor(boxes: { crummock: Box; buttermere: Box; bleaberry: Box }, b: Box) {
+function osmFor(boxes: { crummock: Box; buttermere: Box; bleaberry: Box }, b: Box): {
+  elements: { type: string; tags: Record<string, string>; geometry: { lon: number; lat: number }[] }[];
+} {
   const midY = (b.south + b.north) / 2;
   const midX = (b.west + b.east) / 2;
   return {
