@@ -109,7 +109,7 @@ Unimplemented explicit sources fall back to terrarium with a warning. --engrave 
 on the MapSpec (default on); engraving is a no-op until a later release.
 say parses plain-language design instructions (same rules as the in-app Type a design box),
 prints the parameter diff and any unrecognised phrases. --apply writes the updated project JSON to stdout.
-Unknown parameters and formula errors exit 1 and write nothing. Clamped values are warnings.
+Unknown parameters, formula errors, and remaining fit-check errors exit 1 and write nothing. Clamped values are warnings.
 `;
 
 type Slot = 'side' | 'front' | 'top';

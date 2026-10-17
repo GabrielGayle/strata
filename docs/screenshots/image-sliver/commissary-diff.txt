@@ -1,0 +1,8 @@
+Commissary cut-only vs Strata sheet-NN-cut.dxf
+
+Commissary coarse-cut-only.dxf: LWPOLYLINE 18 on CUT; types={"LWPOLYLINE":18}; layers=CUT; border=false; etch=false
+Commissary medium-cut-only.dxf: LWPOLYLINE 51 on CUT; types={"LWPOLYLINE":51}; layers=CUT; border=false; etch=false
+Commissary fine-cut-only.dxf: LWPOLYLINE 124 on CUT; types={"LWPOLYLINE":124}; layers=CUT; border=false; etch=false
+Strata cut: types={"LWPOLYLINE":43,"CIRCLE":64}; layers=CUT; border=false; etch=false
+ours extra vs Commissary: CIRCLE (CIRCLE = round holes; Commissary tessellates those as LWPOLYLINE)
+both: CUT-only, no sheet border, no ETCH/SHEET/LINE/POLYLINE/SPLINE

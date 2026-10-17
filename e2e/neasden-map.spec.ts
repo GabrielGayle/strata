@@ -11,7 +11,18 @@ import {
   waitForViewportRelief,
   waitForThemeMode,
   waitForPlatesView,
+  waitForMapReady,
 } from './map-helpers';
+
+async function assertNoThin2mmWarnings(page: import('@playwright/test').Page) {
+  await expect(page.locator('.statusbar')).not.toContainText(/updating checks/i);
+  await expect(page.locator('.issue').filter({ hasText: /narrower than 2 mm/ })).toHaveCount(0);
+}
+
+async function assertZeroFitErrors(page: import('@playwright/test').Page) {
+  await expect(page.locator('.statusbar')).not.toContainText(/updating checks/i);
+  await expect(page.locator('.status-bar-field').filter({ hasText: /errors/ })).toHaveText('0 errors');
+}
 
 test('neasden map plates follow real elevation × exaggeration (fixture)', async ({ page }) => {
   await openApp(page);
@@ -22,6 +33,8 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
   expect(parts).toBeGreaterThan(4);
 
   await assertPlateHeightMatchesRelief(page, 0.3);
+  await assertNoThin2mmWarnings(page);
+  await assertZeroFitErrors(page);
   await openWorkspaceTab(page, '3D');
   const caption = (await page.getByTestId('plate-height-range').textContent())?.trim() ?? '';
   expect(caption).toMatch(/terrain \d+[–-]\d+ mm/);
@@ -69,6 +82,33 @@ test('re-clicking Neasden keeps user vertical exaggeration ×21', async ({ page 
   await expect(page.getByLabel('Vertical exaggeration')).toHaveValue('21');
   await page.locator('.map-preset-row').getByRole('button', { name: 'Neasden', exact: true }).click();
   await expect(page.getByLabel('Vertical exaggeration')).toHaveValue('21');
+});
+
+test('neasden ×11 and ×21 have no 2 mm thin-neck fit warnings', async ({ page }) => {
+  await openApp(page);
+  await pickNeasdenPreset(page);
+  await openWorkspaceTab(page, 'Map');
+  for (const ex of ['11', '21']) {
+    await page.getByLabel('Vertical exaggeration').selectOption(ex);
+    await waitForMapReady(page);
+    await assertNoThin2mmWarnings(page);
+    await assertZeroFitErrors(page);
+  }
+});
+
+test('stamped stack + neasden ×11 and ×21 have no fit errors', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: /Presets/ }).click();
+  await page.getByRole('button', { name: /Stamped stack/ }).click();
+  await expect(page.locator('.status-bar-field').filter({ hasText: /parts/ })).toContainText(/\d+\s+parts/, { timeout: 90_000 });
+  await pickNeasdenPreset(page);
+  await openWorkspaceTab(page, 'Map');
+  for (const ex of ['11', '21']) {
+    await page.getByLabel('Vertical exaggeration').selectOption(ex);
+    await waitForMapReady(page);
+    await assertZeroFitErrors(page);
+    await assertNoThin2mmWarnings(page);
+  }
 });
 
 test('neasden 3D and Plates screenshots in light and dark', async ({ page }) => {

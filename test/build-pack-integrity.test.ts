@@ -76,6 +76,7 @@ describe('build pack integrity', { timeout: 120_000 }, () => {
     const radial = newProject();
     radial.params.sliceMode = 'radial';
     radial.params.radialCount = '10';
+    radial.params.insShape = 'none';
     assertZipPlates(createPipeline()(radial, assets), radial, 'radial');
   });
 

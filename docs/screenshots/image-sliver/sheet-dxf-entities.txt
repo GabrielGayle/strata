@@ -1,0 +1,21 @@
+file: sheet-01-cut.dxf
+ACADVER: AC1015
+entity types: {"LWPOLYLINE":10,"CIRCLE":1}
+layers: {"CUT":{"LWPOLYLINE":10,"CIRCLE":1}}
+CUT entities: 11
+non-CUT entities: 0
+has LWPOLYLINE: true
+has CIRCLE: true
+has POLYLINE: false
+has SPLINE: false
+has LINE: false
+has ETCH layer: false
+has SHEET layer: false
+has sheet border: false
+
+Commissary cut-only refs:
+  coarse-cut-only.dxf: types={"LWPOLYLINE":18} layers=CUT border=false etch=false forbidden=false
+  medium-cut-only.dxf: types={"LWPOLYLINE":51} layers=CUT border=false etch=false forbidden=false
+  fine-cut-only.dxf: types={"LWPOLYLINE":124} layers=CUT border=false etch=false forbidden=false
+ours extra vs Commissary: CIRCLE (CIRCLE = round holes)
+both: CUT-only, no sheet border, no ETCH/SHEET/LINE/POLYLINE/SPLINE

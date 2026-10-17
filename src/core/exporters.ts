@@ -8,6 +8,7 @@ import { buildPackHtml } from './buildPack';
 import { fitArcs, type Seg } from './arcs';
 import { DxfWriter, LAYERS } from './dxf';
 import { bboxOf, offset, type Path, type Shape, type Vec2 } from './geom2d';
+import type { Issue } from './checks';
 import type { Model } from './pipeline';
 import type { Part, PlateInfo } from './slicer';
 import type { MouldPart } from './mould';
@@ -23,6 +24,7 @@ import { mapBackPlateEtchPaths } from './mapBackPlateEtch';
 import { mapEngravePathsForPart, type MapEngravePlateContext } from './mapEngravePlate';
 import type { UnfoldPiece } from './unfold';
 import { materialOf } from './appearance';
+import { packManifest } from './counts';
 import {
   assertHtmlBuildPackIntegrity,
   assertZipBuildPackIntegrity,
@@ -50,6 +52,36 @@ export function withExportLock<T>(fn: () => T): { ok: true; value: T } | { ok: f
   }
 }
 
+export class FitCheckExportError extends Error {
+  readonly errors: Issue[];
+  constructor(errors: Issue[]) {
+    const n = errors.length;
+    const head = errors
+      .slice(0, 3)
+      .map((e) => (e.partId ? `${e.partId}: ${e.message}` : e.message))
+      .join(' ');
+    super(`Export refused: ${n} fit error${n === 1 ? '' : 's'} remain${n === 1 ? 's' : ''}.${head ? ` ${head}` : ''}`);
+    this.name = 'FitCheckExportError';
+    this.errors = errors;
+  }
+}
+
+export function fitExportErrors(model: Model): Issue[] {
+  return model.issues.filter((i) => i.severity === 'error');
+}
+
+/** Fabrication ZIP / build pack / plate DXF bundles must not ship while fit errors remain. */
+export function assertExportable(model: Model): void {
+  const errors = fitExportErrors(model);
+  if (errors.length) throw new FitCheckExportError(errors);
+}
+
+export function exportFailureMessage(e: unknown): string {
+  if (e instanceof FitCheckExportError) return e.message;
+  if (e instanceof BuildPackIntegrityError) return `Fabrication zip integrity: ${e.message}`;
+  return e instanceof Error ? e.message : String(e);
+}
+
 export interface FittedContour {
   segs: Seg[];
   hole: boolean;
@@ -66,8 +98,72 @@ export function fitShape(shape: Shape, v: Values): FittedContour[] {
   return out;
 }
 
+/** A closed contour that is a circle within `tol` (round holes → CIRCLE). */
+export function segsAsCircle(segs: Seg[], tol: number): { cx: number; cy: number; r: number } | null {
+  if (segs.length < 2) return null;
+  const arcs = segs.filter((s): s is Extract<Seg, { kind: 'arc' }> => s.kind === 'arc');
+  const lines = segs.filter((s): s is Extract<Seg, { kind: 'line' }> => s.kind === 'line');
+  if (arcs.length >= 2) {
+    const a0 = arcs[0];
+    const allow = Math.max(tol, a0.r * 0.02);
+    let sweep = 0;
+    for (const s of arcs) {
+      if (Math.abs(s.r - a0.r) > allow) return null;
+      if (Math.hypot(s.c[0] - a0.c[0], s.c[1] - a0.c[1]) > allow) return null;
+      sweep += s.sweep;
+    }
+    // Two 180° arcs plus a tiny closing chord is still a circle; a rounded
+    // rect has corner arcs on different centres and fails above.
+    if (Math.abs(Math.abs(sweep) - Math.PI * 2) > 0.6) return null;
+    for (const s of lines) {
+      const d0 = Math.hypot(s.a[0] - a0.c[0], s.a[1] - a0.c[1]);
+      const d1 = Math.hypot(s.b[0] - a0.c[0], s.b[1] - a0.c[1]);
+      if (Math.abs(d0 - a0.r) > allow || Math.abs(d1 - a0.r) > allow) return null;
+      if (Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) > a0.r * 0.45) return null;
+    }
+    return { cx: a0.c[0], cy: a0.c[1], r: a0.r };
+  }
+  // Tessellated circle (no arcs): many short chords, including midpoints on the rim.
+  // Four rectangle corners lie on a circle — reject those (need ≥ 8 chords).
+  if (lines.length !== segs.length || segs.length < 8) return null;
+  const pts = segs.map((s) => s.a);
+  pts.push(segs[segs.length - 1].b);
+  let sx = 0, sy = 0;
+  for (const p of pts) {
+    sx += p[0];
+    sy += p[1];
+  }
+  const cx = sx / pts.length, cy = sy / pts.length;
+  const rs = pts.map((p) => Math.hypot(p[0] - cx, p[1] - cy));
+  const r = rs.reduce((a, b) => a + b, 0) / rs.length;
+  if (r < 0.2) return null;
+  const allow = Math.max(tol, r * 0.02);
+  if (rs.some((x) => Math.abs(x - r) > allow)) return null;
+  for (const s of lines) {
+    const mx = (s.a[0] + s.b[0]) / 2;
+    const my = (s.a[1] + s.b[1]) / 2;
+    if (Math.abs(Math.hypot(mx - cx, my - cy) - r) > allow) return null;
+  }
+  return { cx, cy, r };
+}
+
+function placeCircle(circ: { cx: number; cy: number; r: number }, tf: (p: Vec2) => Vec2) {
+  const c = tf([circ.cx, circ.cy]);
+  const q = tf([circ.cx + circ.r, circ.cy]);
+  return { cx: c[0], cy: c[1], r: Math.hypot(q[0] - c[0], q[1] - c[1]) };
+}
+
 function emitContours(w: DxfWriter, contours: FittedContour[], v: Values, tf: (p: Vec2) => Vec2) {
+  const tol = Math.max(0.02, v.arcTolerance * 2);
   for (const c of contours) {
+    if (c.hole) {
+      const local = segsAsCircle(c.segs, tol);
+      if (local) {
+        const circ = placeCircle(local, tf);
+        w.circle(LAYERS.CUT.name, circ.cx, circ.cy, circ.r);
+        continue;
+      }
+    }
     const segs = c.segs.map((s) => mapSeg(s, tf));
     if (v.dxfMode === 'lines') w.linesAndArcs(LAYERS.CUT.name, segs);
     else w.polyline(LAYERS.CUT.name, segs, true);
@@ -137,20 +233,39 @@ function rotPlace(bb: { minX: number; minY: number; maxX: number; maxY: number }
   };
 }
 
-export function sheetDxf(model: Model, sheetIndex: number): string {
-  const v = model.v;
+function sheetParts(model: Model, sheetIndex: number) {
   const sheet = model.nested.sheets[sheetIndex];
   const byId = new Map(model.sliced.parts.map((p) => [p.id, p]));
-  const w = new DxfWriter([LAYERS.CUT, LAYERS.ETCH, LAYERS.SHEET]);
-  w.path(LAYERS.SHEET.name, [[0, 0], [v.sheetW, 0], [v.sheetW, v.sheetH], [0, v.sheetH]], true);
-  for (const pl of sheet.placements) {
+  return sheet.placements.map((pl) => {
     const part = byId.get(pl.id);
-    if (!part) continue;
-    const tf = rotPlace(part.bbox, pl.x, pl.y, pl.rot);
-    emitContours(w, fitShape(part.shape, v), v, tf);
-    for (const p of [...part.etch, ...part.labelPaths]) w.path(LAYERS.ETCH.name, p.map(tf));
-  }
+    return part ? { pl, part, tf: rotPlace(part.bbox, pl.x, pl.y, pl.rot) } : null;
+  }).filter((x): x is { pl: (typeof sheet.placements)[number]; part: Part; tf: (p: Vec2) => Vec2 } => !!x);
+}
+
+/** Nested sheet, CUT only: part outlines and holes. No sheet border, no etch. Send this to the laser. */
+export function sheetCutDxf(model: Model, sheetIndex: number): string {
+  const v = model.v;
+  const w = new DxfWriter([LAYERS.CUT]);
+  for (const { part, tf } of sheetParts(model, sheetIndex)) emitContours(w, fitShape(part.shape, v), v, tf);
   return w.toString();
+}
+
+/** Nested sheet etch/engrave sidecar (part numbers and artwork). Null when the sheet has none. */
+export function sheetEtchDxf(model: Model, sheetIndex: number): string | null {
+  const w = new DxfWriter([LAYERS.ETCH, LAYERS.ENGRAVE]);
+  let n = 0;
+  for (const { part, tf } of sheetParts(model, sheetIndex)) {
+    for (const p of [...part.etch, ...part.labelPaths]) {
+      w.path(LAYERS.ETCH.name, p.map(tf));
+      n++;
+    }
+  }
+  return n ? w.toString() : null;
+}
+
+/** Cut-only nested sheet (same as `sheetCutDxf`). */
+export function sheetDxf(model: Model, sheetIndex: number): string {
+  return sheetCutDxf(model, sheetIndex);
 }
 
 export function mouldPartDxf(mp: MouldPart, v: Values): string {
@@ -243,9 +358,45 @@ export function sheetFiles(model: Model): Record<string, Uint8Array> {
   model.nested.sheets.forEach((s, i) => {
     const dir = mixed && s.material ? `${safe(s.material)}/` : '';
     counts[dir] = (counts[dir] ?? 0) + 1;
-    files[`${dir}sheet-${String(counts[dir]).padStart(2, '0')}.dxf`] = strToU8(sheetDxf(model, i));
+    const nn = String(counts[dir]).padStart(2, '0');
+    files[`${dir}sheet-${nn}-cut.dxf`] = strToU8(sheetCutDxf(model, i));
+    const etch = sheetEtchDxf(model, i);
+    if (etch) files[`${dir}sheet-${nn}-etch.dxf`] = strToU8(etch);
   });
   return files;
+}
+
+export function packReadme(model: Model): string {
+  const v = model.v;
+  const lines = [
+    'Strata fabrication pack',
+    '=======================',
+    '',
+    'laser/parts/*.dxf',
+    '  One file per laser-cut part (outlines, holes, and etch). Round holes are CIRCLE;',
+    '  other outlines are LWPOLYLINE. Layers: CUT (cut this), ETCH / ENGRAVE (optional).',
+    '',
+    'laser/sheets/sheet-NN-cut.dxf',
+    '  Nested sheet, CUT ONLY. Closed LWPOLYLINE outlines (CIRCLE for round holes) on',
+    '  the CUT layer — the same structure Commissary quotes: no 1250×2500 sheet border',
+    '  and no etch. That rectangle is not a cut; quoting it as one inflates the price.',
+    '',
+    'laser/sheets/sheet-NN-etch.dxf',
+    '  Optional sidecar: part numbers and artwork on ETCH / ENGRAVE. Omit this file',
+    '  if you do not want etching. Never merge it into the cut file for a cut quote.',
+    '',
+    `Sheets are ${v.sheetW} × ${v.sheetH} mm. Nested parts use ${v.partSpacing} mm spacing.`,
+    `Plate thickness ${v.thickness} mm. Kerf compensation ${v.kerf} mm (outlines offset by half).`,
+    '',
+    `This pack has ${model.bom.plateCount} plates and ${model.bom.partCount} laser-cut parts.`,
+    'Counts in header, status, schedule, laser/parts, and manifest.json must match those two numbers.',
+  ];
+  const dropped = (model.sliced.fragments ?? []).filter((e) => e.action === 'dropped' || e.action === 'merged');
+  if (dropped.length) {
+    lines.push('', 'Fragments handled:');
+    for (const ev of dropped) lines.push(`  - ${ev.action} ${ev.pieceId} (${ev.w.toFixed(2)} × ${ev.h.toFixed(2)} mm)`);
+  }
+  return lines.join('\n') + '\n';
 }
 
 /** One DXF per laser part. With mixed metals each metal gets its own folder. */
@@ -315,6 +466,7 @@ function plateArtifactFiles(model: Model, project: Project): Record<string, Uint
 
 /** Printable build pack HTML with integrity checks (use this instead of `buildPackHtml` directly). */
 export function buildPackHtmlChecked(project: Project, model: Model, opts: import('./buildPack').BuildPackOptions = {}): string {
+  assertExportable(model);
   const html = buildPackHtml(project, model, opts);
   assertHtmlBuildPackIntegrity(project, model, html);
   return html;
@@ -322,6 +474,7 @@ export function buildPackHtmlChecked(project: Project, model: Model, opts: impor
 
 /** `rates` are the price estimate's (the user's edited ones, when the UI has them). */
 export function buildZip(model: Model, project: Project, rates: PriceRates = DEFAULT_RATES): Uint8Array {
+  assertExportable(model);
   const v = model.v;
   const files: Record<string, Uint8Array> = {};
   for (const [name, data] of Object.entries(partFiles(model, project))) files[`laser/parts/${name}`] = data;
@@ -346,8 +499,9 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
     files['price-estimate.json'] = strToU8(JSON.stringify(estimate, null, 2) + '\n');
   }
   if (model.shadow && project.shadow?.frames.length) files['shadow-install-card.html'] = strToU8(installCardHtml(project, v, model.shadow));
+  files['README.txt'] = strToU8(packReadme(model));
   files['build-pack.html'] = strToU8(buildPackHtmlChecked(project, model, { rates }));
-  files['manifest.json'] = strToU8(JSON.stringify(buildPlateManifest(model, project), null, 2) + '\n');
+  files['manifest.json'] = strToU8(JSON.stringify({ ...packManifest(model), ...buildPlateManifest(model, project) }, null, 2) + '\n');
   const archetype = project.images.top?.map?.archetypeCard;
   if (archetype && typeof archetype === 'object') {
     files['map/archetype-card.json'] = strToU8(JSON.stringify(archetype, null, 2) + '\n');

@@ -85,7 +85,7 @@ async function seed(page: Page) {
 async function waitReady(page: Page) {
   await page.waitForSelector('.app.window', { timeout: 60_000 });
   // Pack integrity puts plate count first; wait on the parts field, not .first().
-  await expect(page.locator('.status-bar-field').filter({ hasText: /\d+\s+parts/ })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('status-counts')).toContainText(/\d+\s+parts/, { timeout: 60_000 });
   await expect(page.getByTestId('plate-height-range')).toBeVisible({ timeout: 60_000 });
 }
 

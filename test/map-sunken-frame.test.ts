@@ -36,6 +36,7 @@ function mockSliced(shapes: Shape[], keys?: string[]): SliceResult {
       kind: 'plate',
     })),
     warnings: [],
+    fragments: [],
     front: null,
     top: null,
     support: null,

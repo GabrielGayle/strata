@@ -215,7 +215,7 @@ export function assertHtmlBuildPackIntegrity(_project: Project, model: Model, ht
   }
   const mainParts = model.sliced.parts.filter((p) => p.family === 'P' || p.family === 'X' || p.family === 'R');
   for (const p of mainParts) {
-    if (!html.includes(`<td class="id">${p.id}</td>`)) {
+    if (!html.includes(`<td class="id">${p.id}`)) {
       throw new BuildPackIntegrityError(`Build pack HTML schedule missing part ${p.id}`);
     }
   }

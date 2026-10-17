@@ -1,9 +1,10 @@
 // Fabrication fit checks: everything that would make a part uncuttable or
 // make it not fit once it's cut.
-import { difference, offset, pointInShape, shapeArea, shapeBBox, signedArea, type Shape, type Vec2 } from './geom2d';
+import { difference, pointInShape, shapeArea, shapeBBox, signedArea, type Shape, type Vec2 } from './geom2d';
 import { cached } from './memo';
 import type { Values } from './params';
 import type { Part, SliceResult } from './slicer';
+import { formatFragment, kerfGapRegions, morphOpen } from './fragments';
 import { planeToWorld, type V3 } from './section';
 import { baseChamfers, planClearance } from './base';
 
@@ -12,7 +13,7 @@ export type Severity = 'error' | 'warn' | 'info';
 export interface Issue {
   partId: string | null;
   plateKey?: string;
-  type: 'thin' | 'gap' | 'small' | 'collision' | 'island' | 'unanchored' | 'hole' | 'sheet' | 'bevel' | 'label' | 'general';
+  type: 'thin' | 'gap' | 'small' | 'collision' | 'island' | 'unanchored' | 'hole' | 'sheet' | 'bevel' | 'label' | 'fragment' | 'general';
   severity: Severity;
   message: string;
   at?: Vec2;
@@ -26,9 +27,8 @@ function regions(s: Shape, minArea: number): Shape[] {
 // The two morphology checks are the expensive part; they are cached on the part's
 // shape, which the pipeline keeps identical for parts an edit didn't change.
 const thinRegions = (s: Shape, mf: number) =>
-  cached(s, `thin:${mf}`, () => regions(difference(s, offset(offset(s, -mf / 2, 'miter'), mf / 2, 'miter')), mf * mf * 0.6));
-const gapRegions = (s: Shape, kerf: number) =>
-  cached(s, `gap:${kerf}`, () => regions(difference(offset(offset(s, kerf / 2, 'miter'), -kerf / 2, 'miter'), s), kerf * kerf * 4));
+  cached(s, `thin:${mf}`, () => regions(difference(s, morphOpen(s, mf)), mf * mf * 0.6));
+const gapRegions = (s: Shape, kerf: number) => cached(s, `gap:${kerf}`, () => kerfGapRegions(s, kerf).map((e) => [e]));
 /** Thinnest concrete floor left under the embedded plates before it is likely to crack. */
 export const MIN_FLOOR = 5;
 
@@ -198,6 +198,15 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
       issues.push({ partId: b.plateKey ? byKey.get(b.plateKey) ?? null : null, plateKey: b.plateKey, type: 'general', severity: b.severity, message: b.message, at: b.at });
   }
   for (const w of sliced.warnings) issues.push({ partId: null, type: 'general', severity: 'warn', message: w });
+  for (const ev of sliced.fragments ?? []) {
+    issues.push({
+      partId: ev.action === 'kept' ? ev.pieceId : ev.parentId ?? ev.plateId,
+      plateKey: ev.plateKey,
+      type: 'fragment',
+      severity: 'info',
+      message: formatFragment(ev),
+    });
+  }
   return issues;
 }
 

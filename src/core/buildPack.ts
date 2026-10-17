@@ -16,6 +16,7 @@ import { bucketOf, finishOf, lookOf, METAL_NAMES } from './appearance';
 import { isIdentity } from './moves';
 import { DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from './price';
 import type { Rod, RodPlan } from './brace';
+import { formatFragment } from './fragments';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -644,7 +645,8 @@ function scheduleRows(project: Project, m: Model, view: View, parts: Part[], tun
       const metal = metalOf(project, m, p.plateKey);
       const mv = moveText(project, view, p.plateKey);
       const note = tunes.get(p.plateKey);
-      return `<tr><td class="n">${i + 1}</td><td class="id">${esc(p.id)}</td><td>${esc(metal.label)}</td><td class="nw">${n1(p.bbox.maxX - p.bbox.minX)} × ${n1(p.bbox.maxY - p.bbox.minY)}</td><td class="nw">${n1(p.thickness)}</td><td>${esc(positionText(m, view, p))}${note ? `<br><small>rings ${esc(note)}</small>` : ''}</td><td>${mv ? `<b>${esc(mv)}</b>` : '—'}</td><td>${thumb(p.shape)}</td></tr>`;
+      const ofPlate = p.plateId && p.plateId !== p.id ? `<br><small>part of ${esc(p.plateId)}</small>` : '';
+      return `<tr><td class="n">${i + 1}</td><td class="id">${esc(p.id)}${ofPlate}</td><td>${esc(metal.label)}</td><td class="nw">${n1(p.bbox.maxX - p.bbox.minX)} × ${n1(p.bbox.maxY - p.bbox.minY)}</td><td class="nw">${n1(p.thickness)}</td><td>${esc(positionText(m, view, p))}${note ? `<br><small>rings ${esc(note)}</small>` : ''}</td><td>${mv ? `<b>${esc(mv)}</b>` : '—'}</td><td>${thumb(p.shape)}</td></tr>`;
     })
     .join('\n');
 }
@@ -1056,7 +1058,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
   const facts: [string, string][] = [
     ['Design', modeText(m, mains)],
     ['Overall size', `${n1(pb.maxX - pb.minX)} wide × ${n1(pb.maxY - pb.minY)} deep × ${n1(top)} high (mm)`],
-    ['Plates', `${m.sliced.plates.length}${parts.length !== m.sliced.plates.length ? ` (${parts.length} laser-cut parts in all)` : ''}`],
+    ['Plates', `${m.sliced.plates.length} plates · ${parts.length} laser-cut parts`],
     ['Weight', `about ${weight.toFixed(0)} kg${v.baseOn ? ` (steel ${m.bom.plateMass.toFixed(1)} kg, concrete ${m.bom.concreteMass.toFixed(0)} kg)` : ''}`],
     ['Materials', `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
     ['Date', `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`],
@@ -1067,6 +1069,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
 <dl class="facts">${facts.map(([k, x]) => `<dt>${k}</dt><dd>${x}</dd>`).join('')}</dl>
 ${errors ? `<p class="warn">The design has ${plural(errors, 'check error')}: fix ${errors === 1 ? 'it' : 'them'} in Strata before cutting.</p>` : ''}
 <p class="plate-legend" data-plate-count="${m.sliced.plates.length}">This pack lists <b>${m.sliced.plates.length}</b> plates — the same count as the model and <span class="mono">manifest.json</span>.</p>
+${(m.sliced.fragments ?? []).length ? `<p class="note">Fragments: ${m.sliced.fragments.map((e) => esc(formatFragment(e))).join(' ')}</p>` : ''}
 <figure class="full">${angledSvg(project, m, view, 'The finished piece from the front right', { maxH: 400 })}<figcaption>From the front right, in the plates' metals and finishes. Orthographic: parallel edges stay parallel, so nothing shrinks with distance.</figcaption></figure>
 <h2>Contents</h2>
 <ol class="toc">${sections.map((s) => `<li><a href="#${s.id}">${s.title}</a></li>`).join('')}</ol>

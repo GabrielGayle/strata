@@ -81,12 +81,12 @@ describe('mixed metals through the pipeline', () => {
     const files = Object.keys(unzipSync(buildZip(m, p)));
     expect(files.some((f) => f.startsWith('laser/parts/aluminium/'))).toBe(true);
     expect(files.some((f) => f.startsWith('laser/parts/corten/'))).toBe(true);
-    expect(files).toContain('laser/sheets/aluminium/sheet-01.dxf');
-    expect(files).toContain('laser/sheets/corten/sheet-01.dxf');
+    expect(files).toContain('laser/sheets/aluminium/sheet-01-cut.dxf');
+    expect(files).toContain('laser/sheets/corten/sheet-01-cut.dxf');
     // one metal keeps the old flat layout
     const plainP = slimProject();
     const plain = createPipeline()(plainP, assets);
-    expect(Object.keys(unzipSync(buildZip(plain, plainP)))).toContain('laser/sheets/sheet-01.dxf');
+    expect(Object.keys(unzipSync(buildZip(plain, plainP)))).toContain('laser/sheets/sheet-01-cut.dxf');
   });
 
   it('prices each metal on its own rates with one order minimum', () => {

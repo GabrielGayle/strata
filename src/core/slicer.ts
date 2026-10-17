@@ -36,6 +36,7 @@ import { strokeTextCentered, textWidth } from './strokefont';
 import { MAX_TUNED, MIN_TUNED, tunePlates, tuningActive, type PlateTune } from './tuning';
 import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
 import { buildSpacers, planRods, rodHardware, rodHoles, type BraceIssue, type HardwareRow, type RodPlan, type SpacerResult } from './brace';
+import { finishPlatePieces, type FragmentEvent } from './fragments';
 import { movePlane, type PartMoves } from './moves';
 
 export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T';
@@ -68,6 +69,8 @@ export interface Part {
   perimeter: number;
   bbox: BBox;
   anchored: boolean;
+  /** Stem id of the plate this piece belongs to (S-03). Equals `id` when the plate is one piece. */
+  plateId?: string;
   /** Parts that aren't plates (spacers, braces…): the point a hand move turns about. */
   pivot?: V3;
   /** Where a loose part was designed, when a hand move has carried it elsewhere (plane is the moved one). */
@@ -130,6 +133,8 @@ export function plateTopHeightRangeMm(plates: PlateInfo[]): number {
 export interface SliceResult {
   plates: PlateInfo[];
   parts: Part[];
+  /** Sub-minimum or unsupported pieces that were merged, dropped, or kept. */
+  fragments: FragmentEvent[];
   warnings: string[];
   front: FrontWindow | null;
   top: TopWindow | null;
@@ -1116,6 +1121,7 @@ export function slice(input: SliceInput): SliceResult {
   const hf = input.hf;
   const v = input.mapTerrain ? { ...input.v, edgeFlow: 0 } : input.v;
   const warnings: string[] = [];
+  const fragmentEvents: FragmentEvent[] = [];
   const round: { spots: RoundSpot[] } = { spots: [] };
   const roundSplits: string[] = [];
   // design-side work (outlines, image cuts) happens where each plate was designed;
@@ -1396,7 +1402,7 @@ export function slice(input: SliceInput): SliceResult {
     if (cuts.length) shape = difference(shape, cuts.flat());
 
     // 7. split into physical pieces; islands inside holes would fall out
-    const pieces: ExPoly[] = [];
+    let pieces: ExPoly[] = [];
     for (const ex of shape) {
       // islands inside a flat layer's cut-outs rest on the layer below, so they stay as parts
       if ((ex.depth ?? 0) > 0 && !isFlat) {
@@ -1412,6 +1418,23 @@ export function slice(input: SliceInput): SliceResult {
     });
 
     const base = partLabel(v, def.family, def.index, def.count);
+    const anchoredOf = (ex: ExPoly) => {
+      const bb = bboxOf([ex.outer]);
+      return isFlat
+        ? def.index === 0 || !below.length || shapeArea(intersection([ex], below)) > 1
+        : e <= 0 || bb.minY < -0.5;
+    };
+    const resolved = finishPlatePieces(pieces, {
+      v,
+      plateKey: def.key,
+      plateId: base,
+      anchored: anchoredOf,
+      below,
+      isFlat,
+      index: def.index,
+    });
+    fragmentEvents.push(...resolved.events);
+    pieces = resolved.pieces;
     pieces.forEach((ex, pi) => {
       const id = pieces.length > 1 ? `${base}${String.fromCharCode(97 + (pi % 26))}` : base;
       const bb = bboxOf([ex.outer]);
@@ -1442,7 +1465,8 @@ export function slice(input: SliceInput): SliceResult {
         area: shapeArea([ex]),
         perimeter: shapePerimeter([ex]),
         bbox: bb,
-        anchored: isFlat ? def.index === 0 || shapeArea(intersection([ex], below)) > 1 : e <= 0 || bb.minY < -0.5,
+        anchored: anchoredOf(ex),
+        plateId: base,
         kind: 'plate',
       };
       info.parts.push(part);
@@ -1454,17 +1478,20 @@ export function slice(input: SliceInput): SliceResult {
       const guide = outlinePaths(shape);
       for (const q of prev?.parts ?? []) q.etch = [...q.etch, ...clipLines(guide, offset(q.shape, -0.8))];
     }
-    if (isFlat) below = shape;
+    if (isFlat) below = pieces;
     plates.push(info);
   });
 
   // 8. the support ring, cut from the same sheet, with a mortise for every tenon
   if (support) {
     const ring = ringShape(support, v, tenons);
-    const pieces = ring.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
-    if (pieces.length > 1) warnings.push(`Support ring falls apart into ${pieces.length} pieces: widen it or raise the slot end land.`);
+    let pieces = ring.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
     const plane = supportPlane(support);
     const base = partLabel(v, 'S', 0, 1);
+    const resolved = finishPlatePieces(pieces, { v, plateKey: 'S0', plateId: base, anchored: () => true });
+    fragmentEvents.push(...resolved.events);
+    pieces = resolved.pieces;
+    if (pieces.length > 1) warnings.push(`Support ring falls apart into ${pieces.length} pieces: widen it or raise the slot end land.`);
     const hLab = Math.min(v.labelHeight, (support.outer - support.inner) * 0.4);
     pieces.forEach((ex, pi) => {
       const id = pieces.length > 1 ? `${base}${String.fromCharCode(97 + (pi % 26))}` : base;
@@ -1486,6 +1513,7 @@ export function slice(input: SliceInput): SliceResult {
         perimeter: shapePerimeter([ex]),
         bbox: bb,
         anchored: true,
+        plateId: base,
         kind: 'plate',
       };
       allParts.push(part);
@@ -1530,6 +1558,7 @@ export function slice(input: SliceInput): SliceResult {
         perimeter: shapePerimeter([ex]),
         bbox: bboxOf([ex.outer]),
         anchored: true,
+        plateId: id,
         kind: 'plate',
       });
     }
@@ -1542,5 +1571,5 @@ export function slice(input: SliceInput): SliceResult {
   const spots = round.spots.sort((a, b) => b.move - a.move).slice(0, 6);
   if (spots.length && spots[0].move > Math.max(2, rMax * 3)) warnings.push(`Round all corners flattens detail: the edge of ${spots[0].label} moves ${spots[0].move.toFixed(1)} mm. Lower the radius, or set Inside corners lower.`);
   if (roundSplits.length) warnings.push(`Round all corners cuts through a narrow neck and splits ${roundSplits.slice(0, 4).join(', ')}${roundSplits.length > 4 ? ` and ${roundSplits.length - 4} more` : ''} into pieces.`);
-  return { plates, parts: allParts, warnings, front: front ? front.win : null, top: topWin, support, tuning, brace, roundSpots: spots };
+  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, support, tuning, brace, roundSpots: spots };
 }
