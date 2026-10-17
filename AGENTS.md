@@ -41,7 +41,9 @@ It must **bypass** every photo/image step:
 
 The Map tab hillshade can look correct while 3D plates stay a ~32 mm band at `stackHeight` ± `erosionAmp` (live Neasden: 232–264 mm). That means the pipeline still used `buildHeightField` and never called `buildMapHeightField`.
 
-Tests: `test/map-plate-height.test.ts`, `e2e/neasden-map.spec.ts` (fixtures), `LIVE_MAP=1 npm run e2e:live`.
+Map world frame is **right-handed ENU**: **+X south** (S-01 / Front at −X = north), **+Y up**, **+Z west** (east = −Z). 3D Top with north up has **east on the right**. 3D Front (from the north looking south) and each plate DXF viewed face-on from the north have **east on the left** — the same view of the real landscape. OSM engrave uses that plate +x (art west → part maxX). Do not roll the camera to fake east–west; `sampleMapHeightGrid` shares this mapping and is not independent truth. Enforced by `test/map-orient.test.ts` (NE-corner ENU + Top projection + engrave vs profile).
+
+Tests: `test/map-plate-height.test.ts`, `test/map-orient.test.ts`, `e2e/neasden-map.spec.ts` (fixtures), `LIVE_MAP=1 npm run e2e:live`.
 
 ### Manual overrides must not be clobbered
 

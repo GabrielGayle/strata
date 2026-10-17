@@ -9,3 +9,6 @@ export const KINGSBARNS_BBOX: [number, number, number, number] = [-2.655, 56.335
 
 /** Royal County Down — Northern Ireland LiDAR acceptance bbox. */
 export const ROYAL_COUNTY_DOWN_BBOX: [number, number, number, number] = [-5.808, 54.215, -5.775, 54.238];
+
+/** Buttermere / Crummock (WGS84 west, south, east, north) — orientation + water acceptance. */
+export const BUTTERMERE_BBOX: [number, number, number, number] = [-3.34325, 54.51331, -3.21875, 54.58569];
