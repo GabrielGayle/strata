@@ -106,7 +106,8 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
     const a = x * f.across[0] + z * f.across[1];
     const sn = s / f.stackLen + 0.5;
     const an = a / f.acrossLen + 0.5;
-    const d = sampleMetres(metres, depth.w, depth.h, an, 1 - sn);
+    // Map image: col 0 west, row 0 north. S-01 is the front of the stack (sn=0) and the north end.
+    const d = sampleMetres(metres, depth.w, depth.h, an, sn);
     const dd = Number.isFinite(d) ? Math.min(far, Math.max(near, d)) : far;
     return MAP_HEIGHT_FLOOR_MM + (far - dd) * scale;
   };
@@ -123,4 +124,23 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
     }
   }
   return { at, min, max };
+}
+
+/**
+ * Sample plate-top heights onto a north-up map grid (row 0 = north = S-01).
+ * Used to correlate the 3D mesh with the metric DEM.
+ */
+export function sampleMapHeightGrid(hf: HeightField, v: Values, w: number, h: number): Float32Array {
+  const f = stackFrame(v);
+  const data = new Float32Array(w * h);
+  for (let row = 0; row < h; row++) {
+    const sn = h <= 1 ? 0 : row / (h - 1);
+    for (let col = 0; col < w; col++) {
+      const an = w <= 1 ? 0 : col / (w - 1);
+      const s = (sn - 0.5) * f.stackLen;
+      const a = (an - 0.5) * f.acrossLen;
+      data[row * w + col] = hf.at(s * f.stack[0] + a * f.across[0], s * f.stack[1] + a * f.across[1]);
+    }
+  }
+  return data;
 }

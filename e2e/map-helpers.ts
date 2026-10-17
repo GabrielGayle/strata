@@ -1,5 +1,8 @@
 import { expect, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { existsSync, renameSync, unlinkSync } from 'node:fs';
 import { PNG } from 'pngjs';
+import { BUTTERMERE_BBOX } from '../test/map-fixtures';
 
 const MAP_READY_MS = process.env.LIVE_MAP === '1' || process.env.LIVE_MAP_SCREENSHOTS === '1' ? 300_000 : 90_000;
 
@@ -224,4 +227,99 @@ export async function setThemePreset(page: Page, name: string) {
   await page.getByRole('button', { name: 'Appearance ▾' }).click();
   await page.getByRole('button', { name, exact: true }).click();
   await page.keyboard.press('Escape');
+}
+
+export async function applyDesignText(page: Page, text: string) {
+  await dismissTour(page);
+  await page.locator('.app.window').click({ position: { x: 8, y: 8 } });
+  await page.keyboard.press('/');
+  await page.waitForSelector('.design-box .design-input', { timeout: 15_000 });
+  await page.fill('.design-box .design-input', text);
+  await page.getByRole('button', { name: 'Apply' }).click();
+}
+
+/** Map tab bbox fields + Apply. Auto-builds once the spec is set. */
+export async function applyMapBbox(
+  page: Page,
+  bbox: [number, number, number, number] = BUTTERMERE_BBOX,
+  title = 'Buttermere',
+) {
+  await dismissTour(page);
+  await openWorkspaceTab(page, 'Map');
+  await page.locator('#map-title').fill(title);
+  const grid = page.locator('.map-bbox-grid');
+  await grid.getByLabel('West').fill(String(bbox[0]));
+  await grid.getByLabel('South').fill(String(bbox[1]));
+  await grid.getByLabel('East').fill(String(bbox[2]));
+  await grid.getByLabel('North').fill(String(bbox[3]));
+  await page.getByRole('button', { name: 'Apply bbox & title' }).click();
+}
+
+export async function snapViewportDir(page: Page, dir: 'iso' | 'front' | 'side' | 'top', ortho = true) {
+  await openWorkspaceTab(page, '3D');
+  const view = page.getByTestId('viewport-3d');
+  await view.getByRole('button', { name: dir === 'iso' ? 'Iso' : dir === 'front' ? 'Front' : dir === 'side' ? 'Side' : 'Top' }).click();
+  const orthoBtn = view.getByRole('button', { name: 'Ortho' });
+  const on = await orthoBtn.getAttribute('class');
+  if (ortho && !on?.includes('on')) await orthoBtn.click();
+  if (!ortho && on?.includes('on')) await orthoBtn.click();
+}
+
+export function downscalePng(src: Buffer, maxWidth = 400): Buffer {
+  const png = PNG.sync.read(src);
+  const scale = Math.min(1, maxWidth / png.width);
+  const w = Math.max(1, Math.round(png.width * scale));
+  const h = Math.max(1, Math.round(png.height * scale));
+  const out = new PNG({ width: w, height: h });
+  for (let y = 0; y < h; y++) {
+    const sy = Math.min(png.height - 1, Math.round(y / scale));
+    for (let x = 0; x < w; x++) {
+      const sx = Math.min(png.width - 1, Math.round(x / scale));
+      const i = (png.width * sy + sx) << 2;
+      const j = (w * y + x) << 2;
+      out.data[j] = png.data[i];
+      out.data[j + 1] = png.data[i + 1];
+      out.data[j + 2] = png.data[i + 2];
+      out.data[j + 3] = png.data[i + 3];
+    }
+  }
+  return PNG.sync.write(out, { deflateLevel: 9 });
+}
+
+export function stitchPngSideBySide(leftBuf: Buffer, rightBuf: Buffer, gap = 8): Buffer {
+  const left = PNG.sync.read(leftBuf);
+  const right = PNG.sync.read(rightBuf);
+  const h = Math.max(left.height, right.height);
+  const w = left.width + gap + right.width;
+  const out = new PNG({ width: w, height: h });
+  out.data.fill(230);
+  const blit = (src: PNG, dx: number) => {
+    for (let y = 0; y < src.height; y++) {
+      for (let x = 0; x < src.width; x++) {
+        const i = (src.width * y + x) << 2;
+        const j = (w * y + (dx + x)) << 2;
+        out.data[j] = src.data[i];
+        out.data[j + 1] = src.data[i + 1];
+        out.data[j + 2] = src.data[i + 2];
+        out.data[j + 3] = src.data[i + 3];
+      }
+    }
+  };
+  blit(left, 0);
+  blit(right, left.width + gap);
+  return PNG.sync.write(out, { deflateLevel: 9 });
+}
+
+export function compressPngFile(dest: string) {
+  const tmp = `${dest}.tmp.png`;
+  try {
+    execFileSync(
+      'ffmpeg',
+      ['-y', '-loglevel', 'error', '-i', dest, '-vf', 'format=rgb24', '-compression_level', '100', tmp],
+      { stdio: 'pipe' },
+    );
+    if (existsSync(tmp)) renameSync(tmp, dest);
+  } catch {
+    if (existsSync(tmp)) unlinkSync(tmp);
+  }
 }

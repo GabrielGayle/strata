@@ -11,7 +11,7 @@ function webServerEnv(): NodeJS.ProcessEnv {
 
 export default defineConfig({
   testDir: 'e2e',
-  testMatch: /(neasden-map-live|quick-map-live)\.spec\.ts$/,
+  testMatch: /(neasden-map-live|quick-map-live|buttermere-orient-live)\.spec\.ts$/,
   fullyParallel: false,
   retries: 0,
   workers: 1,

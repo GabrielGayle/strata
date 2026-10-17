@@ -55,4 +55,46 @@ describe('map reprojection + resample', () => {
     const aspectIn = (mb.east - mb.west) / (mb.north - mb.south);
     expect(widthM / heightM).toBeCloseTo(aspectIn, 2);
   });
+
+  it('writes a north-up grid (row 0 = north, col 0 = west)', () => {
+    const bbox: [number, number, number, number] = [-0.255, 51.548, -0.245, 51.556];
+    const crs = pickMetricCrs(bbox);
+    const mb = metricBounds(bbox, crs);
+    const w = 48;
+    const h = 48;
+    const pixelW = (mb.east - mb.west) / w;
+    const absH = (mb.north - mb.south) / h;
+    const data = new Float32Array(w * h);
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) {
+        const north = 1 - row / (h - 1);
+        const west = 1 - col / (w - 1);
+        data[row * w + col] = 40 + 90 * north * west;
+      }
+    }
+    const source: Float32Grid = {
+      w,
+      h,
+      data,
+      crs,
+      transform: {
+        originX: mb.west + pixelW / 2,
+        originY: mb.north - absH / 2,
+        pixelW,
+        pixelH: -absH,
+      },
+    };
+    const out = reprojectResample(source, { bbox, resM: 20, model: 'dtm' });
+    expect(out.transform.pixelH).toBeLessThan(0);
+    expect(out.transform.originY).toBeGreaterThan(mb.south + (mb.north - mb.south) * 0.5);
+    let maxI = 0;
+    for (let i = 1; i < out.data.length; i++) if (out.data[i] > out.data[maxI]) maxI = i;
+    const maxRow = Math.floor(maxI / out.w);
+    const maxCol = maxI % out.w;
+    expect(maxRow).toBeLessThan(out.h * 0.25);
+    expect(maxCol).toBeLessThan(out.w * 0.25);
+    const nw = out.data[0];
+    const se = out.data[(out.h - 1) * out.w + (out.w - 1)];
+    expect(nw).toBeGreaterThan(se + 40);
+  });
 });
