@@ -330,7 +330,7 @@ function StackRods({ model }: { model: Model }) {
             position={mid}
             userData={{ strata: 'stack-rod', id: r.id }}
           >
-            <meshStandardMaterial color="#8b9198" metalness={0.88} roughness={0.32} />
+            <meshStandardMaterial color="#d4dbe2" metalness={0.75} roughness={0.28} emissive="#2a3138" emissiveIntensity={0.22} />
           </mesh>
         );
       })}

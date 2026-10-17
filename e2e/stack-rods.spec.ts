@@ -45,6 +45,8 @@ test.describe('support poles on a Stamped two-peak stack', () => {
     await view3d.screenshot({ path: join(SHOT, '3d-plates-and-rods.png') });
 
     await toolbar.getByRole('button', { name: 'Plates' }).click();
+    await toolbar.getByRole('button', { name: 'Engrave / OSM' }).click();
+    await toolbar.getByRole('button', { name: 'Labels / dims' }).click();
     await expect(toolbar.getByRole('button', { name: 'Plates' })).not.toHaveClass(/on/);
     await expect(root).toHaveAttribute('data-strata-stack-rods-visible', '1');
     await view3d.screenshot({ path: join(SHOT, '3d-rods-only.png') });
