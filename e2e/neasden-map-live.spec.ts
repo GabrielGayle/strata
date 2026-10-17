@@ -1,9 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import { openApp, pickNeasdenPreset, openWorkspaceTab, waitForMapReady, assertPlateHeightMatchesRelief } from './map-helpers';
-
-const LIVE_SHOT = '/opt/cursor/artifacts/screenshots';
 
 async function readFit(page: import('@playwright/test').Page) {
   await expect(page.locator('.statusbar')).not.toContainText(/updating checks/i);
@@ -105,9 +101,8 @@ test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page
   await expect(page.locator('.issue').filter({ hasText: /narrower than 2 mm/ })).toHaveCount(0);
 });
 
-test('live Neasden ×11/×21 upright Vermilion and Stamped: 0 errors, no 2 mm thin', async ({ page }) => {
+test('live Neasden ×11/×21 upright Vermilion and Stamped: 0 errors, no 2 mm thin', async ({ page }, testInfo) => {
   test.setTimeout(600_000);
-  await mkdir(LIVE_SHOT, { recursive: true });
   await openApp(page);
   await pickNeasdenPreset(page);
   await openWorkspaceTab(page, 'Map');
@@ -122,7 +117,9 @@ test('live Neasden ×11/×21 upright Vermilion and Stamped: 0 errors, no 2 mm th
     log[label] = fit;
     // eslint-disable-next-line no-console
     console.log(`live app ${label}`, fit);
-    await page.locator('.statusbar').screenshot({ path: join(LIVE_SHOT, `neasden_${label.replace(/\s+/g, '_')}_status.png`) });
+    await page.locator('.statusbar').screenshot({
+      path: testInfo.outputPath(`neasden_${label.replace(/\s+/g, '_')}_status.png`),
+    });
     expect(fit.errors, `${label} ${fit.errorsText}`).toBe(0);
     expect(fit.thin, `${label} still has 2 mm thin warnings`).toBe(0);
     expect(fit.kerf, `${label} still has kerf-narrow gaps`).toBe(0);
