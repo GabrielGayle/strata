@@ -5,10 +5,11 @@ import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
 import { createPipeline, type Assets } from '../src/core/pipeline';
-import { newProject } from '../src/core/project';
+import { newProject, PRESETS } from '../src/core/project';
 import { buildZip } from '../src/core/exporters';
 import { DxfWriter, LAYERS, assertStrictDxfR2000 } from '../src/core/dxf';
 import { GABRIEL_PARAMS, sliverFrontGray, sliverSideGray } from './image-sliver-fixture';
+import { STACK_ROD_PARAMS, twoPeakGray } from './stack-rods-fixture';
 
 const empty: Assets = { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null };
 
@@ -68,6 +69,17 @@ describe('DXF R2000 strict', { timeout: 60_000 }, () => {
           sideImg: sliverSideGray(),
           frontImg: sliverFrontGray(),
           topImg: null,
+          insMesh: null,
+          srcMesh: null,
+        });
+      })(),
+      (() => {
+        const p = newProject();
+        p.params = { ...p.params, ...PRESETS.find((x) => x.name === 'Stamped stack')!.params, ...STACK_ROD_PARAMS };
+        return createPipeline()(p, {
+          sideImg: null,
+          frontImg: null,
+          topImg: twoPeakGray(),
           insMesh: null,
           srcMesh: null,
         });

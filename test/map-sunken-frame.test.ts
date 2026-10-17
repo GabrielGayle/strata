@@ -42,6 +42,7 @@ function mockSliced(shapes: Shape[], keys?: string[]): SliceResult {
     support: null,
     tuning: null,
     brace: null,
+    stackRods: null,
   };
 }
 

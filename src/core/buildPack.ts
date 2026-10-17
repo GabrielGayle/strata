@@ -701,6 +701,13 @@ function assemblySteps(project: Project, m: Model, view: View, names: Map<string
       steps.push(
         `<b>Glue the layers up from the bottom</b>, in the glue-up order: ${nm(P[0])} first${v.baseOn ? ' (onto the base)' : ''}, ${nm(P[P.length - 1])} last. ${v.flatGuides ? 'Each layer sits on the outline etched into the one below' : 'Line each layer up with the one below'}${pins ? ' and drops over the pins' : ''}. Spread the adhesive thinly, keep it out of the cut-outs, and clamp or weight the stack evenly.`,
       );
+    const poles = m.sliced.stackRods?.rods ?? [];
+    if (poles.length) {
+      const poleIds = poles.map((r) => `<b>${esc(r.id)}</b>`).join(', ');
+      steps.push(
+        `<b>Stand the support poles.</b> Drop ${plural(poles.length, 'steel rod')} (${poleIds}, Ø${n1(poles[0].diameter)} mm) through the holes, down to the base, so every island is held. Lengths are in the Support rods table and rods.csv.`,
+      );
+    }
     steps.push('<b>Leave the adhesive to cure fully</b> before moving the piece.');
   } else {
     const ringStep = () => {
@@ -960,6 +967,14 @@ function cutListSection(m: Model, rates: PriceRates): string {
     .filter((g) => g.partCount)
     .map((g) => `<tr><td class="id">${esc(METAL_NAMES[g.material] ?? g.material)}</td><td>${mm(v.thickness)}</td><td>${g.partCount}</td><td>${g.plateMass.toFixed(1)} kg</td><td>${g.cutLength.toFixed(1)} m</td><td>${g.pierces}</td></tr>`)
     .join('')}</tbody></table><p class="note">${plural(bom.sheets, 'sheet')} of ${n1(v.sheetW)} × ${n1(v.sheetH)} mm, ${Math.round(bom.utilisation * 100)}% used. Part files: laser/parts and laser/sheets in the ZIP; the full cut list is cutlist.csv.</p>`);
+  const poles = m.sliced.stackRods?.rods ?? [];
+  if (poles.length) {
+    out.push(
+      `<h3>Support rods</h3><table data-rod-count="${poles.length}"><thead><tr><th>Rod</th><th>Diameter</th><th>Length</th></tr></thead><tbody>${poles
+        .map((r) => `<tr><td class="id">${esc(r.id)}</td><td>${mm(r.diameter)}</td><td>${mm(r.length)}</td></tr>`)
+        .join('')}</tbody></table><p class="note">Length runs from the base to the top of the highest layer each rod holds${v.stackRodStickOut > 0 ? `, plus ${n1(v.stackRodStickOut)} mm stick-out` : ''}. Hole Ø is ${n1(m.sliced.stackRods!.hole)} mm (pole + weld clearance). Full list: rods.csv.</p>`,
+    );
+  }
   const bought: string[] = [];
   for (const r of bom.hardware) bought.push(`<tr><td class="id">${esc(r.item)}</td><td>${esc(r.spec)}</td><td class="n">${r.qty}</td><td>${esc(r.note ?? '')}</td></tr>`);
   const conc = bom.concreteBase + bom.concreteInsert;
