@@ -189,6 +189,9 @@ export function assertZipBuildPackIntegrity(model: Model, project: Project, file
   if (plateDxfCount !== model.sliced.plates.length) {
     throw new BuildPackIntegrityError(`Zip has ${plateDxfCount} plates/*.dxf files, model has ${model.sliced.plates.length} plates`);
   }
+  if (model.sliced.stackRods && !files['rods.csv']?.length) {
+    throw new BuildPackIntegrityError('Support poles are on but rods.csv is missing from the fabrication zip');
+  }
 
   return manifest;
 }
@@ -221,5 +224,12 @@ export function assertHtmlBuildPackIntegrity(_project: Project, model: Model, ht
   }
   if (!html.includes('id="show-spacers"') || !html.includes('hide-spacers')) {
     throw new BuildPackIntegrityError('Build pack HTML missing spacer visibility toggle');
+  }
+  const rods = model.sliced.stackRods?.rods.length ?? 0;
+  if (rods) {
+    const attr = html.match(/data-rod-count="(\d+)"/);
+    if (!attr || Number(attr[1]) !== rods) {
+      throw new BuildPackIntegrityError(`Build pack HTML rod count ${attr?.[1] ?? 'missing'} ≠ model ${rods}`);
+    }
   }
 }

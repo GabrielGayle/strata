@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { applyPreset, newProject, PRESETS } from '../src/core/project';
-import { DEFAULT_VIEWPORT_LAYERS, loadViewportLayers, saveViewportLayers, showInsertMesh } from '../src/ui/viewportLayers';
+import { DEFAULT_VIEWPORT_LAYERS, loadViewportLayers, saveViewportLayers, showInsertMesh, showRodsLayerToggle } from '../src/ui/viewportLayers';
 import { useStore } from '../src/state/store';
 
 const assets: Assets = { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null };
@@ -39,6 +39,12 @@ describe('viewport layer toggles', () => {
   it('keeps the fin visible when plates are hidden', () => {
     expect(showInsertMesh({ ...DEFAULT_VIEWPORT_LAYERS, plates: false, fin: true })).toBe(true);
     expect(showInsertMesh({ ...DEFAULT_VIEWPORT_LAYERS, plates: true, fin: false })).toBe(false);
+  });
+
+  it('shows the Rods toggle on a flat stack, not on the default upright job', () => {
+    expect(showRodsLayerToggle('parallel', { brace: null, stackRods: null })).toBe(false);
+    expect(showRodsLayerToggle('flat', { brace: null, stackRods: null })).toBe(true);
+    expect(showRodsLayerToggle('parallel', { brace: { rods: { rods: { length: 2 } } }, stackRods: null })).toBe(true);
   });
 
   it('does not change export geometry (plate count / BOM)', () => {
