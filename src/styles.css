@@ -3289,6 +3289,23 @@ kbd {
   font-size: 11px;
   color: var(--muted);
 }
+.map-frame-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.map-frame-field.is-disabled {
+  opacity: 0.78;
+}
+.map-frame-field.is-disabled label {
+  cursor: help;
+}
+.map-frame-hint {
+  margin: 0 0 0 22px;
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 40em;
+}
 .map-terrain-spinner {
   display: inline-block;
   width: 12px;
