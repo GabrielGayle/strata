@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createPipeline, type Assets } from '../src/core/pipeline';
+import { createPipeline, type Assets, type Model } from '../src/core/pipeline';
 import { deserialize, newProject, serialize } from '../src/core/project';
 import { newObject, type CutObject } from '../src/core/objects';
-import { DEFAULT_SHELF, MAGENTA_EYE_SHELF, cleanShelf, shelfCards } from '../src/core/shelf';
-import { layoutShelf, solveUnobstructed } from '../src/core/shelfSolve';
+import { DEFAULT_SHELF, MAGENTA_EYE_SHELF, SHELF_SOLVE_KEYS, cleanShelf, clearShelfOverride, shelfCards, withShelfOverride } from '../src/core/shelf';
+import { formatSolverDelta, layoutShelf, solveUnobstructed, solverDeltas } from '../src/core/shelfSolve';
+import { assertExportable, fitExportErrors } from '../src/core/exporters';
 import {
   DEFAULT_FLEX_MM,
   DEFAULT_MAX_HIDDEN_PCT,
@@ -114,6 +115,83 @@ describe('unobstructed off is identical to the previous shelf', () => {
     const m1 = compute({ ...newProject(), shelf: { ...shelf, unobstructed: false } }, assets);
     expect(m1.objects.map((o) => pose(o.object))).toEqual(m0.objects.map((o) => pose(o.object)));
     expect(m1.sliced.parts.map((p) => [p.id, +p.area.toFixed(3)])).toEqual(m0.sliced.parts.map((p) => [p.id, +p.area.toFixed(3)]));
+  });
+});
+
+describe('solver-used placement values', () => {
+  it('formats a moved number as stored → solver', () => {
+    expect(formatSolverDelta('radius', 260, 410)).toBe('radius 260 → solver 410');
+    expect(formatSolverDelta('lean', 12, 8.5)).toBe('lean 12 → solver 8.5');
+  });
+
+  it('lists the magenta-eye fields the solver actually used', () => {
+    const spec = { ...MAGENTA_EYE_SHELF, unobstructed: true as const };
+    const { spec: solved, adjusted } = solveUnobstructed(spec, 120);
+    expect(adjusted).toBe(true);
+    const lines = solverDeltas(spec, solved);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.every((t) => / → solver /.test(t))).toBe(true);
+  });
+
+  it('puts those used values on the model', () => {
+    const compute = createPipeline();
+    const spec = { ...MAGENTA_EYE_SHELF, unobstructed: true as const };
+    const m = compute({ ...newProject(), shelf: spec }, assets);
+    expect(m.shelfSolve?.adjusted).toBe(true);
+    expect(solverDeltas(spec, m.shelfSolve!.spec).length).toBeGreaterThan(0);
+  });
+});
+
+describe('typed-value locks', () => {
+  it('does not lock a field when the typed value is unchanged', () => {
+    const s = { ...DEFAULT_SHELF, radius: 260 };
+    const next = withShelfOverride(s, { radius: 260 }, ['radius']);
+    expect(next).toBe(s);
+    expect(next.overrides).toBeUndefined();
+  });
+
+  it('locks a field when the typed value changes', () => {
+    const s = { ...DEFAULT_SHELF, radius: 260 };
+    const next = withShelfOverride(s, { radius: 410 }, ['radius']);
+    expect(next.radius).toBe(410);
+    expect(next.overrides?.radius).toBe(true);
+  });
+
+  it('clears a lock so the solver may move the field again', () => {
+    const locked = withShelfOverride({ ...DEFAULT_SHELF, radius: 260 }, { radius: 410 }, ['radius']);
+    expect(locked.overrides?.radius).toBe(true);
+    const unlocked = clearShelfOverride(locked, ['radius']);
+    expect(unlocked.overrides).toBeUndefined();
+    expect(unlocked.radius).toBe(410);
+  });
+
+  it('keeps an existing lock when the same number is typed again', () => {
+    const locked = withShelfOverride({ ...DEFAULT_SHELF, radius: 260 }, { radius: 300 }, ['radius']);
+    const again = withShelfOverride(locked, { radius: 300 }, ['radius']);
+    expect(again).toBe(locked);
+    expect(again.overrides?.radius).toBe(true);
+  });
+});
+
+describe('hidden cards are a warning, not an export error', () => {
+  it('names each hidden card and its % when Unobstructed view is on', () => {
+    const overrides = Object.fromEntries(SHELF_SOLVE_KEYS.map((k) => [k, true as const])) as Record<(typeof SHELF_SOLVE_KEYS)[number], true>;
+    const spec = { ...MAGENTA_EYE_SHELF, unobstructed: true as const, overrides };
+    const vis = cardVisibility(shelfCards(spec, 120), viewSettings(spec));
+    expect(vis.hiddenCount).toBeGreaterThan(0);
+    const hidden = vis.issues.filter((i) => i.type === 'hidden');
+    expect(hidden.every((i) => i.severity === 'warn')).toBe(true);
+    expect(hidden.some((i) => /%\s*hidden/.test(i.message))).toBe(true);
+    expect(hidden.some((i) => /Magenta|Eye/.test(i.message))).toBe(true);
+    const model = { issues: vis.issues } as Model;
+    expect(fitExportErrors(model)).toEqual([]);
+    expect(() => assertExportable(model)).not.toThrow();
+  });
+
+  it('keeps hidden cards as info when Unobstructed view is off', () => {
+    const vis = cardVisibility(shelfCards(MAGENTA_EYE_SHELF, 120), viewSettings({ ...MAGENTA_EYE_SHELF, unobstructed: false }));
+    expect(vis.hiddenCount).toBeGreaterThan(0);
+    expect(vis.issues.filter((i) => i.type === 'hidden').every((i) => i.severity === 'info')).toBe(true);
   });
 });
 

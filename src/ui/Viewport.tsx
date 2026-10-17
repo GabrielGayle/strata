@@ -15,6 +15,7 @@ import { plateOutlineYRangeMm } from '../core/slicer';
 import { flatStackIsCapped, formatMapHeightCaption } from '../core/mapGeometryReadout';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
+import { UnobstructedDevDock } from './ShelfPanel';
 import { SunBar } from './SunStudy';
 import { MeasurePanel, MeasureTool, useMeasure } from './Measure';
 import {
@@ -310,6 +311,7 @@ export default function Viewport() {
       {ui.moveMode && !ui.paintMode && !ui.measureMode && <MovePanel />}
       {ui.paintMode && !ui.measureMode && <AppearancePanel />}
       {ui.objectsMode && !ui.measureMode && <ObjectsPanel />}
+      {ui.objectsMode && !ui.measureMode && <UnobstructedDevDock />}
       {ui.measureMode && <MeasurePanel />}
       {v.sunOn && <SunBar model={model} />}
       {v.pourView !== 'plain' && model.pour.rows.length > 0 && (

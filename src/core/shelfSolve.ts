@@ -140,9 +140,39 @@ export function solveUnobstructed(spec: ShelfSpec, baseTop: number, origin?: Fra
   return { spec: adjusted ? out : spec, report, adjusted };
 }
 
+function fmtShelfNum(n: number): string {
+  if (!Number.isFinite(n)) return String(n);
+  const r = Math.round(n);
+  if (Math.abs(n - r) < 1e-6) return String(r);
+  return String(+n.toFixed(2));
+}
+
+/** e.g. `radius 260 → solver 410` when Unobstructed view moved a stored number. */
+export function formatSolverDelta(key: ShelfSolveKey, stored: number, used: number): string {
+  return `${key} ${fmtShelfNum(stored)} → solver ${fmtShelfNum(used)}`;
+}
+
+/** Placement fields the solver actually used that differ from the stored shelf. */
+export function solverDeltas(stored: ShelfSpec, used: ShelfSpec): string[] {
+  const out: string[] = [];
+  for (const k of SHELF_SOLVE_KEYS) {
+    if (Number(stored[k]) !== Number(used[k])) out.push(formatSolverDelta(k, Number(stored[k]), Number(used[k])));
+  }
+  return out;
+}
+
+export interface ShelfLayoutResult {
+  cards: ReturnType<typeof shelfCards>;
+  solve: SolveResult | null;
+}
+
 /** Place shelf cards, running the unobstructed solver first when it is on. */
+export function layoutShelfResult(spec: ShelfSpec | undefined, baseTop: number, origin?: Frame): ShelfLayoutResult {
+  if (!spec?.unobstructed) return { cards: shelfCards(spec, baseTop), solve: null };
+  const solve = solveUnobstructed(spec, baseTop, origin);
+  return { cards: shelfCards(solve.spec, baseTop), solve };
+}
+
 export function layoutShelf(spec: ShelfSpec | undefined, baseTop: number, origin?: Frame) {
-  if (!spec?.unobstructed) return shelfCards(spec, baseTop);
-  const { spec: solved } = solveUnobstructed(spec, baseTop, origin);
-  return shelfCards(solved, baseTop);
+  return layoutShelfResult(spec, baseTop, origin).cards;
 }

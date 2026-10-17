@@ -180,6 +180,15 @@ export default function Inspector() {
         </div>
       )}
 
+      {model.issues.some((i) => i.type === 'hidden' && i.severity === 'warn') && (
+        <div className="note warn hidden-card-notice" data-testid="hidden-card-notice">
+          {model.issues
+            .filter((i) => i.type === 'hidden' && i.severity === 'warn')
+            .map((i) => i.message)
+            .join(' ')}
+        </div>
+      )}
+
       <Section title="Fit checks" count={<span style={{ color: errors.length ? 'var(--err)' : 'var(--ok)' }}>{errors.length} err · {warns.length} warn</span>}>
         <div data-testid="fit-checks">
           <IssueList issues={[...errors, ...warns, ...infos.filter((i) => i.type === 'fragment' || i.type === 'hidden')]} />

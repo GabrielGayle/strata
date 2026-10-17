@@ -196,11 +196,32 @@ function cleanViewFields(r: Record<string, unknown>): Partial<ShelfSpec> {
   return out;
 }
 
-/** Mark placement fields as user-set so the unobstructed solver leaves them alone. */
+/** Mark placement fields as user-set so the unobstructed solver leaves them alone. Retyping the same number does not lock. */
 export function withShelfOverride(s: ShelfSpec, patch: Partial<ShelfSpec>, keys: ShelfSolveKey[]): ShelfSpec {
   const overrides: NonNullable<ShelfSpec['overrides']> = { ...s.overrides };
-  for (const k of keys) overrides[k] = true;
-  return { ...s, ...patch, overrides };
+  let locked = false;
+  for (const k of keys) {
+    const next = patch[k];
+    if (typeof next === 'number' && next === s[k]) continue;
+    overrides[k] = true;
+    locked = true;
+  }
+  if (!locked && keys.every((k) => patch[k] === undefined || patch[k] === s[k])) return s;
+  return { ...s, ...patch, overrides: Object.keys(overrides).length ? overrides : s.overrides };
+}
+
+/** Drop typed locks so the unobstructed solver may adjust those fields again. */
+export function clearShelfOverride(s: ShelfSpec, keys: ShelfSolveKey[]): ShelfSpec {
+  if (!s.overrides) return s;
+  const overrides = { ...s.overrides };
+  let changed = false;
+  for (const k of keys) {
+    if (!overrides[k]) continue;
+    delete overrides[k];
+    changed = true;
+  }
+  if (!changed) return s;
+  return { ...s, overrides: Object.keys(overrides).length ? overrides : undefined };
 }
 
 /** Split the cards into rows whose lengths grow with each row's radius, keeping their order. */

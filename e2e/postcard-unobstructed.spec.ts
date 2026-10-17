@@ -11,21 +11,31 @@ test('Unobstructed view on the postcard shelf shows in Fit checks', async ({ pag
   await expect(page.getByLabel('Layout')).toBeVisible();
   await page.getByLabel('Layout').selectOption('arch');
 
-  await page.getByRole('button', { name: /Unobstructed view \(dev\)/ }).click();
-  const dev = page.getByTestId('shelf-unobstructed-dev');
-  await expect(dev.getByRole('checkbox', { name: 'Unobstructed view' })).toBeVisible();
+  const radius = page.getByLabel(/How tightly the arc curves/);
+  await radius.fill('450');
+  await expect(page.getByRole('button', { name: 'Reset Radius to auto' })).toHaveCount(0);
+  await radius.fill('200');
+  await expect(page.getByRole('button', { name: 'Reset Radius to auto' })).toBeVisible();
+  await page.getByRole('button', { name: 'Reset Radius to auto' }).click();
+  await expect(page.getByRole('button', { name: 'Reset Radius to auto' })).toHaveCount(0);
+
+  await page.getByRole('checkbox', { name: 'Unobstructed view' }).check();
+  await expect(page.getByTestId('shelf-camera-note')).toBeVisible();
+  await expect(page.getByTestId('shelf-camera-note')).toContainText(/camera/i);
 
   const fit = page.getByTestId('fit-checks');
   await fit.scrollIntoViewIfNeeded();
-
-  await dev.getByRole('checkbox', { name: 'Unobstructed view' }).check();
   await expect
     .poll(async () => fit.locator('[data-issue-type="hidden"]').count(), { timeout: 60_000 })
     .toBeGreaterThan(0);
   await expect(fit.locator('[data-issue-type="hidden"][data-issue-severity="error"]')).toHaveCount(0);
-  await expect(fit).toContainText(/every postcard face is visible/i);
 
-  await dev.getByRole('checkbox', { name: 'Unobstructed view' }).uncheck();
+  await page.getByRole('button', { name: /Unobstructed view \(dev\)/ }).click();
+  const dev = page.getByTestId('shelf-unobstructed-dev');
+  await expect(dev).toBeVisible();
+  await expect(dev).toHaveClass(/shelf-view-dock/);
+
+  await page.getByRole('checkbox', { name: 'Unobstructed view' }).uncheck();
   await expect
     .poll(async () => fit.locator('[data-issue-type="hidden"][data-issue-severity="error"]').count(), { timeout: 30_000 })
     .toBe(0);

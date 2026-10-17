@@ -279,7 +279,8 @@ export function hiddenMessage(c: CardSight): string {
 
 function issuesFor(report: Pick<VisibilityReport, 'cards' | 'hiddenCount'>, on: boolean): Issue[] {
   const issues: Issue[] = [];
-  const sev: Issue['severity'] = on ? 'error' : 'info';
+  // A hidden face is a look, not a cut: warn when Unobstructed view is on so Export ZIP still runs.
+  const sev: Issue['severity'] = on ? 'warn' : 'info';
   for (const c of report.cards) {
     if (!c.over) continue;
     issues.push({ partId: c.id, type: 'hidden', severity: sev, message: hiddenMessage(c) });

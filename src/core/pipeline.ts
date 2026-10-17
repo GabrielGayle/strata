@@ -11,7 +11,7 @@ import { buildMapHeightField, isMapDepth } from './mapPlateHeight';
 import { slice, type SliceResult } from './slicer';
 import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
-import { layoutShelf } from './shelfSolve';
+import { layoutShelfResult, type SolveResult } from './shelfSolve';
 import { reportShelfVisibility, shelfLayoutKey, shelfViewKey, type VisibilityReport } from './shelfView';
 import { nest, nestGroups, type NestResult } from './nest';
 import { materialKey, materialOf } from './appearance';
@@ -68,6 +68,8 @@ export interface Model {
   objects: ObjectBuild[];
   /** Postcard-shelf faces hidden from the viewing angle (undefined when there is no shelf). */
   cardVisibility?: VisibilityReport;
+  /** Unobstructed-view solver result (undefined when the flag is off). */
+  shelfSolve?: SolveResult;
   /** The world origin objects and the shelf are measured from. */
   origin: Frame;
   /** Shadow carving: the wall, carved plate grids and how well each frame comes out (null when off). */
@@ -253,11 +255,11 @@ export function createFrontPipeline() {
     const materialFor = (key: string) => materialOf(project.appearance, key, String(v.plateMaterial));
     // tuned plates ring by their own metal, so only then does the metal change the cut
     const origin = stage('World origin', [project.origin, v.baseLength, v.baseWidth, baseTop(v)], () => originFrame(project.origin, v));
-    const shelf = stage('Postcard shelf', [shelfLayoutKey(project.shelf), baseTop(v), project.shelf?.unobstructed ? origin : 0], () =>
-      layoutShelf(project.shelf, baseTop(v), project.shelf?.unobstructed ? origin : undefined),
+    const laid = stage('Postcard shelf', [shelfLayoutKey(project.shelf), baseTop(v), project.shelf?.unobstructed ? origin : 0], () =>
+      layoutShelfResult(project.shelf, baseTop(v), project.shelf?.unobstructed ? origin : undefined),
     );
-    const objects = stage('Objects', [project.objects, shelf, origin], () =>
-      buildObjects([...(project.objects ?? []).map((o) => toWorld(o, origin)), ...shelf.map((o) => toWorld(o, origin, true))]),
+    const objects = stage('Objects', [project.objects, laid, origin], () =>
+      buildObjects([...(project.objects ?? []).map((o) => toWorld(o, origin)), ...laid.cards.map((o) => toWorld(o, origin, true))]),
     );
     const cardVisibility = stage('Card visibility', [objects, shelfViewKey(project.shelf)], () => reportShelfVisibility(objects, project.shelf));
     const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder }));
@@ -301,7 +303,7 @@ export function createFrontPipeline() {
           ? buildMapSunkenFrameLayout(finalSliced, { sunkenFrame: mapFrame }, v.thickness, baseTop(v), v.baseOn ? union([basePlan(v)]) : undefined)
           : null,
     );
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, origin, shadow: carved?.report ?? null, unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, shelfSolve: laid.solve ?? undefined, origin, shadow: carved?.report ?? null, unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
   };
 }
 
