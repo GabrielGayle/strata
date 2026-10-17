@@ -395,6 +395,10 @@ export default function MapView() {
             { id: 'raw' as MapWater, label: 'Raw (no flatten)' },
           ]}
         />
+        <p className="map-view-note">
+          Each lake uses its own shoreline from the DEM inside the water polygon. Streams follow the terrain. Quick map
+          picks Bathymetry, which falls back to the same per-lake surface when no soundings exist.
+        </p>
       </section>
 
       <section className="map-section">

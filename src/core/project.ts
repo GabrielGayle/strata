@@ -155,7 +155,7 @@ const SMALL: Record<string, RawValue> = {
 };
 
 export const PRESETS: Preset[] = [
-  { name: 'Vermilion 40', note: '40 eroded corten plates, central fin, 3-band pour', params: {} },
+  { name: 'Vermilion 40', note: '40 eroded corten plates, central fin, 3-band pour', params: { plateMaterial: 'corten' } },
   {
     name: 'Radial bloom',
     note: 'Radial plates around a cone',
