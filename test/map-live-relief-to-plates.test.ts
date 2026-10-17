@@ -54,7 +54,7 @@ function gridMinMax(g: Float32Grid): { min: number; max: number } {
 }
 
 describe('live-scale EA relief must reach plate tops', () => {
-  it('Vermilion 40 plates span ~ stackHeightMm, not a ~32 mm strata band', async () => {
+  it('Vermilion 40 plates follow relief × auto factor, not a strata stackHeight band', async () => {
     const grid = liveLikeNeasdenGrid();
     const bundle = await buildMapBundle(
       defaultMapSpec({
@@ -103,14 +103,17 @@ describe('live-scale EA relief must reach plate tops', () => {
     expect(outline.lo).toBeLessThanOrEqual(Math.min(...bboxTops) + 1e-6);
     expect(actual).toBeCloseTo(outline.hi - outline.lo, 5);
 
-    // True (max − min) × factor × plan scale, not p98−p2 → plateCount×thickness (45 m → 120 mm).
-    expect(factor).toBeGreaterThanOrEqual(8);
+    // True (max − min) × factor × plan scale. Auto is slope-capped (~×1.5), so
+    // the stack is a short hill — not the old ×11 fill and not strata 220±45 mm.
+    expect(factor).toBeGreaterThanOrEqual(1.4);
+    expect(factor).toBeLessThanOrEqual(3);
     expect(depthRelief).toBeGreaterThan(raw.max - raw.min - 5);
     expect(metric.max - metric.min).toBeGreaterThan((raw.max - raw.min) * 0.7);
-    expect(expected).toBeGreaterThan(80);
-    expect(hfSpan).toBeGreaterThan(80);
+    expect(expected).toBeGreaterThan(12);
+    expect(expected).toBeLessThan(50);
+    expect(hfSpan).toBeGreaterThan(12);
     expect(m.hf?.min).toBeLessThan(20); // map floor (~4 mm), not strata stackHeight 220
-    expect(actual).toBeGreaterThan(80);
+    expect(actual).toBeLessThan(80);
     expect(actual).toBeGreaterThan(expected * 0.7);
     expect(actual).toBeLessThan(expected * 1.3);
   });
