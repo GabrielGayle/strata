@@ -28,13 +28,14 @@ function regions(s: Shape, minArea: number): Shape[] {
 /** Engraving (part number, glue-up, credits, OSM) that crosses a cut hole. */
 export function engravingHoleIssues(
   part: Pick<Part, 'id' | 'plateKey' | 'shape' | 'etch' | 'labelPaths'> & { exportEtch?: Path[]; exportEngrave?: Path[] },
+  holeClear = 0,
 ): Issue[] {
   const disks = fastenerDisks(part.shape);
   if (!disks.length) return [];
   const paths = [...part.etch, ...part.labelPaths, ...(part.exportEtch ?? []), ...(part.exportEngrave ?? [])];
   if (!paths.length) return [];
   for (const d of disks) {
-    if (pathsHitDisk(paths, d.c, d.r + LABEL_HOLE_CLEAR_MM)) {
+    if (pathsHitDisk(paths, d.c, d.r + holeClear)) {
       return [{
         partId: part.id,
         plateKey: part.plateKey,
@@ -135,7 +136,8 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     if (!part.labelAt) {
       issues.push({ partId: part.id, type: 'label', severity: 'info', message: 'No room to etch the part number.' });
     }
-    issues.push(...engravingHoleIssues(part));
+    const holeClear = v.sliceMode === 'flat' && v.stackRodsOn ? LABEL_HOLE_CLEAR_MM : 0;
+    issues.push(...engravingHoleIssues(part, holeClear));
     // thin webs: morphological opening removes anything narrower than mf
     if (mf > 0) {
       for (const r of thinRegions(s, mf)) {
