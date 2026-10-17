@@ -37,7 +37,7 @@ It must **bypass** every photo/image step:
 - the image height-range cap (`imgRange`)
 - water flatten when water mode is **raw** (only `flat`, or `bathy` fallback, may flatten water)
 
-`mapGridToDepth` stores true min/max elevation. `buildMapHeightField` samples those metres (windowed only by user near/far) and sets plate heights. Auto exaggeration may still use a robust (p98−p2) estimate to pick the **factor**; the Map readout and plate maths both use **true** `(max − min)` metres (`mapOrtho.reliefM`). A map top face does not keep the default insert (Vermilion fin). The 3D caption on a map face is **terrain lo–hi mm** from cut-outline vertices above the concrete (`plateOutlineYRangeMm`), not each plate’s bounding-box top (that old “plate height 45–150 mm” band ignored valleys on the same plate).
+`mapGridToDepth` stores true min/max elevation. `buildMapHeightField` samples those metres (windowed only by user near/far) and sets plate heights. Auto exaggeration may still use a robust (p98−p2) estimate to pick the **factor**; plate maths use **true** `(max − min)` metres (`mapOrtho.reliefM`). The Map tab live line and the 3D caption **share the built geometry** (`formatLiveMapReadout` contains `formatMapHeightCaption`): flat stack is **n × thickness**, upright map faces are **terrain lo–hi mm** from cut-outline vertices (`plateOutlineYRangeMm`). Do not show a plan-scale millimetre figure from another preset’s master width (Stamped 520 mm vs Vermilion 800 mm). A map top face does not keep the default insert (Vermilion fin).
 
 The Map tab hillshade can look correct while 3D plates stay a ~32 mm band at `stackHeight` ± `erosionAmp` (live Neasden: 232–264 mm). That means the pipeline still used `buildHeightField` and never called `buildMapHeightField`.
 

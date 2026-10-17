@@ -37,6 +37,18 @@ export function sunkenFrameOptions(spec: Pick<MapSpec, 'sunkenFrame'>): SunkenFr
   };
 }
 
+/** T28 pit is a flat-stack tub. Upright slats (Vermilion, waffle, radial) have no per-depth seats. */
+export function sunkenFrameApplies(sliceMode: string): boolean {
+  return sliceMode === 'flat';
+}
+
+export const SUNKEN_FRAME_FLAT_ONLY_HINT =
+  'Sunken concrete frame is for the Stamped stack (flat layers). Upright slat designs such as Vermilion have no pit — plates stand in the base.';
+
+export const SUNKEN_FRAME_FLAT_HINT =
+  'Cast concrete pit the flat layers sit in. Plates step down into the surround.';
+
+
 /** Flat-stack layers are family P with keys L0, L1, …; upright plates use P0, P1, …. */
 export function framePlateParts(sliced: SliceResult): Part[] {
   return sliced.parts.filter((p) => p.kind === 'plate' && p.family === 'P');

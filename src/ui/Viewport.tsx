@@ -12,6 +12,7 @@ import { gizmoIsBusy, moveTarget, useGizmoClearance } from './PlateGizmo';
 import { useModel, fmt } from './model';
 import { isMapDepth } from '../core/mapPlateHeight';
 import { plateOutlineYRangeMm } from '../core/slicer';
+import { formatMapHeightCaption } from '../core/mapGeometryReadout';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
 import { SunBar } from './SunStudy';
@@ -24,6 +25,8 @@ import {
   VIEWPORT_STYLE,
   ViewportParkedContext,
 } from './viewportKeepAlive';
+import ViewportLayersToolbar from './ViewportLayersToolbar';
+import { DEFAULT_VIEWPORT_LAYERS } from './viewportLayers';
 
 export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
@@ -111,10 +114,11 @@ export default function Viewport() {
       xray: ui.xray,
       showIssues: ui.showIssues,
       showSource: ui.showSource,
+      viewportLayers: ui.viewportLayers ?? DEFAULT_VIEWPORT_LAYERS,
       moveMode: ui.moveMode && !ui.paintMode && !ui.measureMode,
       onPaint: ui.paintMode && !ui.measureMode ? onPaint : undefined,
     }),
-    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.moveMode, ui.paintMode, ui.measureMode, onSelect, onPaint],
+    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.viewportLayers, ui.moveMode, ui.paintMode, ui.measureMode, onSelect, onPaint],
   );
   const bucketed = Object.keys(useStore((s) => s.project.appearance?.assign) ?? {}).length;
   const movedCount = Object.keys(useStore((s) => s.project.moves) ?? {}).length;
@@ -156,6 +160,22 @@ export default function Viewport() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [parked, setUi]);
+  const toggleViewportLayer = useStore((s) => s.toggleViewportLayer);
+  useEffect(() => {
+    if (parked) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (e.metaKey || e.ctrlKey || !e.altKey || !e.shiftKey || el.closest('input, textarea, select, [contenteditable="true"]')) return;
+      const k = e.key.toLowerCase();
+      if (k === 'g') toggleViewportLayer('grid');
+      else if (k === 'p') toggleViewportLayer('plates');
+      else if (k === 'l') toggleViewportLayer('labels');
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [parked, toggleViewportLayer]);
   const heights = model.sliced.parts.map((p) => p.bbox.maxY);
   const hMin = heights.length ? Math.min(...heights) : 0;
   const hMax = heights.length ? Math.max(...heights) : 0;
@@ -185,8 +205,9 @@ export default function Viewport() {
         <CameraClipSync boundSize={boundSize} />
         <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} />
         <Scene model={model} opts={opts} />
-        <MeasureTool active={ui.measureMode} />
+        <MeasureTool active={ui.measureMode} showDimensions={ui.viewportLayers.labels} />
       </Canvas>
+      <ViewportLayersToolbar />
       <div className="overlay tl">
         {(['iso', 'front', 'side', 'top'] as Snap[]).map((d) => (
           <button key={d} className={`btn sm ${ui.snap.dir === d ? 'on' : ''}`} onClick={() => snapTo(d)} title={d === 'front' ? 'Look through the stack (front-view image)' : d === 'side' ? 'Look at the plate faces edge-on (profile)' : undefined}>
@@ -245,11 +266,14 @@ export default function Viewport() {
               : undefined
           }
         >
-          {v.sliceMode === 'flat'
-            ? `stack height ${fmt(model.sliced.plates.length * v.thickness, 0)} mm`
-            : terrainY
-              ? `terrain ${fmt(terrainY.lo, 0)}–${fmt(terrainY.hi, 0)} mm`
-              : `plate height ${fmt(hMin, 0)}–${fmt(hMax, 0)} mm`}
+          {formatMapHeightCaption({
+            sliceMode: v.sliceMode,
+            plates: model.sliced.plates,
+            thicknessMm: v.thickness,
+            mapFace,
+            bboxMin: hMin,
+            bboxMax: hMax,
+          })}
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
       </div>

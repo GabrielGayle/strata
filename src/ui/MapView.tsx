@@ -5,7 +5,10 @@ import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets
 import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/mapNominatim';
 import { MAP_SOURCE_REGISTRY } from '../core/mapSourceRegistry';
 import { noticesWithoutStaleEngraveSkip } from '../core/mapNotices';
+import { formatLiveMapReadout } from '../core/mapGeometryReadout';
+import { SUNKEN_FRAME_FLAT_HINT, SUNKEN_FRAME_FLAT_ONLY_HINT, sunkenFrameApplies } from '../core/mapSunkenFrame';
 import { useStore } from '../state/store';
+import { useModel } from './model';
 import MapPreviewPane from './MapPreviewPane';
 
 const SOURCES: MapSource[] = ['auto', 'ea-dtm', 'ea-dsm', 'scot-dtm', 'wales-dtm', 'ni-dtm', 'cop30', 'terrarium'];
@@ -69,7 +72,24 @@ export default function MapView() {
   const project = useStore((s) => s.project);
   const setTopMap = useStore((s) => s.setTopMap);
   const mapTerrain = useStore((s) => s.mapTerrain);
+  const geom = useModel();
   const existing = project.images.top?.map;
+  const frameApplies = sunkenFrameApplies(geom.v.sliceMode);
+  const frameHint = frameApplies ? SUNKEN_FRAME_FLAT_HINT : SUNKEN_FRAME_FLAT_ONLY_HINT;
+  const factor =
+    existing?.exaggerationFactor ?? (typeof existing?.exaggeration === 'number' ? existing.exaggeration : undefined);
+  const reliefM = project.images.top?.depth?.mapOrtho?.reliefM;
+  const liveReadout =
+    mapTerrain.phase === 'ready' && existing && typeof factor === 'number' && factor > 0 && reliefM != null
+      ? formatLiveMapReadout({
+          factor,
+          reliefM,
+          sliceMode: geom.v.sliceMode,
+          plates: geom.sliced.plates,
+          thicknessMm: geom.v.thickness,
+          mapFace: true,
+        })
+      : existing?.exaggerationReadout;
   const [title, setTitle] = useState(existing?.title ?? project.name ?? 'Map terrain');
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<NominatimPlace[]>([]);
@@ -167,8 +187,10 @@ export default function MapView() {
             ))}
           </ul>
         ) : null}
-        {existing?.exaggerationReadout && mapTerrain.phase === 'ready' ? (
-          <p className="map-readout">Exaggeration {existing.exaggerationReadout} · source {existing.resolvedSource ?? source}</p>
+        {liveReadout && mapTerrain.phase === 'ready' ? (
+          <p className="map-readout" data-testid="map-readout">
+            Exaggeration {liveReadout} · source {existing?.resolvedSource ?? source}
+          </p>
         ) : null}
       </div>
 
@@ -337,19 +359,29 @@ export default function MapView() {
 
       <section className="map-section">
         <h3>Frame &amp; edition</h3>
-        <label>
-          <input
-            type="checkbox"
-            checked={!!existing?.sunkenFrame?.enabled}
-            disabled={!existing}
-            onChange={(e) =>
-              commit({
-                sunkenFrame: e.target.checked ? { enabled: true, wallMm: existing?.sunkenFrame?.wallMm ?? 12 } : { enabled: false },
-              })
-            }
-          />
-          Sunken concrete frame
-        </label>
+        <div className={`map-frame-field${existing && !frameApplies ? ' is-disabled' : ''}`}>
+          <label title={frameHint} htmlFor="map-sunken-frame">
+            <input
+              id="map-sunken-frame"
+              data-testid="sunken-frame-checkbox"
+              type="checkbox"
+              checked={frameApplies && !!existing?.sunkenFrame?.enabled}
+              disabled={!existing || !frameApplies}
+              aria-describedby={!frameApplies && existing ? 'map-sunken-frame-hint' : undefined}
+              onChange={(e) =>
+                commit({
+                  sunkenFrame: e.target.checked ? { enabled: true, wallMm: existing?.sunkenFrame?.wallMm ?? 12 } : { enabled: false },
+                })
+              }
+            />
+            Sunken concrete frame
+          </label>
+          {existing && !frameApplies ? (
+            <p id="map-sunken-frame-hint" className="map-frame-hint">
+              {SUNKEN_FRAME_FLAT_ONLY_HINT}
+            </p>
+          ) : null}
+        </div>
         <label>
           Edition number
           <input

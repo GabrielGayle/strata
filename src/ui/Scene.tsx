@@ -19,6 +19,7 @@ import { isMapDepth } from '../core/mapPlateHeight';
 import { useStore } from '../state/store';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { SunStudy3D } from './SunStudy';
+import type { ViewportLayers } from './viewportLayers';
 
 export interface SceneOpts {
   selected: string | null;
@@ -28,6 +29,7 @@ export interface SceneOpts {
   xray: boolean;
   showIssues: boolean;
   showSource: boolean;
+  viewportLayers: ViewportLayers;
   /** Hand placement: the selected plate gets a move / rotate gizmo. */
   moveMode?: boolean;
   /** Material picking: a click puts the plate in the active bucket (shift-click: the run since the last one). */
@@ -85,7 +87,7 @@ const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selecte
   );
 });
 
-function Etches({ parts, engraving = true, labels = true }: { parts: Part[]; engraving?: boolean; labels?: boolean }) {
+function Etches({ parts, engraving, labels }: { parts: Part[]; engraving: boolean; labels: boolean }) {
   const geo = useMemo(() => {
     const geos = parts
       .map((p) => {
@@ -364,6 +366,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const theme = useStore((st) => st.ui.theme);
   const selMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: cssVar('--accent', '#d4521c'), metalness: 0.2, roughness: 0.5, emissive: new THREE.Color('#5a1a00') }), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const platesLit = useStore((s) => s.ui.highlight === 'plates');
+  const topMap = useStore((s) => s.project.images.top?.map);
   useEffect(() => () => materials.forEach((m) => m.dispose()), [materials]);
   const bounds = useMemo(() => modelBounds(model), [model]);
   const gridY = useMemo(() => gridFloorY(bounds.size), [bounds.size]);
@@ -371,6 +374,8 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const gridB = useMemo(() => cssVar('--grid-b', '#a9a49a'), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   const preview = useRef<THREE.Group>(null);
   const dragKey = opts.moveMode ? (moveTarget(model, opts.selected)?.key ?? null) : null;
+  const L = opts.viewportLayers;
+  const showEngrave = L.engraving || (L.water && !!topMap);
   return (
     <>
       <Env />
@@ -378,7 +383,8 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       <ambientLight intensity={v.sunOn ? 0.28 : 0.35} />
       {v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
       <directionalLight position={[-900, 500, -600]} intensity={v.sunOn ? 0.18 : 0.45} />
-      <ViewportGrid
+      {L.grid && (
+        <ViewportGrid
           args={[Math.max(bounds.size * 6, 1200), Math.max(bounds.size * 6, 1200)]}
           cellSize={10}
           sectionSize={100}
@@ -390,22 +396,25 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
           fadeStrength={0.85}
           position={[0, gridY, 0]}
         />
-      {(model.sunkenFrame || v.baseOn) && <Base model={model} xray={opts.xray} />}
+      )}
+      {(model.sunkenFrame || v.baseOn) && (L.base || L.concrete) && <Base model={model} xray={opts.xray} />}
       <group position={[0, model.sunkenFrame?.plateLiftMm ?? 0, 0]}>
-        {model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
-          <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} />
-        ))}
+        {L.plates &&
+          model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
+            <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} />
+          ))}
         {/* the plate under the gizmo, carried rigidly while it is dragged */}
         <group ref={preview} matrixAutoUpdate={false}>
-          {dragKey &&
+          {L.plates &&
+            dragKey &&
             model.sliced.parts.filter((p) => p.plateKey === dragKey).map((p) => (
               <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected onSelect={opts.onSelect} />
             ))}
         </group>
         {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
-        <Etches parts={model.sliced.parts} />
+        <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} />
         <Rods model={model} />
-        <Insert model={model} />
+        {L.backing && <Insert model={model} />}
         <PlacedObjects model={model} />
         {opts.showSource && model.source && v.stackSource === 'form' && (
           <mesh geometry={model.source.form.geometry}>
@@ -413,7 +422,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
           </mesh>
         )}
       </group>
-      {opts.showMoulds && <Moulds model={model} explode={opts.explode} />}
+      {opts.showMoulds && L.frame && <Moulds model={model} explode={opts.explode} />}
       {opts.showIssues && <IssueMarkers model={model} />}
     </>
   );
