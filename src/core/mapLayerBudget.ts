@@ -1,11 +1,12 @@
 // Layer budget: choose elevation plateaus per plate (equal, quantile, Jenks).
 import type { Float32Grid } from './mapGrid';
+import { gridFiniteMinMax } from './mapGrid';
 
 export type LayerBudgetMode = 'equal' | 'quantile' | 'jenks';
 
 export interface LayerBudgetResult {
   mode: LayerBudgetMode;
-  /** N break elevations in metres (length = plateCount, ascending). */
+  /** Break elevations in metres (plateCount classes, plus extra summit / lake pins). */
   breaksM: number[];
 }
 
@@ -20,14 +21,21 @@ export interface LayerBudgetApplyOpts {
 export const PINNED_BREAK_EPS_M = 0.05;
 /** Metres: Float32 cells sit a hair under a Float64 pin; still belong on that break. */
 const SNAP_EPS_M = 1e-3;
+/** Keep extra summit pins at least this far apart (Grasmoor / Crag Hill / High Stile). */
+const SUMMIT_PIN_EPS_M = 2;
+/** Only pin local maxima in the top 40% of relief. */
+const SUMMIT_BAND_FRAC = 0.4;
+const MAX_SUMMIT_PINS = 12;
 
-function sampleValues(data: Float32Array, max = 8000): number[] {
+function sampleValues(data: Float32Array, max = 8000, extra: number[] = []): number[] {
   const finite: number[] = [];
   for (const v of data) if (Number.isFinite(v)) finite.push(v);
+  const forced = extra.filter((v) => Number.isFinite(v));
   if (finite.length <= max) return finite;
-  const step = finite.length / max;
-  const out: number[] = [];
-  for (let i = 0; i < max; i++) out.push(finite[Math.floor(i * step)]);
+  const budget = Math.max(8, max - forced.length);
+  const step = finite.length / budget;
+  const out: number[] = [...forced];
+  for (let i = 0; i < budget; i++) out.push(finite[Math.floor(i * step)]!);
   return out;
 }
 
@@ -104,6 +112,71 @@ function uniqueSorted(values: number[]): number[] {
   return out;
 }
 
+function isLocalMaxCell(data: Float32Array, w: number, h: number, x: number, y: number): boolean {
+  const z = data[y * w + x];
+  if (!Number.isFinite(z)) return false;
+  let anyLower = false;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const n = data[ny * w + nx];
+      if (!Number.isFinite(n)) continue;
+      if (n > z + SNAP_EPS_M) return false;
+      if (n < z - SNAP_EPS_M) anyLower = true;
+    }
+  }
+  return anyLower;
+}
+
+/**
+ * Distinct summit elevations (metres) from local maxima in the top relief band.
+ * Extra pins, like lake surfaces — they must not steal the plate budget.
+ */
+export function localMaximaElevations(grid: Float32Grid): number[] {
+  const { w, h, data } = grid;
+  const { min, max } = gridFiniteMinMax(data);
+  if (!(max > min) || !Number.isFinite(max)) return [];
+  const band = max - SUMMIT_BAND_FRAC * (max - min);
+  const minDistPx = Math.max(4, Math.round(0.06 * Math.min(w, h)));
+  const candidates: { z: number; x: number; y: number }[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const z = data[y * w + x];
+      if (!Number.isFinite(z) || z < band) continue;
+      if (z >= max - SNAP_EPS_M || isLocalMaxCell(data, w, h, x, y)) {
+        candidates.push({ z, x, y });
+      }
+    }
+  }
+  candidates.sort((a, b) => b.z - a.z);
+  const kept: { z: number; x: number; y: number }[] = [];
+  for (const c of candidates) {
+    if (kept.some((k) => Math.hypot(k.x - c.x, k.y - c.y) < minDistPx)) continue;
+    kept.push(c);
+    if (kept.length >= MAX_SUMMIT_PINS) break;
+  }
+  return uniqueSorted(kept.map((k) => k.z));
+}
+
+/** Split a wide top class so distinct summits do not ceil onto one plateau. */
+export function summitClassSplits(peaks: number[], breaks: number[]): number[] {
+  const sorted = uniqueSorted(breaks);
+  if (sorted.length < 2) return uniqueSorted(peaks);
+  const hi = sorted[sorted.length - 1]!;
+  const lo = sorted[sorted.length - 2]!;
+  const span = hi - lo;
+  const interior = uniqueSorted(peaks.filter((p) => p > lo + SUMMIT_PIN_EPS_M && p < hi - PINNED_BREAK_EPS_M));
+  if (interior.length) return interior;
+  if (span < 20) return [];
+  const step = Math.max(8, span / 5);
+  const extra: number[] = [];
+  for (let z = lo + step; z < hi - 2; z += step) extra.push(z);
+  return extra;
+}
+
 /**
  * Keep every original break (including the max-height class) and append lake pins.
  * Pins are extra levels — they must not steal summit slots from the plate budget.
@@ -134,16 +207,20 @@ export function computeLayerBreaks(
   mode: LayerBudgetMode,
   pinM: number[] = [],
 ): LayerBudgetResult {
-  const values = sampleValues(grid.data, mode === 'jenks' ? 200 : 8000);
+  const { min, max } = gridFiniteMinMax(grid.data);
   const k = Math.max(1, Math.min(512, Math.round(plateCount)));
-  if (!values.length) return { mode, breaksM: injectPinnedBreaks([], pinM, k) };
-  const min = values[0];
-  const max = values[values.length - 1];
+  if (!(max >= min) || !Number.isFinite(max)) return { mode, breaksM: injectPinnedBreaks([], pinM, k) };
+  const peaks = localMaximaElevations(grid);
+  const values = sampleValues(grid.data, mode === 'jenks' ? 200 : 8000, [min, max, ...peaks]);
+  if (!values.length) return { mode, breaksM: injectPinnedBreaks([max], pinM, k) };
   let breaksM: number[];
   if (mode === 'equal') breaksM = equalBreaks(min, max, k);
   else if (mode === 'quantile') breaksM = quantileBreaks(values, k);
   else breaksM = jenksBreaks(values, k);
-  return { mode, breaksM: injectPinnedBreaks(breaksM, pinM, k) };
+  if (!breaksM.length) breaksM = [max];
+  else breaksM[breaksM.length - 1] = max;
+  const extra = summitClassSplits(peaks, breaksM);
+  return { mode, breaksM: injectPinnedBreaks(breaksM, [...pinM, ...extra], k) };
 }
 
 function snapCeil(z: number, sorted: number[]): number {

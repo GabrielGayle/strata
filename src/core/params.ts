@@ -194,7 +194,7 @@ export const PARAMS: ParamDef[] = [
   // Plates
   // Chop Chop CR4 mild steel — cut list and price share this default.
   choice('plateMaterial', 'Material', 'Plates', DEFAULT_PLATE_MATERIAL, [
-    { value: 'steel', label: 'Mild steel' },
+    { value: 'steel', label: 'Mild steel (CR4)' },
     { value: 'aluminium', label: 'Aluminium' },
     { value: 'corten', label: 'Corten' },
   ]),

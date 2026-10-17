@@ -22,6 +22,18 @@ export interface Float32Grid {
   nodata?: number;
 }
 
+/** Finite elevation range of a grid (metres). */
+export function gridFiniteMinMax(data: Float32Array): { min: number; max: number } {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const v of data) {
+    if (!Number.isFinite(v)) continue;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return { min, max };
+}
+
 /** World metres at the centre of cell (col, row). */
 export function gridCellCentre(g: Float32Grid, col: number, row: number): { x: number; y: number } {
   const t = g.transform;

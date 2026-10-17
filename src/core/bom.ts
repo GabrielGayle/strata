@@ -10,7 +10,7 @@ import { bucketOf, type Appearance } from './appearance';
 import { pathLength } from './geom2d';
 
 export const DENSITY: Record<string, number> = { steel: 7850, aluminium: 2700, corten: 7850 };
-export const MATERIAL_NAME: Record<string, string> = { steel: 'Mild steel', aluminium: 'Aluminium', corten: 'Corten steel' };
+export const MATERIAL_NAME: Record<string, string> = { steel: 'Mild steel (CR4)', aluminium: 'Aluminium', corten: 'Corten steel' };
 
 export interface CutRow {
   id: string;

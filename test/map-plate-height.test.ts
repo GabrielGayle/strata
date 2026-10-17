@@ -5,6 +5,7 @@ import { defaultMapSpec } from '../src/core/mapSpec';
 import { mapGridToDepth, syntheticConeGrid } from '../src/core/mapToDepth';
 import {
   buildMapHeightField,
+  MAP_HEIGHT_FLOOR_MM,
   mapDepthToGray,
   mapReliefToPlateRangeMm,
   mapScaleMmPerM,
@@ -183,5 +184,50 @@ describe('map elevation → plate heights (invariant)', () => {
     const p = newProject();
     const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null });
     expect(m.insert).not.toBeNull();
+  });
+
+  it('scales to plate height instead of clipping the peaks', () => {
+    const grid = syntheticConeGrid(48, 24, 18);
+    const { depth } = mapGridToDepth(grid, { exaggeration: 8, bbox: NEASDEN_FAST_BBOX });
+    const v = evaluateParams({
+      baseLength: '400',
+      baseWidth: '400',
+      stackHeight: '40',
+      sliceMode: 'parallel',
+      erosionAmp: '0',
+      crest: '0',
+      slope: '0',
+    }).values;
+    const hf = buildMapHeightField(v, depth, { capMm: 40 });
+    expect(hf.heightCapScale).toBeDefined();
+    expect(hf.heightCapScale!).toBeLessThan(1);
+    expect(hf.max).toBeLessThanOrEqual(40 + 1e-6);
+    expect(hf.max).toBeGreaterThan(MAP_HEIGHT_FLOOR_MM + 10);
+    const p = newProject();
+    p.userParamOverrides = { stackHeight: true };
+    p.params = {
+      ...p.params,
+      baseLength: '400',
+      baseWidth: '400',
+      plateCount: '12',
+      stackHeight: '40',
+      erosionAmp: '0',
+      crest: '0',
+      slope: '0',
+      insShape: 'none',
+    };
+    p.images.top = {
+      name: 'Map',
+      dataUrl: 'data:image/png;base64,xx',
+      map: defaultMapSpec({ bbox: NEASDEN_FAST_BBOX, title: 'Cap' }),
+      depth,
+    };
+    const gray = mapDepthToGray(depth);
+    const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: gray, insMesh: null, srcMesh: null });
+    expect(m.sliced.warnings.some((w) => /scaled to fit/i.test(w) && /not clipped/i.test(w))).toBe(true);
+    const outline = plateOutlineYRangeMm(m.sliced.plates);
+    expect(outline).toBeTruthy();
+    expect(outline!.hi).toBeLessThanOrEqual(40 + 0.5);
+    expect(outline!.hi).toBeGreaterThan(outline!.lo + 8);
   });
 });

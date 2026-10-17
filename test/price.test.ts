@@ -14,7 +14,7 @@ describe('price estimate', () => {
     expect(DEFAULT_PLATE_MATERIAL).toBe('steel');
     expect(m.v.plateMaterial).toBe(DEFAULT_PLATE_MATERIAL);
     expect(m.bom.rows.every((r) => r.material === DEFAULT_PLATE_MATERIAL)).toBe(true);
-    expect(cutListCsv(m.v, m.bom)).toMatch(/Mild steel/);
+    expect(cutListCsv(m.v, m.bom)).toMatch(/Mild steel \(CR4\)/);
     const e = estimatePrice(m.bom, m.v.plateMaterial, m.v.thickness);
     console.log('estimate', e.net.toFixed(2), 'ex VAT', e.lines.length, 'lines');
     const parts = e.lines.filter((l) => l.label !== 'Minimum order charge');

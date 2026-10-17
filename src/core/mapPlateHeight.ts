@@ -130,7 +130,7 @@ function sampleMetres(metres: Float32Array, w: number, h: number, u: number, v: 
  * Ignores mix, contrast, blur, flatten, curve, perspective, matte, and strata erosion.
  * User near/far window the elevation; linear in metres.
  */
-export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
+export function buildMapHeightField(v: Values, depth: DepthData, opts: { capMm?: number } = {}): HeightField {
   const { metres } = decodeDepthBuffers(depth);
   const ortho = depth.mapOrtho;
   const masterMm = mapMasterWidthMm(v);
@@ -139,6 +139,14 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
   const near = Math.max(1e-6, Math.min(depth.settings.near, depth.settings.far - 1e-6));
   const far = Math.max(near + 1e-6, depth.settings.far);
   const f = stackFrame(v);
+  const reliefMm = Math.max(0, far - near) * scale;
+  const unscaledMax = MAP_HEIGHT_FLOOR_MM + reliefMm;
+  const capMm = v.sliceMode === 'flat' ? Infinity : opts.capMm;
+  let heightCapScale = 1;
+  if (capMm != null && Number.isFinite(capMm) && capMm > MAP_HEIGHT_FLOOR_MM && unscaledMax > capMm + 1e-6 && reliefMm > 0) {
+    heightCapScale = (capMm - MAP_HEIGHT_FLOOR_MM) / reliefMm;
+  }
+  const mmPerEncodedM = scale * heightCapScale;
 
   const at = (x: number, z: number) => {
     const s = x * f.stack[0] + z * f.stack[1];
@@ -148,7 +156,7 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
     // +across / +Z is west; geographic easting on the north-up grid is 1 − an.
     const d = sampleMetres(metres, depth.w, depth.h, 1 - an, sn);
     const dd = Number.isFinite(d) ? Math.min(far, Math.max(near, d)) : far;
-    return MAP_HEIGHT_FLOOR_MM + (far - dd) * scale;
+    return MAP_HEIGHT_FLOOR_MM + (far - dd) * mmPerEncodedM;
   };
 
   let min = Infinity;
@@ -162,7 +170,12 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
       max = Math.max(max, h);
     }
   }
-  return { at, min, max };
+  return {
+    at,
+    min,
+    max,
+    ...(heightCapScale < 1 - 1e-9 ? { heightCapScale } : {}),
+  };
 }
 
 /**

@@ -119,7 +119,7 @@ export interface EstimateOpts {
   mapGiftPriceFactor?: number;
 }
 
-const METAL_LABEL: Record<string, string> = { steel: 'Mild steel', corten: 'Corten', aluminium: 'Aluminium' };
+const METAL_LABEL: Record<string, string> = { steel: 'Mild steel (CR4)', corten: 'Corten', aluminium: 'Aluminium' };
 const metalName = (material: string) => METAL_LABEL[material] ?? material;
 
 function machineOf(bom: Bom, material: string, thickness: number, rates: PriceRates): { minutes: number; sheetKg: number } {
