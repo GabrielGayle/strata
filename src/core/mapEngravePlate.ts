@@ -13,7 +13,10 @@ export interface MapEngravePlateContext {
   title?: string;
 }
 
-/** Map image-space paths into a part's local mm (origin at part bbox min). */
+/**
+ * Map image-space paths into a part's local mm.
+ * Art x=0 is west; plate +x runs west so a north-facing drawing has east at minX.
+ */
 export function mapEngravePathsForPart(part: Part, art: MapEngraveArt, ctx: MapEngravePlateContext): Path[] {
   const bb = part.bbox;
   const pw = bb.maxX - bb.minX;
@@ -21,7 +24,7 @@ export function mapEngravePathsForPart(part: Part, art: MapEngraveArt, ctx: MapE
   if (pw < 1 || ph < 1) return [];
   const sx = pw / art.imageW;
   const sy = ph / art.imageH;
-  const tf = (p: Path): Path => p.map(([x, y]) => [bb.minX + x * sx, bb.minY + y * sy]);
+  const tf = (p: Path): Path => p.map(([x, y]) => [bb.maxX - x * sx, bb.minY + y * sy]);
   const out: Path[] = [];
   for (const ln of art.lines) out.push(...clipLines([tf(ln.path)], offset(part.shape, -0.4)));
   const typo = resolveEngravePreset(ctx.presetId);
@@ -36,7 +39,7 @@ export function mapEngravePathsForPart(part: Part, art: MapEngraveArt, ctx: MapE
   }
   for (const t of art.texts) {
     const h = typo.labelHeightMm * typo.labelScale;
-    const cx = bb.minX + t.nx * pw;
+    const cx = bb.maxX - t.nx * pw;
     const cy = bb.minY + t.ny * ph;
     if (textWidth(t.text, h) > pw * 0.9) continue;
     out.push(...clipLines(strokeTextCentered(t.text, cx, cy, h), offset(part.shape, -0.4)));

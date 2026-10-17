@@ -74,8 +74,7 @@ function pickOutputSize(widthM: number, heightM: number, resM: number): { w: num
 }
 
 function sampleSource(g: Float32Grid, x: number, y: number): number {
-  if (g.crs === 'EPSG:3857') return gridSampleBilinear(g, x, y);
-  return gridSampleBilinear(g, x, y);
+  return gridSampleBilinear(g, x, y, true);
 }
 
 /** Bilinear or max-pool resample into metric CRS at `resM` ground metres per pixel (long edge). */
@@ -89,19 +88,20 @@ export function reprojectResample(
   const heightM = bounds.north - bounds.south;
   const { w, h } = pickOutputSize(widthM, heightM, spec.resM);
   const pixelW = widthM / w;
-  const pixelH = heightM / h;
+  /** Negative: row 0 is north so the depth image, OSM, and S-01 agree. */
+  const pixelH = -heightM / h;
   const data = new Float32Array(w * h);
   const useMax = spec.model === 'dsm' || spec.model === 'dtm+buildings';
   const halfW = pixelW / 2;
-  const halfH = pixelH / 2;
+  const halfH = Math.abs(pixelH) / 2;
 
   for (let row = 0; row < h; row++) {
     for (let col = 0; col < w; col++) {
       const cx = bounds.west + (col + 0.5) * pixelW;
-      const cy = bounds.south + (row + 0.5) * pixelH;
+      const cy = bounds.north - (row + 0.5) * Math.abs(pixelH);
       if (!useMax) {
         if (source.crs === crs) {
-          data[row * w + col] = gridSampleBilinear(source, cx, cy);
+          data[row * w + col] = gridSampleBilinear(source, cx, cy, true);
         } else {
           const [lon, lat] = proj4(crs, 'EPSG:4326', [cx, cy]) as [number, number];
           const [mx, my] = proj4('EPSG:4326', 'EPSG:3857', [lon, lat]) as [number, number];
@@ -119,7 +119,7 @@ export function reprojectResample(
       for (const [px, py] of corners) {
         const v =
           source.crs === crs
-            ? gridSampleBilinear(source, px, py)
+            ? gridSampleBilinear(source, px, py, true)
             : (() => {
                 const [lon, lat] = proj4(crs, 'EPSG:4326', [px, py]) as [number, number];
                 const [mx, my] = proj4('EPSG:4326', 'EPSG:3857', [lon, lat]) as [number, number];
@@ -133,7 +133,7 @@ export function reprojectResample(
 
   const transform: GridTransform = {
     originX: bounds.west + pixelW / 2,
-    originY: bounds.south + pixelH / 2,
+    originY: bounds.north + pixelH / 2,
     pixelW,
     pixelH,
   };

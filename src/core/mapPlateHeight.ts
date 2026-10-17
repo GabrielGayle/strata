@@ -6,6 +6,45 @@ import type { Gray } from './image';
 import type { HeightField } from './heightfield';
 import { stackFrame } from './heightfield';
 import type { Values } from './params';
+import type { Plane } from './section';
+
+/**
+ * Physical map frame — right-handed, matching ENU (South × Up = West):
+ *
+ *   +X = south   S-01 / Front sits at −X = north
+ *   +Y = up
+ *   +Z = west    east is −Z
+ *
+ * Grid (Map preview, DEM): row 0 = north, col 0 = west, east on the right.
+ * 3D Top (north up, camera up = −X): screen-right = −Z = east.
+ * 3D Front (from north looking south) and each plate DXF viewed face-on from
+ * the north: east on the left. Plate +u is +Z (west) so part minX is east.
+ * OSM engrave uses that same plate +x. Do not roll the camera to fake E–W.
+ */
+export const MAP_WORLD_EAST_SIGN_Z = -1;
+
+/** col01: 0 = west … 1 = east. row01: 0 = north … 1 = south. */
+export function mapGridUvToWorld(v: Values, col01: number, row01: number): { x: number; z: number } {
+  const f = stackFrame(v);
+  const s = (row01 - 0.5) * f.stackLen;
+  const a = (0.5 - col01) * f.acrossLen;
+  return {
+    x: s * f.stack[0] + a * f.across[0],
+    z: s * f.stack[1] + a * f.across[1],
+  };
+}
+
+/** 3D Top looking down −Y with camera up = −X (north). Screen-right = −Z = east. */
+export function mapTopProject(x: number, z: number): { right: number; up: number } {
+  return { right: -z, up: -x };
+}
+
+/** Flip plate +u so a north-facing DXF has east on the left (+u = west = +Z). */
+export function orientMapPlatePlane(plane: Plane): Plane {
+  if (Math.abs(plane.normal[1]) > 0.5) return plane;
+  const u = plane.u;
+  return { ...plane, u: [-u[0], -u[1], -u[2]] };
+}
 
 /** Lowest plate top (mm above the concrete line) so outlines stay valid. */
 export const MAP_HEIGHT_FLOOR_MM = 4;
@@ -106,7 +145,8 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
     const a = x * f.across[0] + z * f.across[1];
     const sn = s / f.stackLen + 0.5;
     const an = a / f.acrossLen + 0.5;
-    const d = sampleMetres(metres, depth.w, depth.h, an, 1 - sn);
+    // +across / +Z is west; geographic easting on the north-up grid is 1 − an.
+    const d = sampleMetres(metres, depth.w, depth.h, 1 - an, sn);
     const dd = Number.isFinite(d) ? Math.min(far, Math.max(near, d)) : far;
     return MAP_HEIGHT_FLOOR_MM + (far - dd) * scale;
   };
@@ -123,4 +163,21 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
     }
   }
   return { at, min, max };
+}
+
+/**
+ * Sample plate-top heights onto a north-up map grid (row 0 = north = S-01).
+ * Used to correlate the 3D mesh with the metric DEM.
+ */
+export function sampleMapHeightGrid(hf: HeightField, v: Values, w: number, h: number): Float32Array {
+  const data = new Float32Array(w * h);
+  for (let row = 0; row < h; row++) {
+    const sn = h <= 1 ? 0 : row / (h - 1);
+    for (let col = 0; col < w; col++) {
+      const an = w <= 1 ? 0 : col / (w - 1);
+      const { x, z } = mapGridUvToWorld(v, an, sn);
+      data[row * w + col] = hf.at(x, z);
+    }
+  }
+  return data;
 }
