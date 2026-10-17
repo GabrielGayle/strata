@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
+import { cutListCsv } from '../src/core/bom';
 import { cutSpeed, DEFAULT_RATES, estimatePrice } from '../src/core/price';
+import { DEFAULT_PLATE_MATERIAL } from '../src/core/params';
 
 const assets: Assets = { sideImg: null, frontImg: null, insMesh: null, srcMesh: null };
 
@@ -9,7 +11,11 @@ describe('price estimate', () => {
   const m = createPipeline()(newProject(), assets);
 
   it('prices the default piece from the Chop Chop fit', () => {
-    const e = estimatePrice(m.bom, 'corten', m.v.thickness);
+    expect(DEFAULT_PLATE_MATERIAL).toBe('steel');
+    expect(m.v.plateMaterial).toBe(DEFAULT_PLATE_MATERIAL);
+    expect(m.bom.rows.every((r) => r.material === DEFAULT_PLATE_MATERIAL)).toBe(true);
+    expect(cutListCsv(m.v, m.bom)).toMatch(/Mild steel/);
+    const e = estimatePrice(m.bom, m.v.plateMaterial, m.v.thickness);
     console.log('estimate', e.net.toFixed(2), 'ex VAT', e.lines.length, 'lines');
     const parts = e.lines.filter((l) => l.label !== 'Minimum order charge');
     expect(parts.map((l) => l.label)).toEqual(m.bom.rows.map((r) => r.id));
@@ -19,7 +25,7 @@ describe('price estimate', () => {
     expect(e.sheetKg).toBeGreaterThan(m.bom.plateMass);
     expect(m.bom.rows.some((r) => r.etch > 0)).toBe(true);
     expect(e.etchM).toBeGreaterThan(0);
-    expect(e.warnings.some((w) => w.includes('Corten') && w.includes('floor'))).toBe(true);
+    expect(e.warnings.some((w) => /Corten/.test(w))).toBe(false);
   });
 
   it('gets slower and dearer with thicker plate', () => {
@@ -50,7 +56,7 @@ describe('bracing hardware in the price', () => {
     p.params = { ...p.params, insShape: 'none', anchorHoles: '0', rodsOn: true, rodCount: '2', rodSize: 'M6' };
     const m = createPipeline()(p, assets);
     expect(m.bom.hardware.some((r) => r.kind === 'rod' && (r.metres ?? 0) > 0)).toBe(true);
-    const base = estimatePrice(m.bom, 'corten', m.v.thickness);
+    const base = estimatePrice(m.bom, m.v.plateMaterial, m.v.thickness);
     const rates = { ...DEFAULT_RATES, hardware: { rodPerM: 4, nut: 0.5, washer: 0.25 } };
     const e = withHardware(base, m.bom.hardware, rates);
     const metres = m.bom.hardware.reduce((a, r) => a + (r.metres ?? 0), 0);

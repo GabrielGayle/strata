@@ -46,6 +46,7 @@ describe('build pack', { timeout: 30_000 }, () => {
 
   it('angled views: one on the cover, two more on their own page, in the plates\' metal on the concrete', () => {
     const p = newProject();
+    p.params = { ...p.params, plateMaterial: 'corten' };
     p.appearance = { buckets: [{ id: 'b1', name: 'Bright', material: 'aluminium', finish: 'polished' }], assign: { P1: 'b1' } };
     const { html } = pack(p);
     const cover = html.slice(html.indexOf('<section class="cover">'), html.indexOf('<section id="layout">'));

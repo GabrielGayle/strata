@@ -12,3 +12,6 @@ export const ROYAL_COUNTY_DOWN_BBOX: [number, number, number, number] = [-5.808,
 
 /** Buttermere / Crummock (WGS84 west, south, east, north) — orientation + water acceptance. */
 export const BUTTERMERE_BBOX: [number, number, number, number] = [-3.34325, 54.51331, -3.21875, 54.58569];
+
+/** EA DTM lake surfaces (m AMSL) for the Buttermere bbox. */
+export const BUTTERMERE_LAKE_M = { buttermere: 101, crummock: 98 } as const;

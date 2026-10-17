@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { computeAutoExaggeration, exaggerationReadout, resolveExaggerationFactor } from '../src/core/mapExaggeration';
-import { computeLayerBreaks, equalBreaks, jenksBreaks, quantileBreaks, applyLayerBudget } from '../src/core/mapLayerBudget';
+import {
+  computeLayerBreaks,
+  equalBreaks,
+  jenksBreaks,
+  quantileBreaks,
+  applyLayerBudget,
+  injectPinnedBreaks,
+  localBreakStep,
+} from '../src/core/mapLayerBudget';
 import { createPipeline } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
 import { mapDepthToGray } from '../src/core/mapPlateHeight';
@@ -107,5 +115,48 @@ describe('map layer budget + exaggeration', () => {
     const vals = Array.from({ length: 100 }, (_, i) => i);
     expect(quantileBreaks(vals, 8).length).toBe(8);
     expect(equalBreaks(0, 99, 8).length).toBe(8);
+  });
+
+  it('adds lake surfaces on top of the budget and keeps the max-height class', () => {
+    const clustered = [
+      ...Array.from({ length: 80 }, () => 100.72),
+      ...Array.from({ length: 80 }, () => 400),
+      500,
+    ];
+    const jenks = jenksBreaks(clustered, 8);
+    const pins = [98.67, 100.72, 493.39];
+    const mixed = injectPinnedBreaks(jenks, pins, 8);
+    expect(mixed.some((p) => Math.abs(p - 98.67) < 0.01)).toBe(true);
+    expect(mixed.some((p) => Math.abs(p - 100.72) < 0.01)).toBe(true);
+    expect(mixed.some((p) => Math.abs(p - 493.39) < 0.01)).toBe(true);
+    for (const b of jenks) {
+      expect(mixed.some((p) => Math.abs(p - b) < 0.05)).toBe(true);
+    }
+    expect(mixed.length).toBeGreaterThanOrEqual(new Set(jenks.map((b) => b.toFixed(2))).size);
+    expect(Math.max(...mixed)).toBeCloseTo(Math.max(Math.max(...jenks), Math.max(...pins)), 5);
+    const near = mixed.filter((p) => Math.abs(p - 98.67) < 0.05);
+    expect(near).toHaveLength(1);
+    expect(localBreakStep(400, jenks)).toBeGreaterThan(0);
+  });
+
+  it('floors water cells and never snaps them above the raw DEM', () => {
+    const data = new Float32Array([95, 98.67, 100.72, 400]);
+    const grid: Float32Grid = {
+      w: 4,
+      h: 1,
+      data,
+      crs: 'EPSG:27700',
+      transform: { originX: 0, originY: 0, pixelW: 1, pixelH: -1 },
+    };
+    const breaks = [90, 98.67, 100.72, 400];
+    const floorMask = new Uint8Array([1, 1, 0, 0]);
+    const snapped = applyLayerBudget(grid, breaks, { floorMask, cap: data });
+    expect(snapped.data[0]).toBeLessThanOrEqual(95);
+    expect(snapped.data[0]).toBeCloseTo(90, 5);
+    expect(snapped.data[1]).toBeCloseTo(98.67, 5);
+    expect(snapped.data[2]).toBeCloseTo(100.72, 5);
+    const ceiled = applyLayerBudget(grid, breaks);
+    expect(ceiled.data[0]).toBeCloseTo(98.67, 5);
+    expect(ceiled.data[0]).toBeGreaterThan(95);
   });
 });

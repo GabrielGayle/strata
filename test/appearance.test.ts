@@ -60,7 +60,7 @@ describe('mixed metals through the pipeline', () => {
   it('cuts each metal on its own sheets and weighs it by its own density', () => {
     const plain = createPipeline()(slimProject(), assets);
     const m = createPipeline()(mixed(), assets);
-    expect(m.bom.byMaterial.map((g) => g.material)).toEqual(['corten', 'aluminium']);
+    expect(m.bom.byMaterial.map((g) => g.material)).toEqual(['steel', 'aluminium']);
     const alu = m.bom.rows.filter((r) => r.material === 'aluminium');
     expect(alu.length).toBeGreaterThan(0);
     expect(m.bom.plateMass).toBeLessThan(plain.bom.plateMass);
@@ -80,9 +80,9 @@ describe('mixed metals through the pipeline', () => {
     const m = createPipeline()(p, assets);
     const files = Object.keys(unzipSync(buildZip(m, p)));
     expect(files.some((f) => f.startsWith('laser/parts/aluminium/'))).toBe(true);
-    expect(files.some((f) => f.startsWith('laser/parts/corten/'))).toBe(true);
+    expect(files.some((f) => f.startsWith('laser/parts/steel/'))).toBe(true);
     expect(files).toContain('laser/sheets/aluminium/sheet-01-cut.dxf');
-    expect(files).toContain('laser/sheets/corten/sheet-01-cut.dxf');
+    expect(files).toContain('laser/sheets/steel/sheet-01-cut.dxf');
     // one metal keeps the old flat layout
     const plainP = slimProject();
     const plain = createPipeline()(plainP, assets);
@@ -94,11 +94,11 @@ describe('mixed metals through the pipeline', () => {
     const e = estimateMix(m.bom, m.v.thickness);
     expect(e.fitted).toBe(true);
     expect(e.lines.some((l) => l.label.startsWith('Aluminium'))).toBe(true);
-    expect(e.lines.some((l) => l.label.startsWith('Corten'))).toBe(true);
+    expect(e.lines.some((l) => l.label.startsWith('Mild steel'))).toBe(true);
     expect(e.lines.filter((l) => l.label === 'Minimum order charge')).toHaveLength(e.subtotal < 55 - 1e-9 ? 1 : 0);
     // a single metal prices exactly as before
     const plain = createPipeline()(slimProject(), assets);
-    expect(estimateMix(plain.bom, 3).total).toBeCloseTo(estimatePrice(plain.bom, 'corten', 3).total, 9);
+    expect(estimateMix(plain.bom, 3).total).toBeCloseTo(estimatePrice(plain.bom, 'steel', 3).total, 9);
   });
 
   it('tunes aluminium plates to their own length', () => {
