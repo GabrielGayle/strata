@@ -322,7 +322,7 @@ export default function MapView() {
           <input
             type="range"
             data-testid="map-exaggeration-slider"
-            aria-label="Vertical exaggeration slider"
+            aria-label="Exaggeration factor slider"
             min={EXAGGERATION_MIN}
             max={EXAGGERATION_MAX}
             step={EXAGGERATION_STEP}
@@ -333,7 +333,7 @@ export default function MapView() {
           <input
             type="number"
             data-testid="map-exaggeration-input"
-            aria-label="Vertical exaggeration factor"
+            aria-label="Exaggeration factor"
             min={EXAGGERATION_MIN}
             max={EXAGGERATION_MAX}
             step={EXAGGERATION_STEP}

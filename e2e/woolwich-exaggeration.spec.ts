@@ -33,7 +33,7 @@ test('Woolwich fixture: auto rebuild, set ×1.5, export keeps 46 plates', async 
   await waitForMapReady(page);
 
   await openWorkspaceTab(page, 'Map');
-  const select = page.getByLabel('Vertical exaggeration');
+  const select = page.getByTestId('map-exaggeration');
   await expect(select).toHaveValue('auto');
   const readout = page.getByTestId('map-readout');
   await expect(readout).toContainText(/×[123](\.\d)?/);
