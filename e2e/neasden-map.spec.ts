@@ -40,6 +40,7 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
 
   await mkdir(join(process.cwd(), 'docs/screenshots'), { recursive: true });
   await page.screenshot({ path: join(process.cwd(), 'docs/screenshots/neasden-map-3d.png'), fullPage: false });
+  await page.getByTestId('sunken-frame-checkbox').scrollIntoViewIfNeeded();
   await page.locator('.map-view').screenshot({ path: join(process.cwd(), 'docs/screenshots/map-tab.png') });
 });
 
