@@ -164,6 +164,8 @@ export default function App() {
   const mapTerrain = useStore((s) => s.mapTerrain);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
+  const stackRodCount = model.sliced.stackRods?.rods.length ?? 0;
+  const stackRodsVisible = ui.viewportLayers.rods !== false && stackRodCount > 0;
   const topDepth = project.images.top?.depth;
   const mapFace = isMapDepth(topDepth) && !!project.images.top?.map;
   const mapEx = Number(project.images.top?.map?.exaggerationFactor) || 0;
@@ -196,6 +198,9 @@ export default function App() {
         data-strata-plate-height-range-mm={mapFace ? String(plateRangeMm) : undefined}
         data-strata-map-terrain-top-mm={mapFace && terrainTopMm != null ? String(terrainTopMm) : undefined}
         data-strata-map-stack-capped={mapFace && model.v.sliceMode === 'flat' ? (stackCapped ? '1' : '0') : undefined}
+        data-strata-slice-mode={model.v.sliceMode}
+        data-strata-stack-rods={String(stackRodCount)}
+        data-strata-stack-rods-visible={stackRodsVisible ? '1' : '0'}
       >
         <div className="title-bar">
           <div className="title-bar-text">

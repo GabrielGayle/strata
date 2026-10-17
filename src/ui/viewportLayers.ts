@@ -2,6 +2,7 @@ export type ViewportLayerId =
   | 'concrete'
   | 'frame'
   | 'plates'
+  | 'rods'
   | 'fin'
   | 'grid'
   | 'base'
@@ -15,6 +16,7 @@ export const VIEWPORT_LAYER_LABELS: Record<ViewportLayerId, string> = {
   concrete: 'Concrete',
   frame: 'Frame',
   plates: 'Plates',
+  rods: 'Rods',
   fin: 'Fin',
   grid: 'Grid',
   base: 'Base',
@@ -27,6 +29,7 @@ export const DEFAULT_VIEWPORT_LAYERS: ViewportLayers = {
   concrete: true,
   frame: true,
   plates: true,
+  rods: true,
   fin: true,
   grid: true,
   base: true,
@@ -34,6 +37,17 @@ export const DEFAULT_VIEWPORT_LAYERS: ViewportLayers = {
   water: true,
   labels: true,
 };
+
+/** Rods button: Stamped/flat always, or whenever any rods exist (keeps the default 9-button toolbar). */
+export function showRodsLayerToggle(
+  sliceMode: string | undefined,
+  sliced?: { brace?: { rods?: { rods?: { length: number } } | null } | null; stackRods?: { rods?: { length: number } } | null } | null,
+): boolean {
+  if (sliceMode === 'flat') return true;
+  if ((sliced?.brace?.rods?.rods.length ?? 0) > 0) return true;
+  if ((sliced?.stackRods?.rods.length ?? 0) > 0) return true;
+  return false;
+}
 
 const KEY = 'strata.viewport.layers.v1';
 

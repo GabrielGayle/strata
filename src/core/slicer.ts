@@ -38,6 +38,7 @@ import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type Sup
 import { buildSpacers, planRods, rodHardware, rodHoles, type BraceIssue, type HardwareRow, type RodPlan, type SpacerResult } from './brace';
 import { finishPlatePieces, type FragmentEvent } from './fragments';
 import { movePlane, type PartMoves } from './moves';
+import { placeStackRods, punchStackRodHoles, stackRodSettings, type StackRodPlan } from './stackRods';
 
 export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T';
 
@@ -142,6 +143,8 @@ export interface SliceResult {
   /** Target note per plate (aligned with `plates`), when Tuning is on. */
   tuning: (PlateTune | null)[] | null;
   brace: BraceResult | null;
+  /** Vertical support poles through a flat stack; null unless Support poles is on. */
+  stackRods: StackRodPlan | null;
   /** The plates where Round all corners moved an edge the furthest, most first (empty when it is off). */
   roundSpots?: RoundSpot[];
 }
@@ -1262,6 +1265,7 @@ export function slice(input: SliceInput): SliceResult {
   const pinR = v.pinDia / 2;
   let pins: Vec2[] = [];
   let pinsLive: boolean[] = [];
+  let pinTop: number[] = [];
   let below: Shape = []; // material of the layer underneath, for support and guides
 
   // shelf cards: each plate is trimmed down to just above the bottom edge of the cards it holds
@@ -1387,12 +1391,15 @@ export function slice(input: SliceInput): SliceResult {
       if (def.index === 0) {
         pins = flatPinPoints(v, flat, shape, Math.round(v.flatPins), pinR);
         pinsLive = pins.map(() => true);
+        pinTop = pins.map(() => -1);
         if (pins.length < v.flatPins) warnings.push(`Flat stack: room for only ${pins.length} of ${v.flatPins} registration pins.`);
       }
       const holes: Path[] = [];
       pins.forEach((p, k) => {
-        if (pinsLive[k] && pinFits(shape, p, pinR, v.minFeature)) holes.push(circlePath(p[0], p[1], pinR));
-        else pinsLive[k] = false;
+        if (pinsLive[k] && pinFits(shape, p, pinR, v.minFeature)) {
+          holes.push(circlePath(p[0], p[1], pinR));
+          pinTop[k] = def.index;
+        } else pinsLive[k] = false;
       });
       if (holes.length) cuts.push(holes.map((h) => ({ outer: h, holes: [] })));
     }
@@ -1481,6 +1488,26 @@ export function slice(input: SliceInput): SliceResult {
     if (isFlat) below = pieces;
     plates.push(info);
   });
+
+  let stackRods: StackRodPlan | null = null;
+  if (isFlat && v.stackRodsOn) {
+    const islands = plates.flatMap((pl) =>
+      pl.def.family !== 'P'
+        ? []
+        : pl.parts.map((part) => ({
+            key: `${pl.def.key}:${part.id}`,
+            layer: pl.def.index,
+            plateKey: pl.def.key,
+            partId: part.id,
+            shape: part.shape,
+          })),
+    );
+    const existing = pins
+      .map((p, k) => ({ x: p[0], y: p[1], topLayer: pinTop[k] ?? -1, radius: pinR }))
+      .filter((c) => c.topLayer >= 0);
+    stackRods = placeStackRods(islands, stackRodSettings(v, baseTop(v)), existing);
+    punchStackRodHoles(allParts, stackRods);
+  }
 
   // 8. the support ring, cut from the same sheet, with a mortise for every tenon
   if (support) {
@@ -1571,5 +1598,5 @@ export function slice(input: SliceInput): SliceResult {
   const spots = round.spots.sort((a, b) => b.move - a.move).slice(0, 6);
   if (spots.length && spots[0].move > Math.max(2, rMax * 3)) warnings.push(`Round all corners flattens detail: the edge of ${spots[0].label} moves ${spots[0].move.toFixed(1)} mm. Lower the radius, or set Inside corners lower.`);
   if (roundSplits.length) warnings.push(`Round all corners cuts through a narrow neck and splits ${roundSplits.slice(0, 4).join(', ')}${roundSplits.length > 4 ? ` and ${roundSplits.length - 4} more` : ''} into pieces.`);
-  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, support, tuning, brace, roundSpots: spots };
+  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, support, tuning, brace, stackRods, roundSpots: spots };
 }

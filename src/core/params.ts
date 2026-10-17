@@ -107,6 +107,7 @@ const isParallelish = (v: Values) => v.sliceMode !== 'radial';
 const isUpright = (v: Values) => v.sliceMode !== 'radial' && v.sliceMode !== 'flat';
 const isFlat = (v: Values) => v.sliceMode === 'flat';
 const hasRods = (v: Values) => isUpright(v) && v.rodsOn;
+const hasStackRods = (v: Values) => isFlat(v) && v.stackRodsOn;
 const hasCross = (v: Values) => isUpright(v) && (v.spacerMode === 'cross' || v.spacerMode === 'both');
 const hasTemplate = (v: Values) => isUpright(v) && (v.spacerMode === 'template' || v.spacerMode === 'both');
 const hasSpacers = (v: Values) => hasCross(v) || hasTemplate(v);
@@ -222,6 +223,11 @@ export const PARAMS: ParamDef[] = [
   num('flatPins', 'Registration pins', 'Slicer', 2, 0, 8, { int: true, unit: '', show: isFlat, help: 'Holes through every layer they fit, for pins or threaded rod that line the stack up and fix it to the base' }),
   num('pinDia', 'Pin Ø', 'Slicer', 8, 2, 40, { show: (v) => isFlat(v) && v.flatPins > 0 }),
   { id: 'flatGuides', label: 'Etch glue-up guides', group: 'Slicer', kind: 'toggle', def: true, show: isFlat, help: 'Etches the outline of the layer above onto each layer' },
+  { id: 'stackRodsOn', label: 'Support poles', group: 'Slicer', kind: 'toggle', def: false, show: isFlat, help: 'Vertical steel rods through every island of the flat stack, down to the base, so isolated peaks cannot float free. One rod is reused where islands stack.' },
+  num('stackRodDia', 'Pole Ø', 'Slicer', 6, 2, 20, { step: 0.5, show: hasStackRods, noScale: true, help: 'Steel rod diameter. Hole Ø is this plus weld clearance (default 6 + 0.5 = Ø6.5 mm).' }),
+  num('stackRodClearance', 'Weld clearance', 'Slicer', 0.5, 0, 3, { step: 0.05, show: hasStackRods, noScale: true, help: 'Added to the pole Ø so the lasered hole can take a weld or a sliding fit' }),
+  num('stackRodEdge', 'Min edge distance', 'Slicer', 3, 0.5, 30, { step: 0.5, show: hasStackRods, noScale: true, help: 'Least material from the hole edge to the plate edge' }),
+  num('stackRodStickOut', 'Stick-out', 'Slicer', 0, 0, 100, { step: 0.5, show: hasStackRods, noScale: true, help: 'Extra length above the top of the highest layer the rod supports' }),
   choice('sliceAxis', 'Direction', 'Slicer', 'length', [
     { value: 'length', label: 'Along length (X)' },
     { value: 'width', label: 'Along width (Z)' },

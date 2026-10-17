@@ -16,6 +16,7 @@ import {
   withExportLock,
 } from '../core/exporters';
 import { cutListCsv, hardwareCsv, MATERIAL_NAME } from '../core/bom';
+import { stackRodsCsv } from '../core/stackRods';
 import { serialize } from '../core/project';
 import { zipSync } from 'fflate';
 import type { Issue } from '../core/checks';
@@ -186,6 +187,45 @@ export default function Inspector() {
           {infos.length > 0 && ` ${infos.length} info notes.`}
         </div>
       </Section>
+
+      {model.sliced.stackRods && (
+        <div data-testid="inspector-support-poles">
+          <Section title="Support poles" count={`${model.sliced.stackRods.rods.length} rod${model.sliced.stackRods.rods.length === 1 ? '' : 's'}`}>
+            {model.sliced.stackRods.rods.length > 0 ? (
+              <dl className="kv">
+                {model.sliced.stackRods.rods.map((r) => (
+                  <Fragment key={r.id}>
+                    <dt>{r.id}</dt>
+                    <dd>
+                      Ø{fmt(r.diameter, 1)} × {fmt(r.length, 1)} mm
+                      <small style={{ display: 'block', color: 'var(--muted)' }}>hole Ø{fmt(r.hole, 1)} mm</small>
+                    </dd>
+                  </Fragment>
+                ))}
+              </dl>
+            ) : (
+              <div className="note">No extra poles: every island is already held (registration pins count).</div>
+            )}
+            <div className="note">
+              Vertical steel through every island of the flat stack, down to the base. One rod is reused where islands stack.
+              Hole Ø is pole + weld clearance.
+            </div>
+            {model.sliced.stackRods.rods.length > 0 && (
+              <div className="btnrow">
+                <button
+                  className="btn sm"
+                  onClick={() => {
+                    const plan = fullModel().sliced.stackRods;
+                    if (plan) download(`${base}-rods.csv`, stackRodsCsv(plan), 'text/csv');
+                  }}
+                >
+                  Rods CSV
+                </button>
+              </div>
+            )}
+          </Section>
+        </div>
+      )}
 
       {model.sliced.brace && (b.hardware.length > 0 || (model.sliced.brace.spacers?.parts.length ?? 0) > 0) && (
         <Section title="Bracing" count={b.hardware.length ? `${b.hardware.reduce((a, r) => a + r.qty, 0)} hardware` : 'spacers'}>
