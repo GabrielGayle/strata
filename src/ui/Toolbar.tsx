@@ -96,15 +96,18 @@ export async function openProjectFile(f: File, opts: { offerKeep?: boolean } = {
   const { replaceProject, toast } = useStore.getState();
   try {
     let project: Project;
+    let plates: number | undefined;
     if (isProjectZipName(f.name, f.type)) {
-      project = projectFromZip(new Uint8Array(await f.arrayBuffer())).project;
+      const opened = projectFromZip(new Uint8Array(await f.arrayBuffer()));
+      project = opened.project;
+      plates = opened.plateCount;
     } else {
       project = deserialize(await f.text());
     }
     replaceProject(project);
     unlinkActive();
     toast(`Opened ${f.name}`);
-    if (opts.offerKeep !== false && isProjectZipName(f.name, f.type)) await keepOpenedInLibrary(project, f.name);
+    if (opts.offerKeep !== false && isProjectZipName(f.name, f.type)) await keepOpenedInLibrary(project, f.name, plates);
   } catch (e) {
     toast(`Could not open: ${(e as Error).message}`);
   }

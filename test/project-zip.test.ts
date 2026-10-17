@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { deserialize, newProject } from '../src/core/project';
 import { buildZip } from '../src/core/exporters';
-import { projectFromZip, projectOnlyZip, projectZipEntry, ProjectZipError } from '../src/core/projectZip';
+import { projectFromZip, projectOnlyZip, projectZipEntry, ProjectZipError, zipExportedPlateCount } from '../src/core/projectZip';
 
 const assets: Assets = { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null };
 const oldJson = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/projects/old-coarse.strata.json'), 'utf8');
@@ -66,6 +66,37 @@ describe('project zip', () => {
     const zip = zipSync({ 'README.txt': strToU8('nope') });
     expect(() => projectFromZip(zip)).toThrow(ProjectZipError);
     expect(() => projectFromZip(new Uint8Array([1, 2, 3, 4]))).toThrow(/not a readable zip/);
+  });
+
+  it('counts exported plates from the zip, not params.plateCount', () => {
+    const p = newProject();
+    p.name = 'Medium';
+    p.params = { ...p.params, plateCount: '80', plateGap: '6', spacingMode: 'gap' };
+    const zip = zipSync({
+      'project.strata.json': strToU8(JSON.stringify({ format: 'strata-project', version: 1, name: 'Medium', params: p.params, locks: {}, pour: [], images: {}, meshes: {}, variants: [] })),
+      'plates/P1.dxf': strToU8('0'),
+      'plates/P2.dxf': strToU8('0'),
+      'plates/P3.dxf': strToU8('0'),
+      'plates/P4.dxf': strToU8('0'),
+      'plates/P5.dxf': strToU8('0'),
+      'plates/P6.dxf': strToU8('0'),
+      'plates/P7.dxf': strToU8('0'),
+      'plates/P8.dxf': strToU8('0'),
+      'plates/P9.dxf': strToU8('0'),
+      'plates/P10.dxf': strToU8('0'),
+      'plates/P11.dxf': strToU8('0'),
+      'plates/P12.dxf': strToU8('0'),
+      'plates/P13.dxf': strToU8('0'),
+      'plates/P14.dxf': strToU8('0'),
+      'plates/P15.dxf': strToU8('0'),
+      'plates/P16.dxf': strToU8('0'),
+      'plates/P17.dxf': strToU8('0'),
+      'manifest.json': strToU8(JSON.stringify({ plateCount: 17 })),
+    });
+    const opened = projectFromZip(zip);
+    expect(opened.project.params.plateCount).toBe('80');
+    expect(opened.plateCount).toBe(17);
+    expect(zipExportedPlateCount(unzipSync(zip))).toBe(17);
   });
 
   it('projectOnlyZip round-trips through projectFromZip', () => {

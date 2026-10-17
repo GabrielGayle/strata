@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newProject } from '../src/core/project';
-import { filterLibrary, foldersOf, projectKind, sortLibrary } from '../src/state/libraryDescribe';
+import { filterLibrary, foldersOf, plateCountOf, projectKind, rebuildPlateCount, sortLibrary } from '../src/state/libraryDescribe';
 import { memoryLibrary, openEntry, saveAs, type LibraryMeta } from '../src/state/library';
 import { recordLibrarySave } from '../src/state/recordLibrary';
 
@@ -27,6 +27,16 @@ describe('library describe', () => {
     expect(filterLibrary(list, '', 'Show').map((m) => m.id)).toEqual(['a']);
     expect(sortLibrary(list, 'plates').map((m) => m.id)).toEqual(['a', 'b']);
     expect(foldersOf(list)).toEqual(['Show']);
+  });
+
+  it('records rebuilt plate count, not a leftover params.plateCount', () => {
+    const p = {
+      ...newProject(),
+      params: { ...newProject().params, plateCount: '80', plateGap: '6', spacingMode: 'gap' },
+    };
+    expect(Number(p.params.plateCount)).toBe(80);
+    expect(plateCountOf(p, 17)).toBe(17);
+    expect(rebuildPlateCount(p)).not.toBe(80);
   });
 
   it('saveAs stores kind, plate count and material', async () => {

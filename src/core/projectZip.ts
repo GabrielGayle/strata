@@ -33,7 +33,24 @@ export function isProjectZipName(name: string, type = ''): boolean {
   return type === 'application/zip' || type === 'application/x-zip-compressed';
 }
 
-export function projectFromZip(bytes: Uint8Array): { project: Project; entry: string } {
+/** Plate count written by Export ZIP: `plates/*.dxf`, else `manifest.json`. */
+export function zipExportedPlateCount(files: Record<string, Uint8Array>): number | undefined {
+  const dxf = Object.keys(files).filter((n) => {
+    const p = n.replace(/\\/g, '/');
+    return /(?:^|\/)plates\/[^/]+\.dxf$/i.test(p);
+  }).length;
+  if (dxf) return dxf;
+  const manifestKey = Object.keys(files).find((n) => basename(n.replace(/\\/g, '/')).toLowerCase() === 'manifest.json');
+  if (!manifestKey) return undefined;
+  try {
+    const raw = JSON.parse(strFromU8(files[manifestKey])) as { plateCount?: unknown };
+    return typeof raw.plateCount === 'number' && Number.isFinite(raw.plateCount) ? raw.plateCount : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function projectFromZip(bytes: Uint8Array): { project: Project; entry: string; plateCount?: number } {
   let files: Record<string, Uint8Array>;
   try {
     files = unzipSync(bytes);
@@ -47,7 +64,7 @@ export function projectFromZip(bytes: Uint8Array): { project: Project; entry: st
   }
   const text = strFromU8(files[entry]).replace(/^\uFEFF/, '');
   try {
-    return { project: deserialize(text), entry };
+    return { project: deserialize(text), entry, plateCount: zipExportedPlateCount(files) };
   } catch (e) {
     throw new ProjectZipError(`Could not read ${entry}: ${(e as Error).message}`);
   }

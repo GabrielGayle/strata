@@ -1,6 +1,14 @@
 import { METAL_NAMES } from '../core/appearance';
+import { createPipeline, type Assets } from '../core/pipeline';
 import type { Project } from '../core/project';
 import type { LibraryMeta, ProjectKind } from './library';
+
+const EMPTY_ASSETS: Assets = { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null };
+
+/** Sliced plate count from a rebuild — not `params.plateCount`, which can be a leftover or an expression. */
+export function rebuildPlateCount(p: Project, assets: Assets = EMPTY_ASSETS): number {
+  return createPipeline()(p, assets).sliced.plates.length;
+}
 
 export type LibrarySort = 'updated' | 'name' | 'plates' | 'kind';
 
@@ -14,8 +22,11 @@ export function projectKind(p: Project): ProjectKind {
 
 export function plateCountOf(p: Project, plates?: number): number | undefined {
   if (typeof plates === 'number' && Number.isFinite(plates)) return plates;
-  const n = Number(p.params.plateCount);
-  return Number.isFinite(n) ? n : undefined;
+  try {
+    return rebuildPlateCount(p);
+  } catch {
+    return undefined;
+  }
 }
 
 export function materialOfProject(p: Project): string {

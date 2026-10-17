@@ -51,7 +51,7 @@ export function activeLibraryLinkId(): string | undefined {
 }
 
 /** After opening a zip/JSON, offer to keep it in the (cloud) library. */
-export async function keepOpenedInLibrary(project: Project, sourceName: string): Promise<void> {
+export async function keepOpenedInLibrary(project: Project, sourceName: string, plates?: number): Promise<void> {
   if (typeof window === 'undefined') return;
   if (!window.confirm(`Save “${project.name}” from ${sourceName} to Projects so it appears on other builds?`)) return;
   const store = defaultProjectLibrary();
@@ -59,7 +59,10 @@ export async function keepOpenedInLibrary(project: Project, sourceName: string):
   try {
     const names = (await store.list()).map((m) => m.name);
     const name = uniqueName(project.name, names);
-    const { meta, project: saved } = await saveAs(store, project, name, grabThumb(), Date.now(), { source: 'import' });
+    const { meta, project: saved } = await saveAs(store, project, name, grabThumb(), Date.now(), {
+      source: 'import',
+      ...(plates != null ? { plateCount: plates } : {}),
+    });
     setName(saved.name);
     link(useStore.getState().activeSetup, { id: meta.id, print: projectFingerprint(saved) });
     const warn = takeCloudWarning();
@@ -292,9 +295,14 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
     if (!file) return;
     void run(async () => {
       if (isProjectZipName(file.name, file.type)) {
-        const { project: opened } = projectFromZip(new Uint8Array(await file.arrayBuffer()));
+        const opened = projectFromZip(new Uint8Array(await file.arrayBuffer()));
         const names = (list ?? []).map((m) => m.name);
-        const meta = await recordLibrarySave(opened, { source: 'import', thumb: grabThumb(), name: uniqueName(opened.name, names) });
+        const meta = await recordLibrarySave(opened.project, {
+          source: 'import',
+          thumb: grabThumb(),
+          name: uniqueName(opened.project.name, names),
+          plates: opened.plateCount,
+        });
         toast(`Added “${meta.name}” from ${file.name}`);
         return;
       }
