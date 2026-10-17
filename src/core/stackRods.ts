@@ -1,11 +1,19 @@
-// Support poles for a flat (Stamped) stack: vertical steel rods through every
-// connected island, down to the base, reusing one rod wherever islands stack.
-import { circlePath, difference, offset, pointInShape, shapeArea, shapeBBox, shapePerimeter, type BBox, type Shape, type Vec2 } from './geom2d';
+// Support poles for a flat (Stamped) stack: vertical steel rods through
+// islands that would otherwise float, down to the base. One rod is reused
+// wherever islands stack. Held islands (on the base, or resting on a held
+// island below) do not need their own rod.
+import { circlePath, difference, intersection, offset, pointInShape, shapeArea, shapeBBox, shapePerimeter, signedArea, unionShapes, type BBox, type Path, type Shape, type Vec2 } from './geom2d';
+import { piecesTouch } from './fragments';
 import type { HardwareRow } from './brace';
 import type { Values } from './params';
 import type { V3 } from './section';
 
 export const STACK_ROD_GRID_MM = 2;
+/** Least gap from an etch/label stroke to a hole edge. */
+export const LABEL_HOLE_CLEAR_MM = 1.5;
+const GLUE_AREA_MM2 = 1;
+
+export type StackRodSmall = 'keep' | 'drop' | 'merge';
 
 export interface StackRodIsland {
   key: string;
@@ -31,6 +39,7 @@ export interface StackRodSettings {
   thickness: number;
   minFeature: number;
   baseTop: number;
+  small: StackRodSmall;
 }
 
 export interface StackRod {
@@ -48,11 +57,13 @@ export interface StackRod {
 }
 
 export interface StackRodIssue {
-  severity: 'error';
+  severity: 'error' | 'warn' | 'info';
   message: string;
   plateKey?: string;
   partId?: string;
   at?: Vec2;
+  /** True when glue or the base already holds this island. */
+  held?: boolean;
 }
 
 export interface StackRodPlan {
@@ -62,12 +73,31 @@ export interface StackRodPlan {
   issues: StackRodIssue[];
 }
 
+export interface HoleDisk {
+  c: Vec2;
+  r: number;
+}
+
+/** Minimal part fields the drop/merge pass needs (compatible with slicer `Part`). */
+export interface StackRodPart {
+  id: string;
+  plateKey: string;
+  family: string;
+  index: number;
+  shape: Shape;
+  area: number;
+  perimeter: number;
+  bbox: BBox;
+  etch: Path[];
+}
+
 const num = (v: Values, id: string, fallback: number) => {
   const x = Number(v[id]);
   return Number.isFinite(x) ? x : fallback;
 };
 
 export function stackRodSettings(v: Values, baseTop: number): StackRodSettings {
+  const small = String(v.stackRodSmall || 'keep');
   return {
     diameter: num(v, 'stackRodDia', 6),
     clearance: num(v, 'stackRodClearance', 0.5),
@@ -76,11 +106,79 @@ export function stackRodSettings(v: Values, baseTop: number): StackRodSettings {
     thickness: v.thickness,
     minFeature: v.minFeature,
     baseTop,
+    small: small === 'drop' || small === 'merge' ? small : 'keep',
   };
 }
 
 export function stackRodHoleDia(s: StackRodSettings): number {
   return s.diameter + s.clearance;
+}
+
+export function holeDisks(shape: Shape): HoleDisk[] {
+  const out: HoleDisk[] = [];
+  for (const ex of shape) {
+    for (const h of ex.holes) {
+      if (h.length < 3) continue;
+      let sx = 0, sy = 0;
+      for (const q of h) {
+        sx += q[0];
+        sy += q[1];
+      }
+      const c: Vec2 = [sx / h.length, sy / h.length];
+      const r = Math.sqrt(Math.abs(signedArea(h)) / Math.PI);
+      if (r > 0.2) out.push({ c, r });
+    }
+  }
+  return out;
+}
+
+/** Round pin/rod holes, not large terrain voids. */
+export function fastenerDisks(shape: Shape, maxR = 22): HoleDisk[] {
+  const out: HoleDisk[] = [];
+  for (const ex of shape) {
+    for (const h of ex.holes) {
+      if (h.length < 8) continue;
+      let sx = 0, sy = 0;
+      for (const q of h) {
+        sx += q[0];
+        sy += q[1];
+      }
+      const c: Vec2 = [sx / h.length, sy / h.length];
+      const r = Math.sqrt(Math.abs(signedArea(h)) / Math.PI);
+      if (r < 0.4 || r > maxR) continue;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const q of h) {
+        if (q[0] < minX) minX = q[0];
+        if (q[1] < minY) minY = q[1];
+        if (q[0] > maxX) maxX = q[0];
+        if (q[1] > maxY) maxY = q[1];
+      }
+      const w = maxX - minX, ht = maxY - minY;
+      if (w < 0.5 || ht < 0.5 || Math.max(w, ht) / Math.min(w, ht) > 1.3) continue;
+      out.push({ c, r });
+    }
+  }
+  return out;
+}
+
+function distPointToSeg(p: Vec2, a: Vec2, b: Vec2): number {
+  const vx = b[0] - a[0], vy = b[1] - a[1];
+  const l2 = vx * vx + vy * vy;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2)) : 0;
+  return Math.hypot(a[0] + t * vx - p[0], a[1] + t * vy - p[1]);
+}
+
+/** True when any open polyline comes within `r` of the disk centre. */
+export function pathsHitDisk(paths: Path[], c: Vec2, r: number): boolean {
+  if (r <= 0 || !paths.length) return false;
+  for (const path of paths) {
+    for (let i = 0; i < path.length; i++) {
+      const a = path[i];
+      if (Math.hypot(a[0] - c[0], a[1] - c[1]) < r) return true;
+      if (i + 1 < path.length && distPointToSeg(c, a, path[i + 1]) < r) return true;
+    }
+  }
+  return false;
 }
 
 function ptKey(p: Vec2): string {
@@ -93,17 +191,8 @@ function islandCentroid(shape: Shape): Vec2 {
 }
 
 function islandHasHoleAt(shape: Shape, p: Vec2, r: number): boolean {
-  for (const ex of shape) {
-    for (const h of ex.holes) {
-      if (!h.length) continue;
-      let sx = 0, sy = 0;
-      for (const q of h) {
-        sx += q[0];
-        sy += q[1];
-      }
-      const c: Vec2 = [sx / h.length, sy / h.length];
-      if (Math.hypot(c[0] - p[0], c[1] - p[1]) < r + 0.6) return true;
-    }
+  for (const d of holeDisks(shape)) {
+    if (Math.hypot(d.c[0] - p[0], d.c[1] - p[1]) < r + 0.6) return true;
   }
   return false;
 }
@@ -146,8 +235,78 @@ function tooCloseTo(p: Vec2, b: Blocked, holeR: number, minFeat: number): boolea
 }
 
 /**
+ * An island is held when it sits on the base (layer 0), a pin already runs
+ * through it, or it has glue area on a held island of the layer below.
+ */
+export function heldIslandKeys(islands: StackRodIsland[], existing: ExistingColumn[] = []): Set<string> {
+  const held = new Set<string>();
+  if (!islands.length) return held;
+  const maxL = Math.max(...islands.map((is) => is.layer));
+  const byLayer: StackRodIsland[][] = Array.from({ length: maxL + 1 }, () => []);
+  for (const is of islands) byLayer[is.layer].push(is);
+
+  for (const col of existing) {
+    for (const is of islands) {
+      if (is.layer <= col.topLayer && (islandHasHoleAt(is.shape, [col.x, col.y], col.radius) || pointInShape([col.x, col.y], is.shape))) {
+        held.add(is.key);
+      }
+    }
+  }
+
+  for (let layer = 0; layer <= maxL; layer++) {
+    for (const is of byLayer[layer]) {
+      if (held.has(is.key)) continue;
+      if (layer === 0) {
+        held.add(is.key);
+        continue;
+      }
+      const below = byLayer[layer - 1].filter((b) => held.has(b.key));
+      for (const b of below) {
+        if (shapeArea(intersection(is.shape, b.shape)) > GLUE_AREA_MM2) {
+          held.add(is.key);
+          break;
+        }
+      }
+    }
+  }
+  return held;
+}
+
+function setRodLength(rod: StackRod, length: number, settings: StackRodSettings) {
+  rod.length = length;
+  rod.a = [rod.x, settings.baseTop, -rod.y];
+  rod.b = [rod.x, settings.baseTop + length, -rod.y];
+  rod.layers = Array.from({ length: rod.topLayer + 1 }, (_, i) => i);
+}
+
+function issueFor(is: StackRodIsland, held: boolean, hole: number, edge: number, small: StackRodSmall): StackRodIssue {
+  const bb = shapeBBox(is.shape);
+  const at = Number.isFinite(bb.minX) ? [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2] as Vec2 : undefined;
+  if (held) {
+    const why = is.layer === 0 ? 'it sits on the base' : 'it rests on a supported island below';
+    return {
+      severity: small === 'keep' ? 'warn' : 'info',
+      held: true,
+      plateKey: is.plateKey,
+      partId: is.partId,
+      at,
+      message: `Layer ${is.plateKey} island ${is.partId} is too small for a support rod (Ø${hole.toFixed(1)} mm hole, ${edge} mm from the edge); ${why}.`,
+    };
+  }
+  return {
+    severity: small === 'keep' ? 'error' : 'info',
+    held: false,
+    plateKey: is.plateKey,
+    partId: is.partId,
+    at,
+    message: `Layer ${is.plateKey} island ${is.partId} has no room for a support rod (Ø${hole.toFixed(1)} mm hole, ${edge} mm from the edge) and nothing holds it — it would fall off.`,
+  };
+}
+
+/**
  * Greedy set-cover of islands by vertical columns. A column may only cross
  * solid material (with the hole + min edge distance) from the base up.
+ * Held islands that cannot take a hole warn (or drop/merge); floating ones error.
  */
 export function placeStackRods(islands: StackRodIsland[], settings: StackRodSettings, existing: ExistingColumn[] = []): StackRodPlan {
   const hole = stackRodHoleDia(settings);
@@ -165,6 +324,9 @@ export function placeStackRods(islands: StackRodIsland[], settings: StackRodSett
   const byLayer: StackRodIsland[][] = Array.from({ length: maxL + 1 }, () => []);
   for (const is of sorted) byLayer[is.layer].push(is);
 
+  const held = heldIslandKeys(sorted, existing);
+  // Pins already count as covering. Held-by-glue islands do not *need* a rod,
+  // but greedy still places one through any island that has room (peaks).
   const covered = new Set<string>();
   for (const col of existing) {
     for (const is of sorted) {
@@ -244,16 +406,67 @@ export function placeStackRods(islands: StackRodIsland[], settings: StackRodSett
   }
 
   for (const is of uncovered()) {
-    const bb = shapeBBox(is.shape);
-    issues.push({
-      severity: 'error',
-      message: `Layer ${is.plateKey} island ${is.partId} has no room for a support rod (Ø${hole.toFixed(1)} mm hole, ${settings.edge} mm from the edge).`,
-      plateKey: is.plateKey,
-      partId: is.partId,
-      at: Number.isFinite(bb.minX) ? [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2] : undefined,
-    });
+    issues.push(issueFor(is, held.has(is.key), hole, settings.edge, settings.small));
   }
   return plan;
+}
+
+export function stackRodsUnsupported(plan: StackRodPlan | null | undefined): StackRodIssue[] {
+  if (!plan) return [];
+  return plan.issues.filter((i) => i.severity === 'error' || i.severity === 'warn');
+}
+
+function holeFitsAt(
+  shape: Shape,
+  p: Vec2,
+  holeR: number,
+  edge: number,
+  blocked: Blocked[],
+  minFeat: number,
+): boolean {
+  const inner = offset(shape, -(holeR + edge));
+  if (!pointInShape(p, inner)) return false;
+  return !blocked.some((b) => tooCloseTo(p, b, holeR, minFeat));
+}
+
+/**
+ * Stick-out past the highest layer a rod supports: cut a hole through any
+ * plate it would enter when the hole fits, otherwise clamp so it stops at
+ * that plate's underside (air above the whole stack is kept).
+ */
+export function resolveStackRodStickOut(
+  plan: StackRodPlan,
+  parts: { family: string; index: number; shape: Shape }[],
+  settings: StackRodSettings,
+  maxLayer: number,
+): void {
+  if (!plan.rods.length) return;
+  const holeR = plan.hole / 2;
+  const minFeat = Math.max(settings.minFeature, 0.5);
+  const th = settings.thickness;
+  for (const rod of plan.rods) {
+    const p: Vec2 = [rod.x, rod.y];
+    const blocked: Blocked[] = [];
+    for (const other of plan.rods) {
+      if (other === rod) continue;
+      blocked.push({ p: [other.x, other.y], r: plan.hole / 2 });
+    }
+    let wantedTop = (rod.topLayer + 1) * th + Math.max(0, settings.stickOut);
+    for (let layer = rod.topLayer + 1; layer <= maxLayer; layer++) {
+      const plateBottom = layer * th;
+      if (wantedTop <= plateBottom + 1e-9) break;
+      const owners = parts.filter((q) => q.family === 'P' && q.index === layer && pointInShape(p, q.shape));
+      if (owners.length === 0) continue;
+      if (owners.length === 1 && holeFitsAt(owners[0].shape, p, holeR, settings.edge, blocked, minFeat)) {
+        rod.topLayer = layer;
+        continue;
+      }
+      wantedTop = plateBottom;
+      break;
+    }
+    const minLen = (rod.topLayer + 1) * th;
+    setRodLength(rod, Math.max(minLen, wantedTop), settings);
+  }
 }
 
 export function punchStackRodHoles(
@@ -276,6 +489,70 @@ export function punchStackRodHoles(
       part.bbox = shapeBBox(part.shape);
     }
   }
+}
+
+function removePart(allParts: StackRodPart[], plates: { def: { key: string }; parts: StackRodPart[] }[], part: StackRodPart) {
+  const i = allParts.indexOf(part);
+  if (i >= 0) allParts.splice(i, 1);
+  for (const pl of plates) {
+    const j = pl.parts.indexOf(part);
+    if (j >= 0) pl.parts.splice(j, 1);
+  }
+}
+
+/**
+ * Drop or merge islands that cannot take a hole. Keep mode leaves the issues.
+ * A successful drop/merge clears the error/warning so export can proceed,
+ * except we never leave a floating island in place.
+ */
+export function applyStackRodSmall(
+  allParts: StackRodPart[],
+  plates: { def: { key: string }; parts: StackRodPart[] }[],
+  plan: StackRodPlan,
+  mode: StackRodSmall,
+  kerf: number,
+): void {
+  if (mode === 'keep' || !plan.issues.length) return;
+  const pad = Math.max(0.2, kerf);
+  const leftover: StackRodIssue[] = [];
+  for (const issue of plan.issues) {
+    const part = allParts.find((p) => p.id === issue.partId && p.plateKey === issue.plateKey);
+    if (!part) {
+      leftover.push(issue);
+      continue;
+    }
+    const plate = plates.find((pl) => pl.def.key === part.plateKey);
+    const siblings = (plate?.parts ?? []).filter((p) => p !== part);
+    if (mode === 'merge' && siblings.length) {
+      const touching = siblings.filter((s) => part.shape[0] && s.shape[0] && piecesTouch(part.shape[0], s.shape[0], pad));
+      const best = (touching.length ? touching : siblings).slice().sort((a, b) => b.area - a.area)[0];
+      if (best) {
+        const merged = unionShapes(best.shape, part.shape);
+        if (merged.length) {
+          best.shape = merged.length === 1 ? merged : [merged.reduce((a, b) => (shapeArea([a]) >= shapeArea([b]) ? a : b))];
+          best.area = shapeArea(best.shape);
+          best.perimeter = shapePerimeter(best.shape);
+          best.bbox = shapeBBox(best.shape);
+          best.etch = [...best.etch, ...part.etch];
+          removePart(allParts, plates, part);
+          leftover.push({
+            ...issue,
+            severity: 'info',
+            message: `Merged ${part.id} into ${best.id} (too small for a support rod).`,
+          });
+          continue;
+        }
+      }
+    }
+    // drop, or merge fallback
+    removePart(allParts, plates, part);
+    leftover.push({
+      ...issue,
+      severity: 'info',
+      message: `Dropped ${part.id} (too small for a support rod).`,
+    });
+  }
+  plan.issues = leftover;
 }
 
 export function stackRodsCsv(plan: StackRodPlan): string {

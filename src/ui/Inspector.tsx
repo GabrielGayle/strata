@@ -16,7 +16,7 @@ import {
   withExportLock,
 } from '../core/exporters';
 import { cutListCsv, hardwareCsv, MATERIAL_NAME } from '../core/bom';
-import { stackRodsCsv } from '../core/stackRods';
+import { stackRodsCsv, stackRodsUnsupported } from '../core/stackRods';
 import { serialize } from '../core/project';
 import { zipSync } from 'fflate';
 import type { Issue } from '../core/checks';
@@ -97,6 +97,7 @@ export default function Inspector() {
   const errors = model.issues.filter((i) => i.severity === 'error');
   const warns = model.issues.filter((i) => i.severity === 'warn');
   const infos = model.issues.filter((i) => i.severity === 'info');
+  const stackUnsupported = stackRodsUnsupported(model.sliced.stackRods);
   const base = (project.name || 'strata').replace(/[^\w-]+/g, '_');
   const sel = model.sliced.parts.find((p) => p.id === ui.selected);
   const bevelMax = Math.max(0, ...model.sliced.plates.map((p) => p.bevel));
@@ -191,7 +192,7 @@ export default function Inspector() {
       {model.sliced.stackRods && (
         <div data-testid="inspector-support-poles">
           <Section title="Support poles" count={`${model.sliced.stackRods.rods.length} rod${model.sliced.stackRods.rods.length === 1 ? '' : 's'}`}>
-            {model.sliced.stackRods.rods.length > 0 ? (
+            {model.sliced.stackRods.rods.length > 0 && (
               <dl className="kv">
                 {model.sliced.stackRods.rods.map((r) => (
                   <Fragment key={r.id}>
@@ -203,11 +204,21 @@ export default function Inspector() {
                   </Fragment>
                 ))}
               </dl>
-            ) : (
+            )}
+            {stackUnsupported.length > 0 && (
+              <ul className="note" data-testid="inspector-support-poles-unsupported" style={{ margin: '8px 0', paddingLeft: 18 }}>
+                {stackUnsupported.map((i, k) => (
+                  <li key={`${i.plateKey ?? ''}:${i.partId ?? k}`}>
+                    {i.plateKey ?? 'Layer'} {i.partId ?? ''} — {i.held ? 'too small for a pole (already held)' : 'unsupported'}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {model.sliced.stackRods.rods.length === 0 && stackUnsupported.length === 0 && (
               <div className="note">No extra poles: every island is already held (registration pins count).</div>
             )}
             <div className="note">
-              Vertical steel through every island of the flat stack, down to the base. One rod is reused where islands stack.
+              Vertical steel through islands that would otherwise float, down to the base. Islands on the first layer and islands resting on a held island below do not need their own rod.
               Hole Ø is pole + weld clearance.
             </div>
             {model.sliced.stackRods.rods.length > 0 && (

@@ -63,11 +63,11 @@ describe('param overrides (size / tuning)', () => {
   });
 
   it('does not clobber user support-pole settings', () => {
-    const params = { stackRodDia: '8', stackRodClearance: '0.8', stackRodEdge: '4', stackRodStickOut: '2', stackRodsOn: true, plateCount: '12' };
-    const overrides = markUserParamOverrides(undefined, ['stackRodDia', 'stackRodClearance', 'stackRodEdge', 'stackRodStickOut', 'stackRodsOn']);
+    const params = { stackRodDia: '8', stackRodClearance: '0.8', stackRodEdge: '4', stackRodStickOut: '2', stackRodsOn: true, stackRodSmall: 'drop', plateCount: '12' };
+    const overrides = markUserParamOverrides(undefined, ['stackRodDia', 'stackRodClearance', 'stackRodEdge', 'stackRodStickOut', 'stackRodsOn', 'stackRodSmall']);
     const out = applyParamPatchRespectingOverrides(
       params,
-      { stackRodDia: '6', stackRodClearance: '0.5', stackRodEdge: '3', stackRodStickOut: '0', stackRodsOn: false, plateCount: '20' },
+      { stackRodDia: '6', stackRodClearance: '0.5', stackRodEdge: '3', stackRodStickOut: '0', stackRodsOn: false, stackRodSmall: 'keep', plateCount: '20' },
       overrides,
     );
     expect(out.stackRodDia).toBe('8');
@@ -75,6 +75,7 @@ describe('param overrides (size / tuning)', () => {
     expect(out.stackRodEdge).toBe('4');
     expect(out.stackRodStickOut).toBe('2');
     expect(out.stackRodsOn).toBe(true);
+    expect(out.stackRodSmall).toBe('drop');
     expect(out.plateCount).toBe('20');
   });
 });
@@ -93,8 +94,11 @@ describe('store: near/far persist across map rebuild, auto-dimension and design 
   it('marks support-pole params as user overrides', () => {
     useStore.getState().setParam('stackRodsOn', true);
     useStore.getState().setParam('stackRodDia', '8');
+    useStore.getState().setParam('stackRodSmall', 'merge');
     expect(useStore.getState().project.userParamOverrides?.stackRodsOn).toBe(true);
     expect(useStore.getState().project.userParamOverrides?.stackRodDia).toBe(true);
+    expect(useStore.getState().project.userParamOverrides?.stackRodSmall).toBe(true);
+    expect(useStore.getState().project.params.stackRodSmall).toBe('merge');
     expect(useStore.getState().project.params.stackRodDia).toBe('8');
   });
 
