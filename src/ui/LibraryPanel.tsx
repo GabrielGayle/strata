@@ -40,6 +40,11 @@ export function unlinkActive() {
   link(useStore.getState().activeSetup, null);
 }
 
+/** Mark the working copy as the library entry we just auto-saved. */
+export function linkActive(id: string, project: Project) {
+  link(useStore.getState().activeSetup, { id, print: projectFingerprint(project) });
+}
+
 /** After opening a zip/JSON, offer to keep it in the (cloud) library. */
 export async function keepOpenedInLibrary(project: Project, sourceName: string): Promise<void> {
   if (typeof window === 'undefined') return;
@@ -452,17 +457,9 @@ export function CloudSyncMark() {
 
 export function ProjectsButton() {
   const [open, setOpen] = useState(false);
-  const setUi = useStore((s) => s.setUi);
   return (
     <>
-      <button
-        className="tb"
-        onClick={() => {
-          setUi({ leftPane: 'saves' });
-          setOpen(true);
-        }}
-        title="Saves browser: cloud and local projects"
-      >
+      <button className="tb" onClick={() => setOpen(true)} title="Saves browser: cloud and local projects">
         Projects
       </button>
       {open && <LibraryPanel onClose={() => setOpen(false)} />}

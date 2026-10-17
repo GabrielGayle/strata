@@ -9,7 +9,7 @@ import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
 import { loadRates } from './PriceEstimate';
 import { randomTheme, themeTokens, THEME_PRESETS, type ThemeSeed } from './theme';
-import { CloudSyncMark, grabThumb, keepOpenedInLibrary, ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
+import { CloudSyncMark, grabThumb, keepOpenedInLibrary, linkActive, ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
 import { recordLibrarySave } from '../state/recordLibrary';
 import { isProjectZipName, projectFromZip } from '../core/projectZip';
 
@@ -231,7 +231,9 @@ export default function Toolbar() {
 
   const save = () => {
     download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}.strata.json`, serialize(project), 'application/json');
-    void recordLibrarySave(project, { source: 'save', thumb: grabThumb() }).catch((e) => toast(`Saved the file, but Projects failed: ${(e as Error).message}`));
+    void recordLibrarySave(project, { source: 'save', thumb: grabThumb() })
+      .then((meta) => linkActive(meta.id, project))
+      .catch((e) => toast(`Saved the file, but Projects failed: ${(e as Error).message}`));
   };
   const open = async () => {
     const f = await pickFile('.json,.zip,application/json,application/zip');
@@ -243,9 +245,9 @@ export default function Toolbar() {
         const model = fullModel();
         const zip = buildZip(model, project, loadRates());
         download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}-fabrication.zip`, zip, 'application/zip');
-        void recordLibrarySave(project, { source: 'export', plates: model.sliced.plates.length, thumb: grabThumb() }).catch((e) =>
-          toast(`Exported, but Projects failed: ${(e as Error).message}`),
-        );
+        void recordLibrarySave(project, { source: 'export', plates: model.sliced.plates.length, thumb: grabThumb() })
+          .then((meta) => linkActive(meta.id, project))
+          .catch((e) => toast(`Exported, but Projects failed: ${(e as Error).message}`));
         return model;
       });
       if (!ran.ok) toast('Export already running');

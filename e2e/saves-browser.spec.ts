@@ -27,20 +27,23 @@ test('Save and Export ZIP land in the saves browser', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
-  await expect(page.getByTestId('saves-browser')).toBeVisible();
-  await expect(page.getByText('Vermilion 40').first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText(/Vermilion/).first()).toBeVisible();
+  const dlg = page.getByTestId('projects-dialog');
+  await expect(dlg.getByTestId('saves-browser')).toBeVisible();
+  await expect(dlg.getByText('Vermilion 40').first()).toBeVisible({ timeout: 20_000 });
+  await expect(dlg.getByText(/Vermilion/).first()).toBeVisible();
   await shot(page, 'saves-browser-grid');
 
-  await page.getByTestId('saves-view-list').click();
-  await expect(page.getByTestId('saves-view-list')).toHaveClass(/on/);
-  await page.getByTestId('saves-search').fill('vermilion');
-  await expect(page.getByText('Vermilion 40').first()).toBeVisible();
+  await dlg.getByTestId('saves-view-list').click();
+  await expect(dlg.getByTestId('saves-view-list')).toHaveClass(/on/);
+  await dlg.getByTestId('saves-search').fill('vermilion');
+  await expect(dlg.getByText('Vermilion 40').first()).toBeVisible();
   await shot(page, 'saves-browser-list');
 
-  await page.getByTestId('projects-dialog').getByRole('button', { name: 'Close' }).click();
+  await dlg.getByRole('button', { name: 'Close' }).click();
   await page.getByTestId('left-saves-tab').click();
   await expect(page.getByTestId('saves-panel')).toBeVisible();
-  await expect(page.getByTestId('saves-panel').getByText('Vermilion 40').first()).toBeVisible();
+  const sideName = page.getByTestId('saves-panel').getByText('Vermilion 40').first();
+  await sideName.scrollIntoViewIfNeeded();
+  await expect(sideName).toBeVisible({ timeout: 10_000 });
   await shot(page, 'saves-side-panel');
 });

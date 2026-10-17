@@ -2582,6 +2582,16 @@ canvas.thumb {
 .lib-browser.compact .lib-grid {
   grid-template-columns: 1fr;
 }
+.lib-browser.compact .lib-line-main {
+  grid-template-columns: 36px minmax(0, 1fr);
+}
+.lib-browser.compact .lib-line-main .lib-name,
+.lib-browser.compact .lib-line-main small {
+  grid-column: 2;
+}
+.lib-browser.compact .lib-line-main small {
+  white-space: normal;
+}
 .saves-panel {
   min-height: 0;
 }
