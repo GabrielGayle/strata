@@ -68,4 +68,15 @@ test('live Buttermere 500×500: 3D Top north matches Map preview', async ({ page
   const dest = join(shotDir, shotName);
   await writeFile(dest, downscalePng(stitchPngSideBySide(threeBuf, scalePngToHeight(mapBuf, PNG.sync.read(threeBuf).height)), 720));
   compressPngFile(dest);
+
+  if (!isBefore) {
+    await snapViewportDir(page, 'front', true);
+    await waitForViewportRelief(page);
+    const front3d = page.getByTestId('viewport-3d');
+    await expect(front3d.getByRole('button', { name: 'Front' })).toHaveClass(/on/);
+    const frontDest = join(shotDir, 'orient-front.png');
+    const frontBuf = Buffer.from(await front3d.screenshot({ type: 'png' }));
+    await writeFile(frontDest, downscalePng(frontBuf, 720));
+    compressPngFile(frontDest);
+  }
 });

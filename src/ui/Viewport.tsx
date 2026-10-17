@@ -33,12 +33,13 @@ export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { di
   const up = new THREE.Vector3(0, 1, 0);
   switch (dir) {
     case 'front':
-      // looking along the stack, through the plates
+      // From the north end (−X) looking south. Map world +Z is west, so east is on the left.
       return { dir: new THREE.Vector3(-f.stack[0], 0.04, -f.stack[1]).normalize(), up };
     case 'side':
       return { dir: new THREE.Vector3(f.across[0], 0.04, f.across[1]).normalize(), up };
     case 'top':
-      // Maps: north / S-01 (front) at the top, so the plan matches the 2D map.
+      // Maps: north / S-01 (front) at the top. East is screen-right because +Z is west
+      // (South × Up = West). Do not roll this camera to fake an E–W flip.
       // Other designs keep the front plate at the bottom, stack running up the screen.
       return {
         dir: new THREE.Vector3(0, 1, 0),

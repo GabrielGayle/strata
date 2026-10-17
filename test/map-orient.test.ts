@@ -8,8 +8,15 @@ import { osmToEngraveArt } from '../src/core/mapOsmEngrave';
 import { metricBounds, pickMetricCrs, reprojectResample } from '../src/core/mapProject';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { mapGridToDepth } from '../src/core/mapToDepth';
-import { buildMapHeightField, mapDepthToGray, sampleMapHeightGrid } from '../src/core/mapPlateHeight';
+import { mapEngravePathsForPart } from '../src/core/mapEngravePlate';
+import {
+  buildMapHeightField,
+  mapDepthToGray,
+  mapTopProject,
+  sampleMapHeightGrid,
+} from '../src/core/mapPlateHeight';
 import type { Float32Grid } from '../src/core/mapGrid';
+import type { Part } from '../src/core/slicer';
 import { BUTTERMERE_BBOX } from './map-fixtures';
 
 const live = process.env.LIVE_MAP === '1';
@@ -91,6 +98,78 @@ function meanPathY(path: [number, number][]): number {
   return path.reduce((s, p) => s + p[1], 0) / path.length;
 }
 
+function meanPathX(path: [number, number][]): number {
+  return path.reduce((s, p) => s + p[0], 0) / path.length;
+}
+
+/** North-up DEM: a single high blob in the north-east corner. */
+function neHighSource(bbox: [number, number, number, number], size = 64): Float32Grid {
+  const src = nwHighSource(bbox, size);
+  for (let row = 0; row < src.h; row++) {
+    for (let col = 0; col < src.w; col++) {
+      const nr = src.h <= 1 ? 0 : row / (src.h - 1);
+      const nc = src.w <= 1 ? 0 : col / (src.w - 1);
+      const d = Math.hypot(nr - 0.08, nc - 0.92);
+      src.data[row * src.w + col] = d < 0.14 ? 140 : 25;
+    }
+  }
+  return src;
+}
+
+/** North-up DEM: a single high blob in the south-east corner (last-plate / S-nn face). */
+function seHighSource(bbox: [number, number, number, number], size = 64): Float32Grid {
+  const src = nwHighSource(bbox, size);
+  for (let row = 0; row < src.h; row++) {
+    for (let col = 0; col < src.w; col++) {
+      const nr = src.h <= 1 ? 0 : row / (src.h - 1);
+      const nc = src.w <= 1 ? 0 : col / (src.w - 1);
+      const d = Math.hypot(nr - 0.92, nc - 0.92);
+      src.data[row * src.w + col] = d < 0.14 ? 140 : 25;
+    }
+  }
+  return src;
+}
+
+function peakX(part: Part): number {
+  let bestX = (part.bbox.minX + part.bbox.maxX) / 2;
+  let bestY = -Infinity;
+  for (const poly of part.shape) {
+    for (const [x, y] of poly.outer) {
+      if (y > bestY) {
+        bestY = y;
+        bestX = x;
+      }
+    }
+  }
+  return bestX;
+}
+
+function mapProjectFromGrid(source: Float32Grid, bbox: [number, number, number, number], title: string) {
+  const metric = reprojectResample(source, { bbox, resM: 12, model: 'dtm' });
+  const { depth } = mapGridToDepth(metric, { exaggeration: 4, bbox });
+  const p = newProject();
+  p.params = {
+    ...p.params,
+    baseLength: '400',
+    baseWidth: '400',
+    plateCount: '12',
+    thickness: '3',
+    stackHeight: '120',
+    erosionAmp: '0',
+    crest: '0',
+    slope: '0',
+    insShape: 'none',
+    imgTopMode: 'carve',
+  };
+  p.images.top = {
+    name: 'Map',
+    dataUrl: 'data:image/png;base64,xx',
+    map: defaultMapSpec({ bbox, title }),
+    depth,
+  };
+  return { metric, depth, p };
+}
+
 describe('map north-up orientation', () => {
   it('reproject, 3D far/S-01, and OSM all put north at row 0', () => {
     const source = nwHighSource(SYNTH_BBOX);
@@ -149,9 +228,18 @@ describe('map north-up orientation', () => {
 
     const v = evaluateParams(p.params).values;
     const hf = buildMapHeightField(v, depth);
-    const fFront = hf.at((-0.5) * (Number(v.baseLength) || 400) * 0.98, 0);
-    const fBack = hf.at((0.5) * (Number(v.baseLength) || 400) * 0.98, 0);
+    const L = Number(v.baseLength) || 400;
+    const W = Number(v.baseWidth) || 400;
+    const fFront = hf.at((-0.5) * L * 0.98, 0);
+    const fBack = hf.at((0.5) * L * 0.98, 0);
     expect(fFront).toBeGreaterThan(fBack);
+    const north = -0.45 * L;
+    const westZ = 0.45 * W;
+    const eastZ = -0.45 * W;
+    expect(hf.at(north, westZ), 'NW-high DEM: west (+Z) is higher than east (−Z)').toBeGreaterThan(hf.at(north, eastZ));
+    const nwTop = mapTopProject(north, westZ);
+    expect(nwTop.up).toBeGreaterThan(0);
+    expect(nwTop.right).toBeLessThan(0);
 
     const osm = {
       elements: [
@@ -178,6 +266,81 @@ describe('map north-up orientation', () => {
     const ys = art.lines.map((l) => meanPathY(l.path));
     expect(Math.min(...ys) / art.imageH).toBeLessThan(0.12);
     expect(Math.max(...ys) / art.imageH).toBeGreaterThan(0.88);
+  });
+
+  it('NE feature lands north (−X) and east (−Z) and top-right in 3D Top', () => {
+    const source = neHighSource(SYNTH_BBOX);
+    const { metric, depth, p } = mapProjectFromGrid(source, SYNTH_BBOX, 'NE high');
+    const maxI = argMax(metric.data);
+    expect(Math.floor(maxI / metric.w), 'blob stays in the north').toBeLessThan(metric.h * 0.25);
+    expect(maxI % metric.w, 'blob stays in the east').toBeGreaterThan(metric.w * 0.75);
+
+    const gray = mapDepthToGray(depth);
+    const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: gray, insMesh: null, srcMesh: null });
+    const v = m.v;
+    const L = v.baseLength;
+    const W = v.baseWidth;
+    const hf = m.hf!;
+    const north = -0.45 * L;
+    const south = 0.45 * L;
+    const westZ = 0.45 * W;
+    const eastZ = -0.45 * W;
+    const ne = hf.at(north, eastZ);
+    expect(ne).toBeGreaterThan(hf.at(north, westZ));
+    expect(ne).toBeGreaterThan(hf.at(south, eastZ));
+    expect(ne).toBeGreaterThan(hf.at(south, westZ));
+
+    const top = mapTopProject(north, eastZ);
+    expect(top.up, 'north is toward the top of 3D Top').toBeGreaterThan(0);
+    expect(top.right, 'east is toward the right of 3D Top').toBeGreaterThan(0);
+
+    const plates = m.sliced.parts.filter((q) => q.family === 'P');
+    const s01 = plates.filter((q) => q.index === 0).sort((a, b) => b.bbox.maxY - a.bbox.maxY)[0];
+    const xPeak = peakX(s01);
+    const mid = (s01.bbox.minX + s01.bbox.maxX) / 2;
+    expect(xPeak, 'S-01 viewed from the north has east (the peak) on the left').toBeLessThan(mid);
+  });
+
+  it('an easting on the last plate lines up with that plate’s profile', () => {
+    const source = seHighSource(SYNTH_BBOX);
+    const { depth, p } = mapProjectFromGrid(source, SYNTH_BBOX, 'SE high');
+    const gray = mapDepthToGray(depth);
+    const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: gray, insMesh: null, srcMesh: null });
+    const plates = m.sliced.parts.filter((q) => q.family === 'P');
+    const lastIdx = Math.max(...plates.map((q) => q.index));
+    const south = plates.filter((q) => q.index === lastIdx).sort((a, b) => b.bbox.maxY - a.bbox.maxY)[0];
+    const xPeak = peakX(south);
+    const mid = (south.bbox.minX + south.bbox.maxX) / 2;
+    expect(xPeak, 'SE peak sits at the east / left of the south plate').toBeLessThan(mid);
+
+    const eastLon = SYNTH_BBOX[0] + 0.92 * (SYNTH_BBOX[2] - SYNTH_BBOX[0]);
+    const art = osmToEngraveArt(
+      {
+        elements: [
+          {
+            type: 'way',
+            tags: { waterway: 'stream', name: 'East Beck' },
+            geometry: [
+              { lon: eastLon, lat: SYNTH_BBOX[1] + 0.0002 },
+              { lon: eastLon, lat: SYNTH_BBOX[3] - 0.0002 },
+            ],
+          },
+        ],
+      },
+      SYNTH_BBOX,
+      depth.w,
+      depth.h,
+      ['water'],
+    );
+    expect(art.lines.length).toBeGreaterThanOrEqual(1);
+    const paths = mapEngravePathsForPart(south, art, {
+      faceW: south.bbox.maxX - south.bbox.minX,
+      faceH: south.bbox.maxY - south.bbox.minY,
+    });
+    expect(paths.length).toBeGreaterThan(0);
+    const engX = paths.reduce((s, path) => s + meanPathX(path), 0) / paths.length;
+    const span = south.bbox.maxX - south.bbox.minX;
+    expect(Math.abs(engX - xPeak), 'engraved easting sits on the matching profile point').toBeLessThan(span * 0.2);
   });
 });
 
