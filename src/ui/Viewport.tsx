@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
@@ -27,6 +27,7 @@ import {
 } from './viewportKeepAlive';
 import ViewportLayersToolbar from './ViewportLayersToolbar';
 import { DEFAULT_VIEWPORT_LAYERS } from './viewportLayers';
+import ViewFromPointPanel, { ViewFromPointRig } from './ViewFromPoint';
 
 export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
@@ -109,7 +110,8 @@ export default function Viewport() {
   const ui = useStore((s) => s.ui);
   const setUi = useStore((s) => s.setUi);
   const v = model.v;
-  const snapTo = (dir: Snap) => setUi({ snap: { dir, n: ui.snap.n + 1 } });
+  const snapTo = (dir: Snap) => setUi({ snap: { dir, n: ui.snap.n + 1 }, pointViewFov: undefined });
+  const [fromPoint, setFromPoint] = useState(false);
   const onSelect = useCallback((id: string | null) => setUi({ selected: id }), [setUi]);
   const onPaint = useCallback((key: string, shift: boolean) => paintClick(modelRef.current, key, shift), []);
   const opts = useMemo(
@@ -208,11 +210,12 @@ export default function Viewport() {
         style={VIEWPORT_STYLE}
       >
         <ResumeWhenVisible parked={parked} />
-        <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={clip.near} far={clip.far} position={VIEWPORT_CAM_POS} />
+        <PerspectiveCamera makeDefault={!ui.ortho} fov={ui.pointViewFov ?? 32} near={clip.near} far={clip.far} position={VIEWPORT_CAM_POS} />
         <OrthographicCamera makeDefault={ui.ortho} near={-clip.orthoSpan} far={clip.orthoSpan} position={VIEWPORT_CAM_POS} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
         <CameraClipSync boundSize={boundSize} />
         <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} mapNorthUp={mapFace} />
+        <ViewFromPointRig />
         <Scene model={model} opts={opts} />
         <MeasureTool active={ui.measureMode} showDimensions={ui.viewportLayers.labels} />
       </Canvas>
@@ -225,6 +228,14 @@ export default function Viewport() {
         ))}
         <button className={`btn sm ${ui.ortho ? 'on' : ''}`} onClick={() => setUi({ ortho: !ui.ortho })} title="Orthographic camera">
           Ortho
+        </button>
+        <button
+          className={`btn sm ${fromPoint ? 'on' : ''}`}
+          data-testid="view-from-point-toggle"
+          onClick={() => setFromPoint((on) => !on)}
+          title="Paste a Google Earth URL or type lat, lon, altitude, heading and tilt"
+        >
+          View from point
         </button>
       </div>
       <div className="overlay tr col">
@@ -289,6 +300,7 @@ export default function Viewport() {
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
       </div>
+      {fromPoint && <ViewFromPointPanel />}
       {ui.moveMode && !ui.paintMode && !ui.measureMode && <MovePanel />}
       {ui.paintMode && !ui.measureMode && <AppearancePanel />}
       {ui.objectsMode && !ui.measureMode && <ObjectsPanel />}

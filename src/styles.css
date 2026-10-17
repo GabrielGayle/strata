@@ -886,6 +886,8 @@ table.tbl {
 .overlay.tl {
   top: 8px;
   left: 8px;
+  flex-wrap: wrap;
+  max-width: calc(100% - 200px);
 }
 .overlay.tr {
   top: 8px;
@@ -1859,6 +1861,53 @@ canvas.thumb {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--muted, inherit);
+}
+.overlay.viewpoint {
+  top: 44px;
+  left: 8px;
+  width: min(440px, calc(100% - 16px));
+  flex-direction: column;
+  max-height: calc(100% - 120px);
+  overflow: auto;
+}
+.viewpoint .vp-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 9px 4px;
+  font-size: 11px;
+}
+.viewpoint .vp-paste textarea {
+  width: 100%;
+  min-height: 3.2em;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.viewpoint .vp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px 8px;
+  padding: 4px 9px 6px;
+  font-size: 11px;
+}
+.viewpoint .vp-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.viewpoint .vp-grid input {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.viewpoint .vp-warn {
+  color: var(--accent, #b45309);
+  white-space: normal;
+}
+.viewpoint .vp-error {
+  color: var(--accent, #b45309);
+  white-space: normal;
 }
 /* appearance: material buckets */
 .overlay.appearance {
