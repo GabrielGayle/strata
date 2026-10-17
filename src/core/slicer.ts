@@ -36,7 +36,7 @@ import { strokeTextCentered, textWidth } from './strokefont';
 import { MAX_TUNED, MIN_TUNED, tunePlates, tuningActive, type PlateTune } from './tuning';
 import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
 import { buildSpacers, planRods, rodHardware, rodHoles, type BraceIssue, type HardwareRow, type RodPlan, type SpacerResult } from './brace';
-import { cleanupPlateShape, repairOverhangs, resolveFragments, type FragmentEvent } from './fragments';
+import { finishPlatePieces, type FragmentEvent } from './fragments';
 import { movePlane, type PartMoves } from './moves';
 
 export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T';
@@ -1424,9 +1424,15 @@ export function slice(input: SliceInput): SliceResult {
         ? def.index === 0 || !below.length || shapeArea(intersection([ex], below)) > 1
         : e <= 0 || bb.minY < -0.5;
     };
-    pieces = pieces.flatMap((ex) => cleanupPlateShape([ex], v).filter((p) => shapeArea([p]) >= 0.5));
-    if (isFlat && def.index > 0) pieces = repairOverhangs(pieces, below, v);
-    const resolved = resolveFragments(pieces, { v, plateKey: def.key, plateId: base, anchored: anchoredOf });
+    const resolved = finishPlatePieces(pieces, {
+      v,
+      plateKey: def.key,
+      plateId: base,
+      anchored: anchoredOf,
+      below,
+      isFlat,
+      index: def.index,
+    });
     fragmentEvents.push(...resolved.events);
     pieces = resolved.pieces;
     pieces.forEach((ex, pi) => {
@@ -1482,8 +1488,7 @@ export function slice(input: SliceInput): SliceResult {
     let pieces = ring.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
     const plane = supportPlane(support);
     const base = partLabel(v, 'S', 0, 1);
-    pieces = pieces.flatMap((ex) => cleanupPlateShape([ex], v).filter((p) => shapeArea([p]) >= 0.5));
-    const resolved = resolveFragments(pieces, { v, plateKey: 'S0', plateId: base, anchored: () => true });
+    const resolved = finishPlatePieces(pieces, { v, plateKey: 'S0', plateId: base, anchored: () => true });
     fragmentEvents.push(...resolved.events);
     pieces = resolved.pieces;
     if (pieces.length > 1) warnings.push(`Support ring falls apart into ${pieces.length} pieces: widen it or raise the slot end land.`);

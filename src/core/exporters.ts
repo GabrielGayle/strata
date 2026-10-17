@@ -60,7 +60,7 @@ export class FitCheckExportError extends Error {
       .slice(0, 3)
       .map((e) => (e.partId ? `${e.partId}: ${e.message}` : e.message))
       .join(' ');
-    super(`Export refused: ${n} fit error${n === 1 ? '' : 's'} remain.${head ? ` ${head}` : ''}`);
+    super(`Export refused: ${n} fit error${n === 1 ? '' : 's'} remain${n === 1 ? 's' : ''}.${head ? ` ${head}` : ''}`);
     this.name = 'FitCheckExportError';
     this.errors = errors;
   }

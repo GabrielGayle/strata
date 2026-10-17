@@ -11,9 +11,12 @@ import {
   repairOverhangs,
   morphOpen,
   kerfGapRegions,
+  thinFeatureRegions,
+  cleanupPlateShape,
+  finishPlatePieces,
   KERF_GAP_MARGIN,
 } from '../src/core/fragments';
-import { difference, intersection, rect, shapeArea, unionShapes, type ExPoly } from '../src/core/geom2d';
+import { circle, difference, intersection, rect, shapeArea, unionShapes, type ExPoly } from '../src/core/geom2d';
 import { buildZip, FitCheckExportError } from '../src/core/exporters';
 import { GABRIEL_PARAMS, sliverFrontGray, sliverSideGray } from './image-sliver-fixture';
 import { assertCountsAgree } from '../src/core/counts';
@@ -117,6 +120,21 @@ describe('thin necks (min feature)', () => {
     expect(difference(kept, morphOpen(kept, 2)).length).toBeGreaterThan(0);
   });
 
+  it('cleanup in drop mode does not open thin necks (fragments already dropped)', () => {
+    const s = dumbbell();
+    const out = cleanupPlateShape(s, { minFeature: 2, kerf: 0.15, fragmentMode: 'drop' });
+    expect(out).toHaveLength(1);
+    expect(thinFeatureRegions(out, 2).length).toBeGreaterThan(0);
+  });
+
+  it('auto thicken keeps a hole but clears a thin rim', () => {
+    const s = difference(rect(0, 0, 40, 40), circle(20, 20, 18.4));
+    expect(thinFeatureRegions(s, 2).length).toBeGreaterThan(0);
+    const out = repairThinNecks(s, { minFeature: 2, fragmentMode: 'auto' });
+    expect(thinFeatureRegions(out, 2)).toHaveLength(0);
+    expect(out.some((ex) => ex.holes.length > 0)).toBe(true);
+  });
+
   it('does not overwrite the user minFeature / minFragment', () => {
     const p = newProject();
     p.params = { ...p.params, ...GABRIEL_PARAMS, fragmentMode: 'auto', minFeature: '3', minFragment: '9' };
@@ -153,6 +171,14 @@ describe('kerf-narrow gaps', () => {
     const s = slotted();
     const kept = repairKerfGaps(s, { kerf: 0.15, fragmentMode: 'keep' });
     expect(kerfGapRegions(kept, 0.15).length).toBeGreaterThan(0);
+  });
+
+  it('cleanup closes a leftover slit after thickening a neck', () => {
+    const s = unionShapes(rect(0, 0, 40, 40), rect(38, 19.2, 72, 20.8), rect(70, 0, 110, 40));
+    const slottedNeck = difference(s, rect(54.96, 8, 55.04, 32));
+    const out = cleanupPlateShape(slottedNeck, { minFeature: 2, kerf: 0.15, fragmentMode: 'auto' });
+    expect(kerfGapRegions(out, 0.15)).toHaveLength(0);
+    expect(thinFeatureRegions(out, 2)).toHaveLength(0);
   });
 });
 
@@ -241,6 +267,62 @@ describe('Gabriel image sliver (200×150, 1.5 mm, 20 mm gap, 6 plates)', () => {
       buildZip(m, newProject());
     } catch (e) {
       expect((e as Error).message).toMatch(/Export refused/);
+      expect((e as Error).message).toMatch(/fit error(?:s)? remains?\./);
     }
+  });
+
+  it('auto reports the same sliver size as keep', () => {
+    const keep = run('keep');
+    const auto = run('auto');
+    const sliver = keep.sliced.parts.find((p) => !p.anchored);
+    expect(sliver).toBeTruthy();
+    const kw = sliver!.bbox.maxX - sliver!.bbox.minX;
+    const kh = sliver!.bbox.maxY - sliver!.bbox.minY;
+    const ev = auto.sliced.fragments.find((e) => e.action === 'dropped' || e.action === 'merged');
+    expect(ev).toBeTruthy();
+    expect(ev!.w).toBeCloseTo(kw, 1);
+    expect(ev!.h).toBeCloseTo(kh, 1);
+  });
+
+  it('drop removes the keep-mode sliver, not later lettered plates', () => {
+    const keep = run('keep');
+    const drop = run('drop');
+    const sliverIds = keep.sliced.parts.filter((p) => !p.anchored).map((p) => p.id);
+    expect(sliverIds.length).toBeGreaterThan(0);
+    const dropped = drop.sliced.fragments.filter((e) => e.action === 'dropped');
+    expect(dropped.some((e) => sliverIds.includes(e.pieceId))).toBe(true);
+    expect(dropped.every((e) => !/^S-0[56]/.test(e.pieceId))).toBe(true);
+    expect(drop.sliced.parts.every((p) => p.anchored)).toBe(true);
+  });
+
+  it('finishPlatePieces measures fragments before cleanup', () => {
+    const parent = rect(0, -20, 80, 60)[0];
+    const cap = rect(0, 59.2, 18.8, 60)[0];
+    const { pieces, events } = finishPlatePieces([parent, cap], {
+      v: { minFragment: 3, fragmentMode: 'auto', kerf: 0.15, minFeature: 2, minPartSize: 15, thickness: 1.5 },
+      plateKey: 'P1',
+      plateId: 'S-01',
+      anchored: (ex) => ex === parent,
+    });
+    expect(pieces).toHaveLength(1);
+    expect(events).toHaveLength(1);
+    expect(events[0].pieceId).toBe('S-01b');
+    expect(events[0].h).toBeCloseTo(0.8, 1);
+  });
+});
+
+describe('export refuse grammar', () => {
+  it('uses remains for one error and remain for many', () => {
+    const one = new FitCheckExportError([
+      { partId: 'S-20', type: 'gap', severity: 'error', message: 'Gap narrower than the 0.15 mm kerf.' },
+    ]);
+    expect(one.message).toBe(
+      'Export refused: 1 fit error remains. S-20: Gap narrower than the 0.15 mm kerf.',
+    );
+    const two = new FitCheckExportError([
+      { partId: 'S-06', type: 'gap', severity: 'error', message: 'a' },
+      { partId: 'S-12', type: 'gap', severity: 'error', message: 'b' },
+    ]);
+    expect(two.message).toBe('Export refused: 2 fit errors remain. S-06: a S-12: b');
   });
 });

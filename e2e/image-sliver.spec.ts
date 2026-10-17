@@ -111,7 +111,7 @@ test.describe('image sliver and cut-only sheet DXF', () => {
     const downloads: import('@playwright/test').Download[] = [];
     page.on('download', (d) => downloads.push(d));
     await page.getByRole('button', { name: 'Export ZIP' }).click();
-    await expect(page.locator('.toast')).toContainText(/Export refused/i, { timeout: 15_000 });
+    await expect(page.locator('.toast')).toContainText(/Export refused: \d+ fit error(?:s)? remains?/i, { timeout: 15_000 });
     expect(downloads).toHaveLength(0);
   });
 });

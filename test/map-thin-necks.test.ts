@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { buildMapBundle } from '../src/core/mapPipeline';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { mapPresetSpec, NEASDEN_MAP_BBOX } from '../src/core/mapPresets';
@@ -7,6 +7,9 @@ import type { Float32Grid } from '../src/core/mapGrid';
 import { createPipeline } from '../src/core/pipeline';
 import { applyPreset, newProject, PRESETS } from '../src/core/project';
 import { mapDepthToGray } from '../src/core/mapPlateHeight';
+import { fetchEaLidarGrid } from '../src/core/mapEaLidar';
+
+const live = process.env.LIVE_MAP === '1';
 
 /** Live EA Neasden-like DEM: valley ~35 m, peak 86 m, dip 18.8 m. */
 function liveLikeNeasdenGrid(): Float32Grid {
@@ -43,24 +46,24 @@ function liveLikeNeasdenGrid(): Float32Grid {
 
 async function neasdenAt(
   exaggeration: number,
-  opts: { stamped?: boolean; fragmentMode?: string } = {},
+  opts: { stamped?: boolean; fragmentMode?: string; grid?: Float32Grid; water?: 'raw' | 'bathy'; overpass?: boolean } = {},
 ) {
   const stamped = !!opts.stamped;
   const plateCount = stamped ? 20 : 40;
-  const grid = liveLikeNeasdenGrid();
+  const grid = opts.grid ?? liveLikeNeasdenGrid();
   const bundle = await buildMapBundle(
     defaultMapSpec({
       ...mapPresetSpec('neasden'),
       bbox: NEASDEN_MAP_BBOX,
       source: 'ea-dtm',
-      water: 'raw',
+      water: opts.water ?? 'raw',
       exaggeration,
       layerBudget: 'jenks',
       engrave: { enabled: false, features: [] },
     }),
     {
       eaLoader: async () => grid,
-      allowOverpassNetwork: false,
+      allowOverpassNetwork: !!opts.overpass,
       stack: {
         plateCount,
         thicknessMm: 3,
@@ -154,4 +157,39 @@ describe('Neasden thin-neck min-feature pass', () => {
     expect(p.params.minFeature).toBe('2');
     expect(p.params.fragmentMode).toBe('keep');
   });
+});
+
+function issueTally(m: { issues: { severity: string; type: string; message: string; partId: string | null }[] }) {
+  const errors = m.issues.filter((i) => i.severity === 'error');
+  const warnings = m.issues.filter((i) => i.severity === 'warn');
+  const thin = warnings.filter((i) => i.type === 'thin' && /narrower than 2 mm/.test(i.message));
+  return { errors, warnings, thin };
+}
+
+describe.skipIf(!live)('live EA Neasden (LIVE_MAP=1)', () => {
+  let grid: Float32Grid;
+
+  beforeAll(async () => {
+    const g = await fetchEaLidarGrid('ea-dtm', { bbox: NEASDEN_MAP_BBOX, resM: 8 });
+    if (!g) throw new Error('live EA DTM fetch failed');
+    grid = g;
+  }, 120_000);
+
+  it.each([
+    [11, false, 'upright'],
+    [21, false, 'upright'],
+    [11, true, 'stamped'],
+    [21, true, 'stamped'],
+  ] as const)('×%s %s: 0 errors and 0 thin-2mm warnings', async (ex, stamped, label) => {
+    const { m } = await neasdenAt(ex, { stamped, grid, water: 'bathy', overpass: true });
+    const t = issueTally(m);
+    // eslint-disable-next-line no-console
+    console.log(
+      `live Neasden ${label} ×${ex}: errors=${t.errors.length} warnings=${t.warnings.length} thin2mm=${t.thin.length}`,
+      t.errors.map((e) => `${e.partId}: ${e.message}`),
+      t.thin.map((e) => `${e.partId}: ${e.message}`),
+    );
+    expect(t.errors, t.errors.map((e) => `${e.partId}: ${e.message}`).join(' | ')).toHaveLength(0);
+    expect(t.thin, t.thin.map((e) => `${e.partId}: ${e.message}`).join(' | ')).toHaveLength(0);
+  }, 180_000);
 });

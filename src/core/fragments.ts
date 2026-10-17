@@ -30,15 +30,27 @@ export function morphOpen(s: Shape, mf: number): Shape {
 }
 
 /** Morphological closing: fills gaps narrower than `width`. */
-export function morphClose(s: Shape, width: number): Shape {
+export function morphClose(s: Shape, width: number, join: 'miter' | 'round' = 'miter'): Shape {
   if (width <= 0 || !s.length) return s;
-  return offset(offset(s, width / 2, 'miter'), -width / 2, 'miter');
+  return offset(offset(s, width / 2, join), -width / 2, join);
 }
 
 /** Voids the kerf check reports: closing minus the original, ignoring Clipper dust. */
 export function kerfGapRegions(s: Shape, kerf: number): Shape {
   if (kerf <= 0 || !s.length) return [];
   return difference(morphClose(s, kerf), s).filter((e) => shapeArea([e]) > kerf * kerf * 4);
+}
+
+/** Material the min-feature check reports: original minus opening, ignoring Clipper dust. */
+export function thinFeatureRegions(s: Shape, mf: number): Shape {
+  if (mf <= 0 || !s.length) return [];
+  return difference(s, morphOpen(s, mf)).filter((e) => shapeArea([e]) > mf * mf * 0.6);
+}
+
+function holesOf(s: Shape): Shape {
+  const holes: Shape = [];
+  for (const ex of s) for (const h of ex.holes) holes.push({ outer: h, holes: [] });
+  return holes;
 }
 
 /**
@@ -59,14 +71,27 @@ export function repairThinNecks(
   if (mode === 'keep') return s;
   const opened = morphOpen(s, mf);
   if (mode === 'drop') return opened;
-  const thin = difference(s, opened).filter((e) => shapeArea([e]) > mf * mf * 0.6);
+  const thin = thinFeatureRegions(s, mf);
   if (!thin.length) return s;
   // Thicken the thin web in place (long necks are far apart as "cores").
-  // Punch original holes back so a thin rim cannot fill a round cut-out.
-  let out = unionShapes(s, offset(thin, mf / 2 + 0.05, 'round'));
-  const holes: Shape = [];
-  for (const ex of s) for (const h of ex.holes) holes.push({ outer: h, holes: [] });
-  if (holes.length) out = difference(out, holes);
+  // Restore holes: untouched cut-outs keep their size; thin rims keep a shrunk
+  // hole so the remaining material stays ≥ minFeature instead of punching the
+  // original opening back and recreating the warning.
+  const pad = mf / 2 + 0.05;
+  let out = unionShapes(s, offset(thin, pad, 'round'));
+  const holes = holesOf(s);
+  if (holes.length) {
+    const nearThin = offset(thin, pad + 0.2, 'round');
+    const untouched: Shape = [];
+    const touched: Shape = [];
+    for (const h of holes) {
+      if (shapeArea(intersection([h], nearThin)) > 0.01) touched.push(h);
+      else untouched.push(h);
+    }
+    const shrunk = touched.length ? offset(touched, -pad, 'round') : [];
+    const restore = [...untouched, ...shrunk];
+    if (restore.length) out = difference(out, restore);
+  }
   return out;
 }
 
@@ -94,7 +119,12 @@ export function repairKerfGaps(
     const widened = difference(s, offset(gaps, target / 2, 'round'));
     return widened.filter((ex) => shapeArea([ex]) >= 0.5);
   }
-  return closed;
+  // Round join seals slits miter leaves at sharp corners (S-20 on live Neasden).
+  if (!kerfGapRegions(closed, kerf).length) return closed;
+  const round = morphClose(s, target, 'round');
+  if (!kerfGapRegions(round, kerf).length) return round.length ? round : closed;
+  const bigger = morphClose(s, target + kerf, 'round');
+  return bigger.length ? bigger : round.length ? round : closed;
 }
 
 /**
@@ -111,12 +141,66 @@ export function repairOverhangs(
   return pieces.flatMap((ex) => intersection([ex], below).filter((p) => shapeArea([p]) > 1));
 }
 
-/** Kerf-gap close/widen, then thin-neck repair, on one outline. */
+/**
+ * Kerf-gap close/widen, then thin-neck repair, on one outline.
+ * Drop mode only widens kerf slits — thin necks are dropped as fragments
+ * before this runs, so morphOpen must not split remaining keepers.
+ * Auto/merge iterate close → thicken until both checks are empty, then a
+ * final close so a last thicken cannot leave a new sub-kerf slit.
+ */
 export function cleanupPlateShape(
   s: Shape,
   v: { minFeature?: number; kerf?: number; fragmentMode?: string },
 ): Shape {
-  return repairThinNecks(repairKerfGaps(s, v), v);
+  const mode = (String(v.fragmentMode || 'auto') as FragmentMode) || 'auto';
+  if (mode === 'keep' || !s.length) return s;
+  let out = s;
+  for (let i = 0; i < 6; i++) {
+    const g = repairKerfGaps(out, v);
+    const next = mode === 'drop' ? g : repairThinNecks(g, v);
+    if (next === out) break;
+    out = next;
+    const kerf = Number(v.kerf) || 0;
+    const mf = Number(v.minFeature) || 0;
+    const gapsLeft = kerf > 0 && kerfGapRegions(out, kerf).length > 0;
+    const thinLeft = mode !== 'drop' && mf > 0 && thinFeatureRegions(out, mf).length > 0;
+    if (!gapsLeft && !thinLeft) break;
+  }
+  if (mode !== 'drop') out = repairKerfGaps(out, v);
+  return out;
+}
+
+/**
+ * Identify fragments on the original split pieces (so Auto/Drop report the
+ * same sliver size as Keep, and Drop hits S-01b not morphOpen-split S-05a),
+ * then clean the keepers.
+ */
+export function finishPlatePieces(
+  pieces: ExPoly[],
+  opts: {
+    v: Values;
+    plateKey: string;
+    plateId: string;
+    anchored: (ex: ExPoly) => boolean;
+    below?: Shape;
+    isFlat?: boolean;
+    index?: number;
+  },
+): { pieces: ExPoly[]; events: FragmentEvent[] } {
+  let pcs = pieces.filter((ex) => shapeArea([ex]) >= 0.5);
+  if (opts.isFlat && (opts.index ?? 0) > 0 && opts.below?.length) {
+    pcs = repairOverhangs(pcs, opts.below, opts.v);
+  }
+  const resolved = resolveFragments(pcs, {
+    v: opts.v,
+    plateKey: opts.plateKey,
+    plateId: opts.plateId,
+    anchored: opts.anchored,
+  });
+  const cleaned = resolved.pieces.flatMap((ex) =>
+    cleanupPlateShape([ex], opts.v).filter((p) => shapeArea([p]) >= 0.5),
+  );
+  return { pieces: cleaned, events: resolved.events };
 }
 
 export function fragmentMinMm(v: Values): number {
