@@ -26,8 +26,19 @@ type PointWin = Window & {
 
 async function shot(page: Page, name: string) {
   await mkdir(artifactDir, { recursive: true }).catch(() => undefined);
-  const view = page.getByTestId('viewport-3d');
-  await view.screenshot({ path: join(artifactDir, `${name}.png`) });
+  const panel = page.getByTestId('view-from-point');
+  const panelOpen = await panel.isVisible();
+  if (panelOpen) {
+    await page.getByTestId('view-from-point-toggle').click();
+    await expect(panel).toBeHidden();
+  }
+  await page.waitForTimeout(500);
+  const canvas = page.locator('[data-testid="viewport-3d"] canvas').first();
+  await canvas.screenshot({ path: join(artifactDir, `${name}.png`) });
+  if (panelOpen) {
+    await page.getByTestId('view-from-point-toggle').click();
+    await expect(panel).toBeVisible();
+  }
 }
 
 async function openPointPanel(page: Page) {
@@ -99,8 +110,9 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   expect(charlton!.look.z).toBeGreaterThan(0);
   await shot(page, 'view-from-point-charlton');
 
-  await expect(page.locator('.save-mark')).toHaveText(/Saved|Saving/, { timeout: 15_000 });
-  await expect.poll(async () => page.locator('.save-mark').textContent(), { timeout: 15_000 }).toMatch(/Saved/);
+  const localSave = page.locator('.save-mark').filter({ hasText: /Saved|Saving/ }).first();
+  await expect(localSave).toBeVisible({ timeout: 15_000 });
+  await expect.poll(async () => localSave.textContent(), { timeout: 15_000 }).toMatch(/Saved/);
 
   await page.reload();
   await page.waitForSelector('.app.window', { timeout: 60_000 });
