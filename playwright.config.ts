@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
+import { e2eOrigin, e2ePreviewCommand, e2eReuseExistingServer } from './playwright.env';
 
 const liveNetwork = process.env.LIVE_MAP === '1' || process.env.LIVE_MAP_SCREENSHOTS === '1';
+const origin = e2eOrigin();
 
 function webServerEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -18,13 +20,13 @@ export default defineConfig({
   timeout: liveNetwork ? 300_000 : 180_000,
   use: {
     ...devices['Desktop Chrome'],
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: origin,
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: liveNetwork ? false : !process.env.CI,
+    command: e2ePreviewCommand(),
+    url: origin,
+    reuseExistingServer: e2eReuseExistingServer(),
     env: webServerEnv(),
     timeout: liveNetwork ? 300_000 : 180_000,
   },

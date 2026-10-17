@@ -42,3 +42,7 @@ Breaking commit for near/far (map rebuild wiping settings): `2463090` (`finishMa
 ### Map live network (dev / preview)
 
 Vite dev and preview serve `/api/ea-proxy` and `/api/overpass` so browser map builds work without fixtures. Opt-in live smoke: `LIVE_MAP=1 npm run e2e:live`. Do not edit `api/` in map-P0 work (separate hotfix).
+
+### Playwright e2e port and CI
+
+`playwright.config.ts` and `playwright.live.config.ts` share `playwright.env.ts`. When `CI` is set, `webServer.reuseExistingServer` is **false** so a leftover preview on 4173 (another branch, or a dummy) is never reused. The listen port is **`STRATA_E2E_PORT`** (default **4173**) for both `baseURL` and `webServer` (`vite preview --strictPort`). Occupied default port: `CI=1 STRATA_E2E_PORT=4199 npm run e2e`. Live: `LIVE_MAP=1 npm run e2e:live` (same port / CI reuse rules).
