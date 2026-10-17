@@ -22,7 +22,7 @@ import {
 import { commemorativeFitWarning } from './mapBackPlateEtch';
 import { fetchOverpass } from './mapOverpass';
 import { applySoundingsToGrid, loadWelshHarpSampleSoundings } from './mapBathymetry';
-import { applyLocalWater, estimateWaterSurfaceM, waterBodiesFromOverpass } from './mapWater';
+import { applyLocalWaterResult, estimateWaterSurfaceM, restoreWaterSurfaces, waterBodiesFromOverpass, type LocalWaterResult } from './mapWater';
 import { buildMapEngraveArt } from './mapEngraveBuild';
 import { serializeMapEngraveArt } from './mapOsmEngrave';
 import type { OverpassFetcher } from './mapOverpass';
@@ -183,7 +183,9 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   }
   /** Relief for auto exaggeration uses bare terrain before water flattening (flat water shrinks p98−p2). */
   const metricForExaggeration = metric;
+  const rawMetric: Float32Grid = { ...metric, data: new Float32Array(metric.data) };
   let bathyApplied = false;
+  let water: LocalWaterResult | null = null;
   if (spec.water === 'bathy') {
     const soundings = loadWelshHarpSampleSoundings(spec.bbox);
     if (soundings.length) {
@@ -203,7 +205,10 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
         features: ['water'],
       });
       const bodies = waterBodiesFromOverpass(osm as Parameters<typeof waterBodiesFromOverpass>[0], spec, metric.crs ?? 'EPSG:27700');
-      if (bodies.length) metric = applyLocalWater(metric, bodies);
+      if (bodies.length) {
+        water = applyLocalWaterResult(metric, bodies);
+        metric = water.grid;
+      }
     } catch (e) {
       notices.push(mapWarn(`Water flatten skipped: ${(e as Error).message}`));
     }
@@ -215,13 +220,16 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     stack,
   );
   const budgetMode = spec.layerBudget ?? stack.layerBudget ?? 'jenks';
-  const budget = computeLayerBreaks(metric, stack.plateCount, budgetMode);
-  metric = applyLayerBudget(metric, budget.breaksM);
+  const budget = computeLayerBreaks(metric, stack.plateCount, budgetMode, water?.lakeSurfacesM ?? []);
+  metric = applyLayerBudget(metric, budget.breaksM, {
+    floorMask: water?.waterKind,
+    cap: water ? rawMetric.data : undefined,
+  });
   const simplified = simplifyMetricGrid(metric, {
     kerfMm: stack.kerfMm ?? 0.2,
     pixelSizeM: Math.abs(metric.transform.pixelW),
   });
-  metric = simplified.grid;
+  metric = water ? restoreWaterSurfaces(simplified.grid, rawMetric, water) : simplified.grid;
   const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384, bbox: spec.bbox });
   const ortho = depth.mapOrtho;
   const readout = formatExaggerationStackReadout(

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyFlatWater,
   applyLocalWater,
+  applyLocalWaterResult,
   classifyWater,
   estimateBodySurfaceM,
   estimateWaterSurfaceM,
@@ -145,6 +146,29 @@ describe('per-water-body flattening', () => {
     const waterHi = water[Math.floor(water.length * 0.9)]!;
     const landLo = land[Math.floor(land.length * 0.1)]!;
     expect(waterHi).toBeLessThan(landLo);
+  });
+
+  it('overlapping waterways take the minimum inset, not a stacked sum', () => {
+    const grid = plateauGrid();
+    const cross: WaterBody = {
+      kind: 'stream',
+      path: [
+        [400, 20],
+        [400, 780],
+      ],
+      bbox: { west: 400, south: 20, east: 400, north: 780 },
+      name: 'Cross beck',
+    };
+    const one = applyLocalWater(grid, [STREAM]);
+    const both = applyLocalWaterResult(grid, [STREAM, cross]);
+    const col = Math.round((400 - grid.transform.originX) / grid.transform.pixelW);
+    const row = Math.round((400 - grid.transform.originY) / grid.transform.pixelH);
+    const i = row * grid.w + col;
+    const raw = grid.data[i];
+    expect(raw - one.data[i]).toBeCloseTo(STREAM_INSET_M, 3);
+    expect(raw - both.grid.data[i]).toBeCloseTo(STREAM_INSET_M, 3);
+    expect(both.grid.data[i]).toBeCloseTo(one.data[i], 3);
+    expect(raw - both.grid.data[i]).toBeLessThan(STREAM_INSET_M * 1.5);
   });
 
   it('lets streams follow local terrain with a small inset', () => {

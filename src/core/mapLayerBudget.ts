@@ -9,6 +9,18 @@ export interface LayerBudgetResult {
   breaksM: number[];
 }
 
+export interface LayerBudgetApplyOpts {
+  /** Non-zero cells snap down (largest break ≤ z) instead of up. */
+  floorMask?: Uint8Array;
+  /** Per-cell ceiling in metres (raw DEM). Applied only on floorMask cells. */
+  cap?: Float32Array;
+}
+
+/** Metres: two lake pins this close collapse to one reserved level. */
+export const PINNED_BREAK_EPS_M = 0.05;
+/** Metres: Float32 cells sit a hair under a Float64 pin; still belong on that break. */
+const SNAP_EPS_M = 1e-3;
+
 function sampleValues(data: Float32Array, max = 8000): number[] {
   const finite: number[] = [];
   for (const v of data) if (Number.isFinite(v)) finite.push(v);
@@ -83,33 +95,71 @@ export function jenksBreaks(values: number[], k: number): number[] {
   return breaks.sort((a, b) => a - b);
 }
 
-export function computeLayerBreaks(grid: Float32Grid, plateCount: number, mode: LayerBudgetMode): LayerBudgetResult {
+/** Merge near-duplicate pins, keep every lake, fill remaining slots from `breaks`. */
+export function injectPinnedBreaks(breaks: number[], pins: number[], k: number): number[] {
+  const merged: number[] = [];
+  const sortedPins = pins.filter((p) => Number.isFinite(p)).sort((a, b) => a - b);
+  for (const p of sortedPins) {
+    if (!merged.length || p - merged[merged.length - 1] >= PINNED_BREAK_EPS_M) merged.push(p);
+  }
+  const target = Math.max(1, Math.min(512, Math.max(Math.round(k), merged.length)));
+  const out = [...merged];
+  const sortedBreaks = [...breaks].filter((b) => Number.isFinite(b)).sort((a, b) => a - b);
+  for (const b of sortedBreaks) {
+    if (out.length >= target) break;
+    if (out.some((p) => Math.abs(p - b) < PINNED_BREAK_EPS_M)) continue;
+    out.push(b);
+  }
+  return out.sort((a, b) => a - b);
+}
+
+export function computeLayerBreaks(
+  grid: Float32Grid,
+  plateCount: number,
+  mode: LayerBudgetMode,
+  pinM: number[] = [],
+): LayerBudgetResult {
   const values = sampleValues(grid.data, mode === 'jenks' ? 200 : 8000);
   const k = Math.max(1, Math.min(512, Math.round(plateCount)));
-  if (!values.length) return { mode, breaksM: [] };
+  if (!values.length) return { mode, breaksM: injectPinnedBreaks([], pinM, k) };
   const min = values[0];
   const max = values[values.length - 1];
   let breaksM: number[];
   if (mode === 'equal') breaksM = equalBreaks(min, max, k);
   else if (mode === 'quantile') breaksM = quantileBreaks(values, k);
   else breaksM = jenksBreaks(values, k);
-  return { mode, breaksM };
+  return { mode, breaksM: injectPinnedBreaks(breaksM, pinM, k) };
+}
+
+function snapCeil(z: number, sorted: number[]): number {
+  let bi = 0;
+  while (bi < sorted.length - 1 && z > sorted[bi] + SNAP_EPS_M) bi++;
+  return sorted[bi];
+}
+
+function snapFloor(z: number, sorted: number[]): number {
+  let bi = sorted.length - 1;
+  while (bi > 0 && sorted[bi] > z + SNAP_EPS_M) bi--;
+  return sorted[bi] > z + SNAP_EPS_M ? z : sorted[bi];
 }
 
 /** Snap elevations to the Jenks / quantile plateaus so the stamp sees ≤ plateCount levels. */
-export function applyLayerBudget(grid: Float32Grid, breaksM: number[]): Float32Grid {
+export function applyLayerBudget(grid: Float32Grid, breaksM: number[], opts: LayerBudgetApplyOpts = {}): Float32Grid {
   if (!breaksM.length) return grid;
   const sorted = [...breaksM].sort((a, b) => a - b);
   const data = new Float32Array(grid.data.length);
+  const floorMask = opts.floorMask;
+  const cap = opts.cap;
   for (let i = 0; i < grid.data.length; i++) {
     const z = grid.data[i];
     if (!Number.isFinite(z)) {
       data[i] = z;
       continue;
     }
-    let bi = 0;
-    while (bi < sorted.length - 1 && z > sorted[bi]) bi++;
-    data[i] = sorted[bi];
+    const floor = !!floorMask?.[i];
+    let snapped = floor ? snapFloor(z, sorted) : snapCeil(z, sorted);
+    if (floor && cap && Number.isFinite(cap[i])) snapped = Math.min(snapped, cap[i]);
+    data[i] = snapped;
   }
   return { ...grid, data };
 }
