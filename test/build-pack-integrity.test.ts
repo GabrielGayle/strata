@@ -5,7 +5,15 @@ import { fileURLToPath } from 'node:url';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { deserialize, newProject, PRESETS } from '../src/core/project';
 import { buildZip, buildPackHtmlChecked, withExportLock } from '../src/core/exporters';
-import { buildPlateManifest, dxfHasEntities, inAppPlateCount, svgHasPaths, uniqueZipPath } from '../src/core/buildPackIntegrity';
+import {
+  assertZipBuildPackIntegrity,
+  BuildPackIntegrityError,
+  buildPlateManifest,
+  dxfHasEntities,
+  inAppPlateCount,
+  svgHasPaths,
+  uniqueZipPath,
+} from '../src/core/buildPackIntegrity';
 import { buildMapBundle } from '../src/core/mapPipeline';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { depthToGray } from '../src/core/depth';
@@ -137,6 +145,28 @@ describe('build pack integrity', { timeout: 120_000 }, () => {
     expect(a).toBe('plates/P_0.dxf');
     expect(b).toBe('plates/P_0-2.dxf');
     expect(a).not.toBe(b);
+  });
+
+  it('throws BuildPackIntegrityError when a plates/*.dxf is missing from the zip', () => {
+    const p = newProject();
+    p.params.plateCount = '8';
+    const m = createPipeline()(p, assets);
+    const files = unzipSync(buildZip(m, p));
+    const plateDxf = Object.keys(files).find((n) => n.startsWith('plates/') && n.endsWith('.dxf'));
+    expect(plateDxf, 'zip contains plates/*.dxf').toBeTruthy();
+    delete files[plateDxf!];
+    expect(() => assertZipBuildPackIntegrity(m, p, files)).toThrow(BuildPackIntegrityError);
+  });
+
+  it('throws BuildPackIntegrityError when a laser/parts/*.dxf is missing from the zip', () => {
+    const p = newProject();
+    p.params.plateCount = '8';
+    const m = createPipeline()(p, assets);
+    const files = unzipSync(buildZip(m, p));
+    const partDxf = Object.keys(files).find((n) => n.startsWith('laser/parts/') && n.endsWith('.dxf'));
+    expect(partDxf, 'zip contains laser/parts/*.dxf').toBeTruthy();
+    delete files[partDxf!];
+    expect(() => assertZipBuildPackIntegrity(m, p, files)).toThrow(BuildPackIntegrityError);
   });
 
   it('ignores a nested export while one is already running', async () => {
