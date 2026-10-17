@@ -8,6 +8,19 @@ import { stackFrame } from './heightfield';
 import type { Values } from './params';
 import type { Plane } from './section';
 
+/** Plate-top mm cap: well below Clipper hiRange at 1 µm, still taller than any sculpture. */
+const MAX_MAP_PLATE_MM = 1e8;
+const MAX_ENCODED_M = 1e6;
+
+function finiteOr(n: number, fallback: number): number {
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clampFinite(n: number, lo: number, hi: number, fallback: number): number {
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(hi, Math.max(lo, n));
+}
+
 /**
  * Physical map frame — right-handed, matching ENU (South × Up = West):
  *
@@ -80,8 +93,10 @@ export function mapTrueRangePlateMm(depth: DepthData, v: Values, exaggeration: n
 export function mapExpectedPlateRangeMm(depth: DepthData, v: Values): number {
   const ortho = depth.mapOrtho;
   if (!ortho) return 0;
-  const near = Math.max(1e-6, Math.min(depth.settings.near, depth.settings.far - 1e-6));
-  const far = Math.max(near + 1e-6, depth.settings.far);
+  const nearRaw = finiteOr(depth.settings.near, 1e-6);
+  const farRaw = finiteOr(depth.settings.far, nearRaw + 1e-6);
+  const near = Math.max(1e-6, Math.min(nearRaw, farRaw - 1e-6));
+  const far = Math.max(near + 1e-6, farRaw);
   const scale = mapScaleMmPerM(ortho.widthM, mapMasterWidthMm(v));
   return (far - near) * scale;
 }
@@ -93,8 +108,8 @@ export function mapExpectedPlateRangeMm(depth: DepthData, v: Values): number {
 export function mapDepthToGray(d: DepthData): Gray {
   const { metres } = decodeDepthBuffers(d);
   const n = d.w * d.h;
-  const near = Math.max(1e-6, Math.min(d.settings.near, d.settings.far - 1e-6));
-  const far = Math.max(near + 1e-6, d.settings.far);
+  const near = Math.max(1e-6, Math.min(finiteOr(d.settings.near, 1e-6), finiteOr(d.settings.far, 1) - 1e-6));
+  const far = Math.max(near + 1e-6, finiteOr(d.settings.far, near + 1e-6));
   const data = new Float32Array(n);
   const span = far - near;
   for (let i = 0; i < n; i++) {
@@ -135,9 +150,11 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
   const ortho = depth.mapOrtho;
   const masterMm = mapMasterWidthMm(v);
   const mapM = Math.max(ortho?.widthM ?? 0, 1);
-  const scale = mapScaleMmPerM(mapM, masterMm);
-  const near = Math.max(1e-6, Math.min(depth.settings.near, depth.settings.far - 1e-6));
-  const far = Math.max(near + 1e-6, depth.settings.far);
+  const scale = clampFinite(mapScaleMmPerM(mapM, masterMm), 0, 1e6, 0);
+  const nearRaw = finiteOr(depth.settings.near, 1e-6);
+  const farRaw = finiteOr(depth.settings.far, nearRaw + 1e-6);
+  const near = clampFinite(Math.min(nearRaw, farRaw - 1e-6), 1e-6, MAX_ENCODED_M, 1e-6);
+  const far = clampFinite(Math.max(near + 1e-6, farRaw), near + 1e-6, MAX_ENCODED_M, near + 1e-6);
   const f = stackFrame(v);
 
   const at = (x: number, z: number) => {
@@ -148,7 +165,8 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
     // +across / +Z is west; geographic easting on the north-up grid is 1 − an.
     const d = sampleMetres(metres, depth.w, depth.h, 1 - an, sn);
     const dd = Number.isFinite(d) ? Math.min(far, Math.max(near, d)) : far;
-    return MAP_HEIGHT_FLOOR_MM + (far - dd) * scale;
+    const h = MAP_HEIGHT_FLOOR_MM + (far - dd) * scale;
+    return clampFinite(h, 0, MAX_MAP_PLATE_MM, MAP_HEIGHT_FLOOR_MM);
   };
 
   let min = Infinity;
@@ -161,6 +179,10 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
       min = Math.min(min, h);
       max = Math.max(max, h);
     }
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    min = MAP_HEIGHT_FLOOR_MM;
+    max = MAP_HEIGHT_FLOOR_MM;
   }
   return { at, min, max };
 }

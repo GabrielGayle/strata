@@ -16,6 +16,7 @@ import HelpLayer, { HelpButton } from './Help';
 import DesignBox from './DesignBox';
 import { designShortcutFromKey } from './designShortcut';
 import { useMapTerrainBuild } from './useMapTerrainBuild';
+import { isMapTerrainFailure, reportMapTerrainFailure, runFrontPipelineSafe } from './mapTerrainError';
 import { isMapDepth, mapMasterWidthMm, mapScaleMmPerM, mapTrueRangePlateMm } from '../core/mapPlateHeight';
 import { flatStackHeightMm, flatStackIsCapped } from '../core/mapGeometryReadout';
 import { plateTopHeightRangeMm } from '../core/slicer';
@@ -38,7 +39,7 @@ export default function App() {
   const latest = useRef<{ f: FrontModel; input: DeferredInput } | null>(null);
   const deferred = useRef<{ result: DeferredModel; input: DeferredInput } | null>(null);
   const [model, setModelState] = useState<Model>(() => {
-    const f = front(project, assets);
+    const f = runFrontPipelineSafe(front, project, assets);
     const input = deferredInput(f, project);
     latest.current = { f, input };
     deferred.current = { result: local(input, 'full'), input };
@@ -66,7 +67,13 @@ export default function App() {
   const runLocal = (input: DeferredInput) => {
     clearTimeout(localTimer.current);
     localTimer.current = setTimeout(() => {
-      if (latest.current?.input === input) showDeferred(local(input, 'full'), input);
+      if (latest.current?.input !== input) return;
+      try {
+        showDeferred(local(input, 'full'), input);
+      } catch (e) {
+        if (isMapTerrainFailure(e)) reportMapTerrainFailure(e);
+        else throw e;
+      }
     }, 320);
   };
 
@@ -99,7 +106,7 @@ export default function App() {
   // regenerate: the plates on the next frame, then checks, nesting, moulds and BOM in the worker
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
-      const f = front(project, assets);
+      const f = runFrontPipelineSafe(front, project, assets);
       const input = deferredInput(f, project);
       latest.current = { f, input };
       const d = deferred.current!;
@@ -153,10 +160,18 @@ export default function App() {
   // exports want everything current: the model on screen when it is, else finish it here
   const getFull = useMemo(
     () => () => {
-      const f = front(project, assets);
+      const f = runFrontPipelineSafe(front, project, assets);
       const input = deferredInput(f, project);
       const d = deferred.current;
-      return assemble(f, d && sameInput(d.input, input) ? d.result : local(input, 'full'), false);
+      try {
+        return assemble(f, d && sameInput(d.input, input) ? d.result : local(input, 'full'), false);
+      } catch (e) {
+        if (isMapTerrainFailure(e)) {
+          reportMapTerrainFailure(e);
+          return assemble(f, d && sameInput(d.input, input) ? d.result : local(input, 'fast'), false);
+        }
+        throw e;
+      }
     },
     [front, local, project, assets],
   );
