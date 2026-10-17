@@ -2496,6 +2496,114 @@ canvas.thumb {
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 12px;
 }
+.lib-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.lib-tools .search {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.lib-folders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.lib-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lib-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  padding: 2px 4px;
+}
+.lib-line.on {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+.lib-line-main {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  padding: 4px;
+}
+.lib-line-main img,
+.lib-line-main .lib-nothumb {
+  width: 36px;
+  height: 28px;
+  object-fit: cover;
+  font-size: 14px;
+}
+.lib-line-main small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lib-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 160px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 2px 2px 0 var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  padding: 2px;
+}
+.lib-menu button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 4px 10px;
+  cursor: pointer;
+  color: inherit;
+}
+.lib-menu button:hover {
+  background: var(--accent);
+  color: var(--accent-fg, #fff);
+}
+.lib-browser.compact .lib-grid {
+  grid-template-columns: 1fr;
+}
+.saves-panel {
+  min-height: 0;
+}
+.left-panes {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.left-panes button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.7;
+}
+.left-panes button.on {
+  opacity: 1;
+  font-weight: 700;
+  text-decoration: underline;
+}
 .lib-card {
   border: 1px solid var(--line-soft);
   background: var(--panel);

@@ -4,7 +4,7 @@ import { useStore } from '../state/store';
 import type { Project } from '../core/project';
 import { decodeShare, LONG_LINK, projectFromShare, shareCodeFromHash, shareLink, type ShareState } from '../core/share';
 import {
-  defaultLibrary, duplicateEntry, exportLibrary, hasUnsavedChanges, importLibrary, openEntry, projectFingerprint, readLinks, recentEntries, renameEntry, saveAs, saveOver, sortEntries, uniqueName, updatedAtOf, writeLink,
+  defaultLibrary, duplicateEntry, exportLibrary, hasUnsavedChanges, importLibrary, openEntry, projectFingerprint, readLinks, recentEntries, renameEntry, saveAs, saveOver, uniqueName, writeLink,
   type LibraryLink, type LibraryMeta,
 } from '../state/library';
 import { defaultCloudLibrary, probeCloud } from '../state/cloudLibrary';
@@ -16,6 +16,8 @@ import { readOwnerToken, writeOwnerToken } from '../state/ownerToken';
 import { isOneOffAddress, MAIN_HOST } from '../state/persist';
 import { download } from '../core/exporters';
 import { isProjectZipName, projectFromZip } from '../core/projectZip';
+import { LibraryBrowser } from './LibraryBrowser';
+import { recordLibrarySave } from '../state/recordLibrary';
 
 const host = () => (typeof location !== 'undefined' ? location.host : '');
 
@@ -47,7 +49,7 @@ export async function keepOpenedInLibrary(project: Project, sourceName: string):
   try {
     const names = (await store.list()).map((m) => m.name);
     const name = uniqueName(project.name, names);
-    const { meta, project: saved } = await saveAs(store, project, name, grabThumb());
+    const { meta, project: saved } = await saveAs(store, project, name, grabThumb(), Date.now(), { source: 'import' });
     setName(saved.name);
     link(useStore.getState().activeSetup, { id: meta.id, print: projectFingerprint(saved) });
     const warn = takeCloudWarning();
@@ -85,15 +87,6 @@ export function grabThumb(w = 320, h = 220): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function ago(t: number): string {
-  const s = (Date.now() - t) / 1000;
-  if (s < 45) return 'just now';
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  if (s < 86400 * 7) return `${Math.round(s / 86400)} d ago`;
-  return new Date(t).toLocaleDateString();
 }
 
 function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
@@ -222,7 +215,7 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
     const name = window.prompt('Save to the library as', uniqueName(project.name, (list ?? []).map((m) => m.name)));
     if (!name?.trim()) return;
     void run(async () => {
-      const r = await saveAs(store, project, name.trim(), grabThumb());
+      const r = await saveAs(store, project, name.trim(), grabThumb(), Date.now(), { source: 'save' });
       if (r.project.name !== project.name) setName(r.project.name);
       relink({ id: r.meta.id, print: projectFingerprint(r.project) });
       toast(`Saved "${r.meta.name}" to the library`);
@@ -272,6 +265,10 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
       toast(`Deleted "${m.name}"`);
     });
   };
+  const doPatch = (m: LibraryMeta, patch: Partial<LibraryMeta>) =>
+    void run(async () => {
+      await store.put({ ...m, ...patch, updatedAt: Date.now() });
+    });
 
   const doExport = () =>
     void run(async () => {
@@ -287,7 +284,7 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
       if (isProjectZipName(file.name, file.type)) {
         const { project: opened } = projectFromZip(new Uint8Array(await file.arrayBuffer()));
         const names = (list ?? []).map((m) => m.name);
-        const { meta } = await saveAs(store, opened, uniqueName(opened.name, names), grabThumb());
+        const meta = await recordLibrarySave(opened, { source: 'import', thumb: grabThumb(), name: uniqueName(opened.name, names) });
         toast(`Added “${meta.name}” from ${file.name}`);
         return;
       }
@@ -297,7 +294,6 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
     });
   };
 
-  const sorted = list ? sortEntries(list) : [];
   const here = host();
   const recent = list ? recentEntries(list.filter((m) => m.openedAt > 0)) : [];
   return (
@@ -403,46 +399,19 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
           </div>
         </>
       )}
-      <div className="lib-head">All projects{list ? ` (${list.length})` : ''}</div>
-      <div className="lib-body">
-        {!list ? (
-          <div className="empty">Loading…</div>
-        ) : !list.length ? (
-          <div className="lib-note">Nothing saved yet. Save as… keeps the working copy{unlocked ? ' in the cloud and ' : ' '}in this browser with a picture of the 3D view.</div>
-        ) : (
-          <div className="lib-grid">
-            {sorted.map((m) => (
-              <div key={m.id} className={`lib-card ${current?.id === m.id ? 'on' : ''}`}>
-                <button className="lib-thumb" onClick={() => doOpen(m)} disabled={busy} title={`Open "${m.name}"`}>
-                  <Thumb m={m} />
-                </button>
-                <div className="lib-meta">
-                  <span className="lib-name" title={m.name}>
-                    {m.name}
-                  </span>
-                  <small title={new Date(updatedAtOf(m)).toLocaleString()}>
-                    updated {ago(updatedAtOf(m))} · {m.size > 1e6 ? `${(m.size / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(m.size / 1e3))} kB`}
-                  </small>
-                </div>
-                <div className="lib-actions">
-                  <button className="btn sm" disabled={busy} onClick={() => doOpen(m)}>
-                    Open
-                  </button>
-                  <button className="btn sm" disabled={busy} onClick={() => doRename(m)}>
-                    Rename
-                  </button>
-                  <button className="btn sm" disabled={busy} onClick={() => doDuplicate(m)}>
-                    Duplicate
-                  </button>
-                  <button className="btn sm" disabled={busy} onClick={() => doDelete(m)} aria-label={`Delete ${m.name}`}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <div className="lib-head">All saves{list ? ` (${list.length})` : ''}</div>
+      <LibraryBrowser
+        store={store}
+        list={list}
+        currentId={current?.id}
+        busy={busy}
+        onOpen={doOpen}
+        onRename={doRename}
+        onDuplicate={doDuplicate}
+        onDelete={doDelete}
+        onPatch={doPatch}
+        onError={(msg) => toast(msg)}
+      />
       <div className="lib-note">
         {unlocked
           ? `Cloud projects are shared across builds. This browser${here ? ` at ${here}` : ''} still keeps a local copy if you go offline.`
@@ -483,13 +452,106 @@ export function CloudSyncMark() {
 
 export function ProjectsButton() {
   const [open, setOpen] = useState(false);
+  const setUi = useStore((s) => s.setUi);
   return (
     <>
-      <button className="tb" onClick={() => setOpen(true)} title="Cloud and local projects: save, open, rename, duplicate">
+      <button
+        className="tb"
+        onClick={() => {
+          setUi({ leftPane: 'saves' });
+          setOpen(true);
+        }}
+        title="Saves browser: cloud and local projects"
+      >
         Projects
       </button>
       {open && <LibraryPanel onClose={() => setOpen(false)} />}
     </>
+  );
+}
+
+/** Compact saves browser for the left side panel. */
+export function SavesPanel() {
+  const setup = useStore((s) => s.activeSetup);
+  const { replaceProject, setName, toast } = useStore.getState();
+  const store = defaultProjectLibrary();
+  const [list, setList] = useState<LibraryMeta[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [lnk, setLnk] = useState(() => linkOf(setup));
+  const current = lnk && list?.find((m) => m.id === lnk.id);
+
+  const refresh = useCallback(async () => {
+    try {
+      setList(await store.list());
+    } catch {
+      setList([]);
+    }
+  }, [store]);
+  useEffect(() => void refresh(), [refresh]);
+  useEffect(() => setLnk(linkOf(setup)), [setup]);
+
+  const relink = (l: LibraryLink | null) => {
+    link(setup, l);
+    setLnk(l ?? undefined);
+  };
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      toast(`Library: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+      void refresh();
+    }
+  };
+  const doOpen = (m: LibraryMeta) =>
+    void run(async () => {
+      const { project: p, meta } = await openEntry(store, m.id);
+      replaceProject(p);
+      relink({ id: meta.id, print: projectFingerprint(p) });
+    });
+  const doRename = (m: LibraryMeta) => {
+    const name = window.prompt('Rename project', m.name);
+    if (!name?.trim() || name.trim() === m.name) return;
+    void run(async () => {
+      await renameEntry(store, m.id, name.trim());
+      if (current?.id === m.id) setName(name.trim());
+    });
+  };
+  const doDuplicate = (m: LibraryMeta) =>
+    void run(async () => {
+      const d = await duplicateEntry(store, m.id);
+      toast(`Duplicated as "${d.name}"`);
+    });
+  const doDelete = (m: LibraryMeta) => {
+    if (!window.confirm(`Delete "${m.name}" from the library? This can't be undone.`)) return;
+    void run(async () => {
+      await store.remove(m.id);
+      if (lnk?.id === m.id) relink(null);
+    });
+  };
+  const doPatch = (m: LibraryMeta, patch: Partial<LibraryMeta>) =>
+    void run(async () => {
+      await store.put({ ...m, ...patch, updatedAt: Date.now() });
+    });
+
+  return (
+    <div className="saves-panel" data-testid="saves-panel">
+      <LibraryBrowser
+        store={store}
+        list={list}
+        currentId={current?.id}
+        busy={busy}
+        compact
+        onOpen={doOpen}
+        onRename={doRename}
+        onDuplicate={doDuplicate}
+        onDelete={doDelete}
+        onPatch={doPatch}
+        onError={(msg) => toast(msg)}
+      />
+    </div>
   );
 }
 
