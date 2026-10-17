@@ -435,8 +435,9 @@ button.section-head {
   background: transparent;
   border: none;
 }
-.pm.window {
-  background: #c0c0c0;
+.pm.window,
+.window.help-sheet {
+  background: var(--surface);
 }
 .pm > .window-body.pm-body,
 .video-picker > .window-body {

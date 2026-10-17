@@ -31,4 +31,22 @@ test('layer toolbar is one row and clear of the caption at 1280', async ({ page 
     ys.push(Math.round(box!.y));
   }
   expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(4);
+  await expect(toolbar.getByRole('button', { name: 'Fin' })).toBeVisible();
+  await expect(toolbar.getByRole('button', { name: 'Backing' })).toHaveCount(0);
+});
+
+test('Vermilion fin has its own toggle; hiding plates does not hide it', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openApp(page);
+  await page.locator('.ws-tabs').getByRole('tab', { name: '3D' }).click();
+  const toolbar = page.getByTestId('viewport-layers');
+  const plates = toolbar.getByRole('button', { name: 'Plates' });
+  const fin = toolbar.getByRole('button', { name: 'Fin' });
+  await expect(plates).toHaveClass(/on/);
+  await expect(fin).toHaveClass(/on/);
+  await plates.click();
+  await expect(plates).not.toHaveClass(/on/);
+  await expect(fin).toHaveClass(/on/);
+  await fin.click();
+  await expect(fin).not.toHaveClass(/on/);
 });

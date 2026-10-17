@@ -91,35 +91,37 @@ function ShortcutSheet() {
   const close = () => useHelp.setState({ sheet: false });
   return (
     <div className="pm-back help-back" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="pm help-sheet" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-        <div className="box-head">
-          <span>Keyboard shortcuts</span>
-          <button className="btn sm" onClick={close} aria-label="Close">
-            ✕
-          </button>
+      <div className="window pm help-sheet" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" data-testid="shortcuts-sheet">
+        <div className="title-bar">
+          <div className="title-bar-text">Keyboard shortcuts</div>
+          <div className="title-bar-controls">
+            <button type="button" aria-label="Close" onClick={close} />
+          </div>
         </div>
-        <div className="help-grid">
-          {SHORTCUTS.map((g) => (
-            <div className="help-group" key={g.where}>
-              <div className="head">{g.where}</div>
-              {g.keys.map(([keys, what], i) => (
-                <div className="help-row" key={i}>
-                  <span className="keys">
-                    {keys.map((k) => (
-                      <kbd key={k}>{k}</kbd>
-                    ))}
-                  </span>
-                  <span>{what}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-        <div className="btnrow help-foot">
-          <span className="note">Drop a picture, STL / OBJ or .strata.json anywhere on the window to load it.</span>
-          <button className="btn primary" onClick={startTour}>
-            Take the tour
-          </button>
+        <div className="window-body help-sheet-body">
+          <div className="help-grid">
+            {SHORTCUTS.map((g) => (
+              <div className="help-group" key={g.where}>
+                <div className="head">{g.where}</div>
+                {g.keys.map(([keys, what], i) => (
+                  <div className="help-row" key={i}>
+                    <span className="keys">
+                      {keys.map((k) => (
+                        <kbd key={k}>{k}</kbd>
+                      ))}
+                    </span>
+                    <span>{what}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="btnrow help-foot">
+            <span className="note">Drop a picture, STL / OBJ or .strata.json anywhere on the window to load it.</span>
+            <button className="btn primary" onClick={startTour}>
+              Take the tour
+            </button>
+          </div>
         </div>
       </div>
     </div>

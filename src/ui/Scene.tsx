@@ -19,7 +19,7 @@ import { isMapDepth } from '../core/mapPlateHeight';
 import { useStore } from '../state/store';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { SunStudy3D } from './SunStudy';
-import type { ViewportLayers } from './viewportLayers';
+import { showInsertMesh, type ViewportLayers } from './viewportLayers';
 
 export interface SceneOpts {
   selected: string | null;
@@ -414,7 +414,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
         {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
         <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} />
         <Rods model={model} />
-        {L.backing && <Insert model={model} />}
+        {showInsertMesh(L) && <Insert model={model} />}
         <PlacedObjects model={model} />
         {opts.showSource && model.source && v.stackSource === 'form' && (
           <mesh geometry={model.source.form.geometry}>
