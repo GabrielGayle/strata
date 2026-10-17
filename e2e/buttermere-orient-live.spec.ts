@@ -2,8 +2,8 @@ import { test, expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  applyDesignText,
   applyMapBbox,
+  setBaseSizeMm,
   assertZeroFitErrors,
   clickQuickMap,
   compressPngFile,
@@ -20,20 +20,25 @@ import { BUTTERMERE_BBOX } from '../test/map-fixtures';
 test.skip(!process.env.LIVE_MAP, 'Set LIVE_MAP=1 to run live Buttermere orientation');
 
 const shotDir = join(process.cwd(), 'docs/screenshots/buttermere');
-const shotName = process.env.BUTTERMERE_ORIENT_SHOT === 'before' ? 'orient-before.png' : 'orient-after.png';
+const isBefore = process.env.BUTTERMERE_ORIENT_SHOT === 'before';
+const shotName = isBefore ? 'orient-before.png' : 'orient-after.png';
 
 test('live Buttermere 500×500: 3D Top north matches Map preview', async ({ page }) => {
   test.setTimeout(420_000);
   await mkdir(shotDir, { recursive: true });
   await page.setViewportSize({ width: 1280, height: 800 });
   await openApp(page);
-  await applyDesignText(page, 'base 500 × 500 mm');
+  await setBaseSizeMm(page, 500, 500);
   await applyMapBbox(page, BUTTERMERE_BBOX, 'Buttermere');
   await clickQuickMap(page);
   await waitForMapReady(page);
-  await assertZeroFitErrors(page);
+  await openWorkspaceTab(page, 'Map');
+  await page.getByLabel('Vertical exaggeration').selectOption('4');
+  await waitForMapReady(page);
+  if (!isBefore) await assertZeroFitErrors(page);
 
   await expect(page.locator('.app.window')).toHaveAttribute('data-strata-map-phase', 'ready');
+  await expect(page.locator('.overlay.bl.info')).toContainText(/500\s*×\s*500/);
   await expect(page.locator('#map-water-bathy')).toBeChecked();
   await expect(page.getByLabel('OSM engrave on top face')).toBeChecked();
 

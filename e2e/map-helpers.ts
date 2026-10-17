@@ -235,7 +235,22 @@ export async function applyDesignText(page: Page, text: string) {
   await page.keyboard.press('/');
   await page.waitForSelector('.design-box .design-input', { timeout: 15_000 });
   await page.fill('.design-box .design-input', text);
-  await page.getByRole('button', { name: 'Apply' }).click();
+  await page.locator('.design-box').getByRole('button', { name: 'Apply' }).click();
+}
+
+export async function setBaseSizeMm(page: Page, length: number, width: number) {
+  const base = page.locator('[data-group="Base"]');
+  const head = base.locator('button.section-head');
+  if ((await head.getAttribute('aria-expanded')) === 'false') await head.click();
+  const len = base.getByLabel('Length value');
+  await len.fill(String(length));
+  await len.blur();
+  const wid = base.getByLabel('Width value');
+  await wid.fill(String(width));
+  await wid.blur();
+  await expect(page.locator('.overlay.bl.info').first()).toContainText(new RegExp(`${length}\\s*×\\s*${width}`), {
+    timeout: 20_000,
+  });
 }
 
 /** Map tab bbox fields + Apply. Auto-builds once the spec is set. */
