@@ -15,3 +15,29 @@ export const BUTTERMERE_BBOX: [number, number, number, number] = [-3.34325, 54.5
 
 /** EA DTM lake surfaces (m AMSL) for the Buttermere bbox. */
 export const BUTTERMERE_LAKE_M = { buttermere: 101, crummock: 98 } as const;
+
+/** Grasmoor (~851 m) sits in the NE of the Buttermere bbox; Crummock is ~98 m. */
+export const BUTTERMERE_DEM_STATS = {
+  trueReliefM: 753,
+  robustReliefM: 700,
+  /** Equirectangular width; `metricBounds` is within a few tens of metres. */
+  mapWidthM: 8044,
+  masterWidthMm: 800,
+  plateCount: 40,
+  thicknessMm: 3,
+} as const;
+
+/** Shooters Hill to Thames — decoded from Gabriel’s Woolwich project. */
+export const WOOLWICH_BBOX: [number, number, number, number] = [-0.03, 51.465, 0.124, 51.505];
+
+export const WOOLWICH_DEM_STATS = {
+  trueReliefM: 125.47818595170975,
+  robustReliefM: 108.90642626342506,
+  mapWidthM: 10816.234576938907,
+  mapHeightM: 4746.986988676013,
+  zMinM: -0.39947348833084106,
+  zMaxM: 125.0787124633789,
+  masterWidthMm: 720,
+  plateCount: 46,
+  thicknessMm: 1.5,
+} as const;

@@ -3466,6 +3466,18 @@ kbd {
 .map-section [data-testid='quick-map'] {
   align-self: start;
 }
+.map-exaggeration-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.map-exaggeration-row input[type='range'] {
+  flex: 1;
+  min-width: 80px;
+}
+.map-exaggeration-row input[type='number'] {
+  width: 4.5em;
+}
 .map-terrain-status {
   padding: 8px 10px;
   font-size: 12px;

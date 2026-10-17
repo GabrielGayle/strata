@@ -5,6 +5,7 @@ import {
   formatExaggerationStackReadout,
   reliefMetres,
   resolveExaggerationFactor,
+  stackFillExaggeration,
   trueReliefMetres,
 } from '../src/core/mapExaggeration';
 import { mapReliefToPlateRangeMm, mapScaleMmPerM } from '../src/core/mapPlateHeight';
@@ -51,31 +52,30 @@ describe('Neasden auto exaggeration', () => {
     expect(formatExaggerationStackReadout(11, 55.3, 3300, 800)).toBe('×11 · 55 m relief → 147 mm stack on 800 mm');
   });
 
-  it('plan stack-height formula lands near ×18–21 for A3 (420 mm) with 30×3 mm plates', () => {
-    const factor = computeAutoExaggeration({
-      reliefM: 35,
-      stackHeightMm: 90,
-      mapWidthM: 3250,
-      masterWidthMm: 420,
-    });
-    expect(factor).toBeGreaterThanOrEqual(18);
-    expect(factor).toBeLessThanOrEqual(21);
+  it('A3 stack-fill is still ×18–21; the low-relief cap is what auto returns', () => {
+    const input = { reliefM: 35, stackHeightMm: 90, mapWidthM: 3250, masterWidthMm: 420 };
+    const fill = stackFillExaggeration(input);
+    const factor = computeAutoExaggeration(input);
+    expect(fill).toBeGreaterThanOrEqual(18);
+    expect(fill).toBeLessThanOrEqual(21);
+    expect(factor).toBeGreaterThanOrEqual(1.5);
+    expect(factor).toBeLessThanOrEqual(3.5);
+    expect(factor).toBeLessThan(fill);
   });
 
-  it('default Vermilion 40 (800 mm, 40×3 mm) is ~×11 for live-scale Neasden relief, not the A3 ×18–21 number', () => {
+  it('Vermilion 40 stack-fill is ~×11; auto is capped for Neasden-scale slope', () => {
     // Live EA 1 m over the full Neasden bbox is ~45 m p98−p2 on ~3.25 km.
-    // Auto fills the current stack: 120 mm / (45 m × 800/3250 mm per m) ≈ ×10.8.
-    const factor = computeAutoExaggeration({
-      reliefM: 45,
-      stackHeightMm: 120,
-      mapWidthM: 3250,
-      masterWidthMm: 800,
-    });
-    expect(factor).toBeGreaterThanOrEqual(10);
-    expect(factor).toBeLessThanOrEqual(12);
+    // Stack-fill: 120 mm / (45 m × 800/3250 mm per m) ≈ ×10.8. Slope 45/3250 ≈ 1.4%
+    // is below the 3% cap, so auto is 0.03 / 0.0138 ≈ ×2.2.
+    const input = { reliefM: 45, stackHeightMm: 120, mapWidthM: 3250, masterWidthMm: 800 };
+    expect(stackFillExaggeration(input)).toBeGreaterThanOrEqual(10);
+    expect(stackFillExaggeration(input)).toBeLessThanOrEqual(12);
+    const factor = computeAutoExaggeration(input);
+    expect(factor).toBeGreaterThanOrEqual(1.5);
+    expect(factor).toBeLessThanOrEqual(3.5);
   });
 
-  it('buildMapBundle auto lands near ×18–21 for Neasden EA clip (not layer-budget ×50 clamp)', async () => {
+  it('buildMapBundle auto is slope-capped on the Neasden EA clip (not layer-budget ×50)', async () => {
     // A3 30×3 mm on the full ~3.25 km bbox with ~35 m p98−p2 (plan number), not the 9 m fixture trap.
     const bundle = await buildMapBundle(
       defaultMapSpec({
@@ -96,13 +96,13 @@ describe('Neasden auto exaggeration', () => {
       },
     );
     const factor = bundle.asset.map?.exaggerationFactor;
-    expect(factor).toBeGreaterThanOrEqual(18);
-    expect(factor).toBeLessThanOrEqual(22);
+    expect(factor).toBeGreaterThanOrEqual(1.5);
+    expect(factor).toBeLessThanOrEqual(3.5);
     expect(factor).not.toBe(50);
     expect(bundle.asset.map?.resolvedSource).toBe('ea-dtm');
   });
 
-  it('auto exaggeration uses the final ea-dtm grid (~45 m → ×11 on Vermilion 40), not a Terrarium pass', async () => {
+  it('auto exaggeration uses the final ea-dtm grid (slope-capped), not a Terrarium pass', async () => {
     const ea = neasdenRampGrid(20, 66.9);
     expect(reliefMetres(ea)).toBeGreaterThan(40);
     expect(reliefMetres(ea)).toBeLessThan(50);
@@ -126,10 +126,10 @@ describe('Neasden auto exaggeration', () => {
     expect(bundle.asset.map?.resolvedSource).toBe('ea-dtm');
     expect(mapNoticesMatching(bundle.asset.map?.sourceWarnings, /falling back to terrarium/i)).toBe(false);
     const factor = bundle.asset.map?.exaggerationFactor ?? 0;
-    expect(factor).toBeGreaterThanOrEqual(10);
-    expect(factor).toBeLessThanOrEqual(12);
+    expect(factor).toBeGreaterThanOrEqual(1.5);
+    expect(factor).toBeLessThanOrEqual(3.5);
     expect(bundle.asset.map?.exaggeration).toBe('auto');
-    expect(bundle.asset.map?.exaggerationReadout).toMatch(/×1[0-2]/);
+    expect(bundle.asset.map?.exaggerationReadout).toMatch(/×[12]\.\d/);
     const ortho = bundle.depth.mapOrtho!;
     const expectedMm = mapReliefToPlateRangeMm(ortho.reliefM, factor, mapScaleMmPerM(ortho.widthM, VERMILION.masterWidthMm));
     expect(bundle.asset.map?.exaggerationReadout).toBe(
@@ -169,8 +169,8 @@ describe('Neasden auto exaggeration', () => {
       },
     );
     const factor = bundle.asset.map?.exaggerationFactor ?? 0;
-    expect(factor).toBeGreaterThanOrEqual(10);
-    expect(factor).toBeLessThanOrEqual(12);
+    expect(factor).toBeGreaterThanOrEqual(1.5);
+    expect(factor).toBeLessThanOrEqual(3.5);
     const ortho = bundle.depth.mapOrtho!;
     const expectedMm = mapReliefToPlateRangeMm(ortho.reliefM, factor, mapScaleMmPerM(ortho.widthM, VERMILION.masterWidthMm));
     expect(bundle.asset.map?.exaggerationReadout).toBe(
@@ -180,7 +180,7 @@ describe('Neasden auto exaggeration', () => {
     expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(expectedMm)} mm stack on 800 mm`);
   });
 
-  it('browser EA fixture over the full Neasden bbox is live-scale (~45 m → ×11), not 9 m → ×50', async () => {
+  it('browser EA fixture over the full Neasden bbox is slope-capped, not 9 m → ×50', async () => {
     const g = loadBuiltinEaFixture();
     expect(g).toBeTruthy();
     expect(reliefMetres(g!)).toBeGreaterThan(40);
@@ -206,9 +206,9 @@ describe('Neasden auto exaggeration', () => {
     expect(bundle.asset.map?.resolvedSource).toBe('ea-dtm');
     expect(mapNoticesMatching(bundle.asset.map?.sourceWarnings, /falling back to terrarium/i)).toBe(false);
     expect(bundle.asset.map?.exaggeration).toBe('auto');
-    expect(bundle.asset.map?.exaggerationFactor).toBeGreaterThanOrEqual(10);
-    expect(bundle.asset.map?.exaggerationFactor).toBeLessThanOrEqual(12);
-    expect(bundle.asset.map?.exaggerationReadout).toMatch(/×1[0-2]/);
+    expect(bundle.asset.map?.exaggerationFactor).toBeGreaterThanOrEqual(1.5);
+    expect(bundle.asset.map?.exaggerationFactor).toBeLessThanOrEqual(3.5);
+    expect(bundle.asset.map?.exaggerationReadout).toMatch(/×[12]\.\d/);
     expect(bundle.asset.map?.exaggerationReadout).toMatch(/4[0-9] m relief/);
     const ortho = bundle.depth.mapOrtho!;
     const factor = bundle.asset.map?.exaggerationFactor ?? 0;
@@ -220,15 +220,13 @@ describe('Neasden auto exaggeration', () => {
     expect(bundle.asset.map?.exaggerationReadout).toContain(`${Math.round(expectedMm)} mm stack on 800 mm`);
   });
 
-  it('9 m Terrarium-scale relief on the full Neasden width clamps Vermilion 40 auto to ×50', () => {
-    expect(
-      computeAutoExaggeration({
-        reliefM: 9,
-        stackHeightMm: 120,
-        mapWidthM: 3250,
-        masterWidthMm: 800,
-      }),
-    ).toBe(50);
+  it('9 m Terrarium-scale relief no longer stack-fills to ×50 — the slope cap wins', () => {
+    const input = { reliefM: 9, stackHeightMm: 120, mapWidthM: 3250, masterWidthMm: 800 };
+    expect(stackFillExaggeration(input)).toBe(50);
+    const factor = computeAutoExaggeration(input);
+    expect(factor).toBeGreaterThan(8);
+    expect(factor).toBeLessThan(15);
+    expect(factor).toBeLessThan(50);
   });
 
   it('labels Terrarium fallback as terrarium and autos from that low-res relief, not ea-dtm', async () => {
@@ -296,8 +294,8 @@ describe('Neasden auto exaggeration', () => {
     );
     expect(ea.asset.map?.resolvedSource).toBe('ea-dtm');
     expect(ea.asset.map?.exaggeration).toBe('auto');
-    expect(ea.asset.map?.exaggerationFactor).toBeGreaterThanOrEqual(10);
-    expect(ea.asset.map?.exaggerationFactor).toBeLessThanOrEqual(12);
+    expect(ea.asset.map?.exaggerationFactor).toBeGreaterThanOrEqual(1.5);
+    expect(ea.asset.map?.exaggerationFactor).toBeLessThanOrEqual(3.5);
     expect(ea.asset.map?.exaggerationFactor).not.toBe(low);
 
     const locked = await buildMapBundle(

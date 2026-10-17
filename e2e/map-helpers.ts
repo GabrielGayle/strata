@@ -178,10 +178,15 @@ export async function plateHeightRangeMm(page: Page): Promise<number> {
 
 export async function assertPlateHeightMatchesRelief(page: Page, tolerance = 0.3) {
   await expect
+    .poll(async () => Number(await page.locator('.app.window').getAttribute('data-strata-map-expected-height-mm')), {
+      timeout: 60_000,
+    })
+    .toBeGreaterThan(0);
+  await expect
     .poll(async () => Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm')), {
       timeout: 60_000,
     })
-    .toBeGreaterThan(40);
+    .toBeGreaterThan(0);
 
   const metrics = await page.evaluate(() => {
     const el = document.querySelector('.app.window') as HTMLElement | null;
@@ -234,10 +239,15 @@ export async function openWorkspaceTab(page: Page, label: string) {
 export async function waitForViewportRelief(page: Page) {
   await openWorkspaceTab(page, '3D');
   await expect
+    .poll(async () => Number(await page.locator('.app.window').getAttribute('data-strata-map-expected-height-mm')), {
+      timeout: MAP_READY_MS,
+    })
+    .toBeGreaterThan(0);
+  await expect
     .poll(async () => Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm')), {
       timeout: MAP_READY_MS,
     })
-    .toBeGreaterThan(40);
+    .toBeGreaterThan(0);
   const canvas = page.locator('.main canvas').first();
   await expect(canvas).toBeVisible({ timeout: 15_000 });
   await expect

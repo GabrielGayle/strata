@@ -7,6 +7,12 @@ import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/map
 import { MAP_SOURCE_REGISTRY } from '../core/mapSourceRegistry';
 import { noticesWithoutStaleEngraveSkip } from '../core/mapNotices';
 import { formatLiveMapReadout } from '../core/mapGeometryReadout';
+import {
+  EXAGGERATION_MAX,
+  EXAGGERATION_MIN,
+  EXAGGERATION_STEP,
+  exaggerationSelectValues,
+} from '../core/mapExaggeration';
 import { SUNKEN_FRAME_FLAT_HINT, SUNKEN_FRAME_FLAT_ONLY_HINT, sunkenFrameApplies } from '../core/mapSunkenFrame';
 import { useStore } from '../state/store';
 import { useModel } from './model';
@@ -291,6 +297,7 @@ export default function MapView() {
         <label>
           Vertical exaggeration
           <select
+            data-testid="map-exaggeration"
             value={exaggeration === 'auto' ? 'auto' : String(exaggeration)}
             onChange={(e) => {
               const v = e.target.value;
@@ -298,12 +305,50 @@ export default function MapView() {
             }}
             disabled={!existing}
           >
-            <option value="auto">auto</option>
-            {[4, 8, 11, 12, 16, 18, 21, 28, 36].map((n) => (
-              <option key={n} value={n}>×{n}</option>
-            ))}
+            {exaggerationSelectValues(exaggeration).map((n) =>
+              n === 'auto' ? (
+                <option key="auto" value="auto">
+                  auto
+                </option>
+              ) : (
+                <option key={n} value={String(n)}>
+                  ×{n}
+                </option>
+              ),
+            )}
           </select>
         </label>
+        <div className="map-exaggeration-row">
+          <input
+            type="range"
+            data-testid="map-exaggeration-slider"
+            aria-label="Vertical exaggeration slider"
+            min={EXAGGERATION_MIN}
+            max={EXAGGERATION_MAX}
+            step={EXAGGERATION_STEP}
+            disabled={!existing}
+            value={typeof factor === 'number' && factor > 0 ? factor : EXAGGERATION_MIN}
+            onChange={(e) => commit({ exaggeration: Number(e.target.value) })}
+          />
+          <input
+            type="number"
+            data-testid="map-exaggeration-input"
+            aria-label="Vertical exaggeration factor"
+            min={EXAGGERATION_MIN}
+            max={EXAGGERATION_MAX}
+            step={EXAGGERATION_STEP}
+            disabled={!existing}
+            value={typeof factor === 'number' && factor > 0 ? factor : EXAGGERATION_MIN}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n) && n > 0) commit({ exaggeration: n });
+            }}
+          />
+        </div>
+        <p className="map-view-note">
+          ×1–×1.5 reads as wall relief; ×1.5–×3 for low London hills. Auto follows the DEM slope, not the old
+          jump from auto to ×4.
+        </p>
         <label>
           Layer budget
           <select

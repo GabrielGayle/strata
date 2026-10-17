@@ -48,16 +48,16 @@ function tinyNeasdenCone(): Float32Grid {
 }
 
 describe('map layer budget + exaggeration', () => {
-  it('auto exaggeration matches the stack-height formula (Neasden example)', () => {
+  it('auto exaggeration caps the A3 stack-fill example on low-relief London', () => {
     const ex = computeAutoExaggeration({
       reliefM: 35,
       stackHeightMm: 90,
       mapWidthM: 3250,
       masterWidthMm: 400,
     });
-    expect(ex).toBeGreaterThan(19);
-    expect(ex).toBeLessThan(23);
-    expect(exaggerationReadout(ex)).toBe('×20.9');
+    expect(ex).toBeGreaterThan(2);
+    expect(ex).toBeLessThan(3.2);
+    expect(exaggerationReadout(ex)).toMatch(/^×2\.\d$/);
   });
 
   it('Jenks breaks differ from equal breaks on skewed data', () => {
