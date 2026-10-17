@@ -59,6 +59,14 @@ const SHORTCUTS: { where: string; keys: [string[], string][] }[] = [
       [['Esc'], 'Deselect'],
     ],
   },
+  {
+    where: '3D view (view-only layers)',
+    keys: [
+      [['Alt', 'Shift', 'G'], 'Toggle grid'],
+      [['Alt', 'Shift', 'P'], 'Toggle plates'],
+      [['Alt', 'Shift', 'L'], 'Toggle labels / dimensions'],
+    ],
+  },
   { where: 'Plates view', keys: [[['←', '→'], 'Previous / next plate (↑ ↓ too)']] },
   {
     where: 'Composer',
