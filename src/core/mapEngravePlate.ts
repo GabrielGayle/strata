@@ -1,8 +1,9 @@
-import { clipLines, offset, type Path } from './geom2d';
+import { clipLines, type Path } from './geom2d';
 import type { MapEngraveArt } from './mapOsmEngrave';
 import { strokeTextCentered, textWidth } from './strokefont';
 import type { Part } from './slicer';
 import { resolveEngravePreset } from './mapEngravePresets';
+import { etchKeepOut, LABEL_HOLE_CLEAR_MM } from './stackRods';
 
 export interface MapEngravePlateContext {
   /** Width of map on top face in mm (along plate u). */
@@ -25,8 +26,9 @@ export function mapEngravePathsForPart(part: Part, art: MapEngraveArt, ctx: MapE
   const sx = pw / art.imageW;
   const sy = ph / art.imageH;
   const tf = (p: Path): Path => p.map(([x, y]) => [bb.maxX - x * sx, bb.minY + y * sy]);
+  const keep = etchKeepOut(part.shape, LABEL_HOLE_CLEAR_MM, 0.4);
   const out: Path[] = [];
-  for (const ln of art.lines) out.push(...clipLines([tf(ln.path)], offset(part.shape, -0.4)));
+  for (const ln of art.lines) out.push(...clipLines([tf(ln.path)], keep));
   const typo = resolveEngravePreset(ctx.presetId);
   if (ctx.title) {
     const h = Math.min(typo.titleHeightMm, ph * 0.2);
@@ -34,7 +36,7 @@ export function mapEngravePathsForPart(part: Part, art: MapEngraveArt, ctx: MapE
     const cy = bb.maxY - h * 0.8;
     const tw = textWidth(ctx.title, h * typo.titleScale);
     if (tw <= pw - 2) {
-      out.push(...clipLines(strokeTextCentered(ctx.title, cx, cy, h * typo.titleScale), offset(part.shape, -0.4)));
+      out.push(...clipLines(strokeTextCentered(ctx.title, cx, cy, h * typo.titleScale), keep));
     }
   }
   for (const t of art.texts) {
@@ -42,7 +44,7 @@ export function mapEngravePathsForPart(part: Part, art: MapEngraveArt, ctx: MapE
     const cx = bb.maxX - t.nx * pw;
     const cy = bb.minY + t.ny * ph;
     if (textWidth(t.text, h) > pw * 0.9) continue;
-    out.push(...clipLines(strokeTextCentered(t.text, cx, cy, h), offset(part.shape, -0.4)));
+    out.push(...clipLines(strokeTextCentered(t.text, cx, cy, h), keep));
   }
   return out;
 }

@@ -214,6 +214,11 @@ export default function Inspector() {
                 ))}
               </ul>
             )}
+            {model.sliced.stackRods.alignmentOnly && model.sliced.stackRods.rods.length > 0 && (
+              <div className="note" data-testid="inspector-support-poles-alignment">
+                {model.sliced.stackRods.rods.length} alignment rod{model.sliced.stackRods.rods.length === 1 ? '' : 's'}; no island needs support
+              </div>
+            )}
             {model.sliced.stackRods.rods.length === 0 && stackUnsupported.length === 0 && (
               <div className="note">No extra poles: every island is already held (registration pins count).</div>
             )}

@@ -63,6 +63,8 @@ test.describe('support poles on a Stamped two-peak stack', () => {
     await expect(poles).toBeVisible();
     await expect(poles).toContainText('R1');
     await expect(poles).toContainText('Ø6');
+    await expect(poles).toContainText('alignment rod');
+    await expect(poles).toContainText('no island needs support');
     await poles.screenshot({ path: join(SHOT, 'inspector-support-poles.png') });
 
     await page.getByLabel('Filter parameters').fill('Support poles');

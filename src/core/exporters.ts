@@ -200,6 +200,7 @@ function bottomPlateIndex(model: Model): number {
 }
 
 function mapBackEtchForPart(part: Part, project?: Project, model?: Model): Path[] {
+  if (part.exportEtch) return part.exportEtch;
   const map = project?.images.top?.map;
   if (!map || !model) return [];
   if (part.family !== 'P' || part.index !== bottomPlateIndex(model)) return [];
@@ -207,6 +208,7 @@ function mapBackEtchForPart(part: Part, project?: Project, model?: Model): Path[
 }
 
 function mapEngraveForPart(part: Part, project?: Project, model?: Model): Path[] {
+  if (part.exportEngrave) return part.exportEngrave;
   const map = project?.images.top?.map;
   if (!map?.engraveArt || !map.engrave.enabled) return [];
   if (model) {

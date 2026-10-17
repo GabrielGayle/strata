@@ -1,17 +1,20 @@
 // Support poles for a flat (Stamped) stack: vertical steel rods through
 // islands that would otherwise float, down to the base. One rod is reused
 // wherever islands stack. Held islands (on the base, or resting on a held
-// island below) do not need their own rod.
-import { circlePath, difference, intersection, offset, pointInShape, shapeArea, shapeBBox, shapePerimeter, signedArea, unionShapes, type BBox, type Path, type Shape, type Vec2 } from './geom2d';
+// island below) do not need their own rod; poles On still places a few
+// shared alignment rods for stiffness.
+import { circle, circlePath, clipLines, difference, intersection, offset, pointInShape, shapeArea, shapeBBox, shapePerimeter, signedArea, unionShapes, type BBox, type Path, type Shape, type Vec2 } from './geom2d';
 import { piecesTouch } from './fragments';
 import type { HardwareRow } from './brace';
 import type { Values } from './params';
-import type { V3 } from './section';
+import { planeToWorld, type Plane, type V3 } from './section';
 
 export const STACK_ROD_GRID_MM = 2;
 /** Least gap from an etch/label stroke to a hole edge. */
 export const LABEL_HOLE_CLEAR_MM = 1.5;
 const GLUE_AREA_MM2 = 1;
+const ALIGNMENT_MAX = 2;
+const OVERLAP_AREA_MM2 = 0.5;
 
 export type StackRodSmall = 'keep' | 'drop' | 'merge';
 
@@ -40,6 +43,8 @@ export interface StackRodSettings {
   minFeature: number;
   baseTop: number;
   small: StackRodSmall;
+  /** Plate plane used to turn (x, y) into world ends. */
+  plane?: Plane;
 }
 
 export interface StackRod {
@@ -71,6 +76,8 @@ export interface StackRodPlan {
   hole: number;
   diameter: number;
   issues: StackRodIssue[];
+  /** True when every island is already held and the rods are for alignment only. */
+  alignmentOnly?: boolean;
 }
 
 export interface HoleDisk {
@@ -112,6 +119,18 @@ export function stackRodSettings(v: Values, baseTop: number): StackRodSettings {
 
 export function stackRodHoleDia(s: StackRodSettings): number {
   return s.diameter + s.clearance;
+}
+
+/** Default flat-stack plane: plate +x east, +y south → world (+X, +Y up, −Z). */
+export function defaultStackRodPlane(settings: StackRodSettings): Plane {
+  return (
+    settings.plane ?? {
+      origin: [0, settings.baseTop + settings.thickness / 2, 0],
+      normal: [0, 1, 0],
+      u: [1, 0, 0],
+      v: [0, 0, -1],
+    }
+  );
 }
 
 export function holeDisks(shape: Shape): HoleDisk[] {
@@ -179,6 +198,50 @@ export function pathsHitDisk(paths: Path[], c: Vec2, r: number): boolean {
     }
   }
   return false;
+}
+
+/** Part interior minus an inset and every fastener disk grown by `clear`. */
+export function etchKeepOut(shape: Shape, clear = LABEL_HOLE_CLEAR_MM, inset = 0.4): Shape {
+  const keep = inset ? offset(shape, -inset) : shape;
+  const disks = fastenerDisks(shape);
+  if (!disks.length) return keep;
+  // Extra 0.1 mm so clipper endpoints sit strictly outside the fit-check radius.
+  const avoid = disks.map((d) => ({ outer: circlePath(d.c[0], d.c[1], d.r + clear + 0.1), holes: [] as Path[] }));
+  return difference(keep, avoid);
+}
+
+/** Clip etch/engrave polylines so they stay `clear` mm from every pin/rod hole. */
+export function clipEtchFromFastenerHoles(paths: Path[], shape: Shape, clear = LABEL_HOLE_CLEAR_MM, inset = 0.4): Path[] {
+  if (!paths.length) return [];
+  const disks = fastenerDisks(shape);
+  if (!disks.length && !inset) return paths;
+  return clipLines(paths, etchKeepOut(shape, clear, inset));
+}
+
+/** Shift etch in +Y off fastener holes when that keeps it on the part, then clip. */
+export function nudgeAndClipEtch(paths: Path[], shape: Shape, clear = LABEL_HOLE_CLEAR_MM): Path[] {
+  if (!paths.length) return [];
+  const disks = fastenerDisks(shape);
+  if (!disks.length) return paths;
+  const hits = (ps: Path[]) => disks.some((d) => pathsHitDisk(ps, d.c, d.r + clear));
+  let shifted = paths;
+  if (hits(shifted)) {
+    const bb = shapeBBox(shape);
+    for (const dy of [2, 4, 6, 8, 12, 16, 24, 32, 48]) {
+      const tryP = paths.map((p) => p.map(([x, y]) => [x, y + dy] as Vec2));
+      if (tryP.some((p) => p.some((q) => q[1] > bb.maxY - 0.8))) break;
+      if (!hits(tryP)) {
+        shifted = tryP;
+        break;
+      }
+    }
+  }
+  return clipEtchFromFastenerHoles(shifted, shape, clear, 0);
+}
+
+export function discOverlapsShape(c: Vec2, r: number, shape: Shape, minArea = 0.05): boolean {
+  if (r <= 0 || !shape.length) return false;
+  return shapeArea(intersection(shape, circle(c[0], c[1], r))) > minArea;
 }
 
 function ptKey(p: Vec2): string {
@@ -274,14 +337,35 @@ export function heldIslandKeys(islands: StackRodIsland[], existing: ExistingColu
 
 function setRodLength(rod: StackRod, length: number, settings: StackRodSettings) {
   rod.length = length;
-  rod.a = [rod.x, settings.baseTop, -rod.y];
-  rod.b = [rod.x, settings.baseTop + length, -rod.y];
+  const P = defaultStackRodPlane(settings);
+  const t = settings.thickness;
+  rod.a = planeToWorld(P, rod.x, rod.y, -t / 2);
+  rod.b = [rod.a[0] + P.normal[0] * length, rod.a[1] + P.normal[1] * length, rod.a[2] + P.normal[2] * length];
   rod.layers = Array.from({ length: rod.topLayer + 1 }, (_, i) => i);
+}
+
+/** World ends from each plate's plane so a u-flip cannot desync 3D from the cut. */
+export function applyStackRodWorld(
+  plan: StackRodPlan,
+  plates: { index: number; plane: Plane }[],
+  settings: StackRodSettings,
+): void {
+  if (!plan.rods.length) return;
+  const byI = new Map(plates.map((p) => [p.index, p.plane]));
+  const fallback = defaultStackRodPlane(settings);
+  const t = settings.thickness;
+  for (const rod of plan.rods) {
+    const bot = byI.get(0) ?? fallback;
+    const top = byI.get(rod.topLayer) ?? bot;
+    rod.a = planeToWorld(bot, rod.x, rod.y, -t / 2);
+    const extra = rod.length - (rod.topLayer + 1) * t;
+    rod.b = planeToWorld(top, rod.x, rod.y, t / 2 + extra);
+  }
 }
 
 function issueFor(is: StackRodIsland, held: boolean, hole: number, edge: number, small: StackRodSmall): StackRodIssue {
   const bb = shapeBBox(is.shape);
-  const at = Number.isFinite(bb.minX) ? [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2] as Vec2 : undefined;
+  const at = Number.isFinite(bb.minX) ? ([(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2] as Vec2) : undefined;
   if (held) {
     const why = is.layer === 0 ? 'it sits on the base' : 'it rests on a supported island below';
     return {
@@ -303,17 +387,36 @@ function issueFor(is: StackRodIsland, held: boolean, hole: number, edge: number,
   };
 }
 
+function pushRod(plan: StackRodPlan, p: Vec2, keys: string[], topLayer: number, settings: StackRodSettings) {
+  const length = (topLayer + 1) * settings.thickness + settings.stickOut;
+  const rod: StackRod = {
+    id: `R${plan.rods.length + 1}`,
+    x: p[0],
+    y: p[1],
+    diameter: settings.diameter,
+    hole: plan.hole,
+    length,
+    topLayer,
+    layers: Array.from({ length: topLayer + 1 }, (_, i) => i),
+    islands: [...new Set(keys)].sort(),
+    a: [p[0], settings.baseTop, -p[1]],
+    b: [p[0], settings.baseTop + length, -p[1]],
+  };
+  setRodLength(rod, length, settings);
+  plan.rods.push(rod);
+}
+
 /**
- * Greedy set-cover of islands by vertical columns. A column may only cross
- * solid material (with the hole + min edge distance) from the base up.
- * Held islands that cannot take a hole warn (or drop/merge); floating ones error.
+ * Greedy set-cover of islands that *need* a pole (floating, with room).
+ * Held islands that cannot take a hole warn; floating ones error.
+ * When nothing needs a pole, a few shared alignment rods are still placed.
  */
 export function placeStackRods(islands: StackRodIsland[], settings: StackRodSettings, existing: ExistingColumn[] = []): StackRodPlan {
   const hole = stackRodHoleDia(settings);
   const holeR = hole / 2;
   const inset = holeR + settings.edge;
   const issues: StackRodIssue[] = [];
-  const plan: StackRodPlan = { rods: [], hole, diameter: settings.diameter, issues };
+  const plan: StackRodPlan = { rods: [], hole, diameter: settings.diameter, issues, alignmentOnly: false };
   if (!islands.length) return plan;
 
   const sorted = [...islands].sort((a, b) => a.layer - b.layer || a.partId.localeCompare(b.partId) || a.key.localeCompare(b.key));
@@ -325,8 +428,6 @@ export function placeStackRods(islands: StackRodIsland[], settings: StackRodSett
   for (const is of sorted) byLayer[is.layer].push(is);
 
   const held = heldIslandKeys(sorted, existing);
-  // Pins already count as covering. Held-by-glue islands do not *need* a rod,
-  // but greedy still places one through any island that has room (peaks).
   const covered = new Set<string>();
   for (const col of existing) {
     for (const is of sorted) {
@@ -363,14 +464,14 @@ export function placeStackRods(islands: StackRodIsland[], settings: StackRodSett
   }
   const candidates = [...candMap.values()].sort((a, b) => a.p[0] - b.p[0] || a.p[1] - b.p[1]);
 
-  const uncovered = () => sorted.filter((is) => !covered.has(is.key));
+  const neededUncovered = () => sorted.filter((is) => !held.has(is.key) && !covered.has(is.key));
 
-  while (uncovered().length) {
+  while (neededUncovered().length) {
     let best: Cand | null = null;
     let bestN = 0;
     for (const c of candidates) {
       if (blocked.some((b) => tooCloseTo(c.p, b, holeR, minFeat))) continue;
-      const n = c.keys.reduce((a, k) => a + (covered.has(k) ? 0 : 1), 0);
+      const n = c.keys.reduce((a, k) => a + (held.has(k) || covered.has(k) ? 0 : 1), 0);
       if (n === 0) continue;
       const better =
         !best ||
@@ -385,28 +486,45 @@ export function placeStackRods(islands: StackRodIsland[], settings: StackRodSett
     if (!best || bestN === 0) break;
     for (const k of best.keys) covered.add(k);
     blocked.push({ p: best.p, r: holeR });
-    const topLayer = best.topLayer;
-    const length = (topLayer + 1) * settings.thickness + settings.stickOut;
-    const id = `R${plan.rods.length + 1}`;
-    const x = best.p[0];
-    const y = best.p[1];
-    plan.rods.push({
-      id,
-      x,
-      y,
-      diameter: settings.diameter,
-      hole,
-      length,
-      topLayer,
-      layers: Array.from({ length: topLayer + 1 }, (_, i) => i),
-      islands: [...new Set(best.keys)].sort(),
-      a: [x, settings.baseTop, -y],
-      b: [x, settings.baseTop + length, -y],
-    });
+    pushRod(plan, best.p, best.keys, best.topLayer, settings);
   }
 
-  for (const is of uncovered()) {
-    issues.push(issueFor(is, held.has(is.key), hole, settings.edge, settings.small));
+  for (const is of sorted) {
+    if (covered.has(is.key)) continue;
+    const inner = inners.get(is.key) ?? [];
+    if (held.has(is.key)) {
+      if (!inner.length) issues.push(issueFor(is, true, hole, settings.edge, settings.small));
+      continue;
+    }
+    issues.push(issueFor(is, false, hole, settings.edge, settings.small));
+  }
+
+  const floatingErr = issues.some((i) => !i.held);
+  if (!plan.rods.length && !floatingErr) {
+    for (let n = 0; n < ALIGNMENT_MAX; n++) {
+      let best: Cand | null = null;
+      let bestN = 0;
+      for (const c of candidates) {
+        if (c.topLayer < 0) continue;
+        if (blocked.some((b) => tooCloseTo(c.p, b, holeR, minFeat))) continue;
+        const fresh = c.keys.reduce((a, k) => a + (covered.has(k) ? 0 : 1), 0);
+        if (fresh === 0) continue;
+        const better =
+          !best ||
+          fresh > bestN ||
+          (fresh === bestN &&
+            (c.topLayer > best.topLayer || (c.topLayer === best.topLayer && (c.p[0] < best.p[0] || (c.p[0] === best.p[0] && c.p[1] < best.p[1])))));
+        if (better) {
+          best = c;
+          bestN = fresh;
+        }
+      }
+      if (!best || bestN === 0) break;
+      for (const k of best.keys) covered.add(k);
+      blocked.push({ p: best.p, r: holeR });
+      pushRod(plan, best.p, best.keys, best.topLayer, settings);
+    }
+    if (plan.rods.length) plan.alignmentOnly = true;
   }
   return plan;
 }
@@ -430,9 +548,9 @@ function holeFitsAt(
 }
 
 /**
- * Stick-out past the highest layer a rod supports: cut a hole through any
- * plate it would enter when the hole fits, otherwise clamp so it stops at
- * that plate's underside (air above the whole stack is kept).
+ * Stick-out past the highest layer a rod supports: test the full hole disc
+ * against each plate above. Cut a hole when it fits, otherwise clamp so the
+ * rod stops at that plate's underside (air above the whole stack is kept).
  */
 export function resolveStackRodStickOut(
   plan: StackRodPlan,
@@ -455,7 +573,7 @@ export function resolveStackRodStickOut(
     for (let layer = rod.topLayer + 1; layer <= maxLayer; layer++) {
       const plateBottom = layer * th;
       if (wantedTop <= plateBottom + 1e-9) break;
-      const owners = parts.filter((q) => q.family === 'P' && q.index === layer && pointInShape(p, q.shape));
+      const owners = parts.filter((q) => q.family === 'P' && q.index === layer && discOverlapsShape(p, holeR, q.shape));
       if (owners.length === 0) continue;
       if (owners.length === 1 && holeFitsAt(owners[0].shape, p, holeR, settings.edge, blocked, minFeat)) {
         rod.topLayer = layer;
@@ -491,6 +609,34 @@ export function punchStackRodHoles(
   }
 }
 
+/** Residual rod disc sitting in plate steel after holes are punched. */
+export function rodSteelOverlapIssues(
+  plan: StackRodPlan,
+  parts: { family: string; index: number; id: string; plateKey: string; shape: Shape }[],
+  thickness: number,
+): StackRodIssue[] {
+  const out: StackRodIssue[] = [];
+  const r = plan.hole / 2;
+  if (r <= 0 || !plan.rods.length) return out;
+  for (const rod of plan.rods) {
+    for (const part of parts) {
+      if (part.family !== 'P') continue;
+      const lo = part.index * thickness;
+      if (rod.length <= lo + 1e-6) continue;
+      const area = shapeArea(intersection(part.shape, circle(rod.x, rod.y, r)));
+      if (area <= OVERLAP_AREA_MM2) continue;
+      out.push({
+        severity: 'error',
+        plateKey: part.plateKey,
+        partId: part.id,
+        at: [rod.x, rod.y],
+        message: `Rod ${rod.id} overlaps steel on ${part.id} (${area.toFixed(1)} mm²) — cut a hole or shorten the stick-out.`,
+      });
+    }
+  }
+  return out;
+}
+
 function removePart(allParts: StackRodPart[], plates: { def: { key: string }; parts: StackRodPart[] }[], part: StackRodPart) {
   const i = allParts.indexOf(part);
   if (i >= 0) allParts.splice(i, 1);
@@ -500,10 +646,34 @@ function removePart(allParts: StackRodPart[], plates: { def: { key: string }; pa
   }
 }
 
+function tryUnionOne(a: Shape, b: Shape, pads: number[]): Shape | null {
+  const direct = unionShapes(a, b);
+  if (direct.length === 1 && shapeArea(direct) > 0.5) return direct;
+  for (const pad of pads) {
+    if (pad <= 0) continue;
+    const closed = offset(offset(unionShapes(a, b), pad), -pad);
+    if (closed.length === 1 && shapeArea(closed) > 0.5) return closed;
+  }
+  return null;
+}
+
+function adoptShape(part: StackRodPart, shape: Shape) {
+  part.shape = shape;
+  part.area = shapeArea(shape);
+  part.perimeter = shapePerimeter(shape);
+  part.bbox = shapeBBox(shape);
+}
+
+function partDist(a: StackRodPart, b: StackRodPart): number {
+  const ca = islandCentroid(a.shape);
+  const cb = islandCentroid(b.shape);
+  return Math.hypot(ca[0] - cb[0], ca[1] - cb[1]);
+}
+
 /**
- * Drop or merge islands that cannot take a hole. Keep mode leaves the issues.
- * A successful drop/merge clears the error/warning so export can proceed,
- * except we never leave a floating island in place.
+ * Drop or merge islands that need a pole and cannot take a hole.
+ * Held islands are never touched. Merge unions into a same-layer neighbour
+ * or into a part on the layer below; it never falls back to drop.
  */
 export function applyStackRodSmall(
   allParts: StackRodPart[],
@@ -514,37 +684,63 @@ export function applyStackRodSmall(
 ): void {
   if (mode === 'keep' || !plan.issues.length) return;
   const pad = Math.max(0.2, kerf);
+  const weldPads = [0, pad, 2, 4, 8, 12];
   const leftover: StackRodIssue[] = [];
   for (const issue of plan.issues) {
+    if (issue.held) {
+      leftover.push(issue);
+      continue;
+    }
     const part = allParts.find((p) => p.id === issue.partId && p.plateKey === issue.plateKey);
     if (!part) {
       leftover.push(issue);
       continue;
     }
-    const plate = plates.find((pl) => pl.def.key === part.plateKey);
-    const siblings = (plate?.parts ?? []).filter((p) => p !== part);
-    if (mode === 'merge' && siblings.length) {
+    if (mode === 'merge') {
+      const plate = plates.find((pl) => pl.def.key === part.plateKey);
+      const siblings = (plate?.parts ?? []).filter((p) => p !== part);
       const touching = siblings.filter((s) => part.shape[0] && s.shape[0] && piecesTouch(part.shape[0], s.shape[0], pad));
-      const best = (touching.length ? touching : siblings).slice().sort((a, b) => b.area - a.area)[0];
-      if (best) {
-        const merged = unionShapes(best.shape, part.shape);
-        if (merged.length) {
-          best.shape = merged.length === 1 ? merged : [merged.reduce((a, b) => (shapeArea([a]) >= shapeArea([b]) ? a : b))];
-          best.area = shapeArea(best.shape);
-          best.perimeter = shapePerimeter(best.shape);
-          best.bbox = shapeBBox(best.shape);
+      const sameLayer = [
+        ...touching.slice().sort((a, b) => b.area - a.area),
+        ...siblings.filter((s) => !touching.includes(s)).sort((a, b) => partDist(a, part) - partDist(b, part) || b.area - a.area),
+      ];
+      let host: StackRodPart | null = null;
+      for (const best of sameLayer) {
+        const merged = tryUnionOne(best.shape, part.shape, weldPads);
+        if (!merged) continue;
+        adoptShape(best, merged);
+        best.etch = [...best.etch, ...part.etch];
+        host = best;
+        break;
+      }
+      if (!host) {
+        const below = allParts.filter((p) => p !== part && p.family === part.family && p.index === part.index - 1);
+        const overlapping = below.filter((b) => shapeArea(intersection(part.shape, b.shape)) > 0);
+        const belowOrdered = [
+          ...overlapping.slice().sort((a, b) => b.area - a.area),
+          ...below.filter((b) => !overlapping.includes(b)).sort((a, b) => partDist(a, part) - partDist(b, part) || b.area - a.area),
+        ];
+        for (const best of belowOrdered) {
+          const merged = tryUnionOne(best.shape, part.shape, weldPads);
+          if (!merged) continue;
+          adoptShape(best, merged);
           best.etch = [...best.etch, ...part.etch];
-          removePart(allParts, plates, part);
-          leftover.push({
-            ...issue,
-            severity: 'info',
-            message: `Merged ${part.id} into ${best.id} (too small for a support rod).`,
-          });
-          continue;
+          host = best;
+          break;
         }
       }
+      if (host) {
+        removePart(allParts, plates, part);
+        leftover.push({
+          ...issue,
+          severity: 'info',
+          message: `Merged ${part.id} into ${host.id} (too small for a support rod).`,
+        });
+        continue;
+      }
+      leftover.push(issue);
+      continue;
     }
-    // drop, or merge fallback
     removePart(allParts, plates, part);
     leftover.push({
       ...issue,

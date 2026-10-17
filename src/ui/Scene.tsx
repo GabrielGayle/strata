@@ -321,12 +321,18 @@ function StackRods({ model }: { model: Model }) {
   return (
     <group userData={{ strata: 'stack-rods' }}>
       {plan.rods.map((r) => {
-        const mid = new THREE.Vector3(...r.a).add(new THREE.Vector3(...r.b)).multiplyScalar(0.5);
+        const a = new THREE.Vector3(...r.a);
+        const b = new THREE.Vector3(...r.b);
+        const mid = a.clone().add(b).multiplyScalar(0.5);
+        const dir = b.clone().sub(a);
+        const len = dir.length() || r.length;
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
         return (
           <mesh
             key={r.id}
             geometry={geo}
-            scale={[r.diameter / 2, r.length, r.diameter / 2]}
+            quaternion={q}
+            scale={[r.diameter / 2, len, r.diameter / 2]}
             position={mid}
             userData={{ strata: 'stack-rod', id: r.id }}
           >

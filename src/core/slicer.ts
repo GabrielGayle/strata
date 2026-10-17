@@ -40,8 +40,9 @@ import { finishPlatePieces, type FragmentEvent } from './fragments';
 import { movePlane, type PartMoves } from './moves';
 import {
   applyStackRodSmall,
+  applyStackRodWorld,
+  clipEtchFromFastenerHoles,
   fastenerDisks,
-  holeDisks,
   LABEL_HOLE_CLEAR_MM,
   pathsHitDisk,
   placeStackRods,
@@ -78,6 +79,10 @@ export interface Part {
   etch: Path[];
   labelPaths: Path[];
   labelAt: Vec2 | null;
+  /** Map credits / edition ETCH, generated after slice for export and fit-check. */
+  exportEtch?: Path[];
+  /** OSM ENGRAVE paths, generated after slice for export and fit-check. */
+  exportEngrave?: Path[];
   area: number;
   perimeter: number;
   bbox: BBox;
@@ -1092,10 +1097,16 @@ function distToBoundary(p: Vec2, ex: ExPoly): number {
   return best;
 }
 
-export function placeLabel(text: string, piece: ExPoly, prefer: Vec2, hMax: number): { paths: Path[]; at: Vec2 } | null {
+export function placeLabel(
+  text: string,
+  piece: ExPoly,
+  prefer: Vec2,
+  hMax: number,
+  opts?: { clearHoles?: boolean },
+): { paths: Path[]; at: Vec2 } | null {
   const shape = [piece];
   const bb = bboxOf([piece.outer]);
-  const disks = holeDisks(shape);
+  const disks = opts?.clearHoles ? fastenerDisks(shape) : [];
   const holeClear = LABEL_HOLE_CLEAR_MM;
   for (const h of [hMax, hMax * 0.7, hMax * 0.5]) {
     const w = textWidth(text, h);
@@ -1116,18 +1127,22 @@ export function placeLabel(text: string, piece: ExPoly, prefer: Vec2, hMax: numb
       for (const path of [piece.outer, ...piece.holes])
         for (const q of path) if (q[0] > cx - w / 2 - 1 && q[0] < cx + w / 2 + 1 && q[1] > cy - h / 2 - 1 && q[1] < cy + h / 2 + 1) return false;
       if (!pts.every((p) => distToBoundary(p, piece) >= 1)) return false;
-      const minX = cx - w / 2, maxX = cx + w / 2, minY = cy - h / 2, maxY = cy + h / 2;
-      for (const d of disks) {
-        const qx = Math.max(minX, Math.min(d.c[0], maxX));
-        const qy = Math.max(minY, Math.min(d.c[1], maxY));
-        if (Math.hypot(d.c[0] - qx, d.c[1] - qy) < d.r + holeClear) return false;
+      if (disks.length) {
+        const minX = cx - w / 2, maxX = cx + w / 2, minY = cy - h / 2, maxY = cy + h / 2;
+        for (const d of disks) {
+          const qx = Math.max(minX, Math.min(d.c[0], maxX));
+          const qy = Math.max(minY, Math.min(d.c[1], maxY));
+          if (Math.hypot(d.c[0] - qx, d.c[1] - qy) < d.r + holeClear) return false;
+        }
+        const paths = strokeTextCentered(text, cx, cy, h);
+        if (disks.some((d) => pathsHitDisk(paths, d.c, d.r + holeClear))) return false;
       }
-      const paths = strokeTextCentered(text, cx, cy, h);
-      if (disks.some((d) => pathsHitDisk(paths, d.c, d.r + holeClear))) return false;
       return true;
     };
     if (fits(prefer[0], prefer[1])) return { paths: strokeTextCentered(text, prefer[0], prefer[1], h), at: prefer };
-    const step = Math.max(h * 0.6, (bb.maxX - bb.minX) / 32, (bb.maxY - bb.minY) / 32);
+    const step = opts?.clearHoles
+      ? Math.max(h * 0.6, (bb.maxX - bb.minX) / 32, (bb.maxY - bb.minY) / 32)
+      : Math.max(h, (bb.maxX - bb.minX) / 24, (bb.maxY - bb.minY) / 24);
     const cands: Vec2[] = [];
     for (let y = bb.minY + h; y <= bb.maxY - h; y += step) for (let x = bb.minX + w / 2 + 1; x <= bb.maxX - w / 2 - 1; x += step) cands.push([x, y]);
     cands.sort((a, b) => Math.hypot(a[0] - prefer[0], a[1] - prefer[1]) - Math.hypot(b[0] - prefer[0], b[1] - prefer[1]));
@@ -1136,17 +1151,26 @@ export function placeLabel(text: string, piece: ExPoly, prefer: Vec2, hMax: numb
   return null;
 }
 
-function labelPlatePiece(id: string, ex: ExPoly, v: Values, e: number, tune: PlateTune | null, def: PlateDef | null): { paths: Path[]; at: Vec2 | null } {
+function labelPlatePiece(
+  id: string,
+  ex: ExPoly,
+  v: Values,
+  e: number,
+  tune: PlateTune | null,
+  def: PlateDef | null,
+  clearHoles = false,
+): { paths: Path[]; at: Vec2 | null } {
   const bb = bboxOf([ex.outer]);
   const hLab = Math.min(v.labelHeight, e > 0 ? e * 0.5 : v.labelHeight);
   const prefer: Vec2 = [(bb.minX + bb.maxX) / 2, e > 0 && bb.minY < -e / 2 ? -e / 2 : bb.minY + hLab];
-  const lab = placeLabel(id, ex, prefer, hLab);
+  const holeOpts = clearHoles ? { clearHoles: true } : undefined;
+  const lab = placeLabel(id, ex, prefer, hLab, holeOpts);
   let paths = lab?.paths ?? [];
   if (tune?.label && def) {
     const cx = (def.u0 + def.u1) / 2;
     const mid = tune.nodes && tune.nodes.length >= 2 ? -e + ((tune.nodes[0] + tune.nodes[1]) / 2) * tune.cut : (bb.minY + bb.maxY) / 2;
     const h = Math.min(Math.max(v.labelHeight, 7), (bb.maxY - bb.minY) * 0.16);
-    const syl = placeLabel(tune.label, ex, [cx, mid], h);
+    const syl = placeLabel(tune.label, ex, [cx, mid], h, holeOpts);
     if (syl) paths = [...paths, ...syl.paths];
   }
   return { paths, at: lab?.at ?? null };
@@ -1542,25 +1566,25 @@ export function slice(input: SliceInput): SliceResult {
       .map((p, k) => ({ x: p[0], y: p[1], topLayer: pinTop[k] ?? -1, radius: pinR }))
       .filter((c) => c.topLayer >= 0);
     const rodSet = stackRodSettings(v, baseTop(v));
+    const p0 = plates.find((pl) => pl.def.family === 'P');
+    if (p0) rodSet.plane = p0.def.plane;
     stackRods = placeStackRods(islands, rodSet, existing);
     applyStackRodSmall(allParts, plates, stackRods, rodSet.small, v.kerf);
     const maxLayer = Math.max(0, ...plates.filter((pl) => pl.def.family === 'P').map((pl) => pl.def.index));
     resolveStackRodStickOut(stackRods, allParts, rodSet, maxLayer);
     punchStackRodHoles(allParts, stackRods);
+    applyStackRodWorld(
+      stackRods,
+      plates.filter((pl) => pl.def.family === 'P').map((pl) => ({ index: pl.def.index, plane: pl.def.plane })),
+      rodSet,
+    );
     for (const part of allParts) {
       if (part.family !== 'P' || !part.shape[0]) continue;
       const di = defs.findIndex((d) => d.key === part.plateKey);
-      const lab = labelPlatePiece(part.id, part.shape[0], v, e, tuning?.[di] ?? null, defs[di] ?? null);
+      const lab = labelPlatePiece(part.id, part.shape[0], v, e, tuning?.[di] ?? null, defs[di] ?? null, true);
       part.labelPaths = lab.paths;
       part.labelAt = lab.at;
-      if (part.etch.length) {
-        const keep = offset(part.shape, -0.8);
-        const avoid = fastenerDisks(part.shape).map((d) => ({
-          outer: circlePath(d.c[0], d.c[1], d.r + LABEL_HOLE_CLEAR_MM),
-          holes: [] as Path[],
-        }));
-        part.etch = clipLines(part.etch, avoid.length ? difference(keep, avoid) : keep);
-      }
+      if (part.etch.length) part.etch = clipEtchFromFastenerHoles(part.etch, part.shape, LABEL_HOLE_CLEAR_MM, 0.8);
     }
   }
 
