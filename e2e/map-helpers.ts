@@ -280,6 +280,27 @@ export async function snapViewportDir(page: Page, dir: 'iso' | 'front' | 'side' 
   if (!ortho && on?.includes('on')) await orthoBtn.click();
 }
 
+export function scalePngToHeight(src: Buffer, height: number): Buffer {
+  const png = PNG.sync.read(src);
+  const scale = height / Math.max(1, png.height);
+  const w = Math.max(1, Math.round(png.width * scale));
+  const h = height;
+  const out = new PNG({ width: w, height: h });
+  for (let y = 0; y < h; y++) {
+    const sy = Math.min(png.height - 1, Math.round(y / scale));
+    for (let x = 0; x < w; x++) {
+      const sx = Math.min(png.width - 1, Math.round(x / scale));
+      const i = (png.width * sy + sx) << 2;
+      const j = (w * y + x) << 2;
+      out.data[j] = png.data[i];
+      out.data[j + 1] = png.data[i + 1];
+      out.data[j + 2] = png.data[i + 2];
+      out.data[j + 3] = png.data[i + 3];
+    }
+  }
+  return PNG.sync.write(out, { deflateLevel: 9 });
+}
+
 export function downscalePng(src: Buffer, maxWidth = 400): Buffer {
   const png = PNG.sync.read(src);
   const scale = Math.min(1, maxWidth / png.width);

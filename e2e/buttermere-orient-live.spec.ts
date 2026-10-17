@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { PNG } from 'pngjs';
 import {
   applyMapBbox,
   setBaseSizeMm,
@@ -8,6 +9,7 @@ import {
   clickQuickMap,
   compressPngFile,
   downscalePng,
+  scalePngToHeight,
   openApp,
   openWorkspaceTab,
   snapViewportDir,
@@ -62,9 +64,8 @@ test('live Buttermere 500×500: 3D Top north matches Map preview', async ({ page
       { timeout: 30_000 },
     )
     .toBeGreaterThan(16);
-  const mapBuf = Buffer.from(await preview.screenshot({ type: 'png' }));
-
+  const mapBuf = Buffer.from(await page.locator('.map-preview-pane').screenshot({ type: 'png' }));
   const dest = join(shotDir, shotName);
-  await writeFile(dest, downscalePng(stitchPngSideBySide(threeBuf, mapBuf), 720));
+  await writeFile(dest, downscalePng(stitchPngSideBySide(threeBuf, scalePngToHeight(mapBuf, PNG.sync.read(threeBuf).height)), 720));
   compressPngFile(dest);
 });
