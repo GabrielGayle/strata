@@ -7,6 +7,7 @@ import {
   quantileBreaks,
   applyLayerBudget,
   injectPinnedBreaks,
+  localBreakStep,
 } from '../src/core/mapLayerBudget';
 import { createPipeline } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
@@ -116,7 +117,7 @@ describe('map layer budget + exaggeration', () => {
     expect(equalBreaks(0, 99, 8).length).toBe(8);
   });
 
-  it('reserves each lake surface as a snapping level', () => {
+  it('adds lake surfaces on top of the budget and keeps the max-height class', () => {
     const clustered = [
       ...Array.from({ length: 80 }, () => 100.72),
       ...Array.from({ length: 80 }, () => 400),
@@ -128,10 +129,14 @@ describe('map layer budget + exaggeration', () => {
     expect(mixed.some((p) => Math.abs(p - 98.67) < 0.01)).toBe(true);
     expect(mixed.some((p) => Math.abs(p - 100.72) < 0.01)).toBe(true);
     expect(mixed.some((p) => Math.abs(p - 493.39) < 0.01)).toBe(true);
-    expect(mixed.length).toBeGreaterThanOrEqual(3);
-    expect(mixed.length).toBeLessThanOrEqual(8);
+    for (const b of jenks) {
+      expect(mixed.some((p) => Math.abs(p - b) < 0.05)).toBe(true);
+    }
+    expect(mixed.length).toBeGreaterThanOrEqual(new Set(jenks.map((b) => b.toFixed(2))).size);
+    expect(Math.max(...mixed)).toBeCloseTo(Math.max(Math.max(...jenks), Math.max(...pins)), 5);
     const near = mixed.filter((p) => Math.abs(p - 98.67) < 0.05);
     expect(near).toHaveLength(1);
+    expect(localBreakStep(400, jenks)).toBeGreaterThan(0);
   });
 
   it('floors water cells and never snaps them above the raw DEM', () => {

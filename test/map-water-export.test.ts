@@ -1,12 +1,13 @@
 import proj4 from 'proj4';
 import { describe, expect, it } from 'vitest';
-import { applyLayerBudget, computeLayerBreaks } from '../src/core/mapLayerBudget';
+import { applyLayerBudget, computeLayerBreaks, localBreakStep } from '../src/core/mapLayerBudget';
 import { mapDepthToGray, sampleMapHeightGrid } from '../src/core/mapPlateHeight';
 import { buildMapBundle } from '../src/core/mapPipeline';
 import { metricBounds, reprojectResample } from '../src/core/mapProject';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import {
   applyLocalWaterResult,
+  cellOnStream,
   pointInWaterBody,
   restoreWaterSurfaces,
   waterBodiesFromOverpass,
@@ -93,7 +94,10 @@ function twoLakeDem(): { grid: Float32Grid; boxes: { crummock: Box; buttermere: 
     for (let col = 0; col < w; col++) {
       const x = b.west + (col + 0.5) * pixelW;
       const y = b.south + (row + 0.5) * pixelH;
+      const u = col / (w - 1);
+      const v = row / (h - 1);
       let z = LAND_M + 8 * Math.sin(col / 6) * Math.cos(row / 7);
+      if (u < 0.2 && v < 0.22) z = 850 - 80 * Math.hypot(u / 0.2, v / 0.22);
       if (inBox(x, y, boxes.bleaberry)) z = BLEABERRY_M;
       else if (inBox(x, y, boxes.buttermere)) z = BUTTERMERE_M;
       else if (inBox(x, y, boxes.crummock)) z = col % 9 === 0 ? CRUMMOCK_M - 4 : CRUMMOCK_M;
@@ -165,6 +169,33 @@ function namedLake(bodies: WaterBody[], re: RegExp): WaterBody {
   return hit;
 }
 
+function namedStream(bodies: WaterBody[], re: RegExp): WaterBody {
+  const hit = bodies.find((b) => b.kind === 'stream' && re.test(b.name ?? ''));
+  if (!hit) throw new Error(`missing stream ${re}`);
+  return hit;
+}
+
+function gridMax(grid: Float32Grid): number {
+  let m = -Infinity;
+  for (const z of grid.data) if (Number.isFinite(z) && z > m) m = z;
+  return m;
+}
+
+function bundleOpts(
+  grid: Float32Grid,
+  osm: { elements: { type: string; tags: Record<string, string>; geometry: { lon: number; lat: number }[] }[] },
+) {
+  return {
+    eaLoader: async () => grid,
+    overpass: async () => osm,
+    allowOverpassNetwork: false as const,
+    fetch: async () => {
+      throw new Error('water-export test must not mosaic tiles');
+    },
+    stack: { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as const },
+  };
+}
+
 describe('water through layer budget and export plates', () => {
   it('final plate heights keep distinct lakes and never raise water above the DEM', async () => {
     const { grid, boxes } = twoLakeDem();
@@ -180,15 +211,7 @@ describe('water through layer budget and export plates', () => {
       resM: 48,
     });
     const raw = reprojectResample(grid, spec);
-    const bundle = await buildMapBundle(spec, {
-      eaLoader: async () => grid,
-      overpass: async () => osm,
-      allowOverpassNetwork: false,
-      fetch: async () => {
-        throw new Error('water-export test must not mosaic tiles');
-      },
-      stack: { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' },
-    });
+    const bundle = await buildMapBundle(spec, bundleOpts(grid, osm));
 
     const bodies = waterBodiesFromOverpass(osm, spec, bundle.metric.crs);
     const classified = applyLocalWaterResult(raw, bodies);
@@ -264,6 +287,89 @@ describe('water through layer budget and export plates', () => {
     expect(median(bleaberryH)).toBeGreaterThan(median(butterH) + 4);
   });
 
+  it('with water on, the top class and summit cells match water off within one step', async () => {
+    const { grid, boxes } = twoLakeDem();
+    const bounds = metricBounds(NEASDEN_FAST_BBOX, 'EPSG:27700');
+    const osm = osmFor(boxes, bounds);
+    const base = {
+      bbox: NEASDEN_FAST_BBOX,
+      source: 'ea-dtm' as const,
+      exaggeration: 4 as const,
+      layerBudget: 'jenks' as const,
+      engrave: { enabled: false, features: [] as string[] },
+      resM: 48,
+    };
+    const off = await buildMapBundle(defaultMapSpec({ ...base, water: 'raw' }), bundleOpts(grid, osm));
+    const on = await buildMapBundle(defaultMapSpec({ ...base, water: 'flat' }), bundleOpts(grid, osm));
+    const raw = reprojectResample(grid, defaultMapSpec(base));
+    const bodies = waterBodiesFromOverpass(osm, { bbox: NEASDEN_FAST_BBOX }, on.metric.crs);
+    const classified = applyLocalWaterResult(raw, bodies);
+    const topOff = gridMax(off.metric);
+    const topOn = gridMax(on.metric);
+    const landBreaks = off.asset.map?.layerBreaksM ?? [];
+    const step = localBreakStep(topOff, landBreaks);
+    expect(topOn, `summit class dropped from ${topOff.toFixed(1)} to ${topOn.toFixed(1)}`).toBeGreaterThanOrEqual(topOff - step - 1e-3);
+    expect(Math.abs(topOn - topOff)).toBeLessThanOrEqual(step + 1e-3);
+
+    let summitCells = 0;
+    let mismatch = 0;
+    for (let i = 0; i < on.metric.data.length; i++) {
+      if (classified.waterKind[i]) continue;
+      const zOff = off.metric.data[i];
+      const zOn = on.metric.data[i];
+      if (!Number.isFinite(zOff) || !Number.isFinite(zOn)) continue;
+      if (zOff < topOff - step) continue;
+      summitCells++;
+      if (Math.abs(zOn - zOff) > step + 1e-3) mismatch++;
+    }
+    expect(summitCells).toBeGreaterThan(4);
+    expect(mismatch, 'land summit cells must snap like water-off').toBe(0);
+  });
+
+  it('named streams drop at most one local Jenks step and never sit above the DEM', async () => {
+    const { grid, boxes } = twoLakeDem();
+    const bounds = metricBounds(NEASDEN_FAST_BBOX, 'EPSG:27700');
+    const osm = osmFor(boxes, bounds);
+    const spec = defaultMapSpec({
+      bbox: NEASDEN_FAST_BBOX,
+      source: 'ea-dtm',
+      water: 'flat',
+      exaggeration: 4,
+      layerBudget: 'jenks',
+      engrave: { enabled: false, features: [] },
+      resM: 48,
+    });
+    const raw = reprojectResample(grid, spec);
+    const bundle = await buildMapBundle(spec, bundleOpts(grid, osm));
+    const bodies = waterBodiesFromOverpass(osm, spec, bundle.metric.crs);
+    const classified = applyLocalWaterResult(raw, bodies);
+    const breaks = computeLayerBreaks(raw, 12, 'jenks').breaksM;
+    const streams = [namedStream(bodies, /dodsgill/i), namedStream(bodies, /dry gill/i)];
+    for (const stream of streams) {
+      let cells = 0;
+      let above = 0;
+      let worst = 0;
+      for (let row = 0; row < bundle.metric.h; row++) {
+        for (let col = 0; col < bundle.metric.w; col++) {
+          const i = row * bundle.metric.w + col;
+          if (classified.waterKind[i] === WATER_KIND_LAKE) continue;
+          if (!cellOnStream(bundle.metric, col, row, stream)) continue;
+          const z = bundle.metric.data[i];
+          const rawZ = raw.data[i];
+          if (!Number.isFinite(z) || !Number.isFinite(rawZ)) continue;
+          cells++;
+          if (z > rawZ + 1e-3) above++;
+          worst = Math.max(worst, rawZ - z);
+          const step = localBreakStep(rawZ, breaks);
+          expect(rawZ - z, `${stream.name} drop ${ (rawZ - z).toFixed(2) } m > step ${step.toFixed(2)}`).toBeLessThanOrEqual(step + 1e-3);
+        }
+      }
+      expect(cells, stream.name).toBeGreaterThan(4);
+      expect(above, stream.name).toBe(0);
+      expect(worst).toBeGreaterThanOrEqual(0);
+    }
+  });
+
   it('restore after snap keeps each lake on its own level', () => {
     const w = 24;
     const h = 12;
@@ -301,10 +407,10 @@ describe('water through layer budget and export plates', () => {
       name: 'Buttermere',
     };
     const water = applyLocalWaterResult(grid, [crummock, buttermere]);
-    const budget = computeLayerBreaks(water.grid, 6, 'jenks', water.lakeSurfacesM);
-    const snapped = applyLayerBudget(water.grid, budget.breaksM, { floorMask: water.waterKind, cap: grid.data });
+    const land = computeLayerBreaks(grid, 6, 'jenks');
+    const snapped = applyLayerBudget(grid, land.breaksM);
     const simplified = simplifyMetricGrid(snapped, { kerfMm: 0.2, pixelSizeM: 10 });
-    const final = restoreWaterSurfaces(simplified.grid, grid, water);
+    const final = restoreWaterSurfaces(simplified.grid, grid, water, land.breaksM);
     const top = final.data[1 * w + 4];
     const bottom = final.data[10 * w + 4];
     expect(Math.abs(top - bottom)).toBeGreaterThan(1);

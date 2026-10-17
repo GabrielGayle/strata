@@ -1,5 +1,6 @@
 // Water: each lake flattens to its own DEM surface; streams follow (or inset) local terrain.
 import type { Float32Grid } from './mapGrid';
+import { localBreakStep, snapElevation } from './mapLayerBudget';
 import { lonLatToMetric } from './mapProject';
 import type { MapSpec } from './mapSpec';
 import { pointInPath, type Path } from './geom2d';
@@ -371,21 +372,67 @@ export function applyLocalWater(grid: Float32Grid, bodies: WaterBody[]): Float32
   return applyLocalWaterResult(grid, bodies).grid;
 }
 
-/** Re-apply lake surfaces / stream caps after snapping and simplify so water never sits above the DEM. */
-export function restoreWaterSurfaces(grid: Float32Grid, raw: Float32Grid, water: Pick<LocalWaterResult, 'waterKind' | 'lakeLevelM'>): Float32Grid {
+export function cellOnStream(grid: Float32Grid, col: number, row: number, body: WaterBody): boolean {
+  if (body.kind !== 'stream') return false;
+  const half = Math.max(Math.abs(grid.transform.pixelW), Math.abs(grid.transform.pixelH), 2);
+  const { x, y } = cellCentre(grid, col, row);
+  const closed = isClosed(body.path);
+  if (closed && pointInPath([x, y], body.path)) return true;
+  return distToPath(x, y, body.path) <= half;
+}
+
+/**
+ * Lakes: exact shoreline (never above the DEM).
+ * Streams: keep the land-like snap, cap to raw, and never sit more than one
+ * local break step below snapped terrain beside them.
+ */
+export function restoreWaterSurfaces(
+  grid: Float32Grid,
+  raw: Float32Grid,
+  water: Pick<LocalWaterResult, 'waterKind' | 'lakeLevelM'>,
+  breaksM: number[] = [],
+): Float32Grid {
   const out = copyGrid(grid);
+  const { w, h } = out;
   for (let i = 0; i < out.data.length; i++) {
-    const kind = water.waterKind[i];
-    if (!kind) continue;
+    if (water.waterKind[i] !== WATER_KIND_LAKE) continue;
     const cap = raw.data[i];
     if (!Number.isFinite(cap)) continue;
-    if (kind === WATER_KIND_LAKE) {
-      const surface = water.lakeLevelM[i];
-      out.data[i] = Number.isFinite(surface) ? Math.min(surface, cap) : Math.min(out.data[i], cap);
-    } else {
-      const z = out.data[i];
-      const lowered = Number.isFinite(z) ? Math.min(z, cap - STREAM_INSET_M) : cap - STREAM_INSET_M;
-      out.data[i] = Math.min(lowered, cap);
+    const surface = water.lakeLevelM[i];
+    out.data[i] = Number.isFinite(surface) ? Math.min(surface, cap) : Math.min(out.data[i], cap);
+  }
+  const dirs = [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+  ] as const;
+  for (let row = 0; row < h; row++) {
+    for (let col = 0; col < w; col++) {
+      const i = row * w + col;
+      if (water.waterKind[i] !== WATER_KIND_STREAM) continue;
+      const cap = raw.data[i];
+      if (!Number.isFinite(cap)) continue;
+      let z = breaksM.length ? snapElevation(cap, breaksM, 'up') : out.data[i];
+      if (!Number.isFinite(z)) z = cap;
+      z = Math.min(z, cap);
+      let besideLand = Infinity;
+      let besideAny = Infinity;
+      for (const [dx, dy] of dirs) {
+        const nc = col + dx;
+        const nr = row + dy;
+        if (nc < 0 || nr < 0 || nc >= w || nr >= h) continue;
+        const ni = nr * w + nc;
+        const nv = out.data[ni];
+        if (!Number.isFinite(nv)) continue;
+        besideAny = Math.min(besideAny, nv);
+        if (water.waterKind[ni] === WATER_KIND_LAND) besideLand = Math.min(besideLand, nv);
+      }
+      const beside = Number.isFinite(besideLand) ? besideLand : besideAny;
+      if (Number.isFinite(beside) && breaksM.length) {
+        z = Math.max(z, beside - localBreakStep(beside, breaksM));
+      }
+      out.data[i] = Math.min(z, cap);
     }
   }
   return out;

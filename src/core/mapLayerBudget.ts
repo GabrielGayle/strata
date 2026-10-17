@@ -95,22 +95,37 @@ export function jenksBreaks(values: number[], k: number): number[] {
   return breaks.sort((a, b) => a - b);
 }
 
-/** Merge near-duplicate pins, keep every lake, fill remaining slots from `breaks`. */
-export function injectPinnedBreaks(breaks: number[], pins: number[], k: number): number[] {
-  const merged: number[] = [];
-  const sortedPins = pins.filter((p) => Number.isFinite(p)).sort((a, b) => a - b);
-  for (const p of sortedPins) {
-    if (!merged.length || p - merged[merged.length - 1] >= PINNED_BREAK_EPS_M) merged.push(p);
+function uniqueSorted(values: number[]): number[] {
+  const sorted = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  const out: number[] = [];
+  for (const v of sorted) {
+    if (!out.length || v - out[out.length - 1] >= PINNED_BREAK_EPS_M) out.push(v);
   }
-  const target = Math.max(1, Math.min(512, Math.max(Math.round(k), merged.length)));
-  const out = [...merged];
-  const sortedBreaks = [...breaks].filter((b) => Number.isFinite(b)).sort((a, b) => a - b);
-  for (const b of sortedBreaks) {
-    if (out.length >= target) break;
-    if (out.some((p) => Math.abs(p - b) < PINNED_BREAK_EPS_M)) continue;
-    out.push(b);
+  return out;
+}
+
+/**
+ * Keep every original break (including the max-height class) and append lake pins.
+ * Pins are extra levels — they must not steal summit slots from the plate budget.
+ */
+export function injectPinnedBreaks(breaks: number[], pins: number[], _k?: number): number[] {
+  const out = uniqueSorted(breaks);
+  for (const p of uniqueSorted(pins)) {
+    if (out.some((b) => Math.abs(b - p) < PINNED_BREAK_EPS_M)) continue;
+    out.push(p);
   }
   return out.sort((a, b) => a - b);
+}
+
+/** Gap to the previous (or next) break at `z` — one local Jenks / quantile step. */
+export function localBreakStep(z: number, breaksM: number[]): number {
+  const sorted = uniqueSorted(breaksM);
+  if (sorted.length < 2) return SNAP_EPS_M;
+  let i = 0;
+  while (i < sorted.length - 1 && sorted[i] < z - SNAP_EPS_M) i++;
+  const hi = sorted[i]!;
+  const lo = sorted[Math.max(0, i - 1)]!;
+  return Math.max(SNAP_EPS_M, hi - lo);
 }
 
 export function computeLayerBreaks(
@@ -141,6 +156,13 @@ function snapFloor(z: number, sorted: number[]): number {
   let bi = sorted.length - 1;
   while (bi > 0 && sorted[bi] > z + SNAP_EPS_M) bi--;
   return sorted[bi] > z + SNAP_EPS_M ? z : sorted[bi];
+}
+
+/** Snap one elevation onto the layer-budget plateaus (land uses `up`). */
+export function snapElevation(z: number, breaksM: number[], dir: 'up' | 'down' = 'up'): number {
+  const sorted = uniqueSorted(breaksM);
+  if (!sorted.length || !Number.isFinite(z)) return z;
+  return dir === 'down' ? snapFloor(z, sorted) : snapCeil(z, sorted);
 }
 
 /** Snap elevations to the Jenks / quantile plateaus so the stamp sees ≤ plateCount levels. */

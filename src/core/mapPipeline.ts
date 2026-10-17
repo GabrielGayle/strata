@@ -4,7 +4,7 @@ import { fetchTerrariumGrid, getTileFetcher, type TileFetcher } from './mapTerra
 import { cachedTileFetch } from './mapCache';
 import { reprojectResample } from './mapProject';
 import { mapGridToDepth } from './mapToDepth';
-import { applyLayerBudget, computeLayerBreaks, type LayerBudgetMode } from './mapLayerBudget';
+import { applyLayerBudget, computeLayerBreaks, injectPinnedBreaks, type LayerBudgetMode } from './mapLayerBudget';
 import { formatExaggerationStackReadout, resolveExaggerationFactor } from './mapExaggeration';
 import { simplifyMetricGrid } from './mapSimplify';
 import { fetchCop30Grid, type Cop30GridLoader } from './mapCopernicus';
@@ -220,16 +220,18 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     stack,
   );
   const budgetMode = spec.layerBudget ?? stack.layerBudget ?? 'jenks';
-  const budget = computeLayerBreaks(metric, stack.plateCount, budgetMode, water?.lakeSurfacesM ?? []);
-  metric = applyLayerBudget(metric, budget.breaksM, {
-    floorMask: water?.waterKind,
-    cap: water ? rawMetric.data : undefined,
-  });
+  /** Same classes as water-off, including the max-height class. Lake pins are extra. */
+  const landBudget = computeLayerBreaks(rawMetric, stack.plateCount, budgetMode);
+  const budget = {
+    ...landBudget,
+    breaksM: injectPinnedBreaks(landBudget.breaksM, water?.lakeSurfacesM ?? [], stack.plateCount),
+  };
+  metric = applyLayerBudget(rawMetric, landBudget.breaksM);
   const simplified = simplifyMetricGrid(metric, {
     kerfMm: stack.kerfMm ?? 0.2,
     pixelSizeM: Math.abs(metric.transform.pixelW),
   });
-  metric = water ? restoreWaterSurfaces(simplified.grid, rawMetric, water) : simplified.grid;
+  metric = water ? restoreWaterSurfaces(simplified.grid, rawMetric, water, landBudget.breaksM) : simplified.grid;
   const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384, bbox: spec.bbox });
   const ortho = depth.mapOrtho;
   const readout = formatExaggerationStackReadout(
