@@ -1,5 +1,25 @@
 import { test, expect } from '@playwright/test';
-import { openApp, pickNeasdenPreset, openWorkspaceTab, assertPlateHeightMatchesRelief } from './map-helpers';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { openApp, pickNeasdenPreset, openWorkspaceTab, waitForMapReady, assertPlateHeightMatchesRelief } from './map-helpers';
+
+const LIVE_SHOT = '/opt/cursor/artifacts/screenshots';
+
+async function readFit(page: import('@playwright/test').Page) {
+  await expect(page.locator('.statusbar')).not.toContainText(/updating checks/i);
+  const errorsText = await page.locator('.status-bar-field').filter({ hasText: /errors/ }).textContent();
+  const warningsText = await page.locator('.status-bar-field').filter({ hasText: /warnings/ }).textContent();
+  const thin = await page.locator('.issue').filter({ hasText: /narrower than 2 mm/ }).count();
+  const kerf = await page.locator('.issue').filter({ hasText: /Gap narrower than the/ }).count();
+  return {
+    errors: Number(errorsText?.match(/(\d+)\s+errors/)?.[1] ?? -1),
+    warnings: Number(warningsText?.match(/(\d+)\s+warnings/)?.[1] ?? -1),
+    thin,
+    kerf,
+    errorsText: errorsText?.trim() ?? '',
+    warningsText: warningsText?.trim() ?? '',
+  };
+}
 
 test.skip(!process.env.LIVE_MAP, 'Set LIVE_MAP=1 to run live network map smoke tests');
 
@@ -83,4 +103,39 @@ test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page
     .toBeGreaterThan(3);
 
   await expect(page.locator('.issue').filter({ hasText: /narrower than 2 mm/ })).toHaveCount(0);
+});
+
+test('live Neasden ×11/×21 upright Vermilion and Stamped: 0 errors, no 2 mm thin', async ({ page }) => {
+  test.setTimeout(600_000);
+  await mkdir(LIVE_SHOT, { recursive: true });
+  await openApp(page);
+  await pickNeasdenPreset(page);
+  await openWorkspaceTab(page, 'Map');
+
+  const log: Record<string, Awaited<ReturnType<typeof readFit>>> = {};
+
+  const check = async (label: string, ex: '11' | '21') => {
+    await page.getByLabel('Vertical exaggeration').selectOption(ex);
+    await waitForMapReady(page);
+    await expect(page.locator('.statusbar')).not.toContainText(/updating checks/i);
+    const fit = await readFit(page);
+    log[label] = fit;
+    // eslint-disable-next-line no-console
+    console.log(`live app ${label}`, fit);
+    await page.locator('.statusbar').screenshot({ path: join(LIVE_SHOT, `neasden_${label.replace(/\s+/g, '_')}_status.png`) });
+    expect(fit.errors, `${label} ${fit.errorsText}`).toBe(0);
+    expect(fit.thin, `${label} still has 2 mm thin warnings`).toBe(0);
+    expect(fit.kerf, `${label} still has kerf-narrow gaps`).toBe(0);
+  };
+
+  await check('upright x11', '11');
+  await check('upright x21', '21');
+
+  await page.getByRole('button', { name: /Presets/ }).click();
+  await page.getByRole('button', { name: /Stamped stack/ }).click();
+  await expect(page.locator('.status-bar-field').filter({ hasText: /parts/ })).toContainText(/\d+\s+parts/, { timeout: 90_000 });
+  await pickNeasdenPreset(page);
+  await openWorkspaceTab(page, 'Map');
+  await check('stamped x11', '11');
+  await check('stamped x21', '21');
 });
