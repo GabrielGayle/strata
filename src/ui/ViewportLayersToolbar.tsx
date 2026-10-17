@@ -1,7 +1,7 @@
 import { useStore } from '../state/store';
 import { VIEWPORT_LAYER_LABELS, type ViewportLayerId } from './viewportLayers';
 
-const ORDER: ViewportLayerId[] = ['grid', 'base', 'concrete', 'backing', 'frame', 'plates', 'engraving', 'water', 'labels'];
+const ORDER: ViewportLayerId[] = ['grid', 'base', 'concrete', 'frame', 'plates', 'fin', 'engraving', 'water', 'labels'];
 
 export default function ViewportLayersToolbar() {
   const layers = useStore((s) => s.ui.viewportLayers);

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { applyPreset, newProject, PRESETS } from '../src/core/project';
-import { DEFAULT_VIEWPORT_LAYERS, loadViewportLayers, saveViewportLayers } from '../src/ui/viewportLayers';
+import { DEFAULT_VIEWPORT_LAYERS, loadViewportLayers, saveViewportLayers, showInsertMesh } from '../src/ui/viewportLayers';
 import { useStore } from '../src/state/store';
 
 const assets: Assets = { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null };
@@ -28,6 +28,17 @@ describe('viewport layer toggles', () => {
     saveViewportLayers({ ...DEFAULT_VIEWPORT_LAYERS, grid: false, plates: false });
     expect(loadViewportLayers().grid).toBe(false);
     expect(loadViewportLayers().plates).toBe(false);
+  });
+
+  it('maps a stored Backing toggle onto Fin', () => {
+    mem['strata.viewport.layers.v1'] = JSON.stringify({ backing: false, plates: true });
+    expect(loadViewportLayers().fin).toBe(false);
+    expect(loadViewportLayers().plates).toBe(true);
+  });
+
+  it('keeps the fin visible when plates are hidden', () => {
+    expect(showInsertMesh({ ...DEFAULT_VIEWPORT_LAYERS, plates: false, fin: true })).toBe(true);
+    expect(showInsertMesh({ ...DEFAULT_VIEWPORT_LAYERS, plates: true, fin: false })).toBe(false);
   });
 
   it('does not change export geometry (plate count / BOM)', () => {

@@ -2764,6 +2764,19 @@ canvas.thumb {
 }
 .help-sheet {
   width: min(820px, 100%);
+  max-height: min(90vh, 720px);
+}
+.help-sheet-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.help-sheet kbd {
+  background: var(--field-bg);
+  color: var(--chrome-fg);
+  border-color: var(--chrome-muted);
 }
 
 .design-box {
