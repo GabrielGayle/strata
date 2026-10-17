@@ -28,18 +28,25 @@ import {
 import ViewportLayersToolbar from './ViewportLayersToolbar';
 import { DEFAULT_VIEWPORT_LAYERS } from './viewportLayers';
 
-export function snapDirection(model: Model, dir: Snap): { dir: THREE.Vector3; up: THREE.Vector3 } {
+export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
   const up = new THREE.Vector3(0, 1, 0);
   switch (dir) {
     case 'front':
-      // looking along the stack, through the plates
+      // From the north end (−X) looking south. Map world +Z is west, so east is on the left.
       return { dir: new THREE.Vector3(-f.stack[0], 0.04, -f.stack[1]).normalize(), up };
     case 'side':
       return { dir: new THREE.Vector3(f.across[0], 0.04, f.across[1]).normalize(), up };
     case 'top':
-      // plan view from the front end: front plate at the bottom, stack running up the screen
-      return { dir: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(f.stack[0], 0, f.stack[1]) };
+      // Maps: north / S-01 (front) at the top. East is screen-right because +Z is west
+      // (South × Up = West). Do not roll this camera to fake an E–W flip.
+      // Other designs keep the front plate at the bottom, stack running up the screen.
+      return {
+        dir: new THREE.Vector3(0, 1, 0),
+        up: mapNorthUp
+          ? new THREE.Vector3(-f.stack[0], 0, -f.stack[1])
+          : new THREE.Vector3(f.stack[0], 0, f.stack[1]),
+      };
     default:
       return { dir: new THREE.Vector3(0.95, 0.75, 1.25).normalize(), up };
   }
@@ -53,14 +60,14 @@ function ResumeWhenVisible({ parked }: { parked: boolean }) {
   return null;
 }
 
-export function CameraRig({ model, snap, ortho }: { model: Model; snap: { dir: Snap; n: number; follow?: boolean }; ortho: boolean }) {
+export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; snap: { dir: Snap; n: number; follow?: boolean }; ortho: boolean; mapNorthUp?: boolean }) {
   const { camera, controls, size } = useThree() as any;
   // a "follow" snap (preset load) frames again once the new model arrives a frame later
   const pending = useRef<{ n: number; model: Model } | null>(null);
   const frame = (m: Model) => {
     const { center, size: s } = modelBounds(m);
     const { near, far, orthoSpan } = clipPlanesForBounds(s);
-    const { dir, up } = snapDirection(m, snap.dir);
+    const { dir, up } = snapDirection(m, snap.dir, mapNorthUp);
     const fov = 32;
     const dist = (s * 0.8) / Math.tan(((fov / 2) * Math.PI) / 180);
     camera.up.copy(up);
@@ -81,9 +88,9 @@ export function CameraRig({ model, snap, ortho }: { model: Model; snap: { dir: S
     if (!controls) return;
     frame(model);
     pending.current = snap.follow ? { n: snap.n, model } : null;
-    // re-frame only on explicit snaps or camera type changes, not on every regenerate
+    // re-frame only on explicit snaps, camera type, or map north-up (top view flips)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snap.n, snap.dir, ortho, controls, camera]);
+  }, [snap.n, snap.dir, ortho, controls, camera, mapNorthUp]);
   useEffect(() => {
     const p = pending.current;
     if (!controls || !p || p.n !== snap.n || p.model === model) return;
@@ -205,7 +212,7 @@ export default function Viewport() {
         <OrthographicCamera makeDefault={ui.ortho} near={-clip.orthoSpan} far={clip.orthoSpan} position={VIEWPORT_CAM_POS} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
         <CameraClipSync boundSize={boundSize} />
-        <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} />
+        <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} mapNorthUp={mapFace} />
         <Scene model={model} opts={opts} />
         <MeasureTool active={ui.measureMode} showDimensions={ui.viewportLayers.labels} />
       </Canvas>
