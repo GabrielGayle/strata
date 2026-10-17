@@ -97,6 +97,8 @@ interface Store {
   /** Whether the browser autosave has caught up with the latest change. */
   saveStatus: SaveStatus;
   mapTerrain: MapTerrainUi;
+  /** Bumped on Quick map / Apply bbox so a failed build can be retried (clears the hook skip). */
+  mapRebuildEpoch: number;
   setMapTerrain: (patch: Partial<MapTerrainUi>) => void;
   finishMapTerrainBuild: (asset: ImageAsset) => void;
   ui: UiState;
@@ -232,6 +234,7 @@ export const useStore = create<Store>((set, get) => {
     future: [],
     saveStatus: 'saved',
     mapTerrain: { phase: 'idle', message: '' },
+    mapRebuildEpoch: 0,
     setMapTerrain: (patch) => set({ mapTerrain: { ...get().mapTerrain, ...patch } }),
     finishMapTerrainBuild: (asset) => {
       const p = get().project;
@@ -374,16 +377,23 @@ export const useStore = create<Store>((set, get) => {
       const p = get().project;
       const next = projectWithTopMapSpec(p, map);
       commit(next, `map:${performance.now()}`);
-      set({ mapTerrain: { phase: 'working', message: 'Queued terrain build…' } });
+      set({
+        mapTerrain: { phase: 'working', message: 'Queued terrain build…' },
+        mapRebuildEpoch: (get().mapRebuildEpoch ?? 0) + 1,
+      });
     },
     applyQuickMap: () => {
       const p = get().project;
       const next = applyQuickMapToProject(p);
       const prevKey = p.images.top?.map ? mapBuildKey(p.images.top.map) : '';
       const nextKey = next.images.top?.map ? mapBuildKey(next.images.top.map) : '';
+      const retryError = get().mapTerrain.phase === 'error';
       commitParams(next, `quick-map:${performance.now()}`);
-      if (next.images.top?.map && (nextKey !== prevKey || !next.images.top.map.buildKey)) {
-        set({ mapTerrain: { phase: 'working', message: 'Queued terrain build…' } });
+      if (next.images.top?.map && (nextKey !== prevKey || !next.images.top.map.buildKey || retryError)) {
+        set({
+          mapTerrain: { phase: 'working', message: 'Queued terrain build…' },
+          mapRebuildEpoch: (get().mapRebuildEpoch ?? 0) + 1,
+        });
       }
       const layers = {
         ...get().ui.viewportLayers,

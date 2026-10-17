@@ -15,6 +15,7 @@ import type { MouldPart } from './mould';
 import type { Values } from './params';
 import { extrudeOnPlane, extrudePlan, extrudeSunkenFrame, mergeGeometries } from './geometry3d';
 import { cutListCsv, hardwareCsv } from './bom';
+import { stackRodsCsv } from './stackRods';
 import { DEFAULT_RATES, estimateMix, priceText, withHardware, type PriceRates } from './price';
 import { baseGeometry } from './base';
 import { serialize, type Project } from './project';
@@ -199,6 +200,7 @@ function bottomPlateIndex(model: Model): number {
 }
 
 function mapBackEtchForPart(part: Part, project?: Project, model?: Model): Path[] {
+  if (part.exportEtch) return part.exportEtch;
   const map = project?.images.top?.map;
   if (!map || !model) return [];
   if (part.family !== 'P' || part.index !== bottomPlateIndex(model)) return [];
@@ -206,6 +208,7 @@ function mapBackEtchForPart(part: Part, project?: Project, model?: Model): Path[
 }
 
 function mapEngraveForPart(part: Part, project?: Project, model?: Model): Path[] {
+  if (part.exportEngrave) return part.exportEngrave;
   const map = project?.images.top?.map;
   if (!map?.engraveArt || !map.engrave.enabled) return [];
   if (model) {
@@ -391,6 +394,9 @@ export function packReadme(model: Model): string {
     `This pack has ${model.bom.plateCount} plates and ${model.bom.partCount} laser-cut parts.`,
     'Counts in header, status, schedule, laser/parts, and manifest.json must match those two numbers.',
   ];
+  if (model.sliced.stackRods) {
+    lines.push('', 'rods.csv', '  Cut list of support poles: rod id, diameter (mm), length (mm) from the base to the top of the highest layer each rod holds.');
+  }
   const dropped = (model.sliced.fragments ?? []).filter((e) => e.action === 'dropped' || e.action === 'merged');
   if (dropped.length) {
     lines.push('', 'Fragments handled:');
@@ -491,6 +497,7 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   if (model.unfolded.ok && model.unfolded.pieces.length) files['unfold/flat-pattern.dxf'] = strToU8(unfoldDxf([...model.unfolded.pieces, ...model.unfolded.caps], v));
   files['model.stl'] = modelStl(model);
   files['cutlist.csv'] = strToU8(cutListCsv(v, model.bom));
+  if (model.sliced.stackRods) files['rods.csv'] = strToU8(stackRodsCsv(model.sliced.stackRods));
   if (model.bom.hardware.length) files['hardware.csv'] = strToU8(hardwareCsv(model.bom));
   files['pour-plan.txt'] = strToU8(pourPlanText(model));
   if (model.bom.partCount) {

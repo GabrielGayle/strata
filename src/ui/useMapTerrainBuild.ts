@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { mapBuildKey, mapTerrainIsCurrent } from '../core/mapBuildKey';
+import { MAP_TERRAIN_NO_SAMPLES_ERROR, userFacingMapBuildError } from '../core/mapBuildError';
 import { buildMapTerrainAsset } from '../core/mapTerrainBuild';
 import { useStore } from '../state/store';
+import { reportMapTerrainFailure } from './mapTerrainError';
 
 /** When the top face has a MapSpec without matching DepthData, build terrain in the browser. */
 export function useMapTerrainBuild() {
@@ -9,13 +11,20 @@ export function useMapTerrainBuild() {
   const depth = useStore((s) => s.project.images.top?.depth);
   const setMapTerrain = useStore((s) => s.setMapTerrain);
   const finishMapTerrainBuild = useStore((s) => s.finishMapTerrainBuild);
+  const rebuildEpoch = useStore((s) => s.mapRebuildEpoch);
   const token = useRef(0);
   const failedKey = useRef<string | null>(null);
+  const lastFailedError = useRef<string | null>(null);
+  const seenEpoch = useRef(rebuildEpoch);
 
   const buildKey = spec ? mapBuildKey(spec) : '';
   const stale = spec && !mapTerrainIsCurrent(spec, depth);
 
   useEffect(() => {
+    if (rebuildEpoch !== seenEpoch.current) {
+      failedKey.current = null;
+      seenEpoch.current = rebuildEpoch;
+    }
     if (!stale || !spec) {
       if (!stale) failedKey.current = null;
       if (spec && mapTerrainIsCurrent(spec, depth)) {
@@ -25,7 +34,17 @@ export function useMapTerrainBuild() {
       }
       return;
     }
-    if (failedKey.current === buildKey) return;
+    if (failedKey.current === buildKey) {
+      const st = useStore.getState().mapTerrain;
+      if (st.phase === 'working') {
+        setMapTerrain({
+          phase: 'error',
+          message: "Couldn't build plates",
+          error: lastFailedError.current ?? MAP_TERRAIN_NO_SAMPLES_ERROR,
+        });
+      }
+      return;
+    }
 
     const id = ++token.current;
     const key = buildKey;
@@ -46,11 +65,8 @@ export function useMapTerrainBuild() {
       .catch((e: Error) => {
         if (token.current !== id) return;
         failedKey.current = key;
-        setMapTerrain({
-          phase: 'error',
-          message: 'Map terrain build failed',
-          error: e.message || String(e),
-        });
+        lastFailedError.current = userFacingMapBuildError(e);
+        reportMapTerrainFailure(e);
       });
-  }, [stale, spec, depth, buildKey, setMapTerrain, finishMapTerrainBuild]);
+  }, [stale, spec, depth, buildKey, rebuildEpoch, setMapTerrain, finishMapTerrainBuild]);
 }

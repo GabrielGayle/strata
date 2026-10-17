@@ -3,6 +3,7 @@ import { strokeTextCentered, textWidth } from './strokefont';
 import type { MapSpec } from './mapSpec';
 import type { Part } from './slicer';
 import { attributionEtchPaths } from './mapAttributionEtch';
+import { LABEL_HOLE_CLEAR_MM, nudgeAndClipEtch } from './stackRods';
 
 export function editionEtchPaths(part: Part, edition: number): Path[] {
   if (!Number.isFinite(edition) || edition < 1) return [];
@@ -28,7 +29,7 @@ export function mapBackPlateEtchPaths(part: Part, map: MapSpec): Path[] {
       out.push(...strokeTextCentered(text, (bb.minX + bb.maxX) / 2, bb.minY + h * 2.2, h));
     }
   }
-  return out;
+  return nudgeAndClipEtch(out, part.shape, LABEL_HOLE_CLEAR_MM);
 }
 
 export function commemorativeFitWarning(text: string, faceWidthMm: number): string | null {

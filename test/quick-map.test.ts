@@ -315,6 +315,27 @@ describe('store isolation for quick map undo', () => {
     });
   });
 
+  it('setTopMap and applyQuickMap bump mapRebuildEpoch so a failed build can retry', () => {
+    const p = projectWithTopMapSpec(newProject(), mapPresetSpec('neasden'));
+    useStore.setState({
+      project: p,
+      past: [],
+      future: [],
+      mapTerrain: { phase: 'error', message: "Couldn't build plates", error: 'gap' },
+      mapRebuildEpoch: 4,
+    });
+    useStore.getState().applyQuickMap();
+    expect(useStore.getState().mapRebuildEpoch).toBe(5);
+    expect(useStore.getState().mapTerrain).toMatchObject({
+      phase: 'working',
+      message: 'Queued terrain build…',
+    });
+    const spec = useStore.getState().project.images.top!.map!;
+    useStore.getState().setTopMap(spec);
+    expect(useStore.getState().mapRebuildEpoch).toBe(6);
+    expect(useStore.getState().mapTerrain.message).toBe('Queued terrain build…');
+  });
+
   it('redo restores Quick map after undo', () => {
     useStore.getState().setTopMap(mapPresetSpec('neasden'));
     useStore.getState().applyQuickMap();

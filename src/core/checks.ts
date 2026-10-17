@@ -1,10 +1,11 @@
 // Fabrication fit checks: everything that would make a part uncuttable or
 // make it not fit once it's cut.
-import { difference, pointInShape, shapeArea, shapeBBox, signedArea, type Shape, type Vec2 } from './geom2d';
+import { difference, pointInShape, shapeArea, shapeBBox, signedArea, type Path, type Shape, type Vec2 } from './geom2d';
 import { cached } from './memo';
 import type { Values } from './params';
 import type { Part, SliceResult } from './slicer';
 import { formatFragment, kerfGapRegions, morphOpen } from './fragments';
+import { fastenerDisks, LABEL_HOLE_CLEAR_MM, pathsHitDisk, rodSteelOverlapIssues } from './stackRods';
 import { planeToWorld, type V3 } from './section';
 import { baseChamfers, planClearance } from './base';
 
@@ -13,7 +14,7 @@ export type Severity = 'error' | 'warn' | 'info';
 export interface Issue {
   partId: string | null;
   plateKey?: string;
-  type: 'thin' | 'gap' | 'small' | 'collision' | 'island' | 'unanchored' | 'hole' | 'sheet' | 'bevel' | 'label' | 'fragment' | 'hidden' | 'general';
+  type: 'thin' | 'gap' | 'small' | 'collision' | 'island' | 'unanchored' | 'hole' | 'sheet' | 'bevel' | 'label' | 'fragment' | 'hidden' | 'general' | 'rod';
   severity: Severity;
   message: string;
   at?: Vec2;
@@ -22,6 +23,30 @@ export interface Issue {
 
 function regions(s: Shape, minArea: number): Shape[] {
   return s.filter((e) => shapeArea([e]) > minArea).map((e) => [e]);
+}
+
+/** Engraving (part number, glue-up, credits, OSM) that crosses a cut hole. */
+export function engravingHoleIssues(
+  part: Pick<Part, 'id' | 'plateKey' | 'shape' | 'etch' | 'labelPaths'> & { exportEtch?: Path[]; exportEngrave?: Path[] },
+  holeClear = 0,
+): Issue[] {
+  const disks = fastenerDisks(part.shape);
+  if (!disks.length) return [];
+  const paths = [...part.etch, ...part.labelPaths, ...(part.exportEtch ?? []), ...(part.exportEngrave ?? [])];
+  if (!paths.length) return [];
+  for (const d of disks) {
+    if (pathsHitDisk(paths, d.c, d.r + holeClear)) {
+      return [{
+        partId: part.id,
+        plateKey: part.plateKey,
+        type: 'label',
+        severity: 'error',
+        message: `Engraving on ${part.id} overlaps a hole.`,
+        at: d.c,
+      }];
+    }
+  }
+  return [];
 }
 
 // The two morphology checks are the expensive part; they are cached on the part's
@@ -111,6 +136,8 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     if (!part.labelAt) {
       issues.push({ partId: part.id, type: 'label', severity: 'info', message: 'No room to etch the part number.' });
     }
+    const holeClear = v.sliceMode === 'flat' && v.stackRodsOn ? LABEL_HOLE_CLEAR_MM : 0;
+    issues.push(...engravingHoleIssues(part, holeClear));
     // thin webs: morphological opening removes anything narrower than mf
     if (mf > 0) {
       for (const r of thinRegions(s, mf)) {
@@ -196,6 +223,15 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     const byKey = new Map(sliced.parts.map((p) => [p.plateKey, p.id]));
     for (const b of sliced.brace.issues)
       issues.push({ partId: b.plateKey ? byKey.get(b.plateKey) ?? null : null, plateKey: b.plateKey, type: 'general', severity: b.severity, message: b.message, at: b.at });
+  }
+  if (sliced.stackRods) {
+    for (const b of sliced.stackRods.issues) {
+      if (b.severity === 'info') continue;
+      issues.push({ partId: b.partId ?? null, plateKey: b.plateKey, type: 'rod', severity: b.severity, message: b.message, at: b.at });
+    }
+    for (const b of rodSteelOverlapIssues(sliced.stackRods, sliced.parts, v.thickness)) {
+      issues.push({ partId: b.partId ?? null, plateKey: b.plateKey, type: 'rod', severity: b.severity, message: b.message, at: b.at });
+    }
   }
   for (const w of sliced.warnings) issues.push({ partId: null, type: 'general', severity: 'warn', message: w });
   for (const ev of sliced.fragments ?? []) {
