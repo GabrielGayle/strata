@@ -13,7 +13,7 @@ import {
 } from '../src/core/stackRods';
 import { partDxf, buildZip, FitCheckExportError } from '../src/core/exporters';
 import { assertStrictDxfR2000, dxfCutCircles, dxfEntitySummary } from '../src/core/dxf';
-import { STACK_ROD_PARAMS, twoPeakGray } from './stack-rods-fixture';
+import { STACK_ROD_PARAMS, sliverBarGray, twoPeakGray } from './stack-rods-fixture';
 
 function settings(over: Partial<StackRodSettings> = {}): StackRodSettings {
   return { diameter: 6, clearance: 0.5, edge: 3, stickOut: 0, thickness: 3, minFeature: 2, baseTop: 60, ...over };
@@ -146,6 +146,7 @@ describe('support poles on a stamped two-peak stack', { timeout: 60_000 }, () =>
     expect(csv).toMatch(/^rod_id,diameter_mm,length_mm\n/);
     expect(csv).toContain('R1,');
     expect(csv).toContain('R2,');
+    expect(csv).not.toContain('R3,');
     expect(strFromU8(zip['cutlist.csv'])).toContain('rod_id,diameter_mm,length_mm');
     const html = strFromU8(zip['build-pack.html']);
     expect(html).toContain(`data-rod-count="${m.sliced.stackRods!.rods.length}"`);
@@ -155,9 +156,21 @@ describe('support poles on a stamped two-peak stack', { timeout: 60_000 }, () =>
   });
 
   it('refuses export when an island cannot take a rod', () => {
-    const { p, m } = runFlat({ stackRodEdge: '40' });
-    expect(m.issues.some((i) => i.severity === 'error' && i.type === 'rod')).toBe(true);
-    expect(m.issues.find((i) => i.type === 'rod')!.message).toMatch(/Layer L/);
+    const p = newProject();
+    const preset = PRESETS.find((x) => x.name === 'Stamped stack')!;
+    p.params = {
+      ...p.params,
+      ...preset.params,
+      ...STACK_ROD_PARAMS,
+      fragmentMode: 'keep',
+      minPartSize: '0',
+      minFragment: '0',
+      plateCount: '4',
+    };
+    const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: sliverBarGray(), insMesh: null, srcMesh: null });
+    const rodErr = m.issues.filter((i) => i.severity === 'error' && i.type === 'rod');
+    expect(rodErr.length).toBeGreaterThan(0);
+    expect(rodErr[0].message).toMatch(/Layer L0 island /);
     expect(() => buildZip(m, p)).toThrow(FitCheckExportError);
   });
 

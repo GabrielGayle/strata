@@ -2,10 +2,10 @@ import { PNG } from 'pngjs';
 import type { Gray } from '../src/core/image';
 import { PRESETS } from '../src/core/project';
 
-/** White plate with two dark cones (peaks) left and right. */
+/** White plate with two filled dark disks (peaks) left and right, large enough for a Ø6.5 mm hole. */
 export function twoPeakGray(w = 96, h = 64): Gray {
   const data = new Float32Array(w * h).fill(1);
-  const r = Math.min(w, h) * 0.16;
+  const r = Math.min(w, h) * 0.22;
   const peaks: [number, number][] = [
     [w * 0.28, h * 0.5],
     [w * 0.72, h * 0.5],
@@ -15,9 +15,21 @@ export function twoPeakGray(w = 96, h = 64): Gray {
       let best = 1;
       for (const [cx, cy] of peaks) {
         const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / r;
-        if (d < 1) best = Math.min(best, d);
+        if (d < 1) best = Math.min(best, d < 0.85 ? 0 : (d - 0.85) / 0.15);
       }
       data[y * w + x] = best;
+    }
+  }
+  return { w, h, data };
+}
+
+/** A bar too thin for a Ø6.5 mm hole at 3 mm edge distance. */
+export function sliverBarGray(w = 48, h = 64): Gray {
+  const data = new Float32Array(w * h).fill(1);
+  const cx = w / 2;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (Math.abs(x + 0.5 - cx) < 1.5) data[y * w + x] = 0;
     }
   }
   return { w, h, data };
@@ -40,6 +52,8 @@ export const STACK_ROD_PARAMS: Record<string, string | boolean> = {
   topThreshold: '0.08',
   topDepth: '21',
   topSteps: '0',
+  topOutline: 'matte',
+  topMargin: '10',
   plateCount: '10',
   thickness: '3',
   stackHeight: '30',
