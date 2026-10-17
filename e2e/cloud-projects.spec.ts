@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type Route } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
@@ -61,12 +61,60 @@ async function openProjects(page: Page) {
 const PROJECTS_API = /\/api\/projects(?:\?|$)/;
 
 /** Fail page writes without sending them; GET still reaches the file store. Playwright `request` bypasses this. */
+function rejectProjectWrites(route: Route) {
+  const method = route.request().method();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return route.continue();
+  return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'blocked' }) });
+}
+
 async function blockProjectWrites(page: Page) {
-  await page.route(PROJECTS_API, async (route) => {
-    const method = route.request().method();
-    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return route.continue();
-    await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'blocked' }) });
-  });
+  await page.context().route(PROJECTS_API, rejectProjectWrites);
+}
+
+async function unblockProjectWrites(page: Page) {
+  await page.context().unroute(PROJECTS_API, rejectProjectWrites);
+}
+
+function uniqueSaveName(prefix: string): string {
+  return `${prefix} ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+async function currentLibraryId(page: Page): Promise<string> {
+  const el = page.locator('[data-testid^="saves-card-"].on, [data-testid^="saves-row-"].on');
+  await expect(el).toBeVisible();
+  const testId = await el.getAttribute('data-testid');
+  const id = testId?.replace(/^saves-(?:card|row)-/, '');
+  expect(id).toBeTruthy();
+  return id!;
+}
+
+async function cloudPlateCount(request: APIRequestContext, id: string): Promise<string> {
+  const r = await request.get(`/api/projects?id=${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+  expect(r.ok()).toBeTruthy();
+  return JSON.parse((await r.json()).data as string).params.plateCount as string;
+}
+
+/** Save as a unique 11-plate name, then block writes, edit to 17, Save. Returns the library id. */
+async function saveThenBlockedSeventeen(page: Page, request: APIRequestContext, prefix: string): Promise<string> {
+  const name = uniqueSaveName(prefix);
+  page.once('dialog', (d) => void d.accept(name));
+  await openProjects(page);
+  await page.getByRole('button', { name: 'Save as…' }).click();
+  await expect(page.getByText(name).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', 'saved');
+  const id = await currentLibraryId(page);
+  expect(await cloudPlateCount(request, id)).toBe('11');
+  await page.getByTestId('projects-dialog').getByRole('button', { name: 'Close' }).click();
+
+  await blockProjectWrites(page);
+  await page.getByLabel('Plate count value').fill('17');
+  await page.getByLabel('Plate count value').blur();
+  await expect(page.getByLabel('Plate count value')).toHaveValue('17');
+  await openProjects(page);
+  await page.getByTestId('projects-dialog').getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', /offline|pending/, { timeout: 15_000 });
+  expect(await cloudPlateCount(request, id)).toBe('11');
+  return id;
 }
 
 test.describe('cloud projects across origins', () => {
@@ -145,40 +193,17 @@ test.describe('cloud projects across origins', () => {
     await page.waitForSelector('.app.window', { timeout: 60_000 });
     await expect.poll(async () => page.locator('[data-in-app-plates]').getAttribute('data-in-app-plates'), { timeout: 90_000 }).toBe('11');
 
-    page.once('dialog', (d) => void d.accept('Offline Seventeen'));
-    await openProjects(page);
-    await page.getByRole('button', { name: 'Save as…' }).click();
-    await expect(page.getByText('Offline Seventeen').first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', 'saved');
-    await page.getByTestId('projects-dialog').getByRole('button', { name: 'Close' }).click();
-
-    await page.getByLabel('Plate count value').fill('17');
-    await page.getByLabel('Plate count value').blur();
-
-    await blockProjectWrites(page);
-    await openProjects(page);
-    await page.getByTestId('projects-dialog').getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', /offline|pending/, { timeout: 15_000 });
-
-    const listedWhileBlocked = await request.get('/api/projects', { headers: { Authorization: `Bearer ${TOKEN}` } });
-    expect(listedWhileBlocked.ok()).toBeTruthy();
-    const blockedJson = (await listedWhileBlocked.json()) as { entries: { id: string; name: string }[] };
-    const entry = blockedJson.entries.find((e) => e.name === 'Offline Seventeen');
-    expect(entry).toBeTruthy();
-    const cloudWhileBlocked = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
-    expect(JSON.parse((await cloudWhileBlocked.json()).data as string).params.plateCount).toBe('11');
+    const id = await saveThenBlockedSeventeen(page, request, 'Offline Seventeen');
     await expect(page.getByTestId('cloud-sync')).toHaveAttribute('data-sync-status', /offline|pending/);
 
-    await page.unroute(PROJECTS_API);
+    await unblockProjectWrites(page);
     await page.evaluate(() => {
       window.dispatchEvent(new Event('online'));
       window.dispatchEvent(new Event('focus'));
     });
     await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', 'saved', { timeout: 30_000 });
     await expect(page.getByTestId('cloud-sync')).toHaveAttribute('data-sync-status', 'saved');
-
-    const caughtUp = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
-    expect(JSON.parse((await caughtUp.json()).data as string).params.plateCount).toBe('17');
+    expect(await cloudPlateCount(request, id)).toBe('17');
   });
 
   test('blocked save retries on backoff without online, focus, or visibility events', async ({ page, request }) => {
@@ -187,39 +212,11 @@ test.describe('cloud projects across origins', () => {
     await page.waitForSelector('.app.window', { timeout: 60_000 });
     await expect.poll(async () => page.locator('[data-in-app-plates]').getAttribute('data-in-app-plates'), { timeout: 90_000 }).toBe('11');
 
-    page.once('dialog', (d) => void d.accept('Backoff Seventeen'));
-    await openProjects(page);
-    await page.getByRole('button', { name: 'Save as…' }).click();
-    await expect(page.getByText('Backoff Seventeen').first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', 'saved');
-    await page.getByTestId('projects-dialog').getByRole('button', { name: 'Close' }).click();
+    const id = await saveThenBlockedSeventeen(page, request, 'Backoff Seventeen');
 
-    await page.getByLabel('Plate count value').fill('17');
-    await page.getByLabel('Plate count value').blur();
+    await unblockProjectWrites(page);
 
-    await blockProjectWrites(page);
-    await openProjects(page);
-    await page.getByTestId('projects-dialog').getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', /offline|pending/, { timeout: 15_000 });
-
-    const listedWhileBlocked = await request.get('/api/projects', { headers: { Authorization: `Bearer ${TOKEN}` } });
-    const blockedJson = (await listedWhileBlocked.json()) as { entries: { id: string; name: string }[] };
-    const entry = blockedJson.entries.find((e) => e.name === 'Backoff Seventeen');
-    expect(entry).toBeTruthy();
-    const cloudWhileBlocked = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
-    expect(JSON.parse((await cloudWhileBlocked.json()).data as string).params.plateCount).toBe('11');
-
-    await page.unroute(PROJECTS_API);
-
-    await expect
-      .poll(
-        async () => {
-          const r = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
-          return JSON.parse((await r.json()).data as string).params.plateCount;
-        },
-        { timeout: 15_000 },
-      )
-      .toBe('17');
+    await expect.poll(async () => cloudPlateCount(request, id), { timeout: 15_000 }).toBe('17');
     await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', 'saved');
     await expect(page.getByTestId('cloud-sync')).toHaveAttribute('data-sync-status', 'saved');
   });
