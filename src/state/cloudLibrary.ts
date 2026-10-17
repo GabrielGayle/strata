@@ -2,6 +2,7 @@
 import { readOwnerToken } from './ownerToken';
 import { setCloudSync, setCloudWarning } from './cloudSync';
 import type { LibraryMeta, LibraryStore } from './library';
+import { hasPendingUploads } from './pendingUploads';
 
 export class CloudApiError extends Error {
   status: number;
@@ -84,7 +85,10 @@ export function createCloudLibrary(opts?: { fetch?: typeof fetch; token?: () => 
         return { meta: json.meta, data: json.data };
       })();
       inflight.set(id, p);
-      void p.finally(() => inflight.delete(id));
+      void p.then(
+        () => inflight.delete(id),
+        () => inflight.delete(id),
+      );
     }
     return p;
   };
@@ -157,7 +161,8 @@ export async function probeCloud(cloud: CloudLibrary = defaultCloudLibrary()): P
   setCloudSync('syncing');
   try {
     await cloud.list();
-    setCloudSync('saved');
+    if (hasPendingUploads()) setCloudSync('pending', 'Waiting to sync to the cloud');
+    else setCloudSync('saved');
   } catch (e) {
     applyCloudError(e);
   }

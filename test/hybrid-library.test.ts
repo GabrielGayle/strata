@@ -1,11 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { handleProjectsApi } from '../api/_lib/projectsApi';
 import { memoryProjectStore } from '../api/_lib/projectStore';
 import { newProject } from '../src/core/project';
 import { createCloudLibrary } from '../src/state/cloudLibrary';
-import { hybridLibrary, localProjectsPendingMigration, migrateLocalToCloud } from '../src/state/hybridLibrary';
+import { hybridLibrary, localProjectsPendingMigration, migrateLocalToCloud, resetHybridSyncers } from '../src/state/hybridLibrary';
 import { memoryLibrary, openEntry, saveAs } from '../src/state/library';
-import { setCloudSync } from '../src/state/cloudSync';
+import { getCloudSync, setCloudSync } from '../src/state/cloudSync';
+import { memoryStorage, readPending } from '../src/state/pendingUploads';
 
 const TOKEN = 'hybrid-token';
 const env = { STRATA_OWNER_TOKEN: TOKEN };
@@ -27,20 +28,29 @@ function fakeFetch(store: ReturnType<typeof memoryProjectStore>): typeof fetch {
 }
 
 describe('hybrid library', () => {
+  beforeEach(() => {
+    resetHybridSyncers();
+    setCloudSync('locked');
+  });
+
   it('keeps the local copy when the cloud write fails', async () => {
+    resetHybridSyncers();
     setCloudSync('locked');
     const local = memoryLibrary();
+    const storage = memoryStorage();
     const cloud = createCloudLibrary({
       token: () => TOKEN,
       fetch: async () => {
         throw new Error('Failed to fetch');
       },
     });
-    const hybrid = hybridLibrary(local, cloud, () => TOKEN);
+    const hybrid = hybridLibrary(local, cloud, () => TOKEN, { storage });
     const p = { ...newProject(), name: 'Keep me' };
-    await expect(saveAs(hybrid, p, 'Keep me', undefined, 10)).rejects.toThrow(/cloud copy failed/);
-    const opened = await openEntry(local, (await local.list())[0].id);
+    const { meta } = await saveAs(hybrid, p, 'Keep me', undefined, 10);
+    const opened = await openEntry(local, meta.id);
     expect(opened.project.name).toBe('Keep me');
+    expect(readPending(storage).map((x) => x.id)).toEqual([meta.id]);
+    expect(getCloudSync().status).toMatch(/offline|pending/);
   });
 
   it('lists cloud projects through the API and migrates local-only entries', async () => {

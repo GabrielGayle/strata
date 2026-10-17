@@ -30,4 +30,21 @@ describe('Playwright e2e port and CI reuse', () => {
     expect(cloud.STRATA_OWNER_TOKEN).toBe('strata-e2e-owner');
     expect(cloud.STRATA_PROJECTS_DIR).toContain('strata-e2e-projects-4287');
   });
+
+  it('does not pass Vercel Blob credentials into the e2e preview', () => {
+    const cloud = e2eCloudEnv({
+      BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test',
+      BLOB_STORE_ID: 'store_test',
+      BLOB_WEBHOOK_PUBLIC_KEY: 'pk_test',
+      VERCEL: '1',
+      VERCEL_OIDC_TOKEN: 'oidc_test',
+      STRATA_E2E_PORT: '4173',
+    });
+    expect(cloud.BLOB_READ_WRITE_TOKEN).toBeUndefined();
+    expect(cloud.BLOB_STORE_ID).toBeUndefined();
+    expect(cloud.BLOB_WEBHOOK_PUBLIC_KEY).toBeUndefined();
+    expect(cloud.VERCEL).toBeUndefined();
+    expect(cloud.VERCEL_OIDC_TOKEN).toBeUndefined();
+    expect(cloud.STRATA_PROJECTS_DIR).toContain('strata-e2e-projects-4173');
+  });
 });

@@ -1,6 +1,6 @@
 /** Cloud library sync status shown in the toolbar and Projects dialog. */
 
-export type CloudSyncStatus = 'saved' | 'syncing' | 'offline' | 'error' | 'locked';
+export type CloudSyncStatus = 'saved' | 'syncing' | 'pending' | 'offline' | 'error' | 'locked';
 
 export interface CloudSyncState {
   status: CloudSyncStatus;
@@ -39,7 +39,14 @@ export function takeCloudWarning(): string | null {
 export function cloudSyncLabel(status: CloudSyncStatus): string {
   if (status === 'saved') return 'Cloud saved';
   if (status === 'syncing') return 'Syncing…';
-  if (status === 'offline') return 'Offline';
+  if (status === 'pending') return 'Pending sync';
+  if (status === 'offline') return 'Offline, not synced';
   if (status === 'error') return 'Cloud error';
   return 'Cloud locked';
+}
+
+export function isNetworkCloudError(e: unknown): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  const msg = e instanceof Error ? e.message : String(e);
+  return /failed to fetch|networkerror|load failed|abort/i.test(msg);
 }

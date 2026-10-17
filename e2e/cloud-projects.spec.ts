@@ -5,7 +5,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openApp } from './map-helpers';
-import { e2eCloudEnv, e2eOriginB, e2eOwnerToken, e2ePreviewCommandB } from '../playwright.env';
+import { e2eCloudEnv, e2eOriginB, e2eOwnerToken, e2ePreviewCommandB, stopChildProcessTree } from '../playwright.env';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const shotDir = join(root, 'docs/screenshots/projects');
@@ -62,12 +62,18 @@ test.describe('cloud projects across origins', () => {
   let child: ChildProcess | undefined;
 
   test.beforeAll(async () => {
-    child = spawn(e2ePreviewCommandB(), { cwd: root, env: e2eCloudEnv(process.env), stdio: 'pipe', shell: true });
+    child = spawn(e2ePreviewCommandB(), {
+      cwd: root,
+      env: e2eCloudEnv(process.env),
+      stdio: 'pipe',
+      shell: true,
+      detached: true,
+    });
     await waitHttp(e2eOriginB());
   });
 
   test.afterAll(() => {
-    child?.kill('SIGTERM');
+    stopChildProcessTree(child);
   });
 
   test('token gate: without the token the public URL cannot list projects', async ({ page, request }) => {
@@ -120,5 +126,47 @@ test.describe('cloud projects across origins', () => {
     // autosave is IndexedDB; fall back to the param field already checked
     expect(overrides === null || overrides.plateCount === true).toBe(true);
     await ctx.close();
+  });
+
+  test('blocked save retries when the API returns, without pressing Save again', async ({ page, request }) => {
+    await seedProject(page, TOKEN);
+    await page.goto('/');
+    await page.waitForSelector('.app.window', { timeout: 60_000 });
+    await expect.poll(async () => page.locator('[data-in-app-plates]').getAttribute('data-in-app-plates'), { timeout: 90_000 }).toBe('11');
+
+    page.once('dialog', (d) => void d.accept('Offline Seventeen'));
+    await openProjects(page);
+    await page.getByRole('button', { name: 'Save as…' }).click();
+    await expect(page.getByText('Offline Seventeen').first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', 'saved');
+    await page.getByTestId('projects-dialog').getByRole('button', { name: 'Close' }).click();
+
+    await page.getByLabel('Plate count value').fill('17');
+    await page.getByLabel('Plate count value').blur();
+
+    await page.route('**/api/projects**', (route) => route.abort('failed'));
+    await openProjects(page);
+    await page.getByTestId('projects-dialog').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', /offline|pending/, { timeout: 15_000 });
+    await expect(page.getByTestId('cloud-sync')).toHaveAttribute('data-sync-status', /offline|pending/);
+
+    const listedWhileBlocked = await request.get('/api/projects', { headers: { Authorization: `Bearer ${TOKEN}` } });
+    expect(listedWhileBlocked.ok()).toBeTruthy();
+    const blockedJson = (await listedWhileBlocked.json()) as { entries: { id: string; name: string }[] };
+    const entry = blockedJson.entries.find((e) => e.name === 'Offline Seventeen');
+    expect(entry).toBeTruthy();
+    const cloudWhileBlocked = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+    expect(JSON.parse((await cloudWhileBlocked.json()).data as string).params.plateCount).toBe('11');
+
+    await page.unroute('**/api/projects**');
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('online'));
+      window.dispatchEvent(new Event('focus'));
+    });
+    await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', 'saved', { timeout: 30_000 });
+    await expect(page.getByTestId('cloud-sync')).toHaveAttribute('data-sync-status', 'saved');
+
+    const caughtUp = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+    expect(JSON.parse((await caughtUp.json()).data as string).params.plateCount).toBe('17');
   });
 });

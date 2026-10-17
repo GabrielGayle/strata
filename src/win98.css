@@ -313,7 +313,9 @@ select.sel:focus {
   color: #c0281f;
 }
 .save-mark.cloud.offline,
-.lib-sync.offline {
+.lib-sync.offline,
+.save-mark.cloud.pending,
+.lib-sync.pending {
   color: #8a5a00;
 }
 
