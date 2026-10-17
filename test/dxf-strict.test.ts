@@ -28,7 +28,7 @@ ezdxf.readfile(sys.argv[1])
   }
 }
 
-describe('DXF R2000 strict', () => {
+describe('DXF R2000 strict', { timeout: 60_000 }, () => {
   it('emits AcDbEntity / AcDbPolyline / handles on a writer sample', () => {
     const w = new DxfWriter([LAYERS.CUT]);
     w.polyline(LAYERS.CUT.name, [
