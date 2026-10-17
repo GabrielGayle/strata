@@ -83,6 +83,7 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   expect(wool!.look.z, 'WNW look has +Z west').toBeGreaterThan(0);
   expect(wool!.look.x, 'WNW look has −X north').toBeLessThan(0);
   expect(Math.abs(wool!.look.z)).toBeGreaterThan(Math.abs(wool!.look.x) * 0.8);
+  expect(wool!.position[1], 'camera sits above the look-at').toBeGreaterThan(wool!.target[1]);
   await shot(page, 'view-from-point-woolwich');
 
   await openWorkspaceTab(page, 'Map');

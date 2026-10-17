@@ -63,6 +63,7 @@ function ResumeWhenVisible({ parked }: { parked: boolean }) {
 
 export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; snap: { dir: Snap; n: number; follow?: boolean }; ortho: boolean; mapNorthUp?: boolean }) {
   const { camera, controls, size } = useThree() as any;
+  const pointViewN = useStore((s) => s.ui.pointView?.n ?? 0);
   // a "follow" snap (preset load) frames again once the new model arrives a frame later
   const pending = useRef<{ n: number; model: Model } | null>(null);
   const frame = (m: Model) => {
@@ -87,18 +88,21 @@ export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; sn
   };
   useEffect(() => {
     if (!controls) return;
+    // A View-from-point pose owns the camera until Iso/Front/Side/Top (which clears it).
+    if (pointViewN > 0 && !snap.follow) return;
     frame(model);
     pending.current = snap.follow ? { n: snap.n, model } : null;
     // re-frame only on explicit snaps, camera type, or map north-up (top view flips)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snap.n, snap.dir, ortho, controls, camera, mapNorthUp]);
+  }, [snap.n, snap.dir, ortho, controls, camera, mapNorthUp, pointViewN]);
   useEffect(() => {
     const p = pending.current;
     if (!controls || !p || p.n !== snap.n || p.model === model) return;
+    if (pointViewN > 0 && !snap.follow) return;
     pending.current = null;
     frame(model);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model]);
+  }, [model, pointViewN]);
   return null;
 }
 
@@ -110,7 +114,7 @@ export default function Viewport() {
   const ui = useStore((s) => s.ui);
   const setUi = useStore((s) => s.setUi);
   const v = model.v;
-  const snapTo = (dir: Snap) => setUi({ snap: { dir, n: ui.snap.n + 1 }, pointViewFov: undefined });
+  const snapTo = (dir: Snap) => setUi({ snap: { dir, n: ui.snap.n + 1 }, pointViewFov: undefined, pointView: undefined });
   const [fromPoint, setFromPoint] = useState(false);
   const onSelect = useCallback((id: string | null) => setUi({ selected: id }), [setUi]);
   const onPaint = useCallback((key: string, shift: boolean) => paintClick(modelRef.current, key, shift), []);

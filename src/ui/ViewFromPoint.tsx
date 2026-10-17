@@ -300,11 +300,13 @@ export function ViewFromPointRig() {
   const tick = useStore((s) => s.ui.pointView);
   const { camera, controls } = useThree() as {
     camera: THREE.Camera & { isPerspectiveCamera?: boolean; fov?: number; near: number; far: number; updateProjectionMatrix: () => void };
-    controls?: { target: THREE.Vector3; update: () => void };
+    controls?: { target: THREE.Vector3; update: () => void; enableDamping: boolean; sphericalDelta?: THREE.Vector3 };
   };
   useEffect(() => {
     if (!tick?.pose || !controls) return;
     const { pose } = tick;
+    const damping = controls.enableDamping;
+    controls.enableDamping = false;
     camera.up.set(pose.up[0], pose.up[1], pose.up[2]);
     camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
     controls.target.set(pose.target[0], pose.target[1], pose.target[2]);
@@ -318,7 +320,11 @@ export function ViewFromPointRig() {
       camera.far = Math.max(camera.far, dist * 8, 4000);
       camera.updateProjectionMatrix();
     }
+    if (typeof (controls as { sphericalDelta?: THREE.Vector3 }).sphericalDelta?.set === 'function') {
+      (controls as { sphericalDelta: THREE.Vector3 }).sphericalDelta.set(0, 0, 0);
+    }
     controls.update();
+    controls.enableDamping = damping;
     publishPose(pose);
   }, [tick, camera, controls]);
   return null;
