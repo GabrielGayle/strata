@@ -21,6 +21,7 @@ type PointWin = Window & {
     target: [number, number, number];
     look: { x: number; y: number; z: number };
     fov: number;
+    applied?: boolean;
   };
 };
 
@@ -58,6 +59,15 @@ async function pointView(page: Page) {
   return page.evaluate(() => (window as PointWin).__STRATA_POINT_VIEW__ ?? null);
 }
 
+async function waitApplied(page: Page) {
+  await expect
+    .poll(async () => {
+      const v = await pointView(page);
+      return v?.applied ? v.fov : 0;
+    })
+    .toBeCloseTo(35, 0);
+}
+
 test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-trip', async ({ page }) => {
   test.setTimeout(180_000);
   page.on('dialog', () => {
@@ -76,7 +86,7 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   await expect(warn).toContainText(/map box/i);
 
   await page.getByTestId('view-from-point-fit').click();
-  await expect.poll(async () => (await pointView(page))?.fov ?? 0).toBeCloseTo(35, 0);
+  await waitApplied(page);
 
   const wool = await pointView(page);
   expect(wool).toBeTruthy();
@@ -105,7 +115,7 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   if (stillOutside && /outside/i.test(stillOutside)) {
     await page.getByTestId('view-from-point-fit').click();
   }
-  await expect.poll(async () => (await pointView(page))?.fov ?? 0).toBeCloseTo(35, 0);
+  await waitApplied(page);
   const charlton = await pointView(page);
   expect(charlton).toBeTruthy();
   expect(charlton!.look.z).toBeGreaterThan(0);
@@ -121,7 +131,7 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   await openPointPanel(page);
   await expect(page.getByTestId('view-from-point-return')).toBeEnabled({ timeout: 30_000 });
   await page.getByTestId('view-from-point-return').click();
-  await expect.poll(async () => (await pointView(page))?.fov ?? 0).toBeCloseTo(35, 0);
+  await waitApplied(page);
   const back = await pointView(page);
   expect(back).toBeTruthy();
   expect(back!.look.z).toBeGreaterThan(0);

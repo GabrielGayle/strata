@@ -214,7 +214,13 @@ export default function Viewport() {
         style={VIEWPORT_STYLE}
       >
         <ResumeWhenVisible parked={parked} />
-        <PerspectiveCamera makeDefault={!ui.ortho} fov={ui.pointViewFov ?? 32} near={clip.near} far={clip.far} position={VIEWPORT_CAM_POS} />
+        <PerspectiveCamera
+          makeDefault={!ui.ortho}
+          fov={ui.pointViewFov ?? 32}
+          near={clip.near}
+          far={ui.pointView ? Math.max(clip.far, 50_000) : clip.far}
+          position={VIEWPORT_CAM_POS}
+        />
         <OrthographicCamera makeDefault={ui.ortho} near={-clip.orthoSpan} far={clip.orthoSpan} position={VIEWPORT_CAM_POS} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
         <CameraClipSync boundSize={boundSize} />

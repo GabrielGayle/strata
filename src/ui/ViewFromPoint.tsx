@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { useThree } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import {
   earthViewToWorldPose,
   earthWorldFrame,
@@ -52,18 +52,23 @@ function canvasAspect(): number {
   return h > 0 ? w / h : 16 / 9;
 }
 
-function publishPose(pose: EarthWorldPose) {
+function publishPose(pose: EarthWorldPose, camera?: THREE.Camera, target?: THREE.Vector3) {
+  const position = camera
+    ? ([camera.position.x, camera.position.y, camera.position.z] as [number, number, number])
+    : pose.position;
+  const lookAt = target ? ([target.x, target.y, target.z] as [number, number, number]) : pose.target;
   const look = {
-    x: pose.target[0] - pose.position[0],
-    y: pose.target[1] - pose.position[1],
-    z: pose.target[2] - pose.position[2],
+    x: lookAt[0] - position[0],
+    y: lookAt[1] - position[1],
+    z: lookAt[2] - position[2],
   };
   if (typeof window !== 'undefined') {
     (window as Window & { __STRATA_POINT_VIEW__?: unknown }).__STRATA_POINT_VIEW__ = {
-      position: pose.position,
-      target: pose.target,
+      position,
+      target: lookAt,
       look,
       fov: pose.fov,
+      applied: true,
     };
   }
 }
@@ -127,7 +132,6 @@ export default function ViewFromPointPanel() {
     const frame = earthWorldFrame(project.images.top?.map, model.v, project.images.top?.depth);
     if (!frame) return false;
     const pose = earthViewToWorldPose(view, frame);
-    publishPose(pose);
     const ui = useStore.getState().ui;
     setUi({
       ortho: false,
@@ -164,7 +168,6 @@ export default function ViewFromPointPanel() {
     const frame = earthWorldFrame(project.images.top?.map, model.v, project.images.top?.depth);
     if (!frame) return;
     const pose = earthViewToWorldPose(r.view, frame);
-    publishPose(pose);
     const ui = useStore.getState().ui;
     setUi({
       ortho: false,
@@ -295,14 +298,25 @@ export default function ViewFromPointPanel() {
   );
 }
 
+type OrbitLike = {
+  target: THREE.Vector3;
+  update: () => void;
+  enableDamping: boolean;
+  sphericalDelta?: THREE.Vector3;
+  panOffset?: THREE.Vector3;
+};
+
 /** Apply a stored pose to the live three.js camera (after CameraRig so snaps don't win). */
 export function ViewFromPointRig() {
   const tick = useStore((s) => s.ui.pointView);
   const { camera, controls } = useThree() as {
     camera: THREE.Camera & { isPerspectiveCamera?: boolean; fov?: number; near: number; far: number; updateProjectionMatrix: () => void };
-    controls?: { target: THREE.Vector3; update: () => void; enableDamping: boolean; sphericalDelta?: THREE.Vector3 };
+    controls?: OrbitLike;
   };
-  useEffect(() => {
+  const hold = useRef(0);
+  const lastN = useRef(0);
+
+  const apply = () => {
     if (!tick?.pose || !controls) return;
     const { pose } = tick;
     const damping = controls.enableDamping;
@@ -320,12 +334,27 @@ export function ViewFromPointRig() {
       camera.far = Math.max(camera.far, dist * 8, 4000);
       camera.updateProjectionMatrix();
     }
-    if (typeof (controls as { sphericalDelta?: THREE.Vector3 }).sphericalDelta?.set === 'function') {
-      (controls as { sphericalDelta: THREE.Vector3 }).sphericalDelta.set(0, 0, 0);
-    }
+    controls.sphericalDelta?.set(0, 0, 0);
+    controls.panOffset?.set(0, 0, 0);
     controls.update();
     controls.enableDamping = damping;
-    publishPose(pose);
+    publishPose(pose, camera, controls.target);
+  };
+
+  useLayoutEffect(() => {
+    if (!tick?.pose) return;
+    if (tick.n !== lastN.current) {
+      lastN.current = tick.n;
+      hold.current = 16;
+    }
+    apply();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick, camera, controls]);
+
+  useFrame(() => {
+    if (!tick?.pose || hold.current <= 0) return;
+    apply();
+    hold.current -= 1;
+  });
   return null;
 }
