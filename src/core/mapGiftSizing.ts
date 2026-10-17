@@ -6,12 +6,18 @@ import { ORDER_AREA_CAP_M2 } from './chopchopRates';
 /** Tunable: smaller map faces (fewer/smaller plates) reduce the Chop Chop order-area factor. */
 export const MAP_GIFT_AREA_DISCOUNT_EXP = 1.15;
 
-export function mapBboxAreaM2(bbox: MapSpec['bbox']): number {
+/** Ground size of a WGS84 bbox in metres (equirectangular). East–west is width. */
+export function mapBboxWidthHeightM(bbox: MapSpec['bbox']): { widthM: number; heightM: number } {
   const [w, s, e, n] = bbox;
   const lat = (s + n) / 2;
   const widthM = (e - w) * 111_320 * Math.cos((lat * Math.PI) / 180);
   const heightM = (n - s) * 110_540;
-  return Math.max(0, widthM * heightM);
+  return { widthM: Math.max(0, widthM), heightM: Math.max(0, heightM) };
+}
+
+export function mapBboxAreaM2(bbox: MapSpec['bbox']): number {
+  const { widthM, heightM } = mapBboxWidthHeightM(bbox);
+  return widthM * heightM;
 }
 
 export function mapPlateAreaMm2(bom: Bom): number {
