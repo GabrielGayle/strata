@@ -58,6 +58,15 @@ async function openProjects(page: Page) {
   await expect(page.getByTestId('projects-dialog')).toBeVisible();
 }
 
+/** Fail page writes; GET still reaches the file store. Playwright `request` bypasses this either way. */
+async function blockProjectWrites(page: Page) {
+  await page.route('**/api/projects**', (route) => {
+    const method = route.request().method();
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return route.continue();
+    return route.abort('failed');
+  });
+}
+
 test.describe('cloud projects across origins', () => {
   let child: ChildProcess | undefined;
 
@@ -144,11 +153,10 @@ test.describe('cloud projects across origins', () => {
     await page.getByLabel('Plate count value').fill('17');
     await page.getByLabel('Plate count value').blur();
 
-    await page.route('**/api/projects**', (route) => route.abort('failed'));
+    await blockProjectWrites(page);
     await openProjects(page);
     await page.getByTestId('projects-dialog').getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', /offline|pending/, { timeout: 15_000 });
-    await expect(page.getByTestId('cloud-sync')).toHaveAttribute('data-sync-status', /offline|pending/);
 
     const listedWhileBlocked = await request.get('/api/projects', { headers: { Authorization: `Bearer ${TOKEN}` } });
     expect(listedWhileBlocked.ok()).toBeTruthy();
@@ -157,6 +165,7 @@ test.describe('cloud projects across origins', () => {
     expect(entry).toBeTruthy();
     const cloudWhileBlocked = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
     expect(JSON.parse((await cloudWhileBlocked.json()).data as string).params.plateCount).toBe('11');
+    await expect(page.getByTestId('cloud-sync')).toHaveAttribute('data-sync-status', /offline|pending/);
 
     await page.unroute('**/api/projects**');
     await page.evaluate(() => {
@@ -186,7 +195,7 @@ test.describe('cloud projects across origins', () => {
     await page.getByLabel('Plate count value').fill('17');
     await page.getByLabel('Plate count value').blur();
 
-    await page.route('**/api/projects**', (route) => route.abort('failed'));
+    await blockProjectWrites(page);
     await openProjects(page);
     await page.getByTestId('projects-dialog').getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', /offline|pending/, { timeout: 15_000 });
