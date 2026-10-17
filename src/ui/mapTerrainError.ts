@@ -1,9 +1,15 @@
-import { isMapTerrainFailure, MAP_TERRAIN_USER_ERROR, userFacingMapBuildError } from '../core/mapBuildError';
+import { isMapTerrainFailure, userFacingMapBuildError } from '../core/mapBuildError';
 import type { Assets, FrontModel } from '../core/pipeline';
 import type { Project } from '../core/project';
 import { useStore } from '../state/store';
 
-export { isMapTerrainFailure, MAP_TERRAIN_USER_ERROR };
+export {
+  isMapTerrainFailure,
+  MAP_TERRAIN_NETWORK_ERROR,
+  MAP_TERRAIN_NO_SAMPLES_ERROR,
+  MAP_TERRAIN_RANGE_ERROR,
+  MAP_TERRAIN_USER_ERROR,
+} from '../core/mapBuildError';
 
 export function reportMapTerrainFailure(err: unknown): void {
   const error = userFacingMapBuildError(err);

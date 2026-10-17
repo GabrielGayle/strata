@@ -16,11 +16,29 @@ export function attachDialogGuard(page: Page): string[] {
   return dialogs;
 }
 
-export async function waitForMapTerrainError(page: Page) {
+export async function waitForMapTerrainError(page: Page, text?: RegExp) {
   const err = page.getByTestId('map-terrain-error');
   await expect(err).toBeVisible({ timeout: MAP_READY_MS });
-  await expect(err).toContainText(/Couldn't build plates.*gap or bad value/i);
+  await expect(err).toContainText(
+    text ??
+      /Couldn't build plates.*gap or bad value|Couldn't reach the elevation service|height for this landscape is out of range/i,
+  );
   await expect(page.locator('.app.window')).toHaveAttribute('data-strata-map-phase', 'error');
+}
+
+/** After Quick map / Apply, Queued must not linger — the build either runs or the error returns. */
+export async function waitUntilMapNotStuckQueued(page: Page, timeout = 8_000) {
+  const root = page.locator('.app.window');
+  await expect
+    .poll(
+      async () => {
+        const phase = (await root.getAttribute('data-strata-map-phase')) ?? '';
+        const status = (await page.locator('.map-terrain-status').textContent()) ?? '';
+        return phase === 'working' && /Queued terrain build/i.test(status) ? 'queued' : phase;
+      },
+      { timeout, intervals: [100, 200, 400] },
+    )
+    .not.toBe('queued');
 }
 
 /** Replace the offline EA DTM with bilinear-blended nodata (~−1.7e38). */
