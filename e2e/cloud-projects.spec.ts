@@ -58,12 +58,14 @@ async function openProjects(page: Page) {
   await expect(page.getByTestId('projects-dialog')).toBeVisible();
 }
 
-/** Fail page writes; GET still reaches the file store. Playwright `request` bypasses this either way. */
+const PROJECTS_API = /\/api\/projects(?:\?|$)/;
+
+/** Fail page writes without sending them; GET still reaches the file store. Playwright `request` bypasses this. */
 async function blockProjectWrites(page: Page) {
-  await page.route('**/api/projects**', (route) => {
+  await page.route(PROJECTS_API, async (route) => {
     const method = route.request().method();
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return route.continue();
-    return route.abort('failed');
+    await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'blocked' }) });
   });
 }
 
@@ -167,7 +169,7 @@ test.describe('cloud projects across origins', () => {
     expect(JSON.parse((await cloudWhileBlocked.json()).data as string).params.plateCount).toBe('11');
     await expect(page.getByTestId('cloud-sync')).toHaveAttribute('data-sync-status', /offline|pending/);
 
-    await page.unroute('**/api/projects**');
+    await page.unroute(PROJECTS_API);
     await page.evaluate(() => {
       window.dispatchEvent(new Event('online'));
       window.dispatchEvent(new Event('focus'));
@@ -207,7 +209,7 @@ test.describe('cloud projects across origins', () => {
     const cloudWhileBlocked = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
     expect(JSON.parse((await cloudWhileBlocked.json()).data as string).params.plateCount).toBe('11');
 
-    await page.unroute('**/api/projects**');
+    await page.unroute(PROJECTS_API);
 
     await expect
       .poll(
