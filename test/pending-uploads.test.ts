@@ -179,7 +179,7 @@ describe('pending cloud uploads', () => {
       },
       clearTimeout() {},
     };
-    const stop = startPendingRetry(target as unknown as Window);
+    const stop = startPendingRetry(target as unknown as Parameters<typeof startPendingRetry>[0]);
     const first = { ...newProject(), name: 'Backoff', params: { ...newProject().params, plateCount: '11' } };
     const { meta } = await saveAs(hybrid, first, 'Backoff', undefined, 10);
     expect(queued).toHaveLength(0);
