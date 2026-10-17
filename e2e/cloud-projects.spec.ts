@@ -5,7 +5,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openApp } from './map-helpers';
-import { e2eCloudEnv, e2eOriginB, e2eOwnerToken, e2ePreviewCommandB } from '../playwright.env';
+import { e2eCloudEnv, e2eOriginB, e2eOwnerToken, e2ePreviewCommandB, stopChildProcessTree } from '../playwright.env';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const shotDir = join(root, 'docs/screenshots/projects');
@@ -62,12 +62,18 @@ test.describe('cloud projects across origins', () => {
   let child: ChildProcess | undefined;
 
   test.beforeAll(async () => {
-    child = spawn(e2ePreviewCommandB(), { cwd: root, env: e2eCloudEnv(process.env), stdio: 'pipe', shell: true });
+    child = spawn(e2ePreviewCommandB(), {
+      cwd: root,
+      env: e2eCloudEnv(process.env),
+      stdio: 'pipe',
+      shell: true,
+      detached: true,
+    });
     await waitHttp(e2eOriginB());
   });
 
   test.afterAll(() => {
-    child?.kill('SIGTERM');
+    stopChildProcessTree(child);
   });
 
   test('token gate: without the token the public URL cannot list projects', async ({ page, request }) => {

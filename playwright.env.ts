@@ -33,8 +33,14 @@ export function e2eProjectsDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export function e2eCloudEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const rest = { ...env };
+  delete rest.BLOB_READ_WRITE_TOKEN;
+  delete rest.BLOB_STORE_ID;
+  delete rest.BLOB_WEBHOOK_PUBLIC_KEY;
+  delete rest.VERCEL;
+  delete rest.VERCEL_OIDC_TOKEN;
   return {
-    ...env,
+    ...rest,
     STRATA_OWNER_TOKEN: e2eOwnerToken(env),
     STRATA_PROJECTS_DIR: e2eProjectsDir(env),
   };
@@ -53,4 +59,19 @@ export function e2ePreviewCommand(env: NodeJS.ProcessEnv = process.env): string 
 export function e2ePreviewCommandB(env: NodeJS.ProcessEnv = process.env): string {
   const port = e2ePortB(env);
   return `npm run preview -- --host localhost --port ${port} --strictPort`;
+}
+
+/** Kill a spawned preview and its process group (npm → vite), not only the shell. */
+export function stopChildProcessTree(child?: { pid?: number; kill: (signal?: NodeJS.Signals) => boolean }): void {
+  const pid = child?.pid;
+  if (!pid) return;
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch {
+    try {
+      child.kill('SIGTERM');
+    } catch {
+      /* already gone */
+    }
+  }
 }
