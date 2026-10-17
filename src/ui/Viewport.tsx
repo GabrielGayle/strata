@@ -12,7 +12,7 @@ import { gizmoIsBusy, moveTarget, useGizmoClearance } from './PlateGizmo';
 import { useModel, fmt } from './model';
 import { isMapDepth } from '../core/mapPlateHeight';
 import { plateOutlineYRangeMm } from '../core/slicer';
-import { formatMapHeightCaption } from '../core/mapGeometryReadout';
+import { flatStackIsCapped, formatMapHeightCaption } from '../core/mapGeometryReadout';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
 import { SunBar } from './SunStudy';
@@ -182,7 +182,9 @@ export default function Viewport() {
   const boundSize = modelBounds(model).size;
   const clip = useMemo(() => clipPlanesForBounds(boundSize), [boundSize]);
   const mapFace = useStore((s) => isMapDepth(s.project.images.top?.depth) && !!s.project.images.top?.map);
-  const terrainY = mapFace ? plateOutlineYRangeMm(model.sliced.plates) : null;
+  const terrainY = mapFace && v.sliceMode !== 'flat' ? plateOutlineYRangeMm(model.sliced.plates) : null;
+  const stackCapped =
+    mapFace && v.sliceMode === 'flat' && flatStackIsCapped(model.hf?.max, model.sliced.plates.length, v.thickness);
   return (
     <>
       {/* Linear clip + ViewportGrid depthWrite. logarithmicDepthBuffer writes gl_FragDepth (kills early-Z) and drei Grid has no logdepthbuf chunks. */}
@@ -261,9 +263,11 @@ export default function Viewport() {
         <span
           data-testid="plate-height-range"
           title={
-            terrainY
-              ? 'Lowest to highest terrain on the cut outlines, above the concrete. A plate’s bounding-box top can sit higher than a valley on the same plate.'
-              : undefined
+            stackCapped
+              ? 'Layer count × thickness. Terrain millimetres exceed the stack — raise Plate count to keep the top. Exaggeration still changes how many layers each area gets.'
+              : terrainY
+                ? 'Lowest to highest terrain on the cut outlines, above the concrete. A plate’s bounding-box top can sit higher than a valley on the same plate.'
+                : undefined
           }
         >
           {formatMapHeightCaption({
@@ -273,6 +277,7 @@ export default function Viewport() {
             mapFace,
             bboxMin: hMin,
             bboxMax: hMax,
+            terrainTopMm: model.hf?.max,
           })}
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}

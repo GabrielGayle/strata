@@ -17,6 +17,7 @@ import DesignBox from './DesignBox';
 import { designShortcutFromKey } from './designShortcut';
 import { useMapTerrainBuild } from './useMapTerrainBuild';
 import { isMapDepth, mapMasterWidthMm, mapScaleMmPerM, mapTrueRangePlateMm } from '../core/mapPlateHeight';
+import { flatStackHeightMm, flatStackIsCapped } from '../core/mapGeometryReadout';
 import { plateTopHeightRangeMm } from '../core/slicer';
 
 
@@ -169,7 +170,17 @@ export default function App() {
   const mapRelief = topDepth?.mapOrtho?.reliefM;
   const mapScale = topDepth?.mapOrtho ? mapScaleMmPerM(topDepth.mapOrtho.widthM, mapMasterWidthMm(model.v)) : 0;
   const expectedMm = mapFace && topDepth ? mapTrueRangePlateMm(topDepth, model.v, mapEx || 1) : 0;
-  const plateRangeMm = mapFace ? plateTopHeightRangeMm(model.sliced.plates) : 0;
+  const stackMm = flatStackHeightMm(model.sliced.plates.length, model.v.thickness);
+  const terrainTopMm = model.hf?.max;
+  const stackCapped = mapFace && model.v.sliceMode === 'flat' && flatStackIsCapped(terrainTopMm, model.sliced.plates.length, model.v.thickness);
+  // Flat outlines live in plan (x, −z); their Y span is the footprint, not the
+  // laminated height. Report n×thickness so ×11 and ×21 are not a coincidental
+  // ~160 mm plan reading while the stack stays capped at 20 × 3 mm.
+  const plateRangeMm = mapFace
+    ? model.v.sliceMode === 'flat'
+      ? stackMm
+      : plateTopHeightRangeMm(model.sliced.plates)
+    : 0;
 
   return (
     <FullModelContext.Provider value={getFull}>
@@ -183,6 +194,8 @@ export default function App() {
         data-strata-map-scale-mm-per-m={mapFace && mapScale ? String(mapScale) : undefined}
         data-strata-map-expected-height-mm={mapFace ? String(expectedMm) : undefined}
         data-strata-plate-height-range-mm={mapFace ? String(plateRangeMm) : undefined}
+        data-strata-map-terrain-top-mm={mapFace && terrainTopMm != null ? String(terrainTopMm) : undefined}
+        data-strata-map-stack-capped={mapFace && model.v.sliceMode === 'flat' ? (stackCapped ? '1' : '0') : undefined}
       >
         <div className="title-bar">
           <div className="title-bar-text">

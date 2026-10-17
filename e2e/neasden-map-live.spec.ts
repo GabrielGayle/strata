@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { openApp, pickNeasdenPreset, openWorkspaceTab, waitForMapReady, assertPlateHeightMatchesRelief } from './map-helpers';
 
 async function readFit(page: import('@playwright/test').Page) {
@@ -132,7 +134,48 @@ test('live Neasden ×11/×21 upright Vermilion and Stamped: 0 errors, no 2 mm th
   await page.getByRole('button', { name: /Stamped stack/ }).click();
   await expect(page.locator('.status-bar-field').filter({ hasText: /parts/ })).toContainText(/\d+\s+parts/, { timeout: 90_000 });
   await pickNeasdenPreset(page);
-  await openWorkspaceTab(page, 'Map');
-  await check('stamped x11', '11');
-  await check('stamped x21', '21');
+
+  const shotDir = join(process.cwd(), 'docs/screenshots');
+  await mkdir(shotDir, { recursive: true });
+
+  const snapStamped = async (ex: '11' | '21') => {
+    await page.getByRole('tab', { name: 'Map', exact: true }).click();
+    await expect(page.getByLabel('Vertical exaggeration')).toBeVisible();
+    await check(`stamped x${ex}`, ex);
+    await page.getByRole('tab', { name: '3D', exact: true }).click();
+    await expect(page.getByTestId('plate-height-range')).toBeVisible();
+    const caption = (await page.getByTestId('plate-height-range').textContent())?.trim() ?? '';
+    const root = page.locator('.app.window');
+    const metrics = {
+      caption,
+      factor: Number(await root.getAttribute('data-strata-map-exaggeration')),
+      stackMm: Number(await root.getAttribute('data-strata-plate-height-range-mm')),
+      wantedMm: Number(await root.getAttribute('data-strata-map-expected-height-mm')),
+      terrainTopMm: Number(await root.getAttribute('data-strata-map-terrain-top-mm')),
+      capped: await root.getAttribute('data-strata-map-stack-capped'),
+    };
+    const file = `stamped-neasden-x${ex}.png`;
+    await page.locator('.main').screenshot({ path: join(shotDir, file) });
+    await page.locator('.main').screenshot({ path: testInfo.outputPath(file) });
+    return metrics;
+  };
+
+  const s11 = await snapStamped('11');
+  const s21 = await snapStamped('21');
+  expect(s11.factor).toBe(11);
+  expect(s21.factor).toBe(21);
+  expect(s11.stackMm).toBeGreaterThan(0);
+  expect(s21.stackMm).toBe(s11.stackMm);
+  expect(s21.wantedMm / s11.wantedMm).toBeGreaterThan(1.6);
+  expect(s21.wantedMm / s11.wantedMm).toBeLessThan(2.2);
+  expect(s11.caption).toMatch(/stack height \d+ mm/);
+  expect(s21.caption).toMatch(/stack height \d+ mm/);
+  if (s11.terrainTopMm > s11.stackMm + 3) {
+    expect(s11.capped).toBe('1');
+    expect(s11.caption).toMatch(/capped at \d+ layers/);
+  }
+  if (s21.terrainTopMm > s21.stackMm + 3) {
+    expect(s21.capped).toBe('1');
+    expect(s21.caption).toMatch(/capped at \d+ layers/);
+  }
 });

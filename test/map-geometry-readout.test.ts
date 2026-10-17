@@ -5,7 +5,7 @@ import { defaultMapSpec } from '../src/core/mapSpec';
 import { mapGridToDepth, syntheticConeGrid } from '../src/core/mapToDepth';
 import { mapDepthToGray, mapTrueRangePlateMm } from '../src/core/mapPlateHeight';
 import { formatExaggerationStackReadout } from '../src/core/mapExaggeration';
-import { formatLiveMapReadout, formatMapHeightCaption, mm0 } from '../src/core/mapGeometryReadout';
+import { flatStackIsCapped, formatLiveMapReadout, formatMapHeightCaption, mm0 } from '../src/core/mapGeometryReadout';
 import { plateOutlineYRangeMm } from '../src/core/slicer';
 import { NEASDEN_FAST_BBOX } from './map-fixtures';
 
@@ -89,5 +89,36 @@ describe('Map readout equals built geometry', () => {
     const planMm = Number(stale520.match(/→ (\d+) mm stack/)?.[1]);
     expect(planMm).not.toBe(Math.round(stackMm));
     expect(live).not.toContain(`${planMm} mm stack`);
+  });
+
+  it('flatStackIsCapped matches the slicer (n×t < top − t)', () => {
+    expect(flatStackIsCapped(60, 20, 3)).toBe(false);
+    expect(flatStackIsCapped(63, 20, 3)).toBe(false);
+    expect(flatStackIsCapped(64, 20, 3)).toBe(true);
+    expect(flatStackIsCapped(undefined, 20, 3)).toBe(false);
+  });
+
+  it('Stamped caption names the layer cap when the height field is taller than n×thickness', () => {
+    const { m, depth } = run('Stamped stack');
+    const caption = formatMapHeightCaption({
+      sliceMode: m.v.sliceMode,
+      plates: m.sliced.plates,
+      thicknessMm: m.v.thickness,
+      mapFace: true,
+      bboxMin: 0,
+      bboxMax: 0,
+      terrainTopMm: m.sliced.plates.length * m.v.thickness + 80,
+    });
+    expect(caption).toBe(`stack height ${mm0(m.sliced.plates.length * m.v.thickness)} mm · capped at ${m.sliced.plates.length} layers`);
+    const live = formatLiveMapReadout({
+      factor: EX,
+      reliefM: depth.mapOrtho!.reliefM,
+      sliceMode: m.v.sliceMode,
+      plates: m.sliced.plates,
+      thicknessMm: m.v.thickness,
+      mapFace: true,
+      terrainTopMm: m.sliced.plates.length * m.v.thickness + 80,
+    });
+    expect(live).toContain(caption);
   });
 });
