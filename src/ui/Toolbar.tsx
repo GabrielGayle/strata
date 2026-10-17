@@ -9,7 +9,7 @@ import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
 import { loadRates } from './PriceEstimate';
 import { randomTheme, themeTokens, THEME_PRESETS, type ThemeSeed } from './theme';
-import { ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
+import { CloudSyncMark, ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -273,6 +273,7 @@ export default function Toolbar() {
       >
         {saveStatus === 'saved' ? 'Saved' : saveStatus === 'saving' ? 'Saving…' : 'Not saved'}
       </span>
+      <CloudSyncMark />
       <div className="group">
         <button className="tb" onClick={undo} disabled={!past} title="Undo (Ctrl+Z)">
           Undo

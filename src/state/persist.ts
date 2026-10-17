@@ -2,6 +2,11 @@
 // localStorage's ~5 MB quickly, so they live in IndexedDB (hundreds of MB).
 // localStorage is only the fallback when IndexedDB is unavailable, and the
 // old localStorage keys are read once so earlier autosaves carry over.
+//
+// IndexedDB and localStorage are per-origin. Each Vercel preview URL and
+// production (`MAIN_HOST`) is a different origin, so named library saves
+// (src/state/library.ts, database `strata-library`) and this autosave
+// (`strata`) do not appear on another build. Cloud copy: api/projects.ts.
 
 export interface KV {
   get(key: string): Promise<string | undefined>;

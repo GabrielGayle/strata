@@ -299,6 +299,24 @@ input[type='number'],
   color: var(--err);
   font-weight: 700;
 }
+.save-mark.cloud.syncing,
+.lib-sync.syncing {
+  color: var(--muted);
+}
+.save-mark.cloud.offline,
+.lib-sync.offline {
+  color: var(--warn);
+  font-weight: 700;
+}
+.save-mark.cloud.error,
+.lib-sync.error {
+  color: var(--err);
+  font-weight: 700;
+}
+.save-mark.cloud.locked,
+.lib-sync.locked {
+  color: var(--muted);
+}
 
 .menu {
   position: relative;
@@ -2391,6 +2409,36 @@ canvas.thumb {
 }
 .lib-working small {
   color: var(--muted);
+}
+.lib-sync {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lib-gate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.lib-gate label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.lib-gate input {
+  min-width: 220px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  background: var(--field-bg);
+  color: var(--field-fg);
+}
+.lib-gate small {
+  color: var(--muted);
+  flex: 1 1 100%;
 }
 .lib-head {
   padding: 6px 12px;

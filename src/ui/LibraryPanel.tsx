@@ -1,12 +1,18 @@
-// Projects library (named saves kept in this browser) and share links.
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+// Projects library (named saves) and share links. Cloud copy is /api/projects.
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import { useStore } from '../state/store';
 import type { Project } from '../core/project';
 import { decodeShare, LONG_LINK, projectFromShare, shareCodeFromHash, shareLink, type ShareState } from '../core/share';
 import {
-  defaultLibrary, duplicateEntry, exportLibrary, hasUnsavedChanges, importLibrary, openEntry, projectFingerprint, readLinks, recentEntries, renameEntry, saveAs, saveOver, sortEntries, uniqueName, writeLink,
+  defaultLibrary, duplicateEntry, exportLibrary, hasUnsavedChanges, importLibrary, openEntry, projectFingerprint, readLinks, recentEntries, renameEntry, saveAs, saveOver, sortEntries, uniqueName, updatedAtOf, writeLink,
   type LibraryLink, type LibraryMeta,
 } from '../state/library';
+import { defaultCloudLibrary, probeCloud } from '../state/cloudLibrary';
+import { cloudSyncLabel, getCloudSync, subscribeCloudSync, takeCloudWarning } from '../state/cloudSync';
+import {
+  defaultProjectLibrary, hasMigrated, localProjectsPendingMigration, markMigrated, migrateLocalToCloud, migrateSkippedThisSession, skipMigrateThisSession,
+} from '../state/hybridLibrary';
+import { readOwnerToken, writeOwnerToken } from '../state/ownerToken';
 import { isOneOffAddress, MAIN_HOST } from '../state/persist';
 import { download } from '../core/exporters';
 
@@ -78,7 +84,7 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
   }, [onClose]);
   return (
     <div className="pm-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`window pm lib ${wide ? '' : 'narrow'}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`window pm lib ${wide ? '' : 'narrow'}`} role="dialog" aria-modal="true" aria-label={title} data-testid={title === 'Projects' ? 'projects-dialog' : undefined}>
         <div className="title-bar">
           <div className="title-bar-text">{title}</div>
           <div className="title-bar-controls">
@@ -99,13 +105,20 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
   const project = useStore((s) => s.project);
   const setup = useStore((s) => s.activeSetup);
   const { replaceProject, setName, toast } = useStore.getState();
-  const store = defaultLibrary();
+  const store = defaultProjectLibrary();
+  const local = defaultLibrary();
+  const cloud = defaultCloudLibrary();
+  const sync = useSyncExternalStore(subscribeCloudSync, getCloudSync, getCloudSync);
   const [list, setList] = useState<LibraryMeta[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [token, setToken] = useState(() => readOwnerToken() ?? '');
+  const [tokenDraft, setTokenDraft] = useState('');
+  const [migrate, setMigrate] = useState<LibraryMeta[] | null>(null);
   const [lnk, setLnk] = useState(() => linkOf(setup));
   const current = lnk && list?.find((m) => m.id === lnk.id);
   const dirty = useMemo(() => hasUnsavedChanges(project, current ? lnk : undefined), [project, current, lnk]);
+  const unlocked = !!token;
 
   const refresh = useCallback(async () => {
     try {
@@ -116,8 +129,27 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
       setList([]);
     }
   }, [store]);
+
+  const considerMigrate = useCallback(async () => {
+    if (!readOwnerToken() || hasMigrated() || migrateSkippedThisSession()) {
+      setMigrate(null);
+      return;
+    }
+    try {
+      const [localList, cloudList] = await Promise.all([local.list(), cloud.list()]);
+      const pending = localProjectsPendingMigration(localList, cloudList);
+      setMigrate(pending.length ? pending : null);
+      if (!pending.length && localList.length) markMigrated();
+    } catch {
+      /* cloud probe already reported */
+    }
+  }, [cloud, local]);
+
   useEffect(() => void refresh(), [refresh]);
   useEffect(() => setLnk(linkOf(setup)), [setup]);
+  useEffect(() => {
+    if (unlocked) void considerMigrate();
+  }, [unlocked, considerMigrate]);
 
   const relink = (l: LibraryLink | null) => {
     link(setup, l);
@@ -130,10 +162,41 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
     } catch (e) {
       toast(`Library: ${(e as Error).message}`);
     } finally {
+      const warn = takeCloudWarning();
+      if (warn) toast(warn);
       setBusy(false);
       void refresh();
     }
   };
+
+  const unlock = (e: FormEvent) => {
+    e.preventDefault();
+    const next = tokenDraft.trim();
+    if (!next) return;
+    writeOwnerToken(next);
+    setToken(next);
+    void probeCloud();
+    void run(async () => {
+      await considerMigrate();
+    });
+  };
+
+  const forgetToken = () => {
+    writeOwnerToken(null);
+    setToken('');
+    setTokenDraft('');
+    setMigrate(null);
+    void probeCloud();
+    void refresh();
+  };
+
+  const doMigrate = () =>
+    void run(async () => {
+      const r = await migrateLocalToCloud(local, cloud);
+      markMigrated();
+      setMigrate(null);
+      toast(r.added.length ? `Uploaded ${r.added.length} project${r.added.length === 1 ? '' : 's'} to the cloud` : 'Nothing new to upload');
+    });
 
   const doSaveAs = () => {
     const name = window.prompt('Save to the library as', uniqueName(project.name, (list ?? []).map((m) => m.name)));
@@ -216,9 +279,18 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
         <div className="lib-working">
           <b>Working copy:</b> {project.name}
           <small>
-            {current ? (dirty ? ` · changed since saved to "${current.name}"` : ` · saved as "${current.name}"`) : ' · not in the library yet'} · kept in this browser as you work
+            {current ? (dirty ? ` · changed since saved to "${current.name}"` : ` · saved as "${current.name}"`) : ' · not in the library yet'}
+            {unlocked ? ' · cloud + this browser' : ' · this browser only until you unlock the cloud'}
           </small>
         </div>
+        <span
+          className={`lib-sync ${sync.status}`}
+          data-testid="projects-sync"
+          data-sync-status={sync.status}
+          title={sync.detail ?? cloudSyncLabel(sync.status)}
+        >
+          {cloudSyncLabel(sync.status)}
+        </span>
         <span className="seg">
           <button className="btn sm" disabled={busy || !current} onClick={doSave} title={current ? `Overwrite "${current.name}" in the library` : 'Use Save as first'}>
             Save
@@ -236,10 +308,58 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
           </button>
         </span>
       </div>
+      {!unlocked && (
+        <form className="lib-gate" onSubmit={unlock} data-testid="projects-token-form">
+          <label>
+            Access token
+            <input
+              type="password"
+              autoComplete="off"
+              value={tokenDraft}
+              onChange={(e) => setTokenDraft(e.target.value)}
+              aria-label="Access token"
+              data-testid="projects-token"
+              placeholder="STRATA_OWNER_TOKEN"
+            />
+          </label>
+          <button className="btn sm primary" type="submit" disabled={busy || !tokenDraft.trim()}>
+            Unlock cloud
+          </button>
+          <small>Without it this address cannot read or write cloud projects.</small>
+        </form>
+      )}
+      {unlocked && (
+        <div className="lib-note">
+          Cloud unlocked.{' '}
+          <button className="btn sm" type="button" onClick={forgetToken}>
+            Forget token
+          </button>
+        </div>
+      )}
+      {migrate && migrate.length > 0 && (
+        <div className="lib-note warn" data-testid="projects-migrate">
+          This browser has {migrate.length} project{migrate.length === 1 ? '' : 's'} that only live here. Upload them to the cloud so they appear on other builds?
+          <span className="seg">
+            <button className="btn sm primary" disabled={busy} onClick={doMigrate}>
+              Upload
+            </button>
+            <button
+              className="btn sm"
+              disabled={busy}
+              onClick={() => {
+                skipMigrateThisSession();
+                setMigrate(null);
+              }}
+            >
+              Not now
+            </button>
+          </span>
+        </div>
+      )}
       {isOneOffAddress(here) && (
         <div className="lib-note warn">
-          This is a one-off build address ({here}). Projects saved here stay at this address only and won't appear at{' '}
-          <a href={`https://${MAIN_HOST}`}>{MAIN_HOST}</a>. Use Export all here and Import… there to move them.
+          This is a one-off build address ({here}). Named projects go to the cloud once you enter the access token, so they appear at{' '}
+          <a href={`https://${MAIN_HOST}`}>{MAIN_HOST}</a> and other previews. This browser still keeps a local copy.
         </div>
       )}
       {error && <div className="lib-note err">{error}</div>}
@@ -261,7 +381,7 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
         {!list ? (
           <div className="empty">Loading…</div>
         ) : !list.length ? (
-          <div className="lib-note">Nothing saved yet. Save as… keeps the working copy here with a picture of the 3D view, so you can come back to it.</div>
+          <div className="lib-note">Nothing saved yet. Save as… keeps the working copy{unlocked ? ' in the cloud and ' : ' '}in this browser with a picture of the 3D view.</div>
         ) : (
           <div className="lib-grid">
             {sorted.map((m) => (
@@ -273,8 +393,8 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
                   <span className="lib-name" title={m.name}>
                     {m.name}
                   </span>
-                  <small title={new Date(m.savedAt).toLocaleString()}>
-                    saved {ago(m.savedAt)} · {m.size > 1e6 ? `${(m.size / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(m.size / 1e3))} kB`}
+                  <small title={new Date(updatedAtOf(m)).toLocaleString()}>
+                    updated {ago(updatedAtOf(m))} · {m.size > 1e6 ? `${(m.size / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(m.size / 1e3))} kB`}
                   </small>
                 </div>
                 <div className="lib-actions">
@@ -297,9 +417,40 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
         )}
       </div>
       <div className="lib-note">
-        Kept in this browser{here ? ` at ${here}` : ''} only: another address, browser or computer has its own separate library. Export all makes a backup you can Import anywhere.
+        {unlocked
+          ? `Cloud projects are shared across builds. This browser${here ? ` at ${here}` : ''} still keeps a local copy if you go offline.`
+          : `Kept in this browser${here ? ` at ${here}` : ''} only until you unlock the cloud. Export all still makes a backup you can Import anywhere.`}
       </div>
     </Modal>
+  );
+}
+
+export function CloudSyncMark() {
+  const sync = useSyncExternalStore(subscribeCloudSync, getCloudSync, getCloudSync);
+  useEffect(() => {
+    void probeCloud();
+    const onNet = () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      void probeCloud();
+    };
+    const onOff = () => probeCloud();
+    window.addEventListener('online', onNet);
+    window.addEventListener('offline', onOff);
+    return () => {
+      window.removeEventListener('online', onNet);
+      window.removeEventListener('offline', onOff);
+    };
+  }, []);
+  return (
+    <span
+      className={`save-mark cloud ${sync.status}`}
+      data-testid="cloud-sync"
+      data-sync-status={sync.status}
+      role="status"
+      title={sync.detail ?? (sync.status === 'locked' ? 'Enter the access token in Projects to read and write cloud saves.' : 'Named projects in the cloud, shared across builds.')}
+    >
+      {cloudSyncLabel(sync.status)}
+    </span>
   );
 }
 
@@ -307,7 +458,7 @@ export function ProjectsButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="tb" onClick={() => setOpen(true)} title="Projects kept in this browser: save, open, rename, duplicate">
+      <button className="tb" onClick={() => setOpen(true)} title="Cloud and local projects: save, open, rename, duplicate">
         Projects
       </button>
       {open && <LibraryPanel onClose={() => setOpen(false)} />}

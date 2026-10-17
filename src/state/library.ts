@@ -1,8 +1,7 @@
-// The project library: named saves kept in this browser, each with a small
-// picture of the 3D view. It lives in its own IndexedDB database beside the
-// autosave (persist.ts), so the autosave stays the "working copy" and the
-// library holds the copies you chose to keep. Listing reads only the small
-// records in `meta`; the full project (images and all) is in `data`.
+// The project library: named saves, each with a small picture of the 3D view.
+// This browser keeps a copy in IndexedDB (`strata-library`, origin-scoped — see
+// persist.ts). Cloud copies live in Vercel Blob via /api/projects so preview
+// URLs and production share one list (hybridLibrary.ts).
 import { deserialize, serialize, type Project } from '../core/project';
 
 export interface LibraryMeta {
@@ -16,6 +15,8 @@ export interface LibraryMeta {
   thumb?: string;
   /** Size of the stored project text, in characters. */
   size: number;
+  /** ms since epoch; cloud last-write. Falls back to savedAt on older local records. */
+  updatedAt?: number;
 }
 
 export interface LibraryStore {
@@ -34,9 +35,13 @@ export function newEntryId(now = Date.now()): string {
   return `p${now.toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 }
 
-/** Newest saves first. */
+export function updatedAtOf(m: LibraryMeta): number {
+  return m.updatedAt ?? m.savedAt;
+}
+
+/** Newest writes first. */
 export function sortEntries(list: LibraryMeta[]): LibraryMeta[] {
-  return [...list].sort((a, b) => b.savedAt - a.savedAt);
+  return [...list].sort((a, b) => updatedAtOf(b) - updatedAtOf(a));
 }
 
 /** The last few opened, most recent first. */
@@ -70,7 +75,7 @@ export const projectFingerprint = (p: Project) => fingerprint(serialize(p));
 export async function saveAs(store: LibraryStore, p: Project, name: string, thumb?: string, now = Date.now()): Promise<{ meta: LibraryMeta; project: Project }> {
   const project = { ...p, name };
   const data = serialize(project);
-  const meta: LibraryMeta = { id: newEntryId(now), name, savedAt: now, openedAt: now, size: data.length, ...(thumb ? { thumb } : {}) };
+  const meta: LibraryMeta = { id: newEntryId(now), name, savedAt: now, openedAt: now, updatedAt: now, size: data.length, ...(thumb ? { thumb } : {}) };
   await store.put(meta, data);
   return { meta, project };
 }
@@ -80,7 +85,7 @@ export async function saveOver(store: LibraryStore, id: string, p: Project, thum
   const old = await store.getMeta(id);
   if (!old) throw new Error('That project is no longer in the library');
   const data = serialize(p);
-  const meta: LibraryMeta = { ...old, name: p.name, savedAt: now, size: data.length, ...(thumb ? { thumb } : {}) };
+  const meta: LibraryMeta = { ...old, name: p.name, savedAt: now, updatedAt: now, size: data.length, ...(thumb ? { thumb } : {}) };
   await store.put(meta, data);
   return meta;
 }
@@ -101,7 +106,7 @@ export async function renameEntry(store: LibraryStore, id: string, name: string)
   if (!old || data == null) throw new Error('That project is no longer in the library');
   const project = { ...deserialize(data), name };
   const text = serialize(project);
-  const meta = { ...old, name, size: text.length };
+  const meta = { ...old, name, size: text.length, updatedAt: Date.now() };
   await store.put(meta, text);
   return meta;
 }
@@ -112,7 +117,7 @@ export async function duplicateEntry(store: LibraryStore, id: string, now = Date
   if (!old || data == null) throw new Error('That project is no longer in the library');
   const name = uniqueName(`${old.name} copy`, all.map((m) => m.name));
   const text = serialize({ ...deserialize(data), name });
-  const meta: LibraryMeta = { ...old, id: newEntryId(now), name, savedAt: now, openedAt: 0, size: text.length };
+  const meta: LibraryMeta = { ...old, id: newEntryId(now), name, savedAt: now, openedAt: 0, updatedAt: now, size: text.length };
   await store.put(meta, text);
   return meta;
 }
@@ -170,11 +175,13 @@ export async function importLibrary(store: LibraryStore, text: string, now = Dat
       name = unique;
       data = serialize({ ...project, name });
     }
+    const savedAt = Number.isFinite(m.savedAt) ? (m.savedAt as number) : now;
     const meta: LibraryMeta = {
       id,
       name,
-      savedAt: Number.isFinite(m.savedAt) ? (m.savedAt as number) : now,
+      savedAt,
       openedAt: Number.isFinite(m.openedAt) ? (m.openedAt as number) : 0,
+      updatedAt: Number.isFinite(m.updatedAt) ? (m.updatedAt as number) : savedAt,
       size: data.length,
       ...(typeof m.thumb === 'string' ? { thumb: m.thumb } : {}),
     };

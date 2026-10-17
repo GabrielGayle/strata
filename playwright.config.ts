@@ -1,11 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
-import { e2eOrigin, e2ePreviewCommand, e2eReuseExistingServer } from './playwright.env';
+import { e2eCloudEnv, e2eOrigin, e2ePreviewCommand, e2eReuseExistingServer } from './playwright.env';
 
 const liveNetwork = process.env.LIVE_MAP === '1' || process.env.LIVE_MAP_SCREENSHOTS === '1';
 const origin = e2eOrigin();
 
 function webServerEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
+  const env = e2eCloudEnv(process.env);
   if (liveNetwork) delete env.VITE_E2E_MAP_FIXTURES;
   else env.VITE_E2E_MAP_FIXTURES = '1';
   return env;
