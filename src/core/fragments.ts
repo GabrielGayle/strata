@@ -20,10 +20,25 @@ export interface FragmentEvent {
   mergeFallback?: boolean;
 }
 
+/** Extra width past the kerf so the gap check cannot flicker on Clipper dust. */
+export const KERF_GAP_MARGIN = 0.05;
+
 /** Morphological opening used by fit checks: drops material narrower than `mf`. */
 export function morphOpen(s: Shape, mf: number): Shape {
   if (mf <= 0 || !s.length) return s;
   return offset(offset(s, -mf / 2, 'miter'), mf / 2, 'miter');
+}
+
+/** Morphological closing: fills gaps narrower than `width`. */
+export function morphClose(s: Shape, width: number): Shape {
+  if (width <= 0 || !s.length) return s;
+  return offset(offset(s, width / 2, 'miter'), -width / 2, 'miter');
+}
+
+/** Voids the kerf check reports: closing minus the original, ignoring Clipper dust. */
+export function kerfGapRegions(s: Shape, kerf: number): Shape {
+  if (kerf <= 0 || !s.length) return [];
+  return difference(morphClose(s, kerf), s).filter((e) => shapeArea([e]) > kerf * kerf * 4);
 }
 
 /**
@@ -53,6 +68,55 @@ export function repairThinNecks(
   for (const ex of s) for (const h of ex.holes) holes.push({ outer: h, holes: [] });
   if (holes.length) out = difference(out, holes);
   return out;
+}
+
+/**
+ * Honour Small fragments mode on gaps narrower than the kerf (uncuttable slits).
+ * Does not write `kerf` / `minFeature` — those stay the user's values.
+ *
+ * - keep: leave geometry (errors remain)
+ * - drop: widen the void to ≥ kerf + margin so the laser can cut it
+ * - merge / auto: close the slit (weld the sides)
+ */
+export function repairKerfGaps(
+  s: Shape,
+  v: { kerf?: number; fragmentMode?: string },
+): Shape {
+  const kerf = Number(v.kerf) || 0;
+  if (kerf <= 0 || !s.length) return s;
+  const mode = (String(v.fragmentMode || 'auto') as FragmentMode) || 'auto';
+  if (mode === 'keep') return s;
+  const target = kerf + KERF_GAP_MARGIN;
+  const closed = morphClose(s, target);
+  const gaps = difference(closed, s).filter((e) => shapeArea([e]) > kerf * kerf * 4);
+  if (!gaps.length) return s;
+  if (mode === 'drop') {
+    const widened = difference(s, offset(gaps, target / 2, 'round'));
+    return widened.filter((ex) => shapeArea([ex]) >= 0.5);
+  }
+  return closed;
+}
+
+/**
+ * Drop mode: trim each piece to where it sits on the layer below (glue support).
+ * Auto / merge leave overhangs for `resolveFragments` to merge or drop.
+ */
+export function repairOverhangs(
+  pieces: ExPoly[],
+  below: Shape,
+  v: { fragmentMode?: string },
+): ExPoly[] {
+  const mode = (String(v.fragmentMode || 'auto') as FragmentMode) || 'auto';
+  if (mode !== 'drop' || !pieces.length || !below.length) return pieces;
+  return pieces.flatMap((ex) => intersection([ex], below).filter((p) => shapeArea([p]) > 1));
+}
+
+/** Kerf-gap close/widen, then thin-neck repair, on one outline. */
+export function cleanupPlateShape(
+  s: Shape,
+  v: { minFeature?: number; kerf?: number; fragmentMode?: string },
+): Shape {
+  return repairThinNecks(repairKerfGaps(s, v), v);
 }
 
 export function fragmentMinMm(v: Values): number {
@@ -116,19 +180,35 @@ export function resolveFragments(
     anchored: (ex: ExPoly) => boolean;
   },
 ): { pieces: ExPoly[]; events: FragmentEvent[] } {
-  if (pieces.length <= 1) return { pieces, events: [] };
   const minF = fragmentMinMm(opts.v);
   const mode = (String(opts.v.fragmentMode || 'auto') as FragmentMode) || 'auto';
+  if (pieces.length <= 1) {
+    if (pieces.length === 1 && mode !== 'keep' && !opts.anchored(pieces[0])) {
+      const size = pieceSize(pieces[0]);
+      return {
+        pieces: [],
+        events: [
+          {
+            plateKey: opts.plateKey,
+            plateId: opts.plateId,
+            pieceId: letterId(opts.plateId, 0),
+            action: 'dropped',
+            reason: reasonOf(isSubMinimum(pieces[0], minF), true),
+            w: size.w,
+            h: size.h,
+          },
+        ],
+      };
+    }
+    return { pieces, events: [] };
+  }
   const pad = Math.max(0.2, Number(opts.v.kerf) || 0);
-  const minPart = Number(opts.v.minPartSize) || 0;
-  const t = Number(opts.v.thickness) || 0;
 
   const meta = pieces.map((ex, i) => {
     const size = pieceSize(ex);
     const anchored = opts.anchored(ex);
     const small = isSubMinimum(ex, minF);
-    const unsupported = !anchored && (small || size.span < Math.max(minF, minPart, 2 * t, 5));
-    return { ex, i, size, anchored, small, unsupported, fragment: small || unsupported };
+    return { ex, i, size, anchored, small, fragment: small || !anchored };
   });
 
   const keepers = meta.filter((m) => !m.fragment);
@@ -136,7 +216,21 @@ export function resolveFragments(
   if (!frags.length) return { pieces, events: [] };
 
   if (!keepers.length) {
-    const largest = [...frags].sort((a, b) => b.size.area - a.size.area)[0];
+    const anchoredFrags = frags.filter((f) => f.anchored);
+    const pool = anchoredFrags.length ? anchoredFrags : mode === 'keep' ? frags : [];
+    if (!pool.length) {
+      const events: FragmentEvent[] = frags.map((f) => ({
+        plateKey: opts.plateKey,
+        plateId: opts.plateId,
+        pieceId: letterId(opts.plateId, f.i),
+        action: 'dropped' as FragmentAction,
+        reason: reasonOf(f.small, !f.anchored),
+        w: f.size.w,
+        h: f.size.h,
+      }));
+      return { pieces: [], events };
+    }
+    const largest = [...pool].sort((a, b) => b.size.area - a.size.area)[0];
     keepers.push(largest);
     frags.splice(frags.findIndex((f) => f === largest), 1);
   }

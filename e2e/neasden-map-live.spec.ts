@@ -28,6 +28,7 @@ test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page
   // Toolbar Maps ▾ → Neasden auto-builds (~100 s live). There is no Build button.
   await pickNeasdenPreset(page);
   await assertPlateHeightMatchesRelief(page, 0.35);
+  await expect(page.locator('.status-bar-field').filter({ hasText: /errors/ })).toHaveText('0 errors');
   const rangeMm = Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm'));
   expect(rangeMm).toBeGreaterThan(70);
   // #85 live 3D caption was "plate height 232–264 mm" (strata). True relief (~55 m) ×11 → ~4–150 mm.

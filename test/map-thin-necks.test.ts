@@ -5,7 +5,7 @@ import { mapPresetSpec, NEASDEN_MAP_BBOX } from '../src/core/mapPresets';
 import { metricBounds } from '../src/core/mapProject';
 import type { Float32Grid } from '../src/core/mapGrid';
 import { createPipeline } from '../src/core/pipeline';
-import { newProject } from '../src/core/project';
+import { applyPreset, newProject, PRESETS } from '../src/core/project';
 import { mapDepthToGray } from '../src/core/mapPlateHeight';
 
 /** Live EA Neasden-like DEM: valley ~35 m, peak 86 m, dip 18.8 m. */
@@ -41,7 +41,12 @@ function liveLikeNeasdenGrid(): Float32Grid {
   };
 }
 
-async function neasdenAt(exaggeration: number) {
+async function neasdenAt(
+  exaggeration: number,
+  opts: { stamped?: boolean; fragmentMode?: string } = {},
+) {
+  const stamped = !!opts.stamped;
+  const plateCount = stamped ? 20 : 40;
   const grid = liveLikeNeasdenGrid();
   const bundle = await buildMapBundle(
     defaultMapSpec({
@@ -56,20 +61,29 @@ async function neasdenAt(exaggeration: number) {
     {
       eaLoader: async () => grid,
       allowOverpassNetwork: false,
-      stack: { plateCount: 40, thicknessMm: 3, masterWidthMm: 800, layerBudget: 'jenks' },
+      stack: {
+        plateCount,
+        thicknessMm: 3,
+        masterWidthMm: stamped ? 520 : 800,
+        layerBudget: 'jenks',
+      },
     },
   );
-  const p = newProject();
-  p.params = {
-    ...p.params,
-    baseLength: '800',
-    baseWidth: '300',
-    plateCount: '40',
-    thickness: '3',
-    stackHeight: '220',
-    erosionAmp: '45',
-    insShape: 'none',
-  };
+  let p = newProject();
+  if (stamped) p = applyPreset(p, PRESETS.find((x) => x.name === 'Stamped stack')!);
+  else {
+    p.params = {
+      ...p.params,
+      baseLength: '800',
+      baseWidth: '300',
+      plateCount: '40',
+      thickness: '3',
+      stackHeight: '220',
+      erosionAmp: '45',
+      insShape: 'none',
+    };
+  }
+  if (opts.fragmentMode) p.params = { ...p.params, fragmentMode: opts.fragmentMode };
   p.images.top = bundle.asset;
   const gray = mapDepthToGray(bundle.depth);
   const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: gray, insMesh: null, srcMesh: null });
@@ -84,7 +98,21 @@ describe('Neasden thin-neck min-feature pass', () => {
     expect(p.params.minFeature ?? '2').not.toBe('1');
     const thin = m.issues.filter((i) => i.type === 'thin' && /narrower than 2 mm/.test(i.message));
     expect(thin).toHaveLength(0);
+    expect(m.issues.filter((i) => i.severity === 'error')).toHaveLength(0);
     expect(m.sliced.plates.length).toBe(40);
+  });
+
+  it.each([11, 21])('Stamped stack ×%s has no fit errors and still follows the map', async (ex) => {
+    const { p, m, factor } = await neasdenAt(ex, { stamped: true });
+    expect(factor).toBe(ex);
+    expect(m.v.sliceMode).toBe('flat');
+    expect(m.v.kerf).toBe(0.15);
+    expect(m.v.minFeature).toBe(2);
+    expect(p.params.kerf ?? '0.15').not.toBe('0.2');
+    expect(m.issues.filter((i) => i.severity === 'error')).toHaveLength(0);
+    expect(m.issues.filter((i) => i.type === 'thin' && /narrower than 2 mm/.test(i.message))).toHaveLength(0);
+    expect(m.sliced.plates.length).toBe(20);
+    expect(m.sliced.parts.some((q) => q.area > 100)).toBe(true);
   });
 
   it('keep mode can still report thin necks; user minFeature is left alone', async () => {

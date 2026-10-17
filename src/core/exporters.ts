@@ -8,6 +8,7 @@ import { buildPackHtml } from './buildPack';
 import { fitArcs, type Seg } from './arcs';
 import { DxfWriter, LAYERS } from './dxf';
 import { bboxOf, offset, type Path, type Shape, type Vec2 } from './geom2d';
+import type { Issue } from './checks';
 import type { Model } from './pipeline';
 import type { Part, PlateInfo } from './slicer';
 import type { MouldPart } from './mould';
@@ -49,6 +50,36 @@ export function withExportLock<T>(fn: () => T): { ok: true; value: T } | { ok: f
       exportCooldown = false;
     }, 400);
   }
+}
+
+export class FitCheckExportError extends Error {
+  readonly errors: Issue[];
+  constructor(errors: Issue[]) {
+    const n = errors.length;
+    const head = errors
+      .slice(0, 3)
+      .map((e) => (e.partId ? `${e.partId}: ${e.message}` : e.message))
+      .join(' ');
+    super(`Export refused: ${n} fit error${n === 1 ? '' : 's'} remain.${head ? ` ${head}` : ''}`);
+    this.name = 'FitCheckExportError';
+    this.errors = errors;
+  }
+}
+
+export function fitExportErrors(model: Model): Issue[] {
+  return model.issues.filter((i) => i.severity === 'error');
+}
+
+/** Fabrication ZIP / build pack / plate DXF bundles must not ship while fit errors remain. */
+export function assertExportable(model: Model): void {
+  const errors = fitExportErrors(model);
+  if (errors.length) throw new FitCheckExportError(errors);
+}
+
+export function exportFailureMessage(e: unknown): string {
+  if (e instanceof FitCheckExportError) return e.message;
+  if (e instanceof BuildPackIntegrityError) return `Fabrication zip integrity: ${e.message}`;
+  return e instanceof Error ? e.message : String(e);
 }
 
 export interface FittedContour {
@@ -435,6 +466,7 @@ function plateArtifactFiles(model: Model, project: Project): Record<string, Uint
 
 /** Printable build pack HTML with integrity checks (use this instead of `buildPackHtml` directly). */
 export function buildPackHtmlChecked(project: Project, model: Model, opts: import('./buildPack').BuildPackOptions = {}): string {
+  assertExportable(model);
   const html = buildPackHtml(project, model, opts);
   assertHtmlBuildPackIntegrity(project, model, html);
   return html;
@@ -442,6 +474,7 @@ export function buildPackHtmlChecked(project: Project, model: Model, opts: impor
 
 /** `rates` are the price estimate's (the user's edited ones, when the UI has them). */
 export function buildZip(model: Model, project: Project, rates: PriceRates = DEFAULT_RATES): Uint8Array {
+  assertExportable(model);
   const v = model.v;
   const files: Record<string, Uint8Array> = {};
   for (const [name, data] of Object.entries(partFiles(model, project))) files[`laser/parts/${name}`] = data;

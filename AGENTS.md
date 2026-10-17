@@ -12,6 +12,12 @@ Round holes (`CIRCLE` in cut DXF) are detected on the part in local coordinates,
 
 Material narrower than **Min feature** is repaired on the plate outline: **merge** / **auto** widen the neck, **drop** opens (splits or removes) it, **keep** leaves it (warnings remain). User `minFeature` / `minFragment` values are never overwritten. Enforced by `repairThinNecks`, `test/fragments.test.ts`, and Neasden ×11/×21 fit-check tests.
 
+### Kerf-narrow gaps and unsupported overhangs are cleaned, then export refuses errors
+
+Gaps narrower than **Kerf** cannot be cut. **merge** / **auto** close them (weld), **drop** widens the void to ≥ kerf + margin, **keep** leaves the error. Unsupported flat-stack pieces (no glue on the layer below) are merged into a touching sibling, dropped, or in **drop** mode trimmed to the supported area. User `kerf` / `minFeature` / `minFragment` are never overwritten.
+
+Fabrication export (ZIP, build pack, plate/sheet DXFs, CLI) **refuses** while any fit-check error remains (`FitCheckExportError`). Enforced by `repairKerfGaps`, `repairOverhangs`, `assertExportable`, `test/fragments.test.ts`, and Neasden ×11/×21 tests.
+
 ### Fabrication build pack contains every plate
 
 The fabrication build pack must contain **every plate** in the model (`sliced.plates`), including empty or zero-area layers. Zip `plates/*.dxf` count, `manifest.json` `plateCount`, the HTML cover legend (`data-plate-count`), and the Every plate gallery (`data-plate-key` per plate) must equal `sliced.plates.length`. Cuttable plates also have laser part DXFs. Filename sanitisation must not overwrite another plate. Enforced by `buildPackIntegrity` and `test/build-pack-integrity.test.ts`. On mismatch the UI shows an error and the CLI exits with code 1.

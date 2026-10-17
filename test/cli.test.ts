@@ -22,6 +22,7 @@ import { evaluateParams } from '../src/core/params';
 import { buildZip } from '../src/core/exporters';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { deserialize } from '../src/core/project';
+import { gabrielProjectJson } from './image-sliver-fixture';
 
 const example = fileURLToPath(new URL('../examples/image-cliff.strata.json', import.meta.url));
 const dirs: string[] = [];
@@ -246,14 +247,25 @@ describe('cli validation', () => {
   it('warns when a value is clamped and still exports', async () => {
     const dir = scratch();
     const project = join(dir, 'p.json');
-    writeFileSync(project, JSON.stringify({ format: 'strata-project', version: 1, preset: 'Mini waffle', params: { baseLength: '9000' } }));
+    writeFileSync(project, JSON.stringify({ format: 'strata-project', version: 1, preset: 'Mini waffle', params: { labelHeight: '999' } }));
     const out = join(dir, 'out');
     const io = capture();
     expect(await main([project, '--out', out], io)).toBe(0);
-    expect(io.err).toMatch(/warning: baseLength was clamped to 3000 \(range 20\.\.3000\)/);
+    expect(io.err).toMatch(/warning: labelHeight was clamped to 50 \(range 2\.\.50\)/);
     expect(walk(out)).toContain('laser/sheets/sheet-01-cut.dxf');
     const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
-    expect(back.params.baseLength).toBe('9000');
+    expect(back.params.labelHeight).toBe('999');
+  });
+
+  it('refuses export when fit-check errors remain', async () => {
+    const dir = scratch();
+    const project = join(dir, 'p.json');
+    writeFileSync(project, gabrielProjectJson('keep'));
+    const out = join(dir, 'out');
+    const io = capture();
+    expect(await main([project, '--out', out], io)).toBe(1);
+    expect(io.err).toMatch(/Export refused/);
+    expect(() => statSync(out)).toThrow();
   });
 });
 

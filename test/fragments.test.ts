@@ -1,13 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
-import { piecesTouch, resolveFragments, isSubMinimum, formatFragment, repairThinNecks, morphOpen } from '../src/core/fragments';
-import { difference, rect, unionShapes, type ExPoly } from '../src/core/geom2d';
+import {
+  piecesTouch,
+  resolveFragments,
+  isSubMinimum,
+  formatFragment,
+  repairThinNecks,
+  repairKerfGaps,
+  repairOverhangs,
+  morphOpen,
+  kerfGapRegions,
+  KERF_GAP_MARGIN,
+} from '../src/core/fragments';
+import { difference, intersection, rect, shapeArea, unionShapes, type ExPoly } from '../src/core/geom2d';
+import { buildZip, FitCheckExportError } from '../src/core/exporters';
 import { GABRIEL_PARAMS, sliverFrontGray, sliverSideGray } from './image-sliver-fixture';
 import { assertCountsAgree } from '../src/core/counts';
 import { buildPackHtml } from '../src/core/buildPack';
 import { unzipSync, strFromU8 } from 'fflate';
-import { buildZip } from '../src/core/exporters';
 
 const assets = (): Assets => ({
   sideImg: sliverSideGray(),
@@ -117,6 +128,64 @@ describe('thin necks (min feature)', () => {
   });
 });
 
+describe('kerf-narrow gaps', () => {
+  const slotted = () => difference(rect(0, 0, 80, 40), rect(39.96, 8, 40.04, 32));
+
+  it('auto/merge close a 0.08 mm slot so the kerf check is empty', () => {
+    const s = slotted();
+    expect(kerfGapRegions(s, 0.15).length).toBeGreaterThan(0);
+    const closed = repairKerfGaps(s, { kerf: 0.15, fragmentMode: 'auto' });
+    expect(kerfGapRegions(closed, 0.15)).toHaveLength(0);
+    const merged = repairKerfGaps(s, { kerf: 0.15, fragmentMode: 'merge' });
+    expect(kerfGapRegions(merged, 0.15)).toHaveLength(0);
+  });
+
+  it('drop widens the slot to ≥ kerf + margin instead of filling it', () => {
+    const s = slotted();
+    const beforeVoid = shapeArea(difference(rect(0, 0, 80, 40), s));
+    const widened = repairKerfGaps(s, { kerf: 0.15, fragmentMode: 'drop' });
+    expect(kerfGapRegions(widened, 0.15)).toHaveLength(0);
+    expect(shapeArea(difference(rect(0, 0, 80, 40), widened))).toBeGreaterThan(beforeVoid);
+    expect(KERF_GAP_MARGIN).toBeGreaterThan(0);
+  });
+
+  it('keep leaves the uncuttable gap', () => {
+    const s = slotted();
+    const kept = repairKerfGaps(s, { kerf: 0.15, fragmentMode: 'keep' });
+    expect(kerfGapRegions(kept, 0.15).length).toBeGreaterThan(0);
+  });
+});
+
+describe('unsupported overhangs', () => {
+  const below = rect(0, 0, 50, 50);
+  const parent = rect(0, 0, 50, 50)[0];
+  const hang = rect(50, 10, 80, 30)[0]; // shares an edge, no area on the layer below
+
+  it('auto merges a large unanchored neighbour into the supported parent', () => {
+    const { pieces, events } = resolveFragments([parent, hang], {
+      v: { minFragment: 3, fragmentMode: 'auto', kerf: 0.15, minPartSize: 15, thickness: 1.5 },
+      plateKey: 'P11',
+      plateId: 'S-11',
+      anchored: (ex) => shapeArea([ex]) > 2000,
+    });
+    expect(pieces).toHaveLength(1);
+    expect(events[0].action).toBe('merged');
+  });
+
+  it('drop trims to the supported area', () => {
+    const over = rect(40, 40, 80, 80);
+    const trimmed = repairOverhangs(over, below, { fragmentMode: 'drop' });
+    expect(trimmed.length).toBeGreaterThan(0);
+    expect(shapeArea(trimmed)).toBeLessThan(shapeArea(over) - 100);
+    for (const ex of trimmed) expect(shapeArea(intersection([ex], below))).toBeGreaterThan(1);
+  });
+
+  it('drop of a fully unsupported island removes it', () => {
+    const island = rect(60, 60, 90, 90);
+    expect(repairOverhangs(island, below, { fragmentMode: 'drop' })).toHaveLength(0);
+  });
+});
+
 describe('Gabriel image sliver (200×150, 1.5 mm, 20 mm gap, 6 plates)', () => {
   it('keep mode splits a plate into a thin unanchored cap and the parent', () => {
     const m = run('keep');
@@ -162,5 +231,16 @@ describe('Gabriel image sliver (200×150, 1.5 mm, 20 mm gap, 6 plates)', () => {
     expect(manifest.parts).toHaveLength(6);
     expect(manifest.nestedParts).toBe(6);
     expect(manifest.fragments.some((e: { action: string }) => e.action === 'dropped' || e.action === 'merged')).toBe(true);
+  });
+
+  it('refuses fabrication ZIP while keep-mode still has fit errors', () => {
+    const m = run('keep');
+    expect(m.issues.some((i) => i.severity === 'error')).toBe(true);
+    expect(() => buildZip(m, newProject())).toThrow(FitCheckExportError);
+    try {
+      buildZip(m, newProject());
+    } catch (e) {
+      expect((e as Error).message).toMatch(/Export refused/);
+    }
   });
 });

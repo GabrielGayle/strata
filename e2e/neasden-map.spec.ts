@@ -19,6 +19,11 @@ async function assertNoThin2mmWarnings(page: import('@playwright/test').Page) {
   await expect(page.locator('.issue').filter({ hasText: /narrower than 2 mm/ })).toHaveCount(0);
 }
 
+async function assertZeroFitErrors(page: import('@playwright/test').Page) {
+  await expect(page.locator('.statusbar')).not.toContainText(/updating checks/i);
+  await expect(page.locator('.status-bar-field').filter({ hasText: /errors/ })).toHaveText('0 errors');
+}
+
 test('neasden map plates follow real elevation × exaggeration (fixture)', async ({ page }) => {
   await openApp(page);
   await pickNeasdenPreset(page);
@@ -29,6 +34,7 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
 
   await assertPlateHeightMatchesRelief(page, 0.3);
   await assertNoThin2mmWarnings(page);
+  await assertZeroFitErrors(page);
   await openWorkspaceTab(page, 'Map');
   await expect(page.locator('.map-view h2')).toBeVisible();
   const dtm = page.locator('#map-model-dtm');
@@ -63,6 +69,22 @@ test('neasden ×11 and ×21 have no 2 mm thin-neck fit warnings', async ({ page 
   for (const ex of ['11', '21']) {
     await page.getByLabel('Vertical exaggeration').selectOption(ex);
     await waitForMapReady(page);
+    await assertNoThin2mmWarnings(page);
+    await assertZeroFitErrors(page);
+  }
+});
+
+test('stamped stack + neasden ×11 and ×21 have no fit errors', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: /Presets/ }).click();
+  await page.getByRole('button', { name: /Stamped stack/ }).click();
+  await expect(page.locator('.status-bar-field').filter({ hasText: /parts/ })).toContainText(/\d+\s+parts/, { timeout: 90_000 });
+  await pickNeasdenPreset(page);
+  await openWorkspaceTab(page, 'Map');
+  for (const ex of ['11', '21']) {
+    await page.getByLabel('Vertical exaggeration').selectOption(ex);
+    await waitForMapReady(page);
+    await assertZeroFitErrors(page);
     await assertNoThin2mmWarnings(page);
   }
 });

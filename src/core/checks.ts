@@ -1,10 +1,10 @@
 // Fabrication fit checks: everything that would make a part uncuttable or
 // make it not fit once it's cut.
-import { difference, offset, pointInShape, shapeArea, shapeBBox, signedArea, type Shape, type Vec2 } from './geom2d';
+import { difference, pointInShape, shapeArea, shapeBBox, signedArea, type Shape, type Vec2 } from './geom2d';
 import { cached } from './memo';
 import type { Values } from './params';
 import type { Part, SliceResult } from './slicer';
-import { formatFragment } from './fragments';
+import { formatFragment, kerfGapRegions, morphOpen } from './fragments';
 import { planeToWorld, type V3 } from './section';
 import { baseChamfers, planClearance } from './base';
 
@@ -27,9 +27,8 @@ function regions(s: Shape, minArea: number): Shape[] {
 // The two morphology checks are the expensive part; they are cached on the part's
 // shape, which the pipeline keeps identical for parts an edit didn't change.
 const thinRegions = (s: Shape, mf: number) =>
-  cached(s, `thin:${mf}`, () => regions(difference(s, offset(offset(s, -mf / 2, 'miter'), mf / 2, 'miter')), mf * mf * 0.6));
-const gapRegions = (s: Shape, kerf: number) =>
-  cached(s, `gap:${kerf}`, () => regions(difference(offset(offset(s, kerf / 2, 'miter'), -kerf / 2, 'miter'), s), kerf * kerf * 4));
+  cached(s, `thin:${mf}`, () => regions(difference(s, morphOpen(s, mf)), mf * mf * 0.6));
+const gapRegions = (s: Shape, kerf: number) => cached(s, `gap:${kerf}`, () => kerfGapRegions(s, kerf).map((e) => [e]));
 /** Thinnest concrete floor left under the embedded plates before it is likely to crack. */
 export const MIN_FLOOR = 5;
 

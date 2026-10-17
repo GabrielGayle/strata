@@ -2,9 +2,11 @@ import { Fragment, useMemo, useState } from 'react';
 import { useStore } from '../state/store';
 import { useFullModel, useModel, fmt, fmtInt } from './model';
 import {
+  assertExportable,
   buildPackHtmlChecked,
   buildZip,
   download,
+  exportFailureMessage,
   modelStl,
   openHtml,
   partDxf,
@@ -12,7 +14,6 @@ import {
   pourPlanText,
   sheetFiles,
   withExportLock,
-  BuildPackIntegrityError,
 } from '../core/exporters';
 import { cutListCsv, hardwareCsv, MATERIAL_NAME } from '../core/bom';
 import { serialize } from '../core/project';
@@ -102,12 +103,22 @@ export default function Inspector() {
   );
 
   const plateZip = () => {
-    const m = fullModel();
-    download(`${base}-plates.zip`, zipSync(partFiles(m, useStore.getState().project)), 'application/zip');
+    try {
+      const m = fullModel();
+      assertExportable(m);
+      download(`${base}-plates.zip`, zipSync(partFiles(m, useStore.getState().project)), 'application/zip');
+    } catch (e) {
+      toast(exportFailureMessage(e));
+    }
   };
   const sheetZip = () => {
-    const m = fullModel();
-    download(`${base}-sheets.zip`, zipSync(sheetFiles(m)), 'application/zip');
+    try {
+      const m = fullModel();
+      assertExportable(m);
+      download(`${base}-sheets.zip`, zipSync(sheetFiles(m)), 'application/zip');
+    } catch (e) {
+      toast(exportFailureMessage(e));
+    }
   };
 
   return (
@@ -262,8 +273,7 @@ export default function Inspector() {
                 if (!ran.ok) toast('Export already running');
                 else toast('Fabrication ZIP exported');
               } catch (e) {
-                const msg = e instanceof BuildPackIntegrityError ? `Fabrication zip integrity: ${e.message}` : (e as Error).message;
-                toast(msg);
+                toast(exportFailureMessage(e));
               }
             }}
           >
@@ -278,8 +288,7 @@ export default function Inspector() {
                 });
                 if (!ran.ok) toast('Build pack already opening');
               } catch (e) {
-                const msg = e instanceof BuildPackIntegrityError ? `Build pack integrity: ${e.message}` : (e as Error).message;
-                toast(msg);
+                toast(exportFailureMessage(e));
               }
             }}
             title="Printable plate layout, assembly order, rods and spacers, glue-up and pour plan"

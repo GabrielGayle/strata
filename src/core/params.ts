@@ -575,7 +575,7 @@ export const PARAMS: ParamDef[] = [
     { value: 'merge', label: 'Merge into parent' },
     { value: 'drop', label: 'Drop' },
     { value: 'keep', label: 'Keep as parts' },
-  ], { help: 'What to do with sub-minimum or unsupported fragments. Auto merges a sliver into its plate when they touch, otherwise drops it.' }),
+  ], { help: 'What to do with sub-minimum pieces, kerf-narrow gaps, and unsupported overhangs. Auto closes tiny gaps and merges a sliver into its plate when they touch, otherwise drops it. Keep leaves errors in place.' }),
   num('minPartSize', 'Min part size', 'Fabrication', 15, 0, 500, { noScale: true }),
   num('sheetW', 'Sheet length', 'Fabrication', 2500, 100, 6000, { noScale: true }),
   num('sheetH', 'Sheet width', 'Fabrication', 1250, 100, 3000, { noScale: true }),

@@ -101,4 +101,17 @@ test.describe('image sliver and cut-only sheet DXF', () => {
     expect(sum.layers.SHEET).toBeUndefined();
     expect(ents.every((e) => e.layer === 'CUT')).toBe(true);
   });
+
+  test('Export ZIP refuses while keep-mode still has fit errors', async ({ page }) => {
+    await seed(page, 'keep');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await waitReady(page);
+    await expect(page.locator('.status-bar-field').filter({ hasText: /errors/ })).not.toHaveText('0 errors', { timeout: 90_000 });
+    const downloads: import('@playwright/test').Download[] = [];
+    page.on('download', (d) => downloads.push(d));
+    await page.getByRole('button', { name: 'Export ZIP' }).click();
+    await expect(page.locator('.toast')).toContainText(/Export refused/i, { timeout: 15_000 });
+    expect(downloads).toHaveLength(0);
+  });
 });

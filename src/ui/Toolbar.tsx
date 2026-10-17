@@ -4,7 +4,7 @@ import { PRESETS, deserialize, serialize } from '../core/project';
 import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
 import { SOUND_PRESETS } from '../core/soundPresets';
 import { soundDataUrl } from './audio';
-import { buildPackHtmlChecked, buildZip, download, openHtml, withExportLock, BuildPackIntegrityError } from '../core/exporters';
+import { buildPackHtmlChecked, buildZip, download, exportFailureMessage, FitCheckExportError, openHtml, withExportLock } from '../core/exporters';
 import { bytesToBase64, parseMesh } from '../state/assets';
 import { useFullModel } from './model';
 import { loadRates } from './PriceEstimate';
@@ -239,8 +239,8 @@ export default function Toolbar() {
           `Exported ${ran.value.sliced.plates.length} plates (${ran.value.sliced.parts.length} parts), ${ran.value.nested.sheets.length} cut sheets, ${ran.value.moulds.parts.length} mould parts`,
         );
     } catch (e) {
-      const msg = e instanceof BuildPackIntegrityError ? `Fabrication zip integrity: ${e.message}` : (e as Error).message;
-      toast(`Export failed: ${msg}`);
+      const msg = exportFailureMessage(e);
+      toast(e instanceof FitCheckExportError ? msg : `Export failed: ${msg}`);
     }
   };
 
@@ -251,8 +251,8 @@ export default function Toolbar() {
       });
       if (!ran.ok) toast('Build pack already opening');
     } catch (e) {
-      const msg = e instanceof BuildPackIntegrityError ? `Build pack integrity: ${e.message}` : (e as Error).message;
-      toast(`Build pack failed: ${msg}`);
+      const msg = exportFailureMessage(e);
+      toast(e instanceof FitCheckExportError ? msg : `Build pack failed: ${msg}`);
     }
   };
 
