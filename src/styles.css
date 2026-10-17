@@ -2774,9 +2774,9 @@ canvas.thumb {
   overflow: hidden;
 }
 .help-sheet kbd {
-  background: var(--button-face);
+  background: var(--field-bg);
   color: var(--chrome-fg);
-  border-color: var(--button-shadow);
+  border-color: var(--chrome-muted);
 }
 
 .design-box {

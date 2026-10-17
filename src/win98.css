@@ -437,7 +437,8 @@ button.section-head {
 }
 .pm.window,
 .window.help-sheet {
-  background: var(--surface);
+  /* 98.css --surface is inlined away in the production CSS; chrome-bg is the same silver. */
+  background: var(--chrome-bg);
 }
 .pm > .window-body.pm-body,
 .video-picker > .window-body {
