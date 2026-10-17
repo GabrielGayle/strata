@@ -33,7 +33,8 @@ export function exaggerationReadout(factor: number): string {
 /**
  * Plan-scale estimate at map-build time (relief × factor × master/mapWidth).
  * The Map tab live line is `formatLiveMapReadout` so it matches the 3D model
- * (flat: n×thickness; upright: cut-outline lo–hi), not a stale master width.
+ * (flat: n×thickness, plus “capped at N layers” when the height field is
+ * taller; upright: cut-outline lo–hi), not a stale master width.
  */
 export function formatExaggerationStackReadout(
   factor: number,

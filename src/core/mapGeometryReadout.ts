@@ -17,19 +17,43 @@ export interface LiveMapGeometryInput {
   mapFace?: boolean;
   bboxMin?: number;
   bboxMax?: number;
+  /** Height-field max (mm above the concrete). Flat stacks clip to n × thickness. */
+  terrainTopMm?: number;
 }
 
-/** 3D overlay bl.info height line — shared with the Map-tab readout suffix. */
-export function formatMapHeightCaption(input: {
+/** Laminated block height: every layer is one sheet thick, including empty tops. */
+export function flatStackHeightMm(plateCount: number, thicknessMm: number): number {
+  return Math.max(0, plateCount) * Math.max(0, thicknessMm);
+}
+
+/**
+ * Same test as the slicer warning: n layers × thickness do not reach the
+ * stamped block’s top. Plate count is left alone (user override).
+ */
+export function flatStackIsCapped(terrainTopMm: number | undefined, plateCount: number, thicknessMm: number): boolean {
+  if (terrainTopMm == null || !Number.isFinite(terrainTopMm) || !(plateCount > 0) || !(thicknessMm > 0)) return false;
+  return plateCount * thicknessMm < terrainTopMm - thicknessMm;
+}
+
+export interface MapHeightCaptionInput {
   sliceMode: string;
   plates: PlateInfo[];
   thicknessMm: number;
   mapFace: boolean;
   bboxMin: number;
   bboxMax: number;
-}): string {
+  terrainTopMm?: number;
+}
+
+/** 3D overlay bl.info height line — shared with the Map-tab readout suffix. */
+export function formatMapHeightCaption(input: MapHeightCaptionInput): string {
   if (input.sliceMode === 'flat') {
-    return `stack height ${mm0(input.plates.length * input.thicknessMm)} mm`;
+    const n = input.plates.length;
+    const stackMm = flatStackHeightMm(n, input.thicknessMm);
+    if (flatStackIsCapped(input.terrainTopMm, n, input.thicknessMm)) {
+      return `stack height ${mm0(stackMm)} mm · capped at ${n} layers`;
+    }
+    return `stack height ${mm0(stackMm)} mm`;
   }
   if (input.mapFace) {
     const outline = plateOutlineYRangeMm(input.plates);
@@ -40,7 +64,8 @@ export function formatMapHeightCaption(input: {
 
 /**
  * Map tab exaggeration line. Suffix is the same string as the 3D caption so
- * ×21 on Stamped is n×thickness, and on Vermilion it is the cut-outline range.
+ * ×21 on Stamped is n×thickness (and “capped at N layers” when the terrain
+ * wants more), and on Vermilion it is the cut-outline range.
  */
 export function formatLiveMapReadout(input: LiveMapGeometryInput): string {
   const caption = formatMapHeightCaption({
@@ -50,6 +75,7 @@ export function formatLiveMapReadout(input: LiveMapGeometryInput): string {
     mapFace: input.mapFace ?? true,
     bboxMin: input.bboxMin ?? 0,
     bboxMax: input.bboxMax ?? 0,
+    terrainTopMm: input.terrainTopMm,
   });
   return `${exaggerationReadout(input.factor)} · ${Math.round(Math.max(0, input.reliefM))} m relief → ${caption}`;
 }

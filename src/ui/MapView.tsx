@@ -88,6 +88,7 @@ export default function MapView() {
           plates: geom.sliced.plates,
           thicknessMm: geom.v.thickness,
           mapFace: true,
+          terrainTopMm: geom.hf?.max,
         })
       : existing?.exaggerationReadout;
   const [title, setTitle] = useState(existing?.title ?? project.name ?? 'Map terrain');

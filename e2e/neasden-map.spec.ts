@@ -111,6 +111,52 @@ test('stamped stack + neasden ×11 and ×21 have no fit errors', async ({ page }
   }
 });
 
+test('stamped Neasden ×11 vs ×21: stack is n×thickness; exaggeration still changes the wanted millimetres', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: /Presets/ }).click();
+  await page.getByRole('button', { name: /Stamped stack/ }).click();
+  await expect(page.locator('.status-bar-field').filter({ hasText: /parts/ })).toContainText(/\d+\s+parts/, { timeout: 90_000 });
+  await pickNeasdenPreset(page);
+  await openWorkspaceTab(page, 'Map');
+
+  const read = async (ex: '11' | '21') => {
+    await page.getByLabel('Vertical exaggeration').selectOption(ex);
+    await waitForMapReady(page);
+    await openWorkspaceTab(page, '3D');
+    const caption = (await page.getByTestId('plate-height-range').textContent())?.trim() ?? '';
+    const root = page.locator('.app.window');
+    return {
+      caption,
+      factor: Number(await root.getAttribute('data-strata-map-exaggeration')),
+      stackMm: Number(await root.getAttribute('data-strata-plate-height-range-mm')),
+      wantedMm: Number(await root.getAttribute('data-strata-map-expected-height-mm')),
+      terrainTopMm: Number(await root.getAttribute('data-strata-map-terrain-top-mm')),
+      capped: await root.getAttribute('data-strata-map-stack-capped'),
+    };
+  };
+
+  const a = await read('11');
+  const b = await read('21');
+  expect(a.factor).toBe(11);
+  expect(b.factor).toBe(21);
+  expect(a.stackMm).toBeGreaterThan(0);
+  expect(b.stackMm).toBe(a.stackMm);
+  expect(b.wantedMm / a.wantedMm).toBeGreaterThan(1.6);
+  expect(b.wantedMm / a.wantedMm).toBeLessThan(2.2);
+  expect(a.caption).toMatch(/stack height \d+ mm/);
+  expect(b.caption).toMatch(/stack height \d+ mm/);
+  await openWorkspaceTab(page, 'Map');
+  await expect(page.getByTestId('map-readout')).toContainText(b.caption);
+  if (a.terrainTopMm > a.stackMm + 3) {
+    expect(a.capped).toBe('1');
+    expect(a.caption).toMatch(/capped at \d+ layers/);
+  }
+  if (b.terrainTopMm > b.stackMm + 3) {
+    expect(b.capped).toBe('1');
+    expect(b.caption).toMatch(/capped at \d+ layers/);
+  }
+});
+
 test('neasden 3D and Plates screenshots in light and dark', async ({ page }) => {
   await openApp(page);
   await pickNeasdenPreset(page);
