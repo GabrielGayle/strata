@@ -311,7 +311,7 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
       {!unlocked && (
         <form className="lib-gate" onSubmit={unlock} data-testid="projects-token-form">
           <label>
-            Access token
+            <span>Access token</span>
             <input
               type="password"
               autoComplete="off"
