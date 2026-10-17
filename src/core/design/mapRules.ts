@@ -32,4 +32,16 @@ export function registerMapParserRules(registry: DesignRule[]): void {
         note: 'expand bbox for Welsh Harp reservoir',
       }), 43),
   });
+
+  registry.push({
+    id: 'map-quick',
+    priority: 42,
+    run: (text) =>
+      allMatches(text, /\bquick\s+map\b/gi, (m) => ({
+        start: m.index!,
+        end: m.index! + m[0].length,
+        patch: { quickMap: true },
+        note: 'Quick map plate options',
+      }), 42),
+  });
 }

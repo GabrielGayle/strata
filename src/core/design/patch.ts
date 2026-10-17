@@ -6,6 +6,7 @@ import { applyPreset, PRESETS, type Project } from '../project';
 import { speechParamPatch } from '../speechTuning';
 import { projectWithTopMapSpec } from '../mapTopAsset';
 import { unionMapBbox } from '../mapPresets';
+import { applyQuickMapToProject } from '../quickMap';
 import { applyParamPatchRespectingOverrides, masterSizeBlocked } from '../projectOverrides';
 import type { ProjectPatch } from './types';
 
@@ -55,6 +56,7 @@ export function mergePatches(...parts: ProjectPatch[]): ProjectPatch {
         prev?.bbox && p.map.bbox ? unionMapBbox(prev.bbox, p.map.bbox) : (p.map.bbox ?? prev?.bbox);
       out.map = { ...prev, ...p.map, ...(bbox ? { bbox } : {}) };
     }
+    if (p.quickMap) out.quickMap = true;
   }
   return out;
 }
@@ -86,13 +88,15 @@ export function applyProjectPatch(project: Project, patch: ProjectPatch): Projec
     }
   }
   if (patch.name) p = { ...p, name: patch.name };
+  p = { ...p, params };
   if (patch.map) {
     const prev = p.images.top?.map;
     const bbox = patch.map.bbox ?? prev?.bbox;
     if (!bbox) throw new Error('Map patch requires a bbox');
     p = projectWithTopMapSpec(p, { ...patch.map, bbox });
   }
-  return { ...p, params };
+  if (patch.quickMap) p = applyQuickMapToProject(p);
+  return p;
 }
 
 export interface ParamChange {

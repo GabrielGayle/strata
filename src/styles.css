@@ -3292,6 +3292,9 @@ kbd {
   flex-wrap: wrap;
   gap: 6px;
 }
+.map-section [data-testid='quick-map'] {
+  align-self: start;
+}
 .map-terrain-status {
   padding: 8px 10px;
   font-size: 12px;
