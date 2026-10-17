@@ -139,9 +139,10 @@ test('live Neasden ×11/×21 upright Vermilion and Stamped: 0 errors, no 2 mm th
   await mkdir(shotDir, { recursive: true });
 
   const snapStamped = async (ex: '11' | '21') => {
-    await openWorkspaceTab(page, 'Map');
+    await page.getByRole('tab', { name: 'Map', exact: true }).click();
+    await expect(page.getByLabel('Vertical exaggeration')).toBeVisible();
     await check(`stamped x${ex}`, ex);
-    await openWorkspaceTab(page, '3D');
+    await page.getByRole('tab', { name: '3D', exact: true }).click();
     await expect(page.getByTestId('plate-height-range')).toBeVisible();
     const caption = (await page.getByTestId('plate-height-range').textContent())?.trim() ?? '';
     const root = page.locator('.app.window');

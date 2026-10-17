@@ -96,33 +96,22 @@ test('neasden ×11 and ×21 have no 2 mm thin-neck fit warnings', async ({ page 
   }
 });
 
-test('stamped stack + neasden ×11 and ×21 have no fit errors', async ({ page }) => {
+test('stamped stack + neasden ×11 and ×21: n×thickness cap, wanted mm still scale, no fit errors', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: /Presets/ }).click();
   await page.getByRole('button', { name: /Stamped stack/ }).click();
   await expect(page.locator('.status-bar-field').filter({ hasText: /parts/ })).toContainText(/\d+\s+parts/, { timeout: 90_000 });
   await pickNeasdenPreset(page);
-  await openWorkspaceTab(page, 'Map');
-  for (const ex of ['11', '21']) {
+
+  const read = async (ex: '11' | '21') => {
+    await page.getByRole('tab', { name: 'Map', exact: true }).click();
+    await expect(page.getByLabel('Vertical exaggeration')).toBeVisible();
     await page.getByLabel('Vertical exaggeration').selectOption(ex);
     await waitForMapReady(page);
     await assertZeroFitErrors(page);
     await assertNoThin2mmWarnings(page);
-  }
-});
-
-test('stamped Neasden ×11 vs ×21: stack is n×thickness; exaggeration still changes the wanted millimetres', async ({ page }) => {
-  await openApp(page);
-  await page.getByRole('button', { name: /Presets/ }).click();
-  await page.getByRole('button', { name: /Stamped stack/ }).click();
-  await expect(page.locator('.status-bar-field').filter({ hasText: /parts/ })).toContainText(/\d+\s+parts/, { timeout: 90_000 });
-  await pickNeasdenPreset(page);
-  await openWorkspaceTab(page, 'Map');
-
-  const read = async (ex: '11' | '21') => {
-    await page.getByLabel('Vertical exaggeration').selectOption(ex);
-    await waitForMapReady(page);
-    await openWorkspaceTab(page, '3D');
+    await page.getByRole('tab', { name: '3D', exact: true }).click();
+    await expect(page.getByTestId('plate-height-range')).toBeVisible();
     const caption = (await page.getByTestId('plate-height-range').textContent())?.trim() ?? '';
     const root = page.locator('.app.window');
     return {
@@ -145,7 +134,7 @@ test('stamped Neasden ×11 vs ×21: stack is n×thickness; exaggeration still ch
   expect(b.wantedMm / a.wantedMm).toBeLessThan(2.2);
   expect(a.caption).toMatch(/stack height \d+ mm/);
   expect(b.caption).toMatch(/stack height \d+ mm/);
-  await openWorkspaceTab(page, 'Map');
+  await page.getByRole('tab', { name: 'Map', exact: true }).click();
   await expect(page.getByTestId('map-readout')).toContainText(b.caption);
   if (a.terrainTopMm > a.stackMm + 3) {
     expect(a.capped).toBe('1');
