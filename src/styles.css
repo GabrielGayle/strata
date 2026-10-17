@@ -304,7 +304,9 @@ input[type='number'],
   color: var(--muted);
 }
 .save-mark.cloud.offline,
-.lib-sync.offline {
+.lib-sync.offline,
+.save-mark.cloud.pending,
+.lib-sync.pending {
   color: var(--warn);
   font-weight: 700;
 }

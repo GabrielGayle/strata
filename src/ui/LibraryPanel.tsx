@@ -10,7 +10,7 @@ import {
 import { defaultCloudLibrary, probeCloud } from '../state/cloudLibrary';
 import { cloudSyncLabel, getCloudSync, subscribeCloudSync, takeCloudWarning } from '../state/cloudSync';
 import {
-  defaultProjectLibrary, hasMigrated, localProjectsPendingMigration, markMigrated, migrateLocalToCloud, migrateSkippedThisSession, skipMigrateThisSession,
+  defaultProjectLibrary, flushPendingUploads, hasMigrated, localProjectsPendingMigration, markMigrated, migrateLocalToCloud, migrateSkippedThisSession, skipMigrateThisSession, startPendingRetry,
 } from '../state/hybridLibrary';
 import { readOwnerToken, writeOwnerToken } from '../state/ownerToken';
 import { isOneOffAddress, MAIN_HOST } from '../state/persist';
@@ -428,17 +428,10 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
 export function CloudSyncMark() {
   const sync = useSyncExternalStore(subscribeCloudSync, getCloudSync, getCloudSync);
   useEffect(() => {
-    void probeCloud();
-    const onNet = () => {
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-      void probeCloud();
-    };
-    const onOff = () => probeCloud();
-    window.addEventListener('online', onNet);
-    window.addEventListener('offline', onOff);
+    void probeCloud().then(() => void flushPendingUploads());
+    const stopRetry = startPendingRetry(window);
     return () => {
-      window.removeEventListener('online', onNet);
-      window.removeEventListener('offline', onOff);
+      stopRetry();
     };
   }, []);
   return (
