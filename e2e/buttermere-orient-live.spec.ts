@@ -6,6 +6,7 @@ import {
   applyMapBbox,
   setBaseSizeMm,
   assertZeroFitErrors,
+  attachDialogGuard,
   clickQuickMap,
   compressPngFile,
   downscalePng,
@@ -27,6 +28,7 @@ const shotName = isBefore ? 'orient-before.png' : 'orient-after.png';
 
 test('live Buttermere 500×500: 3D Top north matches Map preview', async ({ page }) => {
   test.setTimeout(420_000);
+  const dialogs = attachDialogGuard(page);
   await mkdir(shotDir, { recursive: true });
   await page.setViewportSize({ width: 1280, height: 800 });
   await openApp(page);
@@ -39,6 +41,7 @@ test('live Buttermere 500×500: 3D Top north matches Map preview', async ({ page
   await waitForMapReady(page);
   if (!isBefore) await assertZeroFitErrors(page);
 
+  expect(dialogs, dialogs.join(' | ')).toEqual([]);
   await expect(page.locator('.app.window')).toHaveAttribute('data-strata-map-phase', 'ready');
   await expect(page.locator('.overlay.bl.info')).toContainText(/500\s*×\s*500/);
   await expect(page.locator('#map-water-bathy')).toBeChecked();

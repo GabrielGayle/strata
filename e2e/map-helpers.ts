@@ -6,6 +6,33 @@ import { BUTTERMERE_BBOX } from '../test/map-fixtures';
 
 const MAP_READY_MS = process.env.LIVE_MAP === '1' || process.env.LIVE_MAP_SCREENSHOTS === '1' ? 300_000 : 90_000;
 
+/** Record browser alerts so RangeTest popups fail the test instead of hanging. */
+export function attachDialogGuard(page: Page): string[] {
+  const dialogs: string[] = [];
+  page.on('dialog', (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
+  return dialogs;
+}
+
+export async function waitForMapTerrainError(page: Page) {
+  const err = page.getByTestId('map-terrain-error');
+  await expect(err).toBeVisible({ timeout: MAP_READY_MS });
+  await expect(err).toContainText(/Couldn't build plates.*gap or bad value/i);
+  await expect(page.locator('.app.window')).toHaveAttribute('data-strata-map-phase', 'error');
+}
+
+/** Replace the offline EA DTM with bilinear-blended nodata (~−1.7e38). */
+export async function injectNodataBlendedDem(page: Page) {
+  await page.route('**/map-fixtures/regional/neasden-ea-dtm.json', async (route) => {
+    const res = await route.fetch();
+    const json = (await res.json()) as { data: number[] };
+    json.data = json.data.map(() => -1.7e38);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(json) });
+  });
+}
+
 /** Must stay self-contained: Playwright serializes this into the browser. */
 export function seedAllTourSeenKeys() {
   try {

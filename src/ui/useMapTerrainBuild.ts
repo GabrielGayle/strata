@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { mapBuildKey, mapTerrainIsCurrent } from '../core/mapBuildKey';
 import { buildMapTerrainAsset } from '../core/mapTerrainBuild';
 import { useStore } from '../state/store';
+import { reportMapTerrainFailure } from './mapTerrainError';
 
 /** When the top face has a MapSpec without matching DepthData, build terrain in the browser. */
 export function useMapTerrainBuild() {
@@ -46,11 +47,7 @@ export function useMapTerrainBuild() {
       .catch((e: Error) => {
         if (token.current !== id) return;
         failedKey.current = key;
-        setMapTerrain({
-          phase: 'error',
-          message: 'Map terrain build failed',
-          error: e.message || String(e),
-        });
+        reportMapTerrainFailure(e);
       });
   }, [stale, spec, depth, buildKey, setMapTerrain, finishMapTerrainBuild]);
 }
