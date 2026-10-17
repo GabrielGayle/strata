@@ -38,11 +38,11 @@ describe('project library', () => {
     expect((await openEntry(store, m.id)).project.name).toBe('Big bloom');
     const d1 = await duplicateEntry(store, m.id, 2);
     const d2 = await duplicateEntry(store, m.id, 3);
-    expect([d1.name, d2.name]).toEqual(['Big bloom copy', 'Big bloom copy 2']);
+    expect([d1.name, d2.name]).toEqual(['Big bloom copy', 'Big bloom copy (2)']);
     expect(d1.id).not.toBe(m.id);
     expect((await openEntry(store, d1.id)).project.name).toBe('Big bloom copy');
     await store.remove(m.id);
-    expect((await store.list()).map((x) => x.name).sort()).toEqual(['Big bloom copy', 'Big bloom copy 2']);
+    expect((await store.list()).map((x) => x.name).sort()).toEqual(['Big bloom copy', 'Big bloom copy (2)']);
     expect(await store.getData(m.id)).toBeUndefined();
   });
 
@@ -54,7 +54,7 @@ describe('project library', () => {
 
   it('finds unclashing names', () => {
     expect(uniqueName('X', [])).toBe('X');
-    expect(uniqueName('X', ['x', 'X 2'])).toBe('X 3');
+    expect(uniqueName('X', ['x', 'X (2)'])).toBe('X (3)');
     expect(uniqueName('  ', [])).toBe('Untitled');
   });
 

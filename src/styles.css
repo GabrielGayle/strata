@@ -299,6 +299,26 @@ input[type='number'],
   color: var(--err);
   font-weight: 700;
 }
+.save-mark.cloud.syncing,
+.lib-sync.syncing {
+  color: var(--muted);
+}
+.save-mark.cloud.offline,
+.lib-sync.offline,
+.save-mark.cloud.pending,
+.lib-sync.pending {
+  color: var(--warn);
+  font-weight: 700;
+}
+.save-mark.cloud.error,
+.lib-sync.error {
+  color: var(--err);
+  font-weight: 700;
+}
+.save-mark.cloud.locked,
+.lib-sync.locked {
+  color: var(--muted);
+}
 
 .menu {
   position: relative;
@@ -2392,6 +2412,39 @@ canvas.thumb {
 .lib-working small {
   color: var(--muted);
 }
+.lib-sync {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lib-note .btn {
+  margin-left: 8px;
+}
+.lib-gate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.lib-gate label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.lib-gate input {
+  min-width: 220px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  background: var(--field-bg);
+  color: var(--field-fg);
+}
+.lib-gate small {
+  color: var(--muted);
+  flex: 1 1 100%;
+}
 .lib-head {
   padding: 6px 12px;
   font-size: 11px;
@@ -2444,6 +2497,124 @@ canvas.thumb {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 12px;
+}
+.lib-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.lib-tools .search {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.lib-folders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.lib-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lib-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  padding: 2px 4px;
+}
+.lib-line.on {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+.lib-line-main {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  padding: 4px;
+}
+.lib-line-main img,
+.lib-line-main .lib-nothumb {
+  width: 36px;
+  height: 28px;
+  object-fit: cover;
+  font-size: 14px;
+}
+.lib-line-main small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lib-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 160px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 2px 2px 0 var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  padding: 2px;
+}
+.lib-menu button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 4px 10px;
+  cursor: pointer;
+  color: inherit;
+}
+.lib-menu button:hover {
+  background: var(--accent);
+  color: var(--accent-fg, #fff);
+}
+.lib-browser.compact .lib-grid {
+  grid-template-columns: 1fr;
+}
+.lib-browser.compact .lib-line-main {
+  grid-template-columns: 36px minmax(0, 1fr);
+}
+.lib-browser.compact .lib-line-main .lib-name,
+.lib-browser.compact .lib-line-main small {
+  grid-column: 2;
+}
+.lib-browser.compact .lib-line-main small {
+  white-space: normal;
+}
+.saves-panel {
+  min-height: 0;
+}
+.left-panes {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.left-panes button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.7;
+}
+.left-panes button.on {
+  opacity: 1;
+  font-weight: 700;
+  text-decoration: underline;
 }
 .lib-card {
   border: 1px solid var(--line-soft);

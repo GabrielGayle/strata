@@ -30,9 +30,9 @@ describe('moving the library between addresses', () => {
     const other = memoryLibrary();
     await saveAs(other, { ...newProject(), params: { ...newProject().params, plateCount: '9' } }, 'Bloom', undefined, 5);
     const r = await importLibrary(lib, (await exportLibrary(other)).text);
-    expect(r.added).toEqual(['Bloom 2']);
-    const m = (await lib.list()).find((x) => x.name === 'Bloom 2')!;
-    expect((await openEntry(lib, m.id)).project.name).toBe('Bloom 2');
+    expect(r.added).toEqual(['Bloom (2)']);
+    const m = (await lib.list()).find((x) => x.name === 'Bloom (2)')!;
+    expect((await openEntry(lib, m.id)).project.name).toBe('Bloom (2)');
   });
 
   it('takes a single project file too, and refuses anything else', async () => {

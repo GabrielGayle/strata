@@ -46,7 +46,7 @@ async function deliver(t: DropTarget, all: File[]) {
     case 'src':
       return importMeshInto(t.id, f);
     case 'open':
-      if (window.confirm(`Open ${f.name}? It replaces the working copy (Undo brings it back).`)) return openProjectFile(f);
+      if (window.confirm(`Open ${f.name}? It replaces the working copy (Undo brings it back).`)) return openProjectFile(f, { offerKeep: true });
   }
 }
 

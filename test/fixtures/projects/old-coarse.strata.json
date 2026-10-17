@@ -1,0 +1,45 @@
+{
+  "format": "strata-project",
+  "version": 1,
+  "name": "Coarse Oct 16",
+  "params": {
+    "plateCount": "11",
+    "plateMaterial": "corten"
+  },
+  "locks": {},
+  "pour": [],
+  "images": {
+    "top": {
+      "name": "cliff.png",
+      "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "depth": {
+        "w": 1,
+        "h": 1,
+        "minM": 1,
+        "maxM": 20,
+        "nearM": 2,
+        "farM": 12,
+        "data": "AAEA",
+        "settings": {
+          "near": 3.25,
+          "far": 14.5,
+          "spacing": "perspective",
+          "curve": 1,
+          "flatten": 0,
+          "matte": true,
+          "resolution": 256,
+          "invert": false
+        },
+        "settingsOverrides": {
+          "near": true,
+          "far": true
+        }
+      }
+    }
+  },
+  "meshes": {},
+  "variants": [],
+  "userParamOverrides": {
+    "plateCount": true
+  }
+}
