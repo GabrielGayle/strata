@@ -43,20 +43,33 @@ interface HybridSyncer {
 const syncers: HybridSyncer[] = [];
 const lastCloudPrint = new Map<string, string>();
 let flushing: Promise<void> | null = null;
+/** Starts the backoff timer after a later failed save. Set by `startPendingRetry`. */
+let armRetry: (() => void) | null = null;
 
 export function resetHybridSyncers(): void {
   syncers.length = 0;
   lastCloudPrint.clear();
   flushing = null;
+  armRetry = null;
 }
 
 export function hybridHasPending(): boolean {
   return syncers.some((s) => s.hasPending()) || hasPendingUploads();
 }
 
+function leftoverQueued(storage?: Storage): boolean {
+  return hasPendingUploads(storage) || syncers.some((s) => s.hasPending());
+}
+
+/** Arm the backoff timer when a put/remove/unsynced flush leaves work queued. */
+export function armPendingRetry(): void {
+  armRetry?.();
+}
+
 function markUnsynced(e: unknown, storage?: Storage): void {
   applyCloudError(e);
-  if (!hasPendingUploads(storage) && !syncers.some((s) => s.hasPending())) return;
+  if (!leftoverQueued(storage)) return;
+  armPendingRetry();
   if (isNetworkCloudError(e)) {
     setCloudSync('offline', e instanceof Error ? e.message : String(e));
     return;
@@ -237,8 +250,11 @@ export function hybridLibrary(
       );
       setCloudSync('syncing');
       await flushPendingUploads();
-      if (readPending(storage).some((p) => p.id === meta.id)) {
-        setCloudWarning('Saved in this browser. Waiting to sync to the cloud.');
+      if (leftoverQueued(storage)) {
+        armPendingRetry();
+        if (readPending(storage).some((p) => p.id === meta.id)) {
+          setCloudWarning('Saved in this browser. Waiting to sync to the cloud.');
+        }
       }
     },
     async remove(id) {
@@ -247,8 +263,11 @@ export function hybridLibrary(
       upsertPending({ id, op: 'remove', queuedAt: now() }, storage);
       setCloudSync('syncing');
       await flushPendingUploads();
-      if (readPending(storage).some((p) => p.id === id)) {
-        setCloudWarning('Removed locally. Waiting to sync the delete to the cloud.');
+      if (leftoverQueued(storage)) {
+        armPendingRetry();
+        if (readPending(storage).some((p) => p.id === id)) {
+          setCloudWarning('Removed locally. Waiting to sync the delete to the cloud.');
+        }
       }
     },
   };
@@ -278,20 +297,31 @@ export function startPendingRetry(
   let delay = 400;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  let inScheduledFlush = false;
   const clear = () => {
     if (timer !== undefined) target.clearTimeout(timer);
     timer = undefined;
   };
   const schedule = () => {
     if (stopped) return;
-    clear();
-    if (!hybridHasPending()) return;
+    if (!hybridHasPending()) {
+      delay = 400;
+      return;
+    }
+    if (timer !== undefined || inScheduledFlush) return;
     timer = target.setTimeout(() => {
+      timer = undefined;
+      inScheduledFlush = true;
       void flushPendingUploads().finally(() => {
-        delay = Math.min(Math.round(delay * 1.8), 8_000);
+        inScheduledFlush = false;
+        delay = hybridHasPending() ? Math.min(Math.round(delay * 1.8), 8_000) : 400;
         schedule();
       });
     }, delay);
+  };
+  const arm = () => {
+    if (stopped || inScheduledFlush) return;
+    schedule();
   };
   const kick = () => {
     if (stopped) return;
@@ -300,7 +330,10 @@ export function startPendingRetry(
       return;
     }
     delay = 400;
-    void probeCloud().then(() => flushPendingUploads()).finally(schedule);
+    clear();
+    void probeCloud()
+      .then(() => flushPendingUploads())
+      .finally(schedule);
   };
   const onOff = () => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) setCloudSync('offline', 'This browser is offline');
@@ -308,6 +341,7 @@ export function startPendingRetry(
   const onVis = () => {
     if (target.document?.visibilityState === 'visible') kick();
   };
+  armRetry = arm;
   target.addEventListener('online', kick);
   target.addEventListener('focus', kick);
   target.addEventListener('offline', onOff);
@@ -316,6 +350,7 @@ export function startPendingRetry(
   return () => {
     stopped = true;
     clear();
+    if (armRetry === arm) armRetry = null;
     target.removeEventListener('online', kick);
     target.removeEventListener('focus', kick);
     target.removeEventListener('offline', onOff);

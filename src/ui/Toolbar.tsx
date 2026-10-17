@@ -229,7 +229,8 @@ export default function Toolbar() {
   const past = useStore((s) => s.past.length);
   const future = useStore((s) => s.future.length);
   const saveStatus = useStore((s) => s.saveStatus);
-  const { undo, redo, setName, randomise, loadPreset, saveVariant, loadVariant, deleteVariant, toast, setUi, setTopMap } = useStore.getState();
+  const { undo, redo, setName, randomise, loadPreset, saveVariant, loadVariant, deleteVariant, toast, setUi, setTopMap, applyQuickMap } =
+    useStore.getState();
   const fullModel = useFullModel();
 
   const save = () => {
@@ -333,6 +334,27 @@ export default function Toolbar() {
               ))}
               <li>
                 <details open>
+                  <summary>Maps</summary>
+                  <ul>
+                    <li>
+                      <button
+                        type="button"
+                        data-testid="quick-map-from-presets"
+                        onClick={() => {
+                          applyQuickMap();
+                          setUi({ tab: 'map' });
+                          close();
+                        }}
+                      >
+                        <span>Quick map</span>
+                        <small>dense plates, OSM engrave, no insert</small>
+                      </button>
+                    </li>
+                  </ul>
+                </details>
+              </li>
+              <li>
+                <details open>
                   <summary>Sound</summary>
                   <ul>
                     {SOUND_PRESETS.map((p) => (
@@ -401,6 +423,20 @@ export default function Toolbar() {
                 >
                   <span>Open Map tab</span>
                   <small>source, engraving, presets</small>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  data-testid="quick-map-from-maps"
+                  onClick={() => {
+                    applyQuickMap();
+                    setUi({ tab: 'map' });
+                    close();
+                  }}
+                >
+                  <span>Quick map</span>
+                  <small>dense plates, OSM engrave, no insert</small>
                 </button>
               </li>
               {MAP_PRESET_CATALOG.map((p) => (

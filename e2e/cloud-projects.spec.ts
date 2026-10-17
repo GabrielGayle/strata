@@ -169,4 +169,47 @@ test.describe('cloud projects across origins', () => {
     const caughtUp = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
     expect(JSON.parse((await caughtUp.json()).data as string).params.plateCount).toBe('17');
   });
+
+  test('blocked save retries on backoff without online, focus, or visibility events', async ({ page, request }) => {
+    await seedProject(page, TOKEN);
+    await page.goto('/');
+    await page.waitForSelector('.app.window', { timeout: 60_000 });
+    await expect.poll(async () => page.locator('[data-in-app-plates]').getAttribute('data-in-app-plates'), { timeout: 90_000 }).toBe('11');
+
+    page.once('dialog', (d) => void d.accept('Backoff Seventeen'));
+    await openProjects(page);
+    await page.getByRole('button', { name: 'Save as…' }).click();
+    await expect(page.getByText('Backoff Seventeen').first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', 'saved');
+    await page.getByTestId('projects-dialog').getByRole('button', { name: 'Close' }).click();
+
+    await page.getByLabel('Plate count value').fill('17');
+    await page.getByLabel('Plate count value').blur();
+
+    await page.route('**/api/projects**', (route) => route.abort('failed'));
+    await openProjects(page);
+    await page.getByTestId('projects-dialog').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', /offline|pending/, { timeout: 15_000 });
+
+    const listedWhileBlocked = await request.get('/api/projects', { headers: { Authorization: `Bearer ${TOKEN}` } });
+    const blockedJson = (await listedWhileBlocked.json()) as { entries: { id: string; name: string }[] };
+    const entry = blockedJson.entries.find((e) => e.name === 'Backoff Seventeen');
+    expect(entry).toBeTruthy();
+    const cloudWhileBlocked = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+    expect(JSON.parse((await cloudWhileBlocked.json()).data as string).params.plateCount).toBe('11');
+
+    await page.unroute('**/api/projects**');
+
+    await expect
+      .poll(
+        async () => {
+          const r = await request.get(`/api/projects?id=${entry!.id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+          return JSON.parse((await r.json()).data as string).params.plateCount;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe('17');
+    await expect(page.getByTestId('projects-sync')).toHaveAttribute('data-sync-status', 'saved');
+    await expect(page.getByTestId('cloud-sync')).toHaveAttribute('data-sync-status', 'saved');
+  });
 });

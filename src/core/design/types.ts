@@ -19,6 +19,8 @@ export interface ProjectPatch {
   autoDimension?: { faces: DepthFace[]; reliefExaggeration?: number };
   /** Map function spec for the top face (ticket T18). */
   map?: Partial<MapSpec> & { bbox?: MapSpec['bbox'] };
+  /** Apply Quick map plate + display options (keeps user overrides). */
+  quickMap?: boolean;
 }
 
 export interface ParseContext {

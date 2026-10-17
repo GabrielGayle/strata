@@ -10,6 +10,7 @@ export interface CloudSyncState {
 let snapshot: CloudSyncState = { status: 'locked', detail: null };
 let warning: string | null = null;
 const listeners = new Set<() => void>();
+const warningListeners = new Set<() => void>();
 
 export function getCloudSync(): CloudSyncState {
   return snapshot;
@@ -26,8 +27,14 @@ export function setCloudSync(status: CloudSyncStatus, detail: string | null = nu
   for (const fn of listeners) fn();
 }
 
+export function subscribeCloudWarning(fn: () => void): () => void {
+  warningListeners.add(fn);
+  return () => warningListeners.delete(fn);
+}
+
 export function setCloudWarning(message: string): void {
   warning = message;
+  for (const fn of warningListeners) fn();
 }
 
 export function takeCloudWarning(): string | null {

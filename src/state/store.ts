@@ -21,6 +21,8 @@ import { loadViewportLayers, saveViewportLayers, type ViewportLayerId, type View
 import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
 import { applyProjectPatch, type ProjectPatch } from '../core/design';
 import { applyBuiltMapAsset, projectWithTopMapSpec } from '../core/mapTopAsset';
+import { mapBuildKey } from '../core/mapBuildKey';
+import { applyQuickMapToProject } from '../core/quickMap';
 import { wordsParamPatch } from '../core/chantWords';
 import { speechParamPatch } from '../core/speechTuning';
 
@@ -117,6 +119,8 @@ interface Store {
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
   /** Attach or update MapSpec on the top face (map window / design parser). */
   setTopMap: (map: MapSpec) => void;
+  /** Dense plates, OSM engrave, no insert — one undo step; user overrides win. */
+  applyQuickMap: () => void;
   /** Change how a depth image is shaped; slider drags merge into one undo step. `dataUrl` refreshes its picture. */
   setDepthSettings: (slot: 'top' | 'front' | 'side', patch: Partial<DepthSettings>, dataUrl?: string) => void;
   /** Clear per-field depth overrides and restore auto near/far (and related auto fields). */
@@ -237,8 +241,9 @@ export const useStore = create<Store>((set, get) => {
       }
       const next = applyBuiltMapAsset(p, top);
       if (!next) return;
-      commit(next, `map-build:${performance.now()}`);
-      set({ mapTerrain: { phase: 'ready', message: 'Map terrain ready', error: undefined } });
+      // Depth is derived from the current MapSpec — not a second undo step.
+      // Quick map (and Maps presets) then restore in one Undo.
+      set({ project: next, mapTerrain: { phase: 'ready', message: 'Map terrain ready', error: undefined } });
     },
     newSetup: (mode) => {
       const { project, setups } = get();
@@ -367,6 +372,26 @@ export const useStore = create<Store>((set, get) => {
       const next = projectWithTopMapSpec(p, map);
       commit(next, `map:${performance.now()}`);
       set({ mapTerrain: { phase: 'working', message: 'Queued terrain build…' } });
+    },
+    applyQuickMap: () => {
+      const p = get().project;
+      const next = applyQuickMapToProject(p);
+      const prevKey = p.images.top?.map ? mapBuildKey(p.images.top.map) : '';
+      const nextKey = next.images.top?.map ? mapBuildKey(next.images.top.map) : '';
+      commitParams(next, `quick-map:${performance.now()}`);
+      if (next.images.top?.map && (nextKey !== prevKey || !next.images.top.map.buildKey)) {
+        set({ mapTerrain: { phase: 'working', message: 'Queued terrain build…' } });
+      }
+      const layers = {
+        ...get().ui.viewportLayers,
+        labels: true,
+        engraving: true,
+        water: true,
+        fin: false,
+      };
+      saveViewportLayers(layers);
+      set({ ui: { ...get().ui, viewportLayers: layers } });
+      get().toast('Quick map: dense plates, OSM engrave, insert off');
     },
     setDepthSettings: (slot, patch, dataUrl) => {
       const p = get().project;
