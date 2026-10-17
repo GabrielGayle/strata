@@ -161,14 +161,17 @@ export function buildMapHeightField(v: Values, depth: DepthData, opts: { capMm?:
 
   let min = Infinity;
   let max = -Infinity;
-  for (let i = 0; i <= 24; i++) {
-    for (let j = 0; j <= 12; j++) {
-      const s = (i / 24 - 0.5) * f.stackLen;
-      const ac = (j / 12 - 0.5) * f.acrossLen;
-      const h = at(s * f.stack[0] + ac * f.across[0], s * f.stack[1] + ac * f.across[1]);
-      min = Math.min(min, h);
-      max = Math.max(max, h);
-    }
+  for (let i = 0; i < metres.length; i++) {
+    const d = metres[i];
+    if (!Number.isFinite(d)) continue;
+    const dd = Math.min(far, Math.max(near, d));
+    const h = MAP_HEIGHT_FLOOR_MM + (far - dd) * mmPerEncodedM;
+    if (h < min) min = h;
+    if (h > max) max = h;
+  }
+  if (!Number.isFinite(min)) {
+    min = MAP_HEIGHT_FLOOR_MM;
+    max = MAP_HEIGHT_FLOOR_MM;
   }
   return {
     at,
