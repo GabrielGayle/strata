@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { applyPreset, newProject, PRESETS } from '../src/core/project';
-import { angledPlatePathCount, buildPackHtml, paintOrder, type PaintItem, type Vtx } from '../src/core/buildPack';
+import { aboveGround, angledPlatePathCount, buildPackHtml, paintOrder, type PaintItem, type Vtx } from '../src/core/buildPack';
 
 const assets: Assets = { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null };
 
@@ -96,5 +96,17 @@ describe('build pack angled views: crossing parts and dense rows', { timeout: 60
       for (let i = 1; i < ys.length; i++) expect(ys[i] - ys[i - 1]).toBeGreaterThanOrEqual(12.9);
     }
     expect(layout).toContain(`all ${ids.length} are in the schedule`);
+  });
+});
+
+describe('build pack angled views: cast-in parts', () => {
+  it('cuts plates at the top of the concrete, so what is cast in is not drawn over it', () => {
+    // a plate from y = 90 to 190 on a base whose top is at 120: the bottom 30 is cast in
+    const ring: [number, number, number][] = [[0, 90, 0], [50, 90, 0], [50, 190, 0], [0, 190, 0]];
+    const cut = aboveGround(ring, 120);
+    expect(Math.min(...cut.map((q) => q[1]))).toBe(120);
+    expect(Math.max(...cut.map((q) => q[1]))).toBe(190);
+    expect(cut).toHaveLength(4);
+    expect(aboveGround([[0, 10, 0], [5, 10, 0], [5, 100, 0]], 120)).toHaveLength(0);
   });
 });
