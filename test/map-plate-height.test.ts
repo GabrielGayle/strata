@@ -180,6 +180,32 @@ describe('map elevation → plate heights (invariant)', () => {
     expect(on.outline!.hi - on.outline!.lo).toBeCloseTo(off.outline!.hi - off.outline!.lo, 0);
   });
 
+  it('stays finite when a 1e38 elevation is injected', () => {
+    const grid = syntheticConeGrid(32, 20, 18);
+    grid.data[4] = 1e38;
+    grid.data[5] = Number.POSITIVE_INFINITY;
+    const { depth } = mapGridToDepth(grid, { exaggeration: 4 });
+    expect(Number.isFinite(depth.mapOrtho!.zMinM)).toBe(true);
+    expect(Number.isFinite(depth.mapOrtho!.zMaxM)).toBe(true);
+    expect(depth.mapOrtho!.zMaxM).toBeLessThan(100);
+    depth.settings = { ...depth.settings, near: 1e38, far: 2e38 };
+    const v = evaluateParams({
+      baseLength: '400',
+      baseWidth: '400',
+      stackHeight: '100',
+    }).values;
+    const hf = buildMapHeightField(v, depth);
+    expect(Number.isFinite(hf.min)).toBe(true);
+    expect(Number.isFinite(hf.max)).toBe(true);
+    expect(Math.abs(hf.max)).toBeLessThan(1e7);
+    expect(Math.abs(hf.min)).toBeLessThan(1e7);
+    for (let i = 0; i <= 8; i++) {
+      const h = hf.at((i / 8 - 0.5) * 400, 0);
+      expect(Number.isFinite(h)).toBe(true);
+      expect(Math.abs(h)).toBeLessThan(1e7);
+    }
+  });
+
   it('keeps the default insert when the top face is not a map', () => {
     const p = newProject();
     const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null });

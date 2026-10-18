@@ -312,6 +312,38 @@ function Rods({ model }: { model: Model }) {
   );
 }
 
+/** Vertical support poles through a flat (Stamped) stack. */
+function StackRods({ model }: { model: Model }) {
+  const plan = model.sliced.stackRods;
+  const geo = useMemo(() => new THREE.CylinderGeometry(1, 1, 1, 12), []);
+  useEffect(() => () => geo.dispose(), [geo]);
+  if (!plan?.rods.length) return null;
+  return (
+    <group userData={{ strata: 'stack-rods' }}>
+      {plan.rods.map((r) => {
+        const a = new THREE.Vector3(...r.a);
+        const b = new THREE.Vector3(...r.b);
+        const mid = a.clone().add(b).multiplyScalar(0.5);
+        const dir = b.clone().sub(a);
+        const len = dir.length() || r.length;
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+        return (
+          <mesh
+            key={r.id}
+            geometry={geo}
+            quaternion={q}
+            scale={[r.diameter / 2, len, r.diameter / 2]}
+            position={mid}
+            userData={{ strata: 'stack-rod', id: r.id }}
+          >
+            <meshStandardMaterial color="#d4dbe2" metalness={0.75} roughness={0.28} emissive="#2a3138" emissiveIntensity={0.22} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
 function Instanced({ geometry, mats, color }: { geometry: THREE.BufferGeometry; mats: THREE.Matrix4[]; color: string }) {
   const mesh = useMemo(() => {
     const m = new THREE.InstancedMesh(geometry, new THREE.MeshStandardMaterial({ color, metalness: 0.8, roughness: 0.4 }), Math.max(1, mats.length));
@@ -413,7 +445,8 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
         </group>
         {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
         <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} />
-        <Rods model={model} />
+        {L.rods !== false && <Rods model={model} />}
+        {L.rods !== false && <StackRods model={model} />}
         {showInsertMesh(L) && <Insert model={model} />}
         <PlacedObjects model={model} />
         {opts.showSource && model.source && v.stackSource === 'form' && (

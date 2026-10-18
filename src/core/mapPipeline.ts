@@ -31,6 +31,7 @@ import { mapBuildKey } from './mapBuildKey';
 import { mapInfo, mapWarn, noticesWithoutStaleEngraveSkip, type MapSourceNotice } from './mapNotices';
 import type { DepthData } from './depth';
 import type { Float32Grid } from './mapGrid';
+import { sanitizeElevationGrid } from './mapElevation';
 import type { ImageAsset, Project } from './project';
 import type { RawValue } from './params';
 
@@ -99,36 +100,38 @@ async function fetchElevationGrid(
     return cachedTileFetch(spec.cacheDir ?? opts.cacheDir, url, inner);
   };
 
+  const ok = (grid: Float32Grid, used: MapSource) => ({ grid: sanitizeElevationGrid(grid), used });
+
   if (effective === 'terrarium') {
-    return { grid: await fetchTerrariumGrid(spec, { fetch }), used: 'terrarium' };
+    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
   }
 
   if (effective === 'cop30') {
     const grid = await fetchCop30Grid(spec, { loader: opts.cop30Loader });
-    if (grid) return { grid, used: 'cop30' };
+    if (grid) return ok(grid, 'cop30');
     notices.push(mapWarn('cop30 COG tile unavailable for this bbox; falling back to terrarium (~30 m).'));
-    return { grid: await fetchTerrariumGrid(spec, { fetch }), used: 'terrarium' };
+    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
   }
 
   if (isRegionalLidarSource(effective)) {
     const grid = await fetchRegionalLidarGrid(effective, spec, opts.regionalLoader);
-    if (grid) return { grid, used: effective };
+    if (grid) return ok(grid, effective);
     notices.push(
       mapWarn(`${effective} LiDAR not available for this bbox (no tile coverage or adapter offline); falling back to terrarium (~30 m).`),
     );
-    return { grid: await fetchTerrariumGrid(spec, { fetch }), used: 'terrarium' };
+    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
   }
 
   if (isEaLidarSource(effective)) {
     const grid = await fetchEaLidarGrid(effective, spec, { loader: opts.eaLoader });
-    if (grid) return { grid, used: effective };
+    if (grid) return ok(grid, effective);
     notices.push(mapWarn(`${effective} LiDAR not available for this bbox; falling back to terrarium (~30 m).`));
-    return { grid: await fetchTerrariumGrid(spec, { fetch }), used: 'terrarium' };
+    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
   }
 
   if (STUB_SOURCES.has(effective)) {
     notices.push(mapWarn(`${effective} adapter not shipped yet; falling back to terrarium (~30 m).`));
-    return { grid: await fetchTerrariumGrid(spec, { fetch }), used: 'terrarium' };
+    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
   }
 
   throw new MapSourceNotImplementedError(effective);

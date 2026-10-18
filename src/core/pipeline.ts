@@ -9,6 +9,7 @@ import { processImage, rotate, silhouetteMask, type Gray } from './image';
 import { buildHeightField, type HeightField } from './heightfield';
 import { buildMapHeightField, isMapDepth } from './mapPlateHeight';
 import { slice, type SliceResult } from './slicer';
+import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
 import { nest, nestGroups, type NestResult } from './nest';
 import { materialKey, materialOf } from './appearance';
@@ -275,6 +276,7 @@ export function createFrontPipeline() {
         }),
       ),
     );
+    attachMapPartEtch(sliced, project.images.top?.map);
     const carved = stage('Shadow carve', [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow], () => {
       if (!v.shadowOn || !v.sunOn || v.sliceMode !== 'parallel') return null;
       const frames = (project.shadow?.frames ?? []).flatMap((f, i) => {

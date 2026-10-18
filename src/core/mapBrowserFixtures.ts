@@ -1,9 +1,48 @@
 import type { Float32Grid } from './mapGrid';
-import type { MapSource } from './mapSpec';
+import type { MapSource, MapSpec } from './mapSpec';
 import type { EaGridLoader } from './mapEaLidar';
 import type { RegionalGridLoader } from './mapRegionalLidar';
 import { cropRegionalGridToBbox } from './mapRegionalLidar';
 import type { OverpassFetcher } from './mapOverpass';
+import { metricBounds } from './mapProject';
+
+function gridOverlapsBbox(grid: Float32Grid, bbox: MapSpec['bbox']): boolean {
+  if (grid.crs !== 'EPSG:27700') return true;
+  const b = metricBounds(bbox, 'EPSG:27700');
+  const t = grid.transform;
+  const absW = Math.abs(t.pixelW);
+  const absH = Math.abs(t.pixelH);
+  const gridWest = t.originX - absW / 2;
+  const gridEast = t.originX + (grid.w - 1) * t.pixelW + (t.pixelW > 0 ? absW / 2 : -absW / 2);
+  const west = Math.min(gridWest, gridEast);
+  const east = Math.max(gridWest, gridEast);
+  const gridNorth = t.originY + (t.pixelH < 0 ? absH / 2 : -absH / 2);
+  const gridSouth = t.originY + (grid.h - 1) * t.pixelH + (t.pixelH < 0 ? -absH / 2 : absH / 2);
+  const south = Math.min(gridSouth, gridNorth);
+  const north = Math.max(gridSouth, gridNorth);
+  return b.east >= west && b.west <= east && b.north >= south && b.south <= north;
+}
+
+/** Stretch a fixture grid over `bbox` so offline e2e can use any UK place. */
+export function retargetGridToBbox(grid: Float32Grid, bbox: MapSpec['bbox']): Float32Grid {
+  const crs = grid.crs || 'EPSG:27700';
+  const b = metricBounds(bbox, crs);
+  const pixelW = (b.east - b.west) / Math.max(1, grid.w);
+  const pixelH = -(b.north - b.south) / Math.max(1, grid.h);
+  return {
+    ...grid,
+    transform: {
+      originX: b.west + pixelW / 2,
+      originY: b.north + pixelH / 2,
+      pixelW,
+      pixelH,
+    },
+  };
+}
+
+function coverBbox(grid: Float32Grid, bbox: MapSpec['bbox']): Float32Grid {
+  return gridOverlapsBbox(grid, bbox) ? cropRegionalGridToBbox(grid, bbox) : retargetGridToBbox(grid, bbox);
+}
 
 async function fetchJsonGrid(path: string): Promise<Float32Grid | null> {
   const res = await fetch(path);
@@ -21,7 +60,7 @@ async function fetchJsonGrid(path: string): Promise<Float32Grid | null> {
 export function browserEaGridLoader(): EaGridLoader {
   return async (_source, spec) => {
     const g = await fetchJsonGrid('/map-fixtures/regional/neasden-ea-dtm.json');
-    return g ? cropRegionalGridToBbox(g, spec.bbox) : null;
+    return g ? coverBbox(g, spec.bbox) : null;
   };
 }
 
@@ -34,7 +73,7 @@ export function browserRegionalGridLoader(): RegionalGridLoader {
     const path = files[source];
     if (!path) return null;
     const g = await fetchJsonGrid(path);
-    return g ? cropRegionalGridToBbox(g, spec.bbox) : null;
+    return g ? coverBbox(g, spec.bbox) : null;
   };
 }
 

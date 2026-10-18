@@ -16,12 +16,47 @@ const S = 1000; // 1 µm resolution
 /** Practical 'infinity' (mm) for half-planes. Clipper switches to slow BigInteger maths beyond ~47 m at µm scale. */
 export const BIG = 20000;
 const C = ClipperLib;
+const CLIPPER_HI_RANGE =
+  Number(C.ClipperBase?.hiRange) > 0 ? Number(C.ClipperBase.hiRange) : 4503599627370495;
+/** mm. Stay below Clipper hiRange at 1 µm (hiRange / S ≈ 4.5e12 mm). */
+export const MAX_COORD_MM = Math.min(1e9, CLIPPER_HI_RANGE / S / 4);
+
+/** Clipper RangeTest / invalid input — never a browser `alert()`. */
+export class GeometryRangeError extends Error {
+  readonly operation: string;
+  constructor(operation: string, message?: string) {
+    super(message ?? `Coordinate outside allowed range in ${operation}()`);
+    this.name = 'GeometryRangeError';
+    this.operation = operation;
+  }
+}
+
+export function isGeometryRangeError(err: unknown): boolean {
+  return err instanceof GeometryRangeError || (err instanceof Error && err.name === 'GeometryRangeError');
+}
+
+// clipper-lib's Error() calls alert() and swallows the throw. Replace at load.
+C.Error = (message: string) => {
+  throw new GeometryRangeError('clipper', String(message ?? 'Clipper error'));
+};
 
 type IP = { X: number; Y: number };
 
-function toIP(path: Path): IP[] {
+function toIP(path: Path, op: string): IP[] {
   const out: IP[] = new Array(path.length);
-  for (let i = 0; i < path.length; i++) out[i] = { X: Math.round(path[i][0] * S), Y: Math.round(path[i][1] * S) };
+  for (let i = 0; i < path.length; i++) {
+    const x = path[i][0];
+    const y = path[i][1];
+    if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > MAX_COORD_MM || Math.abs(y) > MAX_COORD_MM) {
+      throw new GeometryRangeError(op);
+    }
+    const X = Math.round(x * S);
+    const Y = Math.round(y * S);
+    if (!Number.isFinite(X) || !Number.isFinite(Y) || Math.abs(X) > CLIPPER_HI_RANGE / 2 || Math.abs(Y) > CLIPPER_HI_RANGE / 2) {
+      throw new GeometryRangeError(op);
+    }
+    out[i] = { X, Y };
+  }
   return out;
 }
 function fromIP(path: IP[]): Path {
@@ -69,30 +104,30 @@ function polyTreeToShape(tree: any): Shape {
 type Fill = 'nonzero' | 'evenodd';
 const fillType = (f: Fill) => (f === 'evenodd' ? C.PolyFillType.pftEvenOdd : C.PolyFillType.pftNonZero);
 
-function run(op: number, subj: Path[], clip: Path[], subjFill: Fill = 'nonzero', clipFill: Fill = 'nonzero'): Shape {
+function run(op: number, subj: Path[], clip: Path[], subjFill: Fill = 'nonzero', clipFill: Fill = 'nonzero', name = 'clip'): Shape {
   const c = new C.Clipper();
-  if (subj.length) c.AddPaths(subj.map(toIP), C.PolyType.ptSubject, true);
-  if (clip.length) c.AddPaths(clip.map(toIP), C.PolyType.ptClip, true);
+  if (subj.length) c.AddPaths(subj.map((p) => toIP(p, name)), C.PolyType.ptSubject, true);
+  if (clip.length) c.AddPaths(clip.map((p) => toIP(p, name)), C.PolyType.ptClip, true);
   const tree = new C.PolyTree();
   c.Execute(op, tree, fillType(subjFill), fillType(clipFill));
   return polyTreeToShape(tree);
 }
 
 export function union(paths: Path[], fill: Fill = 'nonzero'): Shape {
-  return run(C.ClipType.ctUnion, paths, [], fill, fill);
+  return run(C.ClipType.ctUnion, paths, [], fill, fill, 'union');
 }
 export function unionShapes(...shapes: Shape[]): Shape {
-  return run(C.ClipType.ctUnion, shapes.flatMap(shapeToPaths), [], 'nonzero', 'nonzero');
+  return run(C.ClipType.ctUnion, shapes.flatMap(shapeToPaths), [], 'nonzero', 'nonzero', 'union');
 }
 export function difference(a: Shape, b: Shape): Shape {
   if (!b.length) return a;
-  return run(C.ClipType.ctDifference, shapeToPaths(a), shapeToPaths(b));
+  return run(C.ClipType.ctDifference, shapeToPaths(a), shapeToPaths(b), 'nonzero', 'nonzero', 'difference');
 }
 export function intersection(a: Shape, b: Shape): Shape {
-  return run(C.ClipType.ctIntersection, shapeToPaths(a), shapeToPaths(b));
+  return run(C.ClipType.ctIntersection, shapeToPaths(a), shapeToPaths(b), 'nonzero', 'nonzero', 'intersection');
 }
 export function xor(a: Shape, b: Shape): Shape {
-  return run(C.ClipType.ctXor, shapeToPaths(a), shapeToPaths(b));
+  return run(C.ClipType.ctXor, shapeToPaths(a), shapeToPaths(b), 'nonzero', 'nonzero', 'xor');
 }
 
 /** Offset a shape (positive grows outers and shrinks holes). */
@@ -100,7 +135,7 @@ export function offset(shape: Shape, delta: number, join: 'round' | 'miter' | 's
   if (Math.abs(delta) < 1e-6) return shape;
   const jt = join === 'round' ? C.JoinType.jtRound : join === 'miter' ? C.JoinType.jtMiter : C.JoinType.jtSquare;
   const co = new C.ClipperOffset(2, arcTol * S);
-  co.AddPaths(shapeToPaths(shape).map(toIP), jt, C.EndType.etClosedPolygon);
+  co.AddPaths(shapeToPaths(shape).map((p) => toIP(p, 'offset')), jt, C.EndType.etClosedPolygon);
   const tree = new C.PolyTree();
   co.Execute(tree, delta * S);
   return polyTreeToShape(tree);
@@ -110,8 +145,8 @@ export function offset(shape: Shape, delta: number, join: 'round' | 'miter' | 's
 export function clipLines(lines: Path[], shape: Shape): Path[] {
   if (!lines.length || !shape.length) return [];
   const c = new C.Clipper();
-  c.AddPaths(lines.map(toIP), C.PolyType.ptSubject, false);
-  c.AddPaths(shapeToPaths(shape).map(toIP), C.PolyType.ptClip, true);
+  c.AddPaths(lines.map((p) => toIP(p, 'clipLines')), C.PolyType.ptSubject, false);
+  c.AddPaths(shapeToPaths(shape).map((p) => toIP(p, 'clipLines')), C.PolyType.ptClip, true);
   const tree = new C.PolyTree();
   c.Execute(C.ClipType.ctIntersection, tree, C.PolyFillType.pftNonZero, C.PolyFillType.pftNonZero);
   return C.Clipper.OpenPathsFromPolyTree(tree).map(fromIP);

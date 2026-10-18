@@ -6,6 +6,7 @@ import type { NestResult } from './nest';
 import type { MouldResult, PourPlanRow } from './mould';
 import { embedOf } from './slicer';
 import type { HardwareRow } from './brace';
+import { stackRodHardware } from './stackRods';
 import { bucketOf, type Appearance } from './appearance';
 import { pathLength } from './geom2d';
 
@@ -61,6 +62,8 @@ export interface Bom {
   pour: PourPlanRow[];
   /** Bought-in bracing hardware: threaded rods, nuts, washers. */
   hardware: HardwareRow[];
+  /** Flat-stack support poles (id, diameter, length). */
+  supportRods?: { id: string; diameter: number; length: number }[];
 }
 
 export function buildBom(
@@ -124,7 +127,8 @@ export function buildBom(
     dowels: moulds.dowels,
     bolts: moulds.bolts,
     pour,
-    hardware: sliced.brace?.hardware ?? [],
+    hardware: [...(sliced.brace?.hardware ?? []), ...stackRodHardware(sliced.stackRods)],
+    supportRods: (sliced.stackRods?.rods ?? []).map((r) => ({ id: r.id, diameter: r.diameter, length: r.length })),
   };
 }
 
@@ -158,5 +162,9 @@ export function cutListCsv(v: Values, bom: Bom): string {
   const lines = ['part,width_mm,height_mm,area_mm2,cut_length_mm,pierces,mass_kg,material,thickness_mm,bucket'];
   for (const r of bom.rows)
     lines.push([r.id, r.w.toFixed(2), r.h.toFixed(2), r.area.toFixed(1), r.cut.toFixed(1), r.pierces, r.mass.toFixed(3), MATERIAL_NAME[r.material] ?? r.material, v.thickness, q(r.bucket ?? '')].join(','));
+  if (bom.supportRods?.length) {
+    lines.push('', 'rod_id,diameter_mm,length_mm');
+    for (const r of bom.supportRods) lines.push([r.id, r.diameter.toFixed(2), r.length.toFixed(2)].join(','));
+  }
   return lines.join('\n') + '\n';
 }

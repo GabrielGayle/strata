@@ -16,6 +16,7 @@ import HelpLayer, { HelpButton } from './Help';
 import DesignBox from './DesignBox';
 import { designShortcutFromKey } from './designShortcut';
 import { useMapTerrainBuild } from './useMapTerrainBuild';
+import { isMapTerrainFailure, reportMapTerrainFailure, runFrontPipelineSafe } from './mapTerrainError';
 import { isMapDepth, mapMasterWidthMm, mapScaleMmPerM, mapTrueRangePlateMm } from '../core/mapPlateHeight';
 import { flatStackHeightMm, flatStackIsCapped } from '../core/mapGeometryReadout';
 import { countPlatesAtMaxHeight, plateTopHeightRangeMm } from '../core/slicer';
@@ -38,7 +39,7 @@ export default function App() {
   const latest = useRef<{ f: FrontModel; input: DeferredInput } | null>(null);
   const deferred = useRef<{ result: DeferredModel; input: DeferredInput } | null>(null);
   const [model, setModelState] = useState<Model>(() => {
-    const f = front(project, assets);
+    const f = runFrontPipelineSafe(front, project, assets);
     const input = deferredInput(f, project);
     latest.current = { f, input };
     deferred.current = { result: local(input, 'full'), input };
@@ -66,7 +67,13 @@ export default function App() {
   const runLocal = (input: DeferredInput) => {
     clearTimeout(localTimer.current);
     localTimer.current = setTimeout(() => {
-      if (latest.current?.input === input) showDeferred(local(input, 'full'), input);
+      if (latest.current?.input !== input) return;
+      try {
+        showDeferred(local(input, 'full'), input);
+      } catch (e) {
+        if (isMapTerrainFailure(e)) reportMapTerrainFailure(e);
+        else throw e;
+      }
     }, 320);
   };
 
@@ -99,7 +106,7 @@ export default function App() {
   // regenerate: the plates on the next frame, then checks, nesting, moulds and BOM in the worker
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
-      const f = front(project, assets);
+      const f = runFrontPipelineSafe(front, project, assets);
       const input = deferredInput(f, project);
       latest.current = { f, input };
       const d = deferred.current!;
@@ -153,10 +160,18 @@ export default function App() {
   // exports want everything current: the model on screen when it is, else finish it here
   const getFull = useMemo(
     () => () => {
-      const f = front(project, assets);
+      const f = runFrontPipelineSafe(front, project, assets);
       const input = deferredInput(f, project);
       const d = deferred.current;
-      return assemble(f, d && sameInput(d.input, input) ? d.result : local(input, 'full'), false);
+      try {
+        return assemble(f, d && sameInput(d.input, input) ? d.result : local(input, 'full'), false);
+      } catch (e) {
+        if (isMapTerrainFailure(e)) {
+          reportMapTerrainFailure(e);
+          return assemble(f, d && sameInput(d.input, input) ? d.result : local(input, 'fast'), false);
+        }
+        throw e;
+      }
     },
     [front, local, project, assets],
   );
@@ -164,6 +179,8 @@ export default function App() {
   const mapTerrain = useStore((s) => s.mapTerrain);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
+  const stackRodCount = model.sliced.stackRods?.rods.length ?? 0;
+  const stackRodsVisible = ui.viewportLayers.rods !== false && stackRodCount > 0;
   const topDepth = project.images.top?.depth;
   const mapFace = isMapDepth(topDepth) && !!project.images.top?.map;
   const mapEx = Number(project.images.top?.map?.exaggerationFactor) || 0;
@@ -200,6 +217,9 @@ export default function App() {
         data-strata-map-stack-capped={mapFace && model.v.sliceMode === 'flat' ? (stackCapped ? '1' : '0') : undefined}
         data-strata-map-z-max-m={mapFace && mapZMaxM != null ? String(mapZMaxM) : undefined}
         data-strata-plates-at-max={mapFace ? String(platesAtMax) : undefined}
+        data-strata-slice-mode={model.v.sliceMode}
+        data-strata-stack-rods={String(stackRodCount)}
+        data-strata-stack-rods-visible={stackRodsVisible ? '1' : '0'}
       >
         <div className="title-bar">
           <div className="title-bar-text">

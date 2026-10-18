@@ -20,6 +20,7 @@ import { depthToGray } from '../src/core/depth';
 import { fixtureTileFetcher } from './map-cli-fixtures';
 import { NEASDEN_BBOX } from './map-fixtures';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
+import { STACK_ROD_PARAMS, twoPeakGray } from './stack-rods-fixture';
 
 const assets: Assets = { sideImg: null, frontImg: null, topImg: null, insMesh: null, srcMesh: null };
 const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, '_');
@@ -157,6 +158,19 @@ describe('build pack integrity', { timeout: 120_000 }, () => {
     expect(plateDxf, 'zip contains plates/*.dxf').toBeTruthy();
     delete files[plateDxf!];
     expect(() => assertZipBuildPackIntegrity(m, p, files)).toThrow(BuildPackIntegrityError);
+  });
+
+  it('includes rods.csv when Support poles are on', { timeout: 60_000 }, () => {
+    const p = newProject();
+    const preset = PRESETS.find((x) => x.name === 'Stamped stack')!;
+    p.params = { ...p.params, ...preset.params, ...STACK_ROD_PARAMS };
+    const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: twoPeakGray(), insMesh: null, srcMesh: null });
+    expect(m.sliced.stackRods?.rods.length).toBeGreaterThan(0);
+    assertZipPlates(m, p, 'stack-rods');
+    const zip = unzipSync(buildZip(m, p));
+    expect(Object.keys(zip)).toContain('rods.csv');
+    expect(strFromU8(zip['rods.csv'])).toMatch(/^rod_id,diameter_mm,length_mm\n/);
+    expect(strFromU8(zip['build-pack.html'])).toContain(`data-rod-count="${m.sliced.stackRods!.rods.length}"`);
   });
 
   it('throws BuildPackIntegrityError when a laser/parts/*.dxf is missing from the zip', () => {

@@ -4,9 +4,20 @@ import { createPipeline } from '../src/core/pipeline';
 import { newProject, PRESETS } from '../src/core/project';
 import { pointInShape } from '../src/core/geom2d';
 import { baseTop } from '../src/core/slicer';
+import { MapTerrainBuildError } from '../src/core/mapBuildError';
 import { mapGridToDepth, syntheticConeGrid } from '../src/core/mapToDepth';
 
 describe('mapToDepth', () => {
+  it('ignores 1e38 spikes and throws when every sample is invalid', () => {
+    const grid = syntheticConeGrid(16, 10, 12);
+    grid.data[0] = 1e38;
+    const { depth } = mapGridToDepth(grid);
+    expect(depth.mapOrtho!.zMaxM).toBeLessThan(20);
+    const empty = syntheticConeGrid(8, 5, 4);
+    empty.data.fill(-1.7e38);
+    expect(() => mapGridToDepth(empty)).toThrow(MapTerrainBuildError);
+  });
+
   it('decode cache does not reuse ×11 metres under a ×21 window', () => {
     const grid = syntheticConeGrid(32, 20, 18);
     const a = mapGridToDepth(grid, { exaggeration: 11 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import ClipperLib from 'clipper-lib';
 import { fitArcs, segsToPath } from '../src/core/arcs';
-import { circlePath, difference, offset, rect, shapeArea } from '../src/core/geom2d';
+import { circlePath, difference, GeometryRangeError, offset, rect, shapeArea, union } from '../src/core/geom2d';
 import { marchingSquares } from '../src/core/image';
 import { nest } from '../src/core/nest';
 
@@ -33,6 +34,24 @@ describe('2D geometry', () => {
     const loops = marchingSquares(f, w, h);
     expect(loops.length).toBe(2);
   });
+  it('throws GeometryRangeError for Infinity and huge coordinates without alerting', () => {
+    const calls: unknown[] = [];
+    const prev = globalThis.alert;
+    (globalThis as typeof globalThis & { alert: (msg?: unknown) => void }).alert = (msg?: unknown) => {
+      calls.push(msg);
+    };
+    try {
+      expect(() => union([[[Infinity, 0], [1, 0], [0, 1]]])).toThrow(GeometryRangeError);
+      expect(() => union([[[1e20, 0], [1e20 + 10, 0], [1e20, 10]]])).toThrow(GeometryRangeError);
+      expect(() => union([[[NaN, 0], [1, 0], [0, 1]]])).toThrow(GeometryRangeError);
+      expect(() => ClipperLib.Error('Coordinate outside allowed range in RangeTest().')).toThrow(GeometryRangeError);
+      expect(calls).toEqual([]);
+    } finally {
+      if (typeof prev === 'function') globalThis.alert = prev;
+      else delete (globalThis as { alert?: unknown }).alert;
+    }
+  });
+
   it('nests rectangles without overlap', () => {
     const items = Array.from({ length: 30 }, (_, i) => ({ id: `p${i}`, w: 260, h: 300 + (i % 5) * 10, area: 260 * 300 }));
     const r = nest(items, 2500, 1250, 6);

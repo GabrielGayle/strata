@@ -1,6 +1,8 @@
 // Elevation grid (metres AMSL) → DepthData for the existing image / slicer pipeline.
 import type { DepthData, DepthSettings, MapOrthoMeta } from './depth';
 import { defaultDepthSettings } from './depth';
+import { MapTerrainBuildError } from './mapBuildError';
+import { isPlausibleMapElevation } from './mapElevation';
 import type { Float32Grid } from './mapGrid';
 import { gridMetricWidthHeight } from './mapProject';
 
@@ -39,11 +41,13 @@ export function mapGridToDepth(grid: Float32Grid, opts: MapToDepthOptions = {}):
   let zMin = Infinity;
   let zMax = -Infinity;
   for (const v of grid.data) {
-    if (!Number.isFinite(v)) continue;
+    if (!isPlausibleMapElevation(v)) continue;
     if (v < zMin) zMin = v;
     if (v > zMax) zMax = v;
   }
-  if (!(zMax >= zMin) || !Number.isFinite(zMin)) throw new Error('Map grid has no elevation samples');
+  if (!(zMax >= zMin) || !Number.isFinite(zMin)) {
+    throw new MapTerrainBuildError('Map grid has no elevation samples');
+  }
   const ex = opts.exaggeration != null && opts.exaggeration > 0 ? opts.exaggeration : 1;
   const n = grid.w * grid.h;
   const depths = new Float32Array(n);
@@ -51,7 +55,7 @@ export function mapGridToDepth(grid: Float32Grid, opts: MapToDepthOptions = {}):
   let maxD = -Infinity;
   for (let i = 0; i < n; i++) {
     const z = grid.data[i];
-    if (!Number.isFinite(z)) {
+    if (!isPlausibleMapElevation(z)) {
       depths[i] = NaN;
       continue;
     }

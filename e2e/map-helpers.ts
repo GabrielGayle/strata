@@ -6,6 +6,51 @@ import { BUTTERMERE_BBOX } from '../test/map-fixtures';
 
 const MAP_READY_MS = process.env.LIVE_MAP === '1' || process.env.LIVE_MAP_SCREENSHOTS === '1' ? 300_000 : 90_000;
 
+/** Record browser alerts so RangeTest popups fail the test instead of hanging. */
+export function attachDialogGuard(page: Page): string[] {
+  const dialogs: string[] = [];
+  page.on('dialog', (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
+  return dialogs;
+}
+
+export async function waitForMapTerrainError(page: Page, text?: RegExp) {
+  const err = page.getByTestId('map-terrain-error');
+  await expect(err).toBeVisible({ timeout: MAP_READY_MS });
+  await expect(err).toContainText(
+    text ??
+      /Couldn't build plates.*gap or bad value|Couldn't reach the elevation service|height for this landscape is out of range/i,
+  );
+  await expect(page.locator('.app.window')).toHaveAttribute('data-strata-map-phase', 'error');
+}
+
+/** After Quick map / Apply, Queued must not linger — the build either runs or the error returns. */
+export async function waitUntilMapNotStuckQueued(page: Page, timeout = 8_000) {
+  const root = page.locator('.app.window');
+  await expect
+    .poll(
+      async () => {
+        const phase = (await root.getAttribute('data-strata-map-phase')) ?? '';
+        const status = (await page.locator('.map-terrain-status').textContent()) ?? '';
+        return phase === 'working' && /Queued terrain build/i.test(status) ? 'queued' : phase;
+      },
+      { timeout, intervals: [100, 200, 400] },
+    )
+    .not.toBe('queued');
+}
+
+/** Replace the offline EA DTM with bilinear-blended nodata (~−1.7e38). */
+export async function injectNodataBlendedDem(page: Page) {
+  await page.route('**/map-fixtures/regional/neasden-ea-dtm.json', async (route) => {
+    const res = await route.fetch();
+    const json = (await res.json()) as { data: number[] };
+    json.data = json.data.map(() => -1.7e38);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(json) });
+  });
+}
+
 /** Must stay self-contained: Playwright serializes this into the browser. */
 export function seedAllTourSeenKeys() {
   try {
