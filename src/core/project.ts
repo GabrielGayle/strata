@@ -13,6 +13,7 @@ import { cleanUserParamOverrides, type UserParamOverrides } from './projectOverr
 import { cleanShadow, type ShadowSpec } from './shadow';
 import { cleanObjects, type CutObject } from './objects';
 import { cleanShelf, type ShelfSpec } from './shelf';
+import { cleanCandles, type CandleSpec } from './candles';
 import { cleanOrigin, type WorldOrigin } from './origin';
 import { cleanEarthView, type EarthView } from './earthView';
 
@@ -59,6 +60,8 @@ export interface Variant {
   objects?: CutObject[] | null;
   /** The postcard shelf as it was. Missing on variants saved before this existed: those keep the project's. */
   shelf?: ShelfSpec | null;
+  /** The candelabra as it was. Missing on variants saved before this existed: those keep the project's. */
+  candles?: CandleSpec | null;
   /** The world origin as it was. Missing on variants saved before this existed: those keep the project's. */
   origin?: WorldOrigin | null;
   createdAt: string;
@@ -86,6 +89,8 @@ export interface Project {
   objects?: CutObject[];
   /** Postcards laid along an arc, each held in a seat cut into the plates. */
   shelf?: ShelfSpec;
+  /** Candlesticks and tealights laid along a path, the plates stepping up to hold each one. */
+  candles?: CandleSpec;
   /** Where placed objects and the shelf are measured from (the middle of the floor under the base when missing). */
   origin?: WorldOrigin;
   /** Parameter ids the user set; auto-dimension and design size patches must not overwrite them. */
@@ -250,7 +255,7 @@ function readVariants(raw: any): Variant[] {
   if (!Array.isArray(raw.variants)) return [];
   const own = raw.images ?? {};
   const shadow = (v: any) => (v.shadow === SAME_IMAGE ? cleanShadow(raw.shadow) ?? null : v.shadow === undefined ? undefined : cleanShadow(v.shadow) ?? null);
-  return raw.variants.map((v: any) => (v && typeof v === 'object' && 'shadow' in v ? { ...v, shadow: shadow(v) } : v)).map((v: any) => (v && typeof v === 'object' && 'objects' in v ? { ...v, objects: cleanObjects(v.objects) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'shelf' in v ? { ...v, shelf: cleanShelf(v.shelf) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'origin' in v ? { ...v, origin: cleanOrigin(v.origin) ?? null } : v)).map((v: any) => {
+  return raw.variants.map((v: any) => (v && typeof v === 'object' && 'shadow' in v ? { ...v, shadow: shadow(v) } : v)).map((v: any) => (v && typeof v === 'object' && 'objects' in v ? { ...v, objects: cleanObjects(v.objects) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'shelf' in v ? { ...v, shelf: cleanShelf(v.shelf) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'candles' in v ? { ...v, candles: cleanCandles(v.candles) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'origin' in v ? { ...v, origin: cleanOrigin(v.origin) ?? null } : v)).map((v: any) => {
     if (!v?.images || typeof v.images !== 'object') return v;
     const images: Project['images'] = {};
     for (const [slot, a] of Object.entries(v.images)) {
@@ -275,6 +280,7 @@ export function applyVariant(p: Project, v: Variant): Project {
     ...(v.shadow !== undefined ? { shadow: v.shadow ?? undefined } : {}),
     ...(v.objects !== undefined ? { objects: v.objects ?? undefined } : {}),
     ...(v.shelf !== undefined ? { shelf: v.shelf ?? undefined } : {}),
+    ...(v.candles !== undefined ? { candles: v.candles ?? undefined } : {}),
     ...(v.origin !== undefined ? { origin: v.origin ?? undefined } : {}),
   };
 }
@@ -328,6 +334,7 @@ export function deserialize(text: string): Project {
     shadow: cleanShadow(raw.shadow),
     objects: cleanObjects(raw.objects),
     shelf: cleanShelf(raw.shelf),
+    candles: cleanCandles(raw.candles),
     origin: cleanOrigin(raw.origin),
     userParamOverrides: cleanUserParamOverrides(raw.userParamOverrides),
     savedView: cleanEarthView(raw.savedView),

@@ -24,9 +24,10 @@ export interface ShareState {
   /** Cut objects, postcard shelf and world origin: plain numbers and text, so they travel. */
   objects?: Project['objects'];
   shelf?: Project['shelf'];
+  candles?: Project['candles'];
   origin?: Project['origin'];
   /** Variants with their settings only (no pictures, composition or shadow pictures). */
-  variants?: Pick<Project['variants'][number], 'id' | 'name' | 'params' | 'locks' | 'pour' | 'moves' | 'appearance' | 'objects' | 'shelf' | 'origin' | 'createdAt'>[];
+  variants?: Pick<Project['variants'][number], 'id' | 'name' | 'params' | 'locks' | 'pour' | 'moves' | 'appearance' | 'objects' | 'shelf' | 'candles' | 'origin' | 'createdAt'>[];
   /** Plain-language list of what the sender had that the link leaves out. */
   omitted?: string[];
 }
@@ -54,6 +55,7 @@ export function shareState(p: Project): ShareState {
   if (p.appearance) s.appearance = p.appearance;
   if (p.objects?.length) s.objects = p.objects;
   if (p.shelf) s.shelf = p.shelf;
+  if (p.candles) s.candles = p.candles;
   if (p.origin) s.origin = p.origin;
   if (p.variants.length) {
     s.variants = p.variants.map((v) => ({
@@ -66,6 +68,7 @@ export function shareState(p: Project): ShareState {
       ...(v.appearance ? { appearance: v.appearance } : {}),
       ...(v.objects !== undefined ? { objects: v.objects } : {}),
       ...(v.shelf !== undefined ? { shelf: v.shelf } : {}),
+      ...(v.candles !== undefined ? { candles: v.candles } : {}),
       ...(v.origin !== undefined ? { origin: v.origin } : {}),
       createdAt: v.createdAt,
     }));
@@ -93,6 +96,7 @@ export function projectFromShare(s: ShareState): Project {
       appearance: s.appearance,
       objects: s.objects,
       shelf: s.shelf,
+      candles: s.candles,
       origin: s.origin,
     }),
   );

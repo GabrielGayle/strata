@@ -16,6 +16,7 @@ import { markUserParamOverrides } from '../core/projectOverrides';
 import type { ShadowSpec } from '../core/shadow';
 import type { CutObject } from '../core/objects';
 import type { ShelfSpec } from '../core/shelf';
+import type { CandleSpec } from '../core/candles';
 import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { loadViewportLayers, saveViewportLayers, type ViewportLayerId, type ViewportLayers } from '../ui/viewportLayers';
@@ -123,6 +124,8 @@ interface Store {
   setObjects: (objects: CutObject[], key?: string) => void;
   /** The postcard shelf (undefined removes it). */
   setShelf: (shelf: ShelfSpec | undefined, key?: string) => void;
+  /** The candelabra (undefined removes it). */
+  setCandles: (candles: CandleSpec | undefined, key?: string) => void;
   setOrigin: (origin: WorldOrigin | undefined, key?: string) => void;
   /** Persist the 3D View-from-point camera with the project (local + cloud saves). */
   setSavedView: (view: EarthView | undefined) => void;
@@ -373,6 +376,7 @@ export const useStore = create<Store>((set, get) => {
     },
     setObjects: (objects, key = `objects:${performance.now()}`) => commit({ ...get().project, objects: objects.length ? objects : undefined }, key),
     setShelf: (shelf, key = `shelf:${performance.now()}`) => commit({ ...get().project, shelf }, key),
+    setCandles: (candles, key = `candles:${performance.now()}`) => commit({ ...get().project, candles }, key),
     setOrigin: (origin, key = `origin:${performance.now()}`) => commit({ ...get().project, origin }, key),
     setSavedView: (view) => commit({ ...get().project, savedView: view }, `saved-view:${performance.now()}`),
     setName: (name) => commit({ ...get().project, name }, 'name'),
@@ -537,6 +541,7 @@ export const useStore = create<Store>((set, get) => {
         shadow: p.shadow ?? null,
         objects: p.objects ?? null,
         shelf: p.shelf ?? null,
+        candles: p.candles ?? null,
         origin: p.origin ?? null,
         createdAt: new Date().toISOString(),
       };

@@ -37,6 +37,7 @@ export function fillGroups(model: Model): { id: string; label: string; plates: F
     { id: 'main', label: flat ? 'Layers' : 'Plates', plates: fam(['P', 'R']) },
     { id: 'cross', label: 'Cross slats', plates: fam(['X']) },
     { id: 'pieces', label: 'Cross pieces', plates: loose('C') },
+    { id: 'fins', label: 'Candle fins', plates: loose('K') },
   ].filter((g) => g.plates.length);
   const all = [...new Map(model.sliced.parts.map((p) => [p.plateKey, { key: p.plateKey, height: height(p.plateKey) }])).values()];
   if (groups.length > 1) groups.push({ id: 'all', label: 'Everything', plates: all });

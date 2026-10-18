@@ -52,8 +52,9 @@ import {
   type StackRodPlan,
 } from './stackRods';
 import { orientMapPlatePlane } from './mapPlateHeight';
+import { targetFins } from './candles';
 
-export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T';
+export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T' | 'K';
 
 export interface PlateDef {
   key: string;
@@ -202,6 +203,8 @@ export interface SliceInput {
   objects?: { mesh: IndexedMesh; clearance: number; seat?: number; shoulder?: number }[];
   /** Map terrain: skip image impression / strata-flow flatten; heights come from the map field. */
   mapTerrain?: boolean;
+  /** Candlesticks held by target fins: where each stands and how its fins grip it. */
+  candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: { fins: number; reach: number; grip: number; spin: number } }[];
 }
 
 const UP: V3 = [0, 1, 0];
@@ -1686,6 +1689,31 @@ export function slice(input: SliceInput): SliceResult {
       });
     }
   }
+  // 10. candle holders: target fins standing in the concrete round each candlestick
+  const fins = (input.candles ?? []).flatMap((c, i) => targetFins(c, c.holder, { t, embed: e, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i));
+  fins.forEach((f, j) => {
+    const ex = f.shape[0];
+    const id = partLabel(v, 'K', j, fins.length);
+    const lab = placeLabel(id, ex, f.labelAt, Math.min(v.labelHeight, f.labelMax));
+    allParts.push({
+      id,
+      plateKey: `K${j}`,
+      family: 'K',
+      index: j,
+      piece: 0,
+      plane: f.plane,
+      thickness: t,
+      shape: [ex],
+      etch: [],
+      labelPaths: lab?.paths ?? [],
+      labelAt: lab?.at ?? null,
+      area: shapeArea([ex]),
+      perimeter: shapePerimeter([ex]),
+      bbox: bboxOf([ex.outer]),
+      anchored: true,
+      kind: 'plate',
+    });
+  });
   const brace: BraceResult | null = rods || spacers ? { rods, spacers, hardware: rods ? rodHardware(rods) : [], issues: braceIssues } : braceIssues.length ? { rods: null, spacers: null, hardware: [], issues: braceIssues } : null;
 
   placeLooseParts(allParts, input.moves, new Set(defs.map((d) => d.key)));

@@ -180,6 +180,8 @@ function PlacedObjects({ model }: { model: Model }) {
   return (
     <>
       {model.objects.map(({ object: o, geometry }) => {
+        if (o.look === 'hidden') return null;
+        if (o.look) return <Candle key={o.id} o={o} geometry={geometry} picked={o.id === sel || hl === 'objects'} />;
         const shelf = o.seat !== undefined || o.id.startsWith('shelf');
         const lit = hl === 'notches' || (hl === 'cards' && shelf) || (hl === 'objects' && !shelf);
         const picked = o.id === sel || lit;
@@ -251,6 +253,36 @@ function HiddenFaceTint({ model }: { model: Model }) {
           <meshBasicMaterial color="#c0281f" transparent opacity={0.45} depthTest depthWrite={false} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+/** A candle or tealight: wax (in a metal cup for a tealight), a wick and a small flame. */
+function Candle({ o, geometry, picked }: { o: CutObject; geometry: THREE.BufferGeometry; picked: boolean }) {
+  const accent = cssVar('--accent', '#d4521c');
+  const tea = o.look === 'tealight';
+  const top = o.y + o.h / 2;
+  const flame = Math.min(22, Math.max(9, o.w * 0.45));
+  return (
+    <group>
+      <mesh geometry={geometry} userData={{ measure: o.id }} castShadow receiveShadow>
+        {tea ? <meshStandardMaterial color="#c9ccd1" metalness={0.85} roughness={0.35} /> : <meshStandardMaterial color="#f1e8d6" roughness={0.6} />}
+        {picked && <Edges color={accent} threshold={20} />}
+      </mesh>
+      {tea && (
+        <mesh position={[o.x, top + 0.01, o.z]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[o.w / 2 - 1, 40]} />
+          <meshStandardMaterial color="#f6f1e6" roughness={0.7} />
+        </mesh>
+      )}
+      <mesh position={[o.x, top + 2.5, o.z]}>
+        <cylinderGeometry args={[0.5, 0.5, 5, 6]} />
+        <meshStandardMaterial color="#2a2420" />
+      </mesh>
+      <mesh position={[o.x, top + 5 + flame / 2, o.z]} scale={[1, 1.9, 1]}>
+        <sphereGeometry args={[flame / 3.8, 16, 12]} />
+        <meshBasicMaterial color="#ffc35a" transparent opacity={0.9} />
+      </mesh>
     </group>
   );
 }
