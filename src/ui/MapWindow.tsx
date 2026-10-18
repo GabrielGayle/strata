@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { defaultMapSpec, type MapModel, type MapSpec } from '../core/mapSpec';
 import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/mapNominatim';
 import { useStore } from '../state/store';
+import { trackBusy } from './busy';
 
 function parseBboxFields(w: string, s: string, e: string, n: string): MapSpec['bbox'] | null {
   const west = Number(w);
@@ -42,7 +43,7 @@ export default function MapWindow({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setStatus('');
     try {
-      const rows = await searchNominatim(query);
+      const rows = await trackBusy({ scene: 'search', title: 'Finding the place', detail: `Looking up “${query.trim()}” on OpenStreetMap…` }, searchNominatim(query));
       setHits(rows);
       if (rows[0]) {
         applyBbox(nominatimBbox(rows[0]));

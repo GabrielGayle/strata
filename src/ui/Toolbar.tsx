@@ -12,6 +12,7 @@ import { randomTheme, themeTokens, THEME_PRESETS, type ThemeSeed } from './theme
 import { activeLibraryLinkId, CloudSyncMark, grabThumb, keepOpenedInLibrary, linkActive, ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
 import { recordLibrarySave } from '../state/recordLibrary';
 import { isProjectZipName, projectFromZip } from '../core/projectZip';
+import { busyThen } from './busy';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -243,9 +244,9 @@ export default function Toolbar() {
     const f = await pickFile('.json,.zip,application/json,application/zip');
     if (f) openProjectFile(f);
   };
-  const exportZip = () => {
+  const exportZip = async () => {
     try {
-      const ran = withExportLock(() => {
+      const ran = await busyThen({ scene: 'export', title: 'Exporting', detail: 'Slicing every plate, nesting cut sheets, drawing moulds and zipping the DXFs…' }, () => withExportLock(() => {
         const model = fullModel();
         const zip = buildZip(model, project, loadRates());
         download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}-fabrication.zip`, zip, 'application/zip');
@@ -253,7 +254,7 @@ export default function Toolbar() {
           .then((meta) => linkActive(meta.id, project))
           .catch((e) => toast(`Exported, but Projects failed: ${(e as Error).message}`));
         return model;
-      });
+      }));
       if (!ran.ok) toast('Export already running');
       else
         toast(
@@ -265,11 +266,13 @@ export default function Toolbar() {
     }
   };
 
-  const buildPack = () => {
+  const buildPack = async () => {
     try {
-      const ran = withExportLock(() => {
-        openHtml(buildPackHtmlChecked(project, fullModel(), { rates: loadRates() }));
-      });
+      const ran = await busyThen({ scene: 'pack', title: 'Build pack', detail: 'Laying out the numbered plates, assembly order and pour plan…' }, () =>
+        withExportLock(() => {
+          openHtml(buildPackHtmlChecked(project, fullModel(), { rates: loadRates() }));
+        }),
+      );
       if (!ran.ok) toast('Build pack already opening');
     } catch (e) {
       const msg = exportFailureMessage(e);

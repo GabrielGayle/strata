@@ -1,0 +1,303 @@
+/* Animated wait UI (src/ui/BusyAnim.tsx, src/ui/BusyWindow.tsx).
+
+   Open source this builds on, both MIT licensed:
+   - 98.css v0.1.21 (https://github.com/jdan/98.css, © Jordan Scales):
+     the .progress-indicator.segmented bar and window chrome, already loaded
+     in main.tsx.
+   - XP.css v0.2.6 (https://github.com/botoxparty/XP.css, © Adam Hammad,
+     Jordan Scales): the indeterminate bar, a striped block that slides along
+     the track on a pseudo-element (its `sliding` keyframes), redrawn here
+     with 98.css's navy segments.
+
+   Every animation here moves only transform or opacity, so the browser's
+   compositor keeps it playing while an export blocks the main thread. */
+
+.busy-windows {
+  bottom: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: fixed;
+  right: 8px;
+  z-index: 130;
+}
+.busy-window {
+  background: #c0c0c0;
+  color: #222;
+  width: 300px;
+}
+.busy-window .window-body {
+  margin: 8px;
+}
+.busy-detail {
+  margin: 6px 0;
+  min-height: 2.6em;
+}
+.busy-foot {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 6px;
+  min-height: 23px;
+}
+.busy-time {
+  color: #222;
+}
+
+/* ── Progress bar ─────────────────────────────────────────────── */
+.busy-progress {
+  height: 22px;
+  overflow: hidden;
+  padding: 3px;
+}
+.busy-progress > .progress-indicator-bar {
+  transition: width 0.25s steps(4, end);
+}
+.busy-progress.indeterminate > .progress-indicator-bar {
+  animation: busy-sliding 1.6s linear infinite;
+  /* five segments wide, like the Windows marquee block */
+  width: 90px;
+}
+@keyframes busy-sliding {
+  from {
+    transform: translateX(-90px);
+  }
+  to {
+    transform: translateX(300px);
+  }
+}
+
+/* ── Flying icons (the "copying files" dialog) ─────────────────── */
+.busy-anim {
+  height: 40px;
+  position: relative;
+  width: 100%;
+}
+.busy-flight {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+.busy-from,
+.busy-to {
+  flex: none;
+  position: relative;
+  z-index: 1;
+}
+.busy-arc {
+  flex: 1;
+  height: 40px;
+  position: relative;
+}
+.busy-fly-x {
+  animation: busy-fly-x 1.8s linear infinite;
+  left: 0;
+  position: absolute;
+  top: 18px;
+  width: 100%;
+}
+.busy-fly-y {
+  animation: busy-fly-y 1.8s ease-in-out infinite;
+  width: 14px;
+}
+.busy-fly-y > svg {
+  display: block;
+}
+/* the outer box slides across, the inner one rises and falls: an arc */
+@keyframes busy-fly-x {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(calc(100% - 14px));
+  }
+}
+@keyframes busy-fly-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-16px);
+  }
+}
+
+/* ── Laser over a plate stack (engine / checks) ───────────────── */
+.busy-laser {
+  display: flex;
+  justify-content: center;
+}
+.busy-laser-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 40px;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  width: 120px;
+}
+.busy-laser-plate {
+  animation: busy-plate-glow 1.2s steps(2, end) infinite;
+  background: #b5571f;
+  border: 1px solid #000;
+  height: 4px;
+}
+.busy-laser-plate:nth-child(odd) {
+  margin: 0 6px;
+}
+@keyframes busy-plate-glow {
+  50% {
+    opacity: 0.55;
+  }
+}
+.busy-laser-beam {
+  animation: busy-laser 1.2s steps(12, end) infinite alternate;
+  background: #ff0000;
+  box-shadow: 0 0 0 1px #ffff00;
+  height: 100%;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: 2px;
+}
+@keyframes busy-laser {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(118px);
+  }
+}
+
+/* ── Magnifier circling a map (place search) ──────────────────── */
+.busy-search {
+  display: flex;
+  justify-content: center;
+}
+.busy-lens-orbit {
+  animation: busy-orbit 1.6s steps(16, end) infinite;
+  height: 32px;
+  left: calc(50% - 14px);
+  position: absolute;
+  top: 2px;
+  transform-origin: 12px 12px;
+}
+@keyframes busy-orbit {
+  from {
+    transform: rotate(0deg) translateX(10px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(10px) rotate(-360deg);
+  }
+}
+
+/* ── Hourglass ────────────────────────────────────────────────── */
+.busy-hourglass-wrap {
+  display: flex;
+  justify-content: center;
+}
+.busy-hourglass {
+  animation: busy-flip 2.4s steps(1, end) infinite;
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+}
+.busy-hourglass svg {
+  display: block;
+}
+.busy-sand-top {
+  animation: busy-drain 1.2s steps(4, end) infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.busy-sand-bottom {
+  animation: busy-fill 1.2s steps(4, end) infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.busy-sand-stream {
+  animation: busy-stream 0.3s steps(2, end) infinite;
+}
+@keyframes busy-flip {
+  50% {
+    transform: rotate(180deg);
+  }
+}
+@keyframes busy-drain {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes busy-fill {
+  from {
+    transform: scaleY(0.1);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes busy-stream {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* ── Status bar light, notes and Loading… ─────────────────────── */
+.busy-light {
+  align-items: center;
+  display: flex;
+  flex-grow: 0;
+  gap: 4px;
+  white-space: nowrap;
+}
+.busy-note {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+}
+.busy-loading {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .busy-progress.indeterminate > .progress-indicator-bar {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+  .busy-fly-x,
+  .busy-fly-y,
+  .busy-laser-plate,
+  .busy-laser-beam,
+  .busy-lens-orbit,
+  .busy-hourglass,
+  .busy-sand-top,
+  .busy-sand-bottom,
+  .busy-sand-stream {
+    animation: none;
+  }
+  .busy-fly-x {
+    opacity: 1;
+    transform: translateX(calc(50% - 7px));
+  }
+  .busy-laser-beam {
+    transform: translateX(59px);
+  }
+}

@@ -178,6 +178,7 @@ export async function depthFromPhoto(
     const detail = (body as { detail?: unknown } | null)?.detail;
     throw new Error(typeof detail === 'string' ? detail : `Depth service error ${res.status}`);
   }
+  answeredAt = Date.now();
   return parseDepthResponse(body);
 }
 
@@ -185,6 +186,21 @@ export async function depthFromPhoto(
 // last request (scaledown_window=300 in modal_app/worker.py).
 const WAKE_EVERY = 4 * 60_000;
 let wokeAt = -Infinity;
+let answeredAt = -Infinity;
+const BOOT_MS = 45_000;
+const STAYS_UP_MS = 5 * 60_000;
+const READ_MS = 8_000;
+
+/**
+ * How long a depth request starting now should take, from what this page has
+ * seen: a recent answer means the server is up; a recent wake-up nudge means
+ * part of the ~45 s boot has already passed. A guess for the progress window.
+ */
+export function depthWaitEstimate(now = Date.now()): { bootMs: number; totalMs: number } {
+  if (now - answeredAt < STAYS_UP_MS) return { bootMs: 0, totalMs: READ_MS };
+  const bootMs = now - wokeAt < STAYS_UP_MS ? Math.max(0, BOOT_MS - (now - wokeAt)) : BOOT_MS;
+  return { bootMs, totalMs: bootMs + READ_MS };
+}
 
 /**
  * Nudge the depth service awake so its cold start overlaps with picking a photo.

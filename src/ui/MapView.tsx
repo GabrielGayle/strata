@@ -12,6 +12,7 @@ import { SUNKEN_FRAME_FLAT_HINT, SUNKEN_FRAME_FLAT_ONLY_HINT, sunkenFrameApplies
 import { useStore } from '../state/store';
 import { useModel } from './model';
 import MapPreviewPane from './MapPreviewPane';
+import { trackBusy } from './busy';
 
 function sourceLabel(id: MapSource): string {
   if (id === 'auto') return 'auto (EA 1 m in England, else 30 m)';
@@ -131,7 +132,7 @@ export default function MapView() {
     setBusy(true);
     setSearchStatus('');
     try {
-      const rows = await searchNominatim(query);
+      const rows = await trackBusy({ scene: 'search', title: 'Finding the place', detail: `Looking up “${query.trim()}” on OpenStreetMap…` }, searchNominatim(query));
       setHits(rows);
       if (rows[0]) {
         applyBbox(nominatimBbox(rows[0]));

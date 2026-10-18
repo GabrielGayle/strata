@@ -5,6 +5,7 @@ import { createPipeline } from '../core/pipeline';
 import { decodeProjectAssets } from '../state/assets';
 import { filterLibrary, foldersOf, sortLibrary, sourceLabel, type LibrarySort } from '../state/libraryDescribe';
 import { updatedAtOf, type LibraryMeta, type LibraryStore } from '../state/library';
+import { Loading } from './BusyWindow';
 
 const VIEW_KEY = 'strata.library.view';
 const SORT_KEY = 'strata.library.sort';
@@ -168,7 +169,7 @@ export function LibraryBrowser({
       )}
       <div className="lib-body">
         {!list ? (
-          <div className="empty">Loading…</div>
+          <Loading label="Loading your projects…" />
         ) : !shown.length ? (
           <div className="lib-note">{list.length ? 'Nothing matches.' : 'Nothing saved yet. Save or Export ZIP lands here automatically.'}</div>
         ) : view === 'list' ? (

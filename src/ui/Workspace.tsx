@@ -9,6 +9,7 @@ import { activeLayout, PRESETS, TABS, useWorkspaces } from '../state/workspaces'
 import { Menu } from './Toolbar';
 import { Tab as TabItem } from './Tab';
 import { ViewportParkedContext } from './viewportKeepAlive';
+import { Loading } from './BusyWindow';
 
 // Every view loads on first open (the 3D one included), so the first screen only
 // waits for the views it shows. Hovering a tab starts fetching its view early.
@@ -189,7 +190,7 @@ function PaneBody({ p }: { p: Pane | Float }) {
   return (
     <div className="view">
       {keep3d && has3d && (
-        <Suspense fallback={show3d ? <div className="empty">Loading…</div> : null}>
+        <Suspense fallback={show3d ? <Loading label="Loading the 3D view…" /> : null}>
           <ViewportParkedContext.Provider value={!show3d}>
             <div className={`view-layer${show3d ? '' : ' parked'}`} data-testid="viewport-3d" inert={!show3d}>
               <Three />
@@ -198,7 +199,7 @@ function PaneBody({ p }: { p: Pane | Float }) {
         </Suspense>
       )}
       {p.active !== '3d' && (
-        <Suspense fallback={<div className="empty">Loading…</div>}>{View && <View />}</Suspense>
+        <Suspense fallback={<Loading />}>{View && <View />}</Suspense>
       )}
       <DropZones id={p.id} />
     </div>
