@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildMapBundle } from '../src/core/mapPipeline';
-import { EA_LIDAR_DSM_CATALOG, EA_LIDAR_DTM_CATALOG } from '../src/core/mapEaLidar';
+import { EA_LIDAR_DSM_CATALOG, EA_LIDAR_DTM_CATALOG, fetchEaLidarGrid } from '../src/core/mapEaLidar';
 import { loadBuiltinEaFixture } from '../src/core/mapEaLidar.fixtures';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
@@ -8,6 +8,22 @@ import { fixtureTileFetcher } from './map-cli-fixtures';
 import { NEASDEN_FAST_BBOX } from './map-fixtures';
 
 describe('map EA LiDAR (T6)', () => {
+  it('reports why the EA fetch failed (e.g. the proxy refusing an oversized response)', async () => {
+    const reasons: string[] = [];
+    const grid = await fetchEaLidarGrid(
+      'ea-dtm',
+      { bbox: NEASDEN_FAST_BBOX, resM: 8 },
+      {
+        fetchBytes: async () => {
+          throw new Error('EA fetch failed (413): EA response is larger than 16 MB; choose a smaller area or a lower map resolution');
+        },
+        onError: (m) => reasons.push(m),
+      },
+    );
+    expect(grid).toBeNull();
+    expect(reasons[0]).toMatch(/larger than 16 MB/);
+  });
+
   it('loads offline Neasden 1 m fixture', () => {
     const g = loadBuiltinEaFixture();
     expect(g?.crs).toBe('EPSG:27700');

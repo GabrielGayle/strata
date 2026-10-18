@@ -5,6 +5,7 @@ import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets
 import { engraveHasLabels } from '../core/quickMap';
 import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/mapNominatim';
 import { MAP_SOURCE_REGISTRY } from '../core/mapSourceRegistry';
+import { WORKING_MAP_SOURCES, isWorkingMapSource } from '../core/mapSourcePick';
 import { noticesWithoutStaleEngraveSkip } from '../core/mapNotices';
 import { formatLiveMapReadout } from '../core/mapGeometryReadout';
 import { SUNKEN_FRAME_FLAT_HINT, SUNKEN_FRAME_FLAT_ONLY_HINT, sunkenFrameApplies } from '../core/mapSunkenFrame';
@@ -12,7 +13,11 @@ import { useStore } from '../state/store';
 import { useModel } from './model';
 import MapPreviewPane from './MapPreviewPane';
 
-const SOURCES: MapSource[] = ['auto', 'ea-dtm', 'ea-dsm', 'scot-dtm', 'wales-dtm', 'ni-dtm', 'cop30', 'terrarium'];
+function sourceLabel(id: MapSource): string {
+  if (id === 'auto') return 'auto (EA 1 m in England, else 30 m)';
+  const res = `${MAP_SOURCE_REGISTRY[id].resolutionM} m`;
+  return isWorkingMapSource(id) ? `${id} (${res})` : `${id} (not supported yet, uses terrarium)`;
+}
 
 function radioId(name: string, value: string): string {
   return `${name}-${value.replace(/[^a-z0-9]+/gi, '-')}`;
@@ -266,9 +271,12 @@ export default function MapView() {
             onChange={(e) => commit({ source: e.target.value as MapSource })}
             disabled={!existing}
           >
-            {SOURCES.map((id) => (
-              <option key={id} value={id}>{id} ({MAP_SOURCE_REGISTRY[id].resolutionM} m)</option>
+            {WORKING_MAP_SOURCES.map((id) => (
+              <option key={id} value={id}>{sourceLabel(id)}</option>
             ))}
+            {!isWorkingMapSource(source) && (
+              <option value={source} disabled>{sourceLabel(source)}</option>
+            )}
           </select>
         </label>
         <fieldset>

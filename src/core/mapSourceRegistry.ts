@@ -71,13 +71,6 @@ export const MAP_SOURCE_REGISTRY: Record<MapSource, MapSourceMeta> = {
     licence: 'Open Government Licence v3.0',
     attribution: ['LiDAR DSM © Environment Agency — Defra Data Services Platform'],
   },
-  cop30: {
-    id: 'cop30',
-    resolutionM: 30,
-    portalUrl: 'https://registry.opendata.aws/copernicus-dem/',
-    licence: 'Copernicus DEM licence (see registry)',
-    attribution: ['Elevation © Copernicus DEM GLO-30'],
-  },
   terrarium: {
     id: 'terrarium',
     resolutionM: 30,

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { buildEaUpstreamHeaders, fetchEaUpstream, parseAllowedEaProxyTarget } from './eaCorsProxy';
+import { buildEaUpstreamHeaders, eaProxyErrorStatus, fetchEaUpstream, parseAllowedEaProxyTarget } from './eaCorsProxy';
 
 function readQueryUrl(req: IncomingMessage): string | undefined {
   const raw = req.url ?? '';
@@ -45,7 +45,7 @@ export async function handleEaProxyHttp(req: IncomingMessage, res: ServerRespons
     }
     res.end(Buffer.from(proxied.body ?? new ArrayBuffer(0)));
   } catch (e) {
-    res.statusCode = 502;
+    res.statusCode = eaProxyErrorStatus(e);
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: `Upstream failed: ${(e as Error).message}` }));
   }

@@ -51,4 +51,9 @@ describe('MapSpec schema', () => {
     expect(m?.engrave.enabled).toBe(true);
     expect(m?.engrave.features.length).toBeGreaterThan(0);
   });
+
+  it('loads saves with the removed cop30 source as terrarium (what they always built from)', () => {
+    expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], source: 'cop30' })?.source).toBe('terrarium');
+    expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], source: 'nonsense' })?.source).toBe('auto');
+  });
 });

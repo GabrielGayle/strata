@@ -8,7 +8,6 @@ import { applyLayerBudget, computeLayerBreaks, injectPinnedBreaks, type LayerBud
 import { formatExaggerationStackReadout, resolveExaggerationFactor } from './mapExaggeration';
 import { restoreSummitCells, simplifyMetricGrid } from './mapSimplify';
 import { prominentSummitCells } from './mapSummits';
-import { fetchCop30Grid, type Cop30GridLoader } from './mapCopernicus';
 import { fetchEaLidarGrid, isEaLidarSource, type EaGridLoader } from './mapEaLidar';
 import { fetchRegionalLidarGrid, isRegionalLidarSource, type RegionalGridLoader } from './mapRegionalLidar';
 import { pickAutoMapSource, pickExplicitSource } from './mapSourcePick';
@@ -80,7 +79,6 @@ export interface BuildMapImageOptions {
   overpass?: OverpassFetcher;
   /** When true, Overpass may use the network if the cache misses (CLI default). */
   allowOverpassNetwork?: boolean;
-  cop30Loader?: Cop30GridLoader;
 }
 
 export interface MapBuildResult {
@@ -107,26 +105,19 @@ async function fetchElevationGrid(
     return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
   }
 
-  if (effective === 'cop30') {
-    const grid = await fetchCop30Grid(spec, { loader: opts.cop30Loader });
-    if (grid) return ok(grid, 'cop30');
-    notices.push(mapWarn('cop30 COG tile unavailable for this bbox; falling back to terrarium (~30 m).'));
-    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
-  }
-
   if (isRegionalLidarSource(effective)) {
     const grid = await fetchRegionalLidarGrid(effective, spec, opts.regionalLoader);
     if (grid) return ok(grid, effective);
-    notices.push(
-      mapWarn(`${effective} LiDAR not available for this bbox (no tile coverage or adapter offline); falling back to terrarium (~30 m).`),
-    );
+    notices.push(mapWarn(`${effective} LiDAR is not supported yet; using terrarium (~30 m).`));
     return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
   }
 
   if (isEaLidarSource(effective)) {
-    const grid = await fetchEaLidarGrid(effective, spec, { loader: opts.eaLoader });
+    let reason = '';
+    const grid = await fetchEaLidarGrid(effective, spec, { loader: opts.eaLoader, onError: (m) => (reason = m) });
     if (grid) return ok(grid, effective);
-    notices.push(mapWarn(`${effective} LiDAR not available for this bbox; falling back to terrarium (~30 m).`));
+    const why = reason ? ` (${reason})` : '';
+    notices.push(mapWarn(`${effective} LiDAR not available for this bbox${why}; falling back to terrarium (~30 m).`));
     return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
   }
 

@@ -8,7 +8,6 @@ export type MapSource =
   | 'ni-dtm'
   | 'ea-dtm'
   | 'ea-dsm'
-  | 'cop30'
   | 'terrarium';
 export type MapModel = 'dtm' | 'dsm' | 'dtm+buildings';
 export type MapWater = 'flat' | 'bathy' | 'raw';
@@ -130,9 +129,10 @@ const SOURCES = new Set<MapSource>([
   'ni-dtm',
   'ea-dtm',
   'ea-dsm',
-  'cop30',
   'terrarium',
 ]);
+/** Ids older saves may carry: the Copernicus stub was removed and always fell back to Terrarium. */
+const RETIRED_SOURCES: Record<string, MapSource> = { cop30: 'terrarium' };
 const MODELS = new Set<MapModel>(['dtm', 'dsm', 'dtm+buildings']);
 const WATERS = new Set<MapWater>(['flat', 'bathy', 'raw']);
 const BUDGETS = new Set<LayerBudgetMode>(['equal', 'quantile', 'jenks']);
@@ -156,7 +156,12 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   if (!o || o.kind !== 'map') return undefined;
   const bbox = bboxOf(o.bbox);
   if (!bbox) return undefined;
-  const source = typeof o.source === 'string' && SOURCES.has(o.source as MapSource) ? (o.source as MapSource) : 'auto';
+  const source =
+    typeof o.source !== 'string'
+      ? 'auto'
+      : SOURCES.has(o.source as MapSource)
+        ? (o.source as MapSource)
+        : (RETIRED_SOURCES[o.source] ?? 'auto');
   const model = typeof o.model === 'string' && MODELS.has(o.model as MapModel) ? (o.model as MapModel) : 'dtm';
   const resM = num(o.resM);
   const water = typeof o.water === 'string' && WATERS.has(o.water as MapWater) ? (o.water as MapWater) : 'bathy';

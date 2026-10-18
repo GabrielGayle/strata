@@ -2,6 +2,17 @@
 
 Wave 1 CLI defaults to **AWS Terrain Tiles (Mapzen Terrarium)** when no higher-resolution adapter is available. Wave 2 adds **UK regional LiDAR** source ids and auto-pick per bbox (ticket T23).
 
+## What works where
+
+Only sources that really fetch elevation are offered: the Map tab lists `auto`, `ea-dtm`, `ea-dsm` and `terrarium` (`WORKING_MAP_SOURCES` in `src/core/mapSourcePick.ts`), and `auto` resolves to `ea-dtm` or `terrarium` only.
+
+| Source | Browser (Map tab) | CLI | Notes |
+|---|---|---|---|
+| `terrarium` | yes | yes | ~30 m, worldwide |
+| `ea-dtm` / `ea-dsm` | yes, through `/api/ea-proxy` | yes, direct | 1 m, England only; falls back to Terrarium with the reason when EA has no tile or the proxy refuses |
+| `scot-dtm` / `wales-dtm` / `ni-dtm` | no | no | No adapter yet: only tests' fixture loaders return grids. An explicit id falls back to Terrarium with a notice; older saves show the id as "not supported yet" |
+| `cop30` | no | no | Removed (the stub always fell back to Terrarium). Older saves load as `terrarium` |
+
 ## AWS Terrain Tiles (Terrarium) — global fallback
 
 | Field | Value |
@@ -128,16 +139,6 @@ Offline tests: `test/fixtures/map/regional/royal-county-down-ni-dtm.json`.
 | **Rate limit** | Client throttled to **1 request per second** (`searchNominatim`) |
 | **Licence** | ODbL — same attribution requirements as OSM engraving; place search results set `MapSpec.bbox` only (no bulk DB storage). |
 
-## Copernicus GLO-30 — `cop30`
-
-| Field | Value |
-|---|---|
-| **Registry** | [registry.opendata.aws/copernicus-dem](https://registry.opendata.aws/copernicus-dem/) |
-| **Resolution** | 30 m — **too coarse for golf-scale maps**; used only as an explicit source or documented fallback |
-| **COG base URL** | `https://copernicus-dem-30m.s3.amazonaws.com/` (see `COPERNICUS_DEM30_BASE` in `src/core/mapCopernicus.ts`) |
-| **Licence** | [Copernicus DEM licence](https://registry.opendata.aws/copernicus-dem/) — attribute `Elevation © Copernicus DEM GLO-30` |
-| **Strata status** | Ticket **T5** reads COG range requests (cached as `.cog.bin` under `--map-cache`); offline tests use `test/fixtures/map/cop30-neasden.json`. |
-
 ## British National Grid (reprojection)
 
 | Field | Value |
@@ -156,6 +157,16 @@ Browser fetches to `environment.data.gov.uk` are often blocked by CORS. `api/ea-
 - Uses `redirect: manual` and re-checks the allowlist on every redirect hop.
 - Forwards only `content-type`, `content-length`, `cache-control`, `etag`, and `last-modified` (never `set-cookie`).
 - Proxies GET/HEAD with optional `Range` for COG/catalog range reads; no injected credentials.
+- Gives the whole upstream exchange **20 s** (then 504) and refuses bodies over **16 MB** (413, checked against `content-length` first, then while streaming). Both say why in the JSON `error`, which the Map tab shows in its fallback notice.
+- Drops `content-length` when the upstream body was compressed (fetch hands back the decompressed bytes).
+
+## Overpass proxy (`api/overpass.ts`)
+
+Shared logic in `api/_lib/overpassProxy.ts` (Vercel and the Vite dev/preview middleware):
+
+- **Origin:** only the app's own pages (`Origin` host equals the request host, or `localhost` / `127.0.0.1`); no `Access-Control-Allow-Origin` is sent. Requests with no `Origin` need `Sec-Fetch-Site: same-origin`.
+- **Body:** at most **16 KB**; the query must look like `overpassQueryForBbox` output (`[out:json][timeout:N]` with N ≤ 30, no `maxsize`, ends in an `out` statement). Refusals cost no upstream request.
+- **Mirrors:** tried **one at a time**, **10 s** each (aborted at the timeout). A mirror silent for 2.5 s lets the next start beside it, and the first answer aborts every request still in flight. An upstream **400** stops the walk and is passed back as 400, and the browser does not retry 4xx, so a bad query costs one upstream request.
 
 Scotland/Wales/NI adapters still need separate proxy work or CLI-only fetch until a broader allowlist ships.
 
@@ -167,11 +178,11 @@ Other regional hosts (`remotesensingdata.gov.scot`, `datamap.gov.wales`, ArcGIS)
 
 | Nation (heuristic) | Picked source | ≤2 m |
 |---|---|---|
-| Scotland | `scot-dtm` | yes |
-| Wales | `wales-dtm` | yes |
-| Northern Ireland | `ni-dtm` | yes (where surveyed) |
-| England | `ea-dtm` | yes (when adapter live) |
+| England | `ea-dtm` | yes |
+| Scotland / Wales / Northern Ireland | `terrarium` | no (warns "… LiDAR is not supported yet") |
 | Outside UK | `terrarium` | no (warn) |
+
+Switch Scotland, Wales and NI back to their LiDAR ids here once their adapters fetch real data.
 
 Resolved source and warnings are stored on `MapSpec.resolvedSource` and `MapSpec.sourceWarnings`.
 

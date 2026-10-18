@@ -3,29 +3,26 @@ import { buildMapBundle, resolveMapSource } from '../src/core/mapPipeline';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { cropRegionalGridToBbox } from '../src/core/mapRegionalLidar';
 import { loadBuiltinRegionalFixture } from '../src/core/mapRegionalLidar.fixtures';
-import { pickAutoMapSource, isHighResSource } from '../src/core/mapSourcePick';
+import { WORKING_MAP_SOURCES, isHighResSource, isWorkingMapSource, pickAutoMapSource } from '../src/core/mapSourcePick';
 import { sourceMeta } from '../src/core/mapSourceRegistry';
 import { KINGSBARNS_BBOX, ROYAL_COUNTY_DOWN_BBOX, NEASDEN_BBOX } from './map-fixtures';
 
 describe('map source auto-pick (T23)', () => {
-  it('picks ≤2 m Scotland LiDAR for Kingsbarns', () => {
+  it('uses terrarium with an honest warning for Scotland until its LiDAR adapter ships', () => {
     const { source, warnings } = pickAutoMapSource(KINGSBARNS_BBOX);
-    expect(source).toBe('scot-dtm');
-    expect(isHighResSource(source)).toBe(true);
-    expect(sourceMeta(source).resolutionM).toBeLessThanOrEqual(2);
-    expect(warnings).toHaveLength(0);
+    expect(source).toBe('terrarium');
+    expect(warnings.join(' ')).toMatch(/Scottish LiDAR is not supported yet; using terrarium/);
   });
 
-  it('picks ≤2 m NI LiDAR for Royal County Down', () => {
-    const { source, warnings } = pickAutoMapSource(ROYAL_COUNTY_DOWN_BBOX);
-    expect(source).toBe('ni-dtm');
-    expect(sourceMeta(source).resolutionM).toBeLessThanOrEqual(2);
-    expect(warnings).toHaveLength(0);
+  it('uses terrarium for Northern Ireland and Wales', () => {
+    expect(pickAutoMapSource(ROYAL_COUNTY_DOWN_BBOX).source).toBe('terrarium');
+    expect(pickAutoMapSource([-3.84, 52.41, -3.8, 52.43]).source).toBe('terrarium');
   });
 
   it('picks EA DTM for England (Neasden) with no auto warnings', () => {
-    const { source } = pickAutoMapSource(NEASDEN_BBOX);
+    const { source, warnings } = pickAutoMapSource(NEASDEN_BBOX);
     expect(source).toBe('ea-dtm');
+    expect(warnings).toHaveLength(0);
   });
 
   it('warns when auto is outside UK heuristics', () => {
@@ -34,24 +31,40 @@ describe('map source auto-pick (T23)', () => {
     expect(warnings.some((w) => /too coarse/i.test(w))).toBe(true);
   });
 
-  it('loads offline fixtures and resolves auto to regional sources', () => {
-    const scot = loadBuiltinRegionalFixture('scot-dtm');
-    expect(scot).not.toBeNull();
-    const cropped = cropRegionalGridToBbox(scot!, KINGSBARNS_BBOX);
-    expect(cropped.w).toBeGreaterThan(0);
-    const resolvedScot = resolveMapSource({ source: 'auto', bbox: KINGSBARNS_BBOX });
-    expect(resolvedScot.effective).toBe('scot-dtm');
-
-    const ni = loadBuiltinRegionalFixture('ni-dtm');
-    expect(ni).not.toBeNull();
-    const resolvedNi = resolveMapSource({ source: 'auto', bbox: ROYAL_COUNTY_DOWN_BBOX });
-    expect(resolvedNi.effective).toBe('ni-dtm');
+  it('auto only ever resolves to a source the Map tab offers', () => {
+    const boxes: [number, number, number, number][] = [
+      KINGSBARNS_BBOX,
+      ROYAL_COUNTY_DOWN_BBOX,
+      NEASDEN_BBOX,
+      [-3.84, 52.41, -3.8, 52.43],
+      [2.3, 48.8, 2.35, 48.85],
+      [-122.5, 37.7, -122.4, 37.8],
+    ];
+    for (const bbox of boxes) {
+      const { effective, warnings } = resolveMapSource({ source: 'auto', bbox });
+      expect(isWorkingMapSource(effective)).toBe(true);
+      for (const id of ['scot-dtm', 'wales-dtm', 'ni-dtm', 'cop30']) expect(warnings.join(' ')).not.toContain(id);
+    }
+    expect(WORKING_MAP_SOURCES).toEqual(['auto', 'ea-dtm', 'ea-dsm', 'terrarium']);
   });
 
-  it('buildMapBundle uses regional fixture grid when loader supplies data', async () => {
+  it('still reports EA DTM as high resolution', () => {
+    expect(isHighResSource('ea-dtm')).toBe(true);
+    expect(sourceMeta('ea-dtm').resolutionM).toBeLessThanOrEqual(2);
+    expect(isHighResSource('terrarium')).toBe(false);
+  });
+
+  it('crops the offline regional fixtures', () => {
+    const scot = loadBuiltinRegionalFixture('scot-dtm');
+    expect(scot).not.toBeNull();
+    expect(cropRegionalGridToBbox(scot!, KINGSBARNS_BBOX).w).toBeGreaterThan(0);
+    expect(loadBuiltinRegionalFixture('ni-dtm')).not.toBeNull();
+  });
+
+  it('buildMapBundle uses a regional fixture grid only when the source is explicit and a loader supplies data', async () => {
     const regionalLoader = async (source: string) => loadBuiltinRegionalFixture(source as 'scot-dtm');
     const bundle = await buildMapBundle(
-      defaultMapSpec({ bbox: KINGSBARNS_BBOX, source: 'auto', resM: 12, engrave: { enabled: false, features: [] } }),
+      defaultMapSpec({ bbox: KINGSBARNS_BBOX, source: 'scot-dtm', resM: 12, engrave: { enabled: false, features: [] } }),
       { regionalLoader },
     );
     expect(bundle.asset.map?.resolvedSource).toBe('scot-dtm');
