@@ -20,6 +20,7 @@ import type { CandleSpec } from '../core/candles';
 import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { loadViewportLayers, saveViewportLayers, type ViewportLayerId, type ViewportLayers } from '../ui/viewportLayers';
+import { loadViewAids, saveViewAids, type ViewAids } from '../ui/viewAids';
 import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
 import { applyProjectPatch, type ProjectPatch } from '../core/design';
 import { applyBuiltMapAsset, projectWithTopMapSpec } from '../core/mapTopAsset';
@@ -81,6 +82,8 @@ export interface UiState {
   sunTime: number;
   sunPlaying: boolean;
   viewportLayers: ViewportLayers;
+  /** Edge outlines, plate tint and spread in the 3D view (view only). */
+  viewAids: ViewAids;
   /** Apply a View-from-point pose in the 3D camera (n increments to retrigger). */
   pointView?: { n: number; pose: EarthWorldPose };
   /** Vertical FOV from the last point view; Iso/Front/… clear it. */
@@ -156,6 +159,7 @@ interface Store {
   deleteVariant: (id: string) => void;
   setUi: (patch: Partial<UiState>) => void;
   toggleViewportLayer: (id: ViewportLayerId) => void;
+  setViewAids: (patch: Partial<ViewAids>) => void;
   setTheme: (t: ThemeChoice) => void;
   toast: (msg: string) => void;
 }
@@ -317,6 +321,7 @@ export const useStore = create<Store>((set, get) => {
       sunTime: 12,
       sunPlaying: false,
       viewportLayers: loadViewportLayers(),
+      viewAids: loadViewAids(),
       ...loadUi(),
     },
     setParam: (id, value) => {
@@ -572,6 +577,11 @@ export const useStore = create<Store>((set, get) => {
       if (id === 'base') layers.concrete = layers.base;
       saveViewportLayers(layers);
       set({ ui: { ...get().ui, viewportLayers: layers } });
+    },
+    setViewAids: (patch) => {
+      const aids = { ...get().ui.viewAids, ...patch };
+      saveViewAids(aids);
+      set({ ui: { ...get().ui, viewAids: aids } });
     },
     setTheme: (t) => {
       applyTheme(t);

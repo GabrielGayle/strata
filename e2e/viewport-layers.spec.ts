@@ -23,7 +23,7 @@ test('layer toolbar is one row and clear of the caption at 1280', async ({ page 
   expect(tb!.height, 'toolbar should stay on one row').toBeLessThan(40);
   expect(overlap(tb!, cap!), 'toolbar must not cover the bottom-left caption').toBe(false);
   const buttons = toolbar.getByRole('button');
-  await expect(buttons).toHaveCount(9);
+  await expect(buttons).toHaveCount(8);
   const ys = [];
   for (const btn of await buttons.all()) {
     const box = await btn.boundingBox();
@@ -49,4 +49,28 @@ test('Vermilion fin has its own toggle; hiding plates does not hide it', async (
   await expect(fin).toHaveClass(/on/);
   await fin.click();
   await expect(fin).not.toHaveClass(/on/);
+});
+
+test('edge view aids sit above the layer toolbar and remember their settings', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openApp(page);
+  await page.locator('.ws-tabs').getByRole('tab', { name: '3D' }).click();
+  const aids = page.getByTestId('view-aids');
+  const layers = page.getByTestId('viewport-layers');
+  await expect(aids).toBeVisible();
+  const a = await aids.boundingBox();
+  const l = await layers.boundingBox();
+  expect(overlap(a!, l!), 'view aids must not cover the layer toggles').toBe(false);
+  const edges = page.getByTestId('view-aid-outlines');
+  await expect(edges).not.toHaveClass(/on/);
+  await edges.click();
+  await expect(edges).toHaveClass(/on/);
+  await page.getByTestId('view-aid-tint').selectOption('alternate');
+  await page.getByTestId('view-aid-spread').selectOption('2');
+  await page.reload();
+  await page.waitForSelector('.app.window', { timeout: 60_000 });
+  await page.locator('.ws-tabs').getByRole('tab', { name: '3D' }).click();
+  await expect(page.getByTestId('view-aid-outlines')).toHaveClass(/on/);
+  await expect(page.getByTestId('view-aid-tint')).toHaveValue('alternate');
+  await expect(page.getByTestId('view-aid-spread')).toHaveValue('2');
 });

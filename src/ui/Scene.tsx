@@ -22,6 +22,7 @@ import type { CardSight } from '../core/shelfView';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { Candle3D, SunStudy3D } from './SunStudy';
 import { showBaseMesh, showInsertMesh, showObject, type ViewportLayers } from './viewportLayers';
+import { contourStep, makeHeightBandMaterial, outlineColor, outlineSegments, reliefRange, spreadOffsets, tintColor, type ViewAids } from './viewAids';
 
 export interface SceneOpts {
   selected: string | null;
@@ -32,6 +33,8 @@ export interface SceneOpts {
   showIssues: boolean;
   showSource: boolean;
   viewportLayers: ViewportLayers;
+  /** Edge outlines, plate tint and spread (view only). */
+  viewAids?: ViewAids;
   /** Hand placement: the selected plate gets a move / rotate gizmo. */
   moveMode?: boolean;
   /** Material picking: a click puts the plate in the active bucket (shift-click: the run since the last one). */
@@ -60,12 +63,13 @@ export function Env({ intensity = 0.55 }: { intensity?: number }) {
   return null;
 }
 
-const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selected, onSelect, onPaint }: { part: Part; material: THREE.Material; selMaterial: THREE.Material; selected: boolean; onSelect?: (id: string) => void; onPaint?: (key: string, shift: boolean) => void }) {
+const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selected, onSelect, onPaint, offset }: { part: Part; material: THREE.Material; selMaterial: THREE.Material; selected: boolean; onSelect?: (id: string) => void; onPaint?: (key: string, shift: boolean) => void; offset?: [number, number, number] }) {
   const geo = useMemo(() => extrudeOnPlane(part.shape, part.thickness, part.plane), [part]);
   useEffect(() => () => geo.dispose(), [geo]);
   return (
     <mesh
       geometry={geo}
+      position={offset}
       userData={{ measure: part.id }}
       castShadow
       receiveShadow
@@ -89,7 +93,7 @@ const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selecte
   );
 });
 
-function Etches({ parts, engraving, labels }: { parts: Part[]; engraving: boolean; labels: boolean }) {
+function Etches({ parts, engraving, labels, offsets }: { parts: Part[]; engraving: boolean; labels: boolean; offsets: Map<string, [number, number, number]> }) {
   const geo = useMemo(() => {
     const geos = parts
       .map((p) => {
@@ -97,7 +101,10 @@ function Etches({ parts, engraving, labels }: { parts: Part[]; engraving: boolea
         if (engraving) seg.push(...p.etch);
         if (labels) seg.push(...p.labelPaths);
         if (!seg.length) return null;
-        return etchSegments(seg, p.thickness, p.plane);
+        const g = etchSegments(seg, p.thickness, p.plane);
+        const o = offsets.get(p.id);
+        if (o) g.translate(o[0], o[1], o[2]);
+        return g;
       })
       .filter(Boolean) as THREE.BufferGeometry[];
     if (!geos.length) return new THREE.BufferGeometry();
@@ -112,12 +119,29 @@ function Etches({ parts, engraving, labels }: { parts: Part[]; engraving: boolea
     const out = new THREE.BufferGeometry();
     out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     return out;
-  }, [parts, engraving, labels]);
+  }, [parts, engraving, labels, offsets]);
   useEffect(() => () => geo.dispose(), [geo]);
   if (!engraving && !labels) return null;
   return (
     <lineSegments geometry={geo}>
       <lineBasicMaterial color="#1b1b1b" transparent opacity={0.75} />
+    </lineSegments>
+  );
+}
+
+/** View aid: every plate face outlined in one draw call, so each top edge reads against the plate behind. */
+function PlateOutlines({ parts, offsets, color }: { parts: Part[]; offsets: Map<string, [number, number, number]>; color: string }) {
+  const geo = useMemo(() => {
+    const pos: number[] = [];
+    for (const p of parts) outlineSegments(p.shape, p.thickness, p.plane, pos, offsets.get(p.id));
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    return g;
+  }, [parts, offsets]);
+  useEffect(() => () => geo.dispose(), [geo]);
+  return (
+    <lineSegments geometry={geo} renderOrder={1}>
+      <lineBasicMaterial color={color} transparent opacity={0.9} />
     </lineSegments>
   );
 }
@@ -477,7 +501,49 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
     [lookKey], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const material = materials.get(MAIN)!;
-  const matFor = (p: Part) => materials.get(appearance?.assign[p.plateKey] ?? MAIN) ?? material;
+  const aids = opts.viewAids;
+  const tint = aids?.tint ?? 'off';
+  const parts = model.sliced.parts;
+  // view aids: tinted copies of the plate materials, made once per look and colour
+  const tinted = useMemo(() => {
+    const out = new Map<string, THREE.Material>();
+    if (tint === 'off') return out;
+    if (tint === 'height') {
+      const hb = makeHeightBandMaterial(looks[MAIN]);
+      // bands run over the plate tops, where the relief is, not from the base up
+      const { lo, hi } = reliefRange(parts);
+      const lift = model.sunkenFrame?.plateLiftMm ?? 0;
+      hb.setRange(lo + lift, hi + lift, contourStep(hi - lo));
+      out.set('height', hb);
+      return out;
+    }
+    const count = new Map<string, number>();
+    for (const p of parts) count.set(p.family, Math.max(count.get(p.family) ?? 0, p.index + 1));
+    for (const p of parts) {
+      const look = looks[appearance?.assign[p.plateKey] ?? MAIN] ?? looks[MAIN];
+      const c = tintColor(tint, look.color, p.index, count.get(p.family) ?? 1);
+      if (!c || out.has(c)) continue;
+      out.set(c, new THREE.MeshStandardMaterial({ color: c, metalness: Math.min(look.metalness, 0.35), roughness: Math.max(look.roughness, 0.55) }));
+    }
+    return out;
+  }, [tint, parts, lookKey, appearance?.assign, model.sunkenFrame]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => tinted.forEach((m) => m.dispose()), [tinted]);
+  const familyCount = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const p of parts) c.set(p.family, Math.max(c.get(p.family) ?? 0, p.index + 1));
+    return c;
+  }, [parts]);
+  const matFor = (p: Part) => {
+    const base = materials.get(appearance?.assign[p.plateKey] ?? MAIN) ?? material;
+    if (tint === 'off') return base;
+    if (tint === 'height') return tinted.get('height') ?? base;
+    const look = looks[appearance?.assign[p.plateKey] ?? MAIN] ?? looks[MAIN];
+    const c = tintColor(tint, look.color, p.index, familyCount.get(p.family) ?? 1);
+    return (c && tinted.get(c)) || base;
+  };
+  // spread is off while a plate is being moved by hand, so the gizmo sits on the real plate
+  const spread = opts.moveMode ? 1 : (aids?.spread ?? 1);
+  const offsets = useMemo(() => spreadOffsets(parts, spread), [parts, spread]);
   // re-read theme colours whenever the window appearance changes
   const theme = useStore((st) => st.ui.theme);
   const selMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: cssVar('--accent', '#d4521c'), metalness: 0.2, roughness: 0.5, emissive: new THREE.Color('#5a1a00') }), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -519,7 +585,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       <group position={[0, model.sunkenFrame?.plateLiftMm ?? 0, 0]}>
         {L.plates &&
           model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
-            <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} />
+            <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} offset={offsets.get(p.id)} />
           ))}
         {/* the plate under the gizmo, carried rigidly while it is dragged */}
         <group ref={preview} matrixAutoUpdate={false}>
@@ -530,7 +596,8 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
             ))}
         </group>
         {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
-        <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} />
+        {L.plates && aids?.outlines && <PlateOutlines parts={parts} offsets={offsets} color={outlineColor(tint, looks[MAIN].color)} />}
+        <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} offsets={offsets} />
         {L.rods !== false && <Rods model={model} />}
         {L.rods !== false && <StackRods model={model} />}
         {showInsertMesh(L) && <Insert model={model} />}
