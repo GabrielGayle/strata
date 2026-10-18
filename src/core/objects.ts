@@ -35,8 +35,12 @@ export interface CutObject {
   look?: 'candle' | 'tealight' | 'hidden';
   /** Candlesticks held by a target: fins standing round it, gripping it from every side. */
   holder?: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number };
-  /** Candles with the plates choked in to them: how far round each the plates reach, and whether they join along the path. */
-  choke?: { reach: number; join: boolean; closed: boolean };
+  /**
+   * Plates choked in to it (candles, shelf cards): how far round it the plates
+   * reach, and whether they join to the next object of the same group (candles
+   * along their path, cards along the shelf). Cards keep a band along their bottom edge.
+   */
+  choke?: { reach: number; join: boolean; closed: boolean; group?: string };
   /** Candles that sit into the plates: how deep below the plate tops under them their bottom goes (mm). */
   sink?: number;
   /** Only shapes the plate tops (its seat), cutting nothing. */
