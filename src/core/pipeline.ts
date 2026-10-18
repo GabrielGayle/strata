@@ -24,7 +24,14 @@ import { share } from './memo';
 import { carveShadow, isCandle, type ShadowReport } from './shadow';
 import type { Project } from './project';
 import { buildObjects, type ObjectBuild } from './objects';
-import { candleObjects } from './candles';
+import { candleObjects, chokeCircles, sitOnSurface, surfaceTop } from './candles';
+import { intersection, rect, shapeBBox, type Shape } from './geom2d';
+
+/** Top of a plate shape between two u values (plate coordinates), or null where it has no steel. */
+function topWithin(s: Shape, u0: number, u1: number): number | null {
+  const cut = intersection(s, rect(u0, -20000, u1, 20000));
+  return cut.length ? shapeBBox(cut).maxY : null;
+}
 import { originFrame, toWorld, type Frame } from './origin';
 import { baseTop } from './slicer';
 import { basePlan } from './base';
@@ -265,12 +272,24 @@ export function createFrontPipeline() {
     const laid = stage('Postcard shelf', [shelfLayoutKey(project.shelf), baseTop(v), project.shelf?.unobstructed ? origin : 0], () =>
       layoutShelfResult(project.shelf, baseTop(v), project.shelf?.unobstructed ? origin : undefined),
     );
-    const candles = stage('Candelabra', [project.candles, baseTop(v)], () => candleObjects(project.candles, baseTop(v)));
-    const objects = stage('Objects', [project.objects, laid, candles, origin], () =>
-      buildObjects([...(project.objects ?? []).map((o) => toWorld(o, origin)), ...laid.cards.map((o) => toWorld(o, origin, true)), ...candles.map((o) => toWorld(o, origin, true))]),
-    );
+    const onSurface = project.candles?.sit === 'surface' || (project.candles?.sit === 'auto' && !!mapTop);
+    const candles = stage('Candelabra', [project.candles, baseTop(v), onSurface], () => candleObjects(project.candles, baseTop(v), onSurface));
+    const others = stage('Placed objects', [project.objects, laid, origin], () => [...(project.objects ?? []).map((o) => toWorld(o, origin)), ...laid.cards.map((o) => toWorld(o, origin, true))]);
+    // candles sitting into the plates need the plates as they are without them first
+    const bare = onSurface
+      ? stage('Plate surface', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, others, !!mapTop], () => {
+          const b = buildObjects(others);
+          return slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: mapTop ? null : topImg, topMask: mapTop ? null : topMask, moves: project.moves, materialFor, objects: b.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut })), mapTerrain: !!mapTop });
+        })
+      : null;
+    const placedCandles = stage('Candles placed', [candles, origin, bare], () => {
+      const w = candles.map((o) => toWorld(o, origin, true));
+      return bare ? sitOnSurface(w, (x, z, r) => surfaceTop(bare.parts, x, z, r, topWithin)) : w;
+    });
+    const objects = stage('Objects', [others, placedCandles], () => buildObjects([...others, ...placedCandles]));
     const sight = stage('Sight lines', [objects, shelfViewKey(project.shelf), project.shelf?.seat], () => shelfSight(objects, project.shelf));
-    const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder }));
+    const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut }));
+    const choke = chokeCircles(objects.map((o) => o.object));
     const holders = objects.flatMap(({ object: o }) => (o.holder ? [{ x: o.x, z: o.z, r: o.w / 2, bottom: o.y - o.h / 2, ry: o.ry, slack: o.clearance, holder: o.holder }] : []));
     const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, sight, !!mapTop], () =>
       share(
@@ -288,6 +307,7 @@ export function createFrontPipeline() {
           objects: cutters,
           sight,
           candles: holders,
+          choke,
           mapTerrain: !!mapTop,
         }),
       ),
