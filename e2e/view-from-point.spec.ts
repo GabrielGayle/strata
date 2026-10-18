@@ -77,6 +77,16 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   await page.waitForSelector('[data-testid="viewport-3d"] canvas', { timeout: 120_000 });
   await openPointPanel(page);
 
+  await page.locator('.overlay.tr').getByRole('button', { name: /^Objects/ }).click();
+  await expect(page.locator('.overlay.appearance.objects')).toBeVisible();
+  const lookBtn = page.getByTestId('view-from-point-look');
+  await expect(lookBtn).toBeVisible();
+  await lookBtn.click({ trial: true });
+  await lookFrom(page, WOOLWICH);
+  await expect(page.getByTestId('view-from-point-warning')).toBeVisible();
+  await page.locator('.overlay.tr').getByRole('button', { name: /^Objects/ }).click();
+  await expect(page.locator('.overlay.appearance.objects')).toHaveCount(0);
+
   await lookFrom(page, 'not a google earth view');
   await expect(page.getByTestId('view-from-point-warning')).toContainText(/Paste a Google Earth|Could not read|lat, lon/i);
 

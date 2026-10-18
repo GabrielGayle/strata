@@ -219,7 +219,7 @@ export default function ViewFromPointPanel() {
 
   return (
     <div
-      className="overlay appearance viewpoint"
+      className="overlay viewpoint"
       data-testid="view-from-point"
       data-view-lat={fields.lat}
       data-view-lon={fields.lon}

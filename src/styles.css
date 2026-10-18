@@ -893,6 +893,29 @@ table.tbl {
   top: 8px;
   right: 8px;
 }
+/* Right tools + View from point stacked so Objects (top-left) cannot cover Look. */
+.vp-tr-column {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-height: calc(100% - 150px);
+  overflow: auto;
+  pointer-events: none;
+}
+.vp-tr-column > * {
+  pointer-events: auto;
+}
+.vp-tr-column .overlay.tr {
+  position: relative;
+  top: auto;
+  right: auto;
+  flex-shrink: 0;
+}
 .overlay.bl {
   bottom: 8px;
   left: 8px;
@@ -1863,11 +1886,9 @@ canvas.thumb {
   color: var(--muted, inherit);
 }
 .overlay.viewpoint {
-  top: 44px;
-  left: 8px;
-  width: min(440px, calc(100% - 16px));
   flex-direction: column;
-  max-height: calc(100% - 120px);
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 180px));
   overflow: auto;
 }
 .viewpoint .vp-paste {
