@@ -17,6 +17,8 @@ import { makeConcreteMaterial, METALS, PLY, type Band } from './materials';
 import { lookOf, MAIN, type Appearance } from '../core/appearance';
 import { isMapDepth } from '../core/mapPlateHeight';
 import { useStore } from '../state/store';
+import { objectMatrix, type CutObject } from '../core/objects';
+import type { CardSight } from '../core/shelfView';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { SunStudy3D } from './SunStudy';
 import { showInsertMesh, type ViewportLayers } from './viewportLayers';
@@ -200,7 +202,56 @@ function PlacedObjects({ model }: { model: Model }) {
         );
       })}
       <OriginMarker model={model} />
+      <HiddenFaceTint model={model} />
     </>
+  );
+}
+
+function overlayGeometry(sight: CardSight, o: CutObject): THREE.BufferGeometry | null {
+  const polys = sight.localHidden.filter((e) => e.outer.length >= 3);
+  if (!polys.length) return null;
+  const shapes = polys.map((e) => {
+    const s = new THREE.Shape(e.outer.map(([x, y]) => new THREE.Vector2(x, y)));
+    for (const h of e.holes) {
+      if (h.length < 3) continue;
+      s.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
+    }
+    return s;
+  });
+  const g = new THREE.ShapeGeometry(shapes);
+  const bump = Math.sign(sight.faceZ || 1) * 0.2;
+  g.translate(0, 0, sight.faceZ + bump);
+  g.applyMatrix4(objectMatrix(o));
+  return g;
+}
+
+/** Paint occluded postcard faces while Unobstructed view (dev) is open and tint is on. */
+function HiddenFaceTint({ model }: { model: Model }) {
+  const devOpen = useStore((s) => s.ui.shelfViewDevOpen);
+  const tint = useStore((s) => !!s.project.shelf?.tintHidden);
+  const vis = model.cardVisibility;
+  const geos = useMemo(() => {
+    if (!devOpen || !tint || !vis) return [];
+    const byId = new Map(model.objects.map((b) => [b.object.id, b.object]));
+    return vis.cards
+      .map((c) => {
+        const o = byId.get(c.id);
+        if (!o || c.hiddenArea < 0.2) return null;
+        const g = overlayGeometry(c, o);
+        return g ? { id: c.id, g } : null;
+      })
+      .filter(Boolean) as { id: string; g: THREE.BufferGeometry }[];
+  }, [devOpen, tint, vis, model.objects]);
+  useEffect(() => () => geos.forEach((x) => x.g.dispose()), [geos]);
+  if (!geos.length) return null;
+  return (
+    <group>
+      {geos.map((x) => (
+        <mesh key={x.id} geometry={x.g} renderOrder={20}>
+          <meshBasicMaterial color="#c0281f" transparent opacity={0.45} depthTest depthWrite={false} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
+        </mesh>
+      ))}
+    </group>
   );
 }
 

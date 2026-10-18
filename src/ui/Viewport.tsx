@@ -15,6 +15,7 @@ import { plateOutlineYRangeMm } from '../core/slicer';
 import { flatStackIsCapped, formatMapHeightCaption } from '../core/mapGeometryReadout';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
+import { UnobstructedDevDock } from './ShelfPanel';
 import { SunBar } from './SunStudy';
 import { MeasurePanel, MeasureTool, useMeasure } from './Measure';
 import {
@@ -27,6 +28,7 @@ import {
 } from './viewportKeepAlive';
 import ViewportLayersToolbar from './ViewportLayersToolbar';
 import { DEFAULT_VIEWPORT_LAYERS } from './viewportLayers';
+import { setLiveViewFromOffset } from './liveView';
 import ViewFromPointPanel, { ViewFromPointRig } from './ViewFromPoint';
 
 export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { dir: THREE.Vector3; up: THREE.Vector3 } {
@@ -103,6 +105,22 @@ export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; sn
     frame(model);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, pointViewN]);
+  return null;
+}
+
+function LiveViewTracker() {
+  const { camera, controls } = useThree() as { camera: THREE.Camera; controls?: { target: THREE.Vector3; addEventListener: (t: string, fn: () => void) => void; removeEventListener: (t: string, fn: () => void) => void } };
+  useEffect(() => {
+    const sync = () => {
+      if (!controls) return;
+      const p = camera.position;
+      const t = controls.target;
+      setLiveViewFromOffset(p.x - t.x, p.y - t.y, p.z - t.z);
+    };
+    sync();
+    controls?.addEventListener('change', sync);
+    return () => controls?.removeEventListener('change', sync);
+  }, [camera, controls]);
   return null;
 }
 
@@ -223,6 +241,7 @@ export default function Viewport() {
         />
         <OrthographicCamera makeDefault={ui.ortho} near={-clip.orthoSpan} far={clip.orthoSpan} position={VIEWPORT_CAM_POS} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
+        <LiveViewTracker />
         <CameraClipSync boundSize={boundSize} />
         <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} mapNorthUp={mapFace} />
         <ViewFromPointRig />
@@ -314,6 +333,7 @@ export default function Viewport() {
       {ui.moveMode && !ui.paintMode && !ui.measureMode && <MovePanel />}
       {ui.paintMode && !ui.measureMode && <AppearancePanel />}
       {ui.objectsMode && !ui.measureMode && <ObjectsPanel />}
+      {ui.objectsMode && !ui.measureMode && <UnobstructedDevDock />}
       {ui.measureMode && <MeasurePanel />}
       {v.sunOn && <SunBar model={model} />}
       {v.pourView !== 'plain' && model.pour.rows.length > 0 && (

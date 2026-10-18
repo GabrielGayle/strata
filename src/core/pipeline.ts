@@ -11,6 +11,8 @@ import { buildMapHeightField, isMapDepth } from './mapPlateHeight';
 import { slice, type SliceResult } from './slicer';
 import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
+import { layoutShelfResult, type SolveResult } from './shelfSolve';
+import { reportShelfVisibility, shelfLayoutKey, shelfViewKey, type VisibilityReport } from './shelfView';
 import { nest, nestGroups, type NestResult } from './nest';
 import { materialKey, materialOf } from './appearance';
 import { tuningActive } from './tuning';
@@ -22,7 +24,6 @@ import { share } from './memo';
 import { carveShadow, type ShadowReport } from './shadow';
 import type { Project } from './project';
 import { buildObjects, type ObjectBuild } from './objects';
-import { shelfCards } from './shelf';
 import { originFrame, toWorld, type Frame } from './origin';
 import { baseTop } from './slicer';
 import { basePlan } from './base';
@@ -65,6 +66,10 @@ export interface Model {
   sliced: SliceResult;
   /** Placed objects that cut the plates (postcards, boxes…). */
   objects: ObjectBuild[];
+  /** Postcard-shelf faces hidden from the viewing angle (undefined when there is no shelf). */
+  cardVisibility?: VisibilityReport;
+  /** Unobstructed-view solver result (undefined when the flag is off). */
+  shelfSolve?: SolveResult;
   /** The world origin objects and the shelf are measured from. */
   origin: Frame;
   /** Shadow carving: the wall, carved plate grids and how well each frame comes out (null when off). */
@@ -249,11 +254,14 @@ export function createFrontPipeline() {
     const mats = materialKey(project.appearance, String(v.plateMaterial));
     const materialFor = (key: string) => materialOf(project.appearance, key, String(v.plateMaterial));
     // tuned plates ring by their own metal, so only then does the metal change the cut
-    const shelf = stage('Postcard shelf', [project.shelf, baseTop(v)], () => shelfCards(project.shelf, baseTop(v)));
     const origin = stage('World origin', [project.origin, v.baseLength, v.baseWidth, baseTop(v)], () => originFrame(project.origin, v));
-    const objects = stage('Objects', [project.objects, shelf, origin], () =>
-      buildObjects([...(project.objects ?? []).map((o) => toWorld(o, origin)), ...shelf.map((o) => toWorld(o, origin, true))]),
+    const laid = stage('Postcard shelf', [shelfLayoutKey(project.shelf), baseTop(v), project.shelf?.unobstructed ? origin : 0], () =>
+      layoutShelfResult(project.shelf, baseTop(v), project.shelf?.unobstructed ? origin : undefined),
     );
+    const objects = stage('Objects', [project.objects, laid, origin], () =>
+      buildObjects([...(project.objects ?? []).map((o) => toWorld(o, origin)), ...laid.cards.map((o) => toWorld(o, origin, true))]),
+    );
+    const cardVisibility = stage('Card visibility', [objects, shelfViewKey(project.shelf)], () => reportShelfVisibility(objects, project.shelf));
     const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder }));
     const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, !!mapTop], () =>
       share(
@@ -295,7 +303,7 @@ export function createFrontPipeline() {
           ? buildMapSunkenFrameLayout(finalSliced, { sunkenFrame: mapFrame }, v.thickness, baseTop(v), v.baseOn ? union([basePlan(v)]) : undefined)
           : null,
     );
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, origin, shadow: carved?.report ?? null, unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, shelfSolve: laid.solve ?? undefined, origin, shadow: carved?.report ?? null, unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
   };
 }
 
@@ -369,9 +377,10 @@ export function createDeferredPipeline() {
 
 /** Joins a front pass with a deferred result into the model the UI reads. */
 export function assemble(f: FrontModel, d: Omit<DeferredModel, 'totalMs'> & { totalMs?: number }, stale = d.stale): Model {
+  const extra = f.cardVisibility?.issues;
   return {
     ...f,
-    issues: d.issues,
+    issues: extra?.length ? [...d.issues, ...extra] : d.issues,
     nested: d.nested,
     moulds: d.moulds,
     mouldNest: d.mouldNest,
