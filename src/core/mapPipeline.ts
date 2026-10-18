@@ -73,6 +73,21 @@ export interface BuildMapImageOptions {
   overpass?: OverpassFetcher;
   /** When true, Overpass may use the network if the cache misses (CLI default). */
   allowOverpassNetwork?: boolean;
+  /** Cancels tile fetches and stops the build between stages (a newer build superseded it). */
+  signal?: AbortSignal;
+}
+
+/**
+ * Give the event loop a turn between heavy stages and stop if the build was
+ * cancelled. Until the engine runs in a worker this keeps each main-thread
+ * task to one stage.
+ */
+async function nextStage(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  const sched = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+  if (sched?.yield) await sched.yield();
+  else await new Promise((r) => setTimeout(r, 0));
+  signal?.throwIfAborted();
 }
 
 export interface MapBuildResult {
@@ -88,22 +103,22 @@ async function fetchElevationGrid(
   notices: MapSourceNotice[],
   opts: BuildMapImageOptions,
 ): Promise<{ grid: Float32Grid; used: MapSource }> {
-  const fetch: TileFetcher = async (url) => {
+  const fetch: TileFetcher = async (url, signal) => {
     const inner = opts.fetch ?? getTileFetcher();
-    return cachedTileFetch(spec.cacheDir ?? opts.cacheDir, url, inner);
+    return cachedTileFetch(spec.cacheDir ?? opts.cacheDir, url, (u) => inner(u, signal));
   };
 
   const ok = (grid: Float32Grid, used: MapSource) => ({ grid: sanitizeElevationGrid(grid), used });
 
   if (effective === 'terrarium') {
-    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
+    return ok(await fetchTerrariumGrid(spec, { fetch, signal: opts.signal }), 'terrarium');
   }
 
   if (isRegionalLidarSource(effective)) {
     const grid = await fetchRegionalLidarGrid(effective, spec, opts.regionalLoader);
     if (grid) return ok(grid, effective);
     notices.push(mapWarn(`${effective} LiDAR is not supported yet; using terrarium (~30 m).`));
-    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
+    return ok(await fetchTerrariumGrid(spec, { fetch, signal: opts.signal }), 'terrarium');
   }
 
   if (isEaLidarSource(effective)) {
@@ -112,12 +127,12 @@ async function fetchElevationGrid(
     if (grid) return ok(grid, effective);
     const why = reason ? ` (${reason})` : '';
     notices.push(mapWarn(`${effective} LiDAR not available for this bbox${why}; falling back to terrarium (~30 m).`));
-    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
+    return ok(await fetchTerrariumGrid(spec, { fetch, signal: opts.signal }), 'terrarium');
   }
 
   if (STUB_SOURCES.has(effective)) {
     notices.push(mapWarn(`${effective} adapter not shipped yet; falling back to terrarium (~30 m).`));
-    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
+    return ok(await fetchTerrariumGrid(spec, { fetch, signal: opts.signal }), 'terrarium');
   }
 
   throw new MapSourceNotImplementedError(effective);
@@ -143,10 +158,12 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   const fetchSource = resolveElevationSourceForModel(resolved.effective, spec.model);
   const elevHit = await fetchElevationGrid(spec, fetchSource, notices, opts);
   const elev = elevHit.grid;
+  await nextStage(opts.signal);
   /** Actual raster after fallback — auto exaggeration and the readout source must use this, not the pick. */
   const usedSource = elevHit.used;
   const resampleSpec = { ...spec, model: spec.model === 'dtm+buildings' ? 'dtm' : spec.model };
   let metric = reprojectResample(elev, resampleSpec);
+  await nextStage(opts.signal);
   let dtmMetric = metric;
   if (spec.model === 'dsm' && fetchSource !== resolved.effective) {
     const dtmElev = await fetchElevationGrid(spec, resolved.effective, notices, opts);
@@ -202,6 +219,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       notices.push(mapWarn(`Water flatten skipped: ${(e as Error).message}`));
     }
   }
+  await nextStage(opts.signal);
   const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
   const { factor } = resolveExaggerationFactor(
     { exaggeration: spec.exaggeration },
@@ -231,6 +249,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     ortho?.widthM ?? 1,
     stack.masterWidthMm,
   );
+  await nextStage(opts.signal);
   let engraveArt: MapSpec['engraveArt'];
   if (spec.engrave?.enabled) {
     try {

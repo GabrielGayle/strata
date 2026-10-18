@@ -4,7 +4,75 @@ import type { MapSpec } from './mapSpec';
 
 export const TERRARIUM_TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 
-export type TileFetcher = (url: string) => Promise<Uint8Array>;
+/** `signal` aborts the request when the build is superseded or times out; fetchers may ignore it. */
+export type TileFetcher = (url: string, signal?: AbortSignal) => Promise<Uint8Array>;
+
+/** Tiles in flight at once, and how long one may take before the build fails. */
+export const TERRARIUM_FETCH_CONCURRENCY = 4;
+export const TERRARIUM_TILE_TIMEOUT_MS = 15_000;
+
+export class MapTileTimeoutError extends Error {
+  constructor(url: string, ms: number) {
+    super(`Terrarium tile timed out after ${Math.round(ms / 1000)} s: ${url}`);
+    this.name = 'MapTileTimeoutError';
+  }
+}
+
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new DOMException('Map build cancelled', 'AbortError');
+}
+
+/** One tile with its own timeout, also aborted by the build's signal. Rejects even if the fetcher ignores the signal. */
+export function fetchTileWithTimeout(fetch: TileFetcher, url: string, timeoutMs: number, signal?: AbortSignal): Promise<Uint8Array> {
+  if (signal?.aborted) return Promise.reject(abortError(signal));
+  const ctrl = new AbortController();
+  return new Promise<Uint8Array>((resolve, reject) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const timer = setTimeout(() => {
+      const err = new MapTileTimeoutError(url, timeoutMs);
+      ctrl.abort(err);
+      done();
+      reject(err);
+    }, timeoutMs);
+    const onAbort = () => {
+      const err = abortError(signal!);
+      ctrl.abort(err);
+      done();
+      reject(err);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    fetch(url, ctrl.signal).then(
+      (buf) => {
+        done();
+        resolve(buf);
+      },
+      (e) => {
+        done();
+        reject(e);
+      },
+    );
+  });
+}
+
+/** Run `task` over `items` with at most `limit` in flight; the first failure rejects and no new items start. */
+export async function mapWithConcurrency<T>(items: T[], limit: number, task: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  let failed = false;
+  const lane = async () => {
+    while (!failed && next < items.length) {
+      try {
+        await task(items[next++]!);
+      } catch (e) {
+        failed = true;
+        throw e;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, lane));
+}
 
 export function terrariumUrl(z: number, x: number, y: number): string {
   return `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
@@ -91,6 +159,10 @@ export function pickTerrariumZoom(bbox: MapSpec['bbox'], maxZoom = 13): number {
 export interface TerrariumMosaicOptions {
   fetch?: TileFetcher;
   zoom?: number;
+  /** Aborts outstanding tile fetches (a newer build started). */
+  signal?: AbortSignal;
+  concurrency?: number;
+  timeoutMs?: number;
 }
 
 export async function fetchTerrariumGrid(spec: Pick<MapSpec, 'bbox'>, opts: TerrariumMosaicOptions = {}): Promise<Float32Grid> {
@@ -106,19 +178,21 @@ export async function fetchTerrariumGrid(spec: Pick<MapSpec, 'bbox'>, opts: Terr
   const mosaic = new Float32Array(mw * mh).fill(NaN);
   const fetch = opts.fetch ?? getTileFetcher();
 
-  for (let tx = tl.x; tx <= br.x; tx++) {
-    for (let ty = tl.y; ty <= br.y; ty++) {
-      const buf = await fetch(terrariumUrl(z, tx, ty));
-      const tile = await decodeTerrariumPngAsync(buf);
-      const ox = (tx - tl.x) * tileSize;
-      const oy = (ty - tl.y) * tileSize;
-      for (let y = 0; y < tile.h; y++) {
-        for (let x = 0; x < tile.w; x++) {
-          mosaic[(oy + y) * mw + ox + x] = tile.data[y * tile.w + x];
-        }
+  const tiles: { tx: number; ty: number }[] = [];
+  for (let tx = tl.x; tx <= br.x; tx++) for (let ty = tl.y; ty <= br.y; ty++) tiles.push({ tx, ty });
+  const timeoutMs = opts.timeoutMs ?? TERRARIUM_TILE_TIMEOUT_MS;
+  await mapWithConcurrency(tiles, opts.concurrency ?? TERRARIUM_FETCH_CONCURRENCY, async ({ tx, ty }) => {
+    const buf = await fetchTileWithTimeout(fetch, terrariumUrl(z, tx, ty), timeoutMs, opts.signal);
+    if (opts.signal?.aborted) throw abortError(opts.signal);
+    const tile = await decodeTerrariumPngAsync(buf);
+    const ox = (tx - tl.x) * tileSize;
+    const oy = (ty - tl.y) * tileSize;
+    for (let y = 0; y < tile.h; y++) {
+      for (let x = 0; x < tile.w; x++) {
+        mosaic[(oy + y) * mw + ox + x] = tile.data[y * tile.w + x];
       }
     }
-  }
+  });
 
   const tileWest = tileMercatorBounds(z, tl.x, tl.y).west;
   const tileNorth = tileMercatorBounds(z, tl.x, tl.y).north;
@@ -161,8 +235,8 @@ export function getTileFetcher(): TileFetcher {
   return tileFetcherOverride ?? defaultTileFetcher;
 }
 
-export async function defaultTileFetcher(url: string): Promise<Uint8Array> {
-  const res = await fetch(url);
+export async function defaultTileFetcher(url: string, signal?: AbortSignal): Promise<Uint8Array> {
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`Terrarium tile fetch failed: ${url} (${res.status})`);
   return new Uint8Array(await res.arrayBuffer());
 }

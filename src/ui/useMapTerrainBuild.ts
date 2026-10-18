@@ -14,6 +14,8 @@ export function useMapTerrainBuild() {
   const finishMapTerrainBuild = useStore((s) => s.finishMapTerrainBuild);
   const rebuildEpoch = useStore((s) => s.mapRebuildEpoch);
   const token = useRef(0);
+  /** Cancels the running build's tile fetches when a newer build starts or the app unmounts. */
+  const inFlight = useRef<AbortController | null>(null);
   const failedKey = useRef<string | null>(null);
   const lastFailedError = useRef<string | null>(null);
   const seenEpoch = useRef(rebuildEpoch);
@@ -53,12 +55,15 @@ export function useMapTerrainBuild() {
 
     const id = ++token.current;
     const key = buildKey;
+    inFlight.current?.abort();
+    const ctrl = new AbortController();
+    inFlight.current = ctrl;
     setMapTerrain({ phase: 'working', message: 'Fetching elevation and building depth…', error: undefined });
 
     // Read the project at kickoff so param / override edits during the fetch
     // do not restart it, and finishMapTerrainBuild merges into the latest store.
     const project = useStore.getState().project;
-    void buildMapTerrainAsset(project, { ...spec, buildKey: key })
+    void buildMapTerrainAsset(project, { ...spec, buildKey: key }, ctrl.signal)
       .then((asset) => {
         if (token.current !== id) return;
         finishMapTerrainBuild(asset);
@@ -74,4 +79,6 @@ export function useMapTerrainBuild() {
         reportMapTerrainFailure(e);
       });
   }, [stale, spec, depth, stack, buildKey, rebuildEpoch, setMapTerrain, finishMapTerrainBuild]);
+
+  useEffect(() => () => inFlight.current?.abort(), []);
 }

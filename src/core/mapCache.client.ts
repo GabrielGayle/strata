@@ -1,24 +1,72 @@
-/** Browser build: no on-disk map cache (CLI uses `mapCache.ts`). */
+/**
+ * Browser build of `mapCache.ts` (swapped in by vite.config.ts): the same
+ * kinds and keys as the CLI's on-disk cache, stored in IndexedDB. `dir` is
+ * ignored; the browser always caches.
+ */
+import { browserMapCacheGet, browserMapCacheSet } from './mapCacheBrowser';
+
 type MapCacheKind = 'terrarium' | 'cog' | 'wms' | 'bytes' | 'nominatim' | 'overpass';
 
-export async function cachedTileFetch(_dir: string | undefined, url: string, inner: (url: string) => Promise<Uint8Array>): Promise<Uint8Array> {
-  return inner(url);
+/** Elevation rasters do not change; OSM answers are refreshed after a month. */
+const MAX_AGE_MS: Record<MapCacheKind, number> = {
+  terrarium: Infinity,
+  cog: Infinity,
+  wms: Infinity,
+  bytes: Infinity,
+  nominatim: 30 * 24 * 3600 * 1000,
+  overpass: 30 * 24 * 3600 * 1000,
+};
+
+export async function cachedTileFetch(dir: string | undefined, url: string, inner: (url: string) => Promise<Uint8Array>): Promise<Uint8Array> {
+  return cachedMapBytes(dir, 'terrarium', url, inner);
 }
 
 export async function cachedMapBytes(
-  dir: string | undefined,
-  _kind: MapCacheKind,
+  _dir: string | undefined,
+  kind: MapCacheKind,
   url: string,
   inner: (url: string) => Promise<Uint8Array>,
 ): Promise<Uint8Array> {
-  if (!dir) return inner(url);
-  return inner(url);
+  const hit = await browserMapCacheGet(kind, url, MAX_AGE_MS[kind]);
+  if (hit instanceof Uint8Array) return hit;
+  const data = await inner(url);
+  if (looksLike(kind, data)) void browserMapCacheSet(kind, url, data);
+  return data;
 }
 
-export async function cachedMapJson<T>(_dir: string | undefined, _kind: MapCacheKind, _key: string, inner: () => Promise<T>): Promise<T> {
-  return inner();
+export async function cachedMapJson<T>(_dir: string | undefined, kind: MapCacheKind, key: string, inner: () => Promise<T>): Promise<T> {
+  const hit = await browserMapCacheGet(kind, key, MAX_AGE_MS[kind]);
+  if (typeof hit === 'string') {
+    try {
+      return JSON.parse(hit) as T;
+    } catch {
+      /* corrupt entry: refetch */
+    }
+  }
+  const data = await inner();
+  if (cacheable(kind, data)) void browserMapCacheSet(kind, key, JSON.stringify(data));
+  return data;
 }
 
+/**
+ * A server can answer 200 with an error page (EA WCS sends XML exception
+ * reports). Only keep bytes that are the format the caller expects, so a bad
+ * answer is retried next build instead of pinned forever.
+ */
+function looksLike(kind: MapCacheKind, b: Uint8Array): boolean {
+  if (kind === 'terrarium') return b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+  if (kind === 'cog') return b.length > 8 && ((b[0] === 0x49 && b[1] === 0x49) || (b[0] === 0x4d && b[1] === 0x4d));
+  return b.length > 0;
+}
+
+/** Overpass reports runtime errors (timeouts, memory) as a 200 with a `remark`; never keep those. */
+function cacheable(kind: MapCacheKind, data: unknown): boolean {
+  if (data == null) return false;
+  if (kind === 'overpass' && typeof data === 'object' && 'remark' in data) return false;
+  return true;
+}
+
+/** Offline Overpass reads (no fetcher) go through `cachedMapJson` in the browser; there is no sync store. */
 export function readMapCacheJson(): null {
   return null;
 }
