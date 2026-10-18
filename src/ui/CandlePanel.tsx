@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { candleList, CHOKE_NAMES, DEFAULT_CANDLES, SIT_NAMES, type Choke, type Sit, HOLDER_NAMES, parseCandles, PATH_NAMES, PRESETS, type CandlePath, type CandleSpec, type Holder } from '../core/candles';
+import { candleList, CHOKE_NAMES, DEFAULT_CANDLES, SIT_NAMES, SNAP_NAMES, type Choke, type Sit, type Snap, HOLDER_NAMES, parseCandles, PATH_NAMES, PRESETS, type CandlePath, type CandleSpec, type Holder } from '../core/candles';
 import type { Model } from '../core/pipeline';
 import type { RawValue } from '../core/params';
 import { baseTop } from '../core/slicer';
 
-type NumKey = 'size' | 'bend' | 'lift' | 'crown' | 'ramp' | 'grip' | 'cup' | 'fins' | 'reach' | 'spin' | 'engage' | 'pad' | 'slack' | 'shoulder' | 'x' | 'z' | 'turn';
+type NumKey = 'size' | 'bend' | 'lift' | 'crown' | 'ramp' | 'grip' | 'cup' | 'fins' | 'reach' | 'spin' | 'engage' | 'pad' | 'cols' | 'gapX' | 'gapZ' | 'every' | 'slack' | 'shoulder' | 'x' | 'z' | 'turn';
 
 interface Field {
   key: NumKey;
@@ -33,7 +33,11 @@ let mapDesign = false;
 const sitsIn = (s: CandleSpec) => s.sit === 'surface' || (s.sit === 'auto' && mapDesign);
 
 const FIELDS: Field[] = [
-  { key: 'size', label: (s) => (s.path === 'circle' ? 'Across' : s.path === 'line' || s.path === 'wave' ? 'Length' : 'Width'), step: 10, hint: 'How big the path is (mm): its length for a line or wave, the diameter for a circle, the width for the other shapes.', show: (s) => s.path !== 'custom' },
+  { key: 'cols', label: 'Columns', step: 1, hint: 'Grid: how many candles in each row (across the plates). The rows fill up from the front as you add candles.', show: (s) => s.path === 'grid' },
+  { key: 'gapX', label: 'Across', step: 5, hint: 'Grid: spacing between columns (mm).', show: (s) => s.path === 'grid' && s.snap === 'off' },
+  { key: 'every', label: 'Every', step: 1, hint: 'Grid lined up with the plates: a column every this many plates, so the spacing follows the plate pitch exactly.', show: (s) => s.path === 'grid' && s.snap !== 'off' },
+  { key: 'gapZ', label: 'Back', step: 5, hint: 'Grid: spacing between rows, front to back (mm).', show: (s) => s.path === 'grid' },
+  { key: 'size', label: (s) => (s.path === 'circle' ? 'Across' : s.path === 'line' || s.path === 'wave' ? 'Length' : 'Width'), step: 10, hint: 'How big the path is (mm): its length for a line or wave, the diameter for a circle, the width for the other shapes.', show: (s) => s.path !== 'custom' && s.path !== 'grid' && s.path !== 'free' },
   { key: 'bend', label: (s) => BEND_LABEL[s.path] ?? 'Bend', step: 1, hint: (s) => BEND_HINT[s.path] ?? '', show: (s) => s.path in BEND_LABEL },
   { key: 'lift', show: (s) => !sitsIn(s), label: 'Lift', step: 5, hint: 'Height of the candle bottoms above the concrete (mm). The plates step up to meet them.' },
   { key: 'crown', show: (s) => !sitsIn(s), label: 'Crown', step: 5, hint: 'Extra height for the middle candles (mm), rising in a curve like a candelabra. Negative dips the middle. Rings and shapes have no middle, so it does nothing there.' },
@@ -53,7 +57,7 @@ const FIELDS: Field[] = [
 ];
 
 const DEFAULT_HINT =
-  'Type one candle per line: a name like "5 taper", "tealight", "maxi", or diameter × height in mm like "24 x 300 stick". Add "cup", "slotted" or "target" to a line to pick its holder. Hover any value to see what it does.';
+  'Click any candle in the 3D view and drag it to place it freely. Type one candle per line: a name like "5 taper", "tealight", "maxi", or diameter × height in mm like "24 x 300 stick". Add "cup", "slotted" or "target" to a line to pick its holder. Hover any value to see what it does.';
 
 /** Settings that make the plates flat-topped and tall enough to meet every candle, on a base big enough to hold them (null with no candles). */
 export function fitCandles(model: Model, s: CandleSpec): Record<string, RawValue> | null {
@@ -146,6 +150,13 @@ export default function CandlePanel() {
               </option>
             ))}
           </select>
+          <select aria-label="Snap" value={s.snap} onChange={(e) => edit({ snap: e.target.value as Snap })} {...help('Line the candles up with the plates. Onto plates: each candle slides along the stack to stand centred on the nearest plate. Between plates: centred in the gap between two. A grid then spaces its columns by whole plates (see Every).')}>
+            {(Object.keys(SNAP_NAMES) as Snap[]).map((k) => (
+              <option key={k} value={k}>
+                {SNAP_NAMES[k]}
+              </option>
+            ))}
+          </select>
           <select aria-label="Height" value={s.sit} onChange={(e) => edit({ sit: e.target.value as Sit })} {...help('Where the candles stand. Lift: at a set height above the concrete, with the plates stepping up to meet them. Sit into the plates: each candle sinks its Cup or Grip depth below the lowest plate top under it, so the plates keep their own shape (a map, a relief) and are just cut to hold it. Auto sits them into a map and lifts them otherwise.')}>
             {(Object.keys(SIT_NAMES) as Sit[]).map((k) => (
               <option key={k} value={k}>
@@ -181,6 +192,14 @@ export default function CandlePanel() {
           </button>
         ))}
       </div>
+      {s.path === 'free' && (
+        <div className="mp-row ap-edit">
+          <span className="ap-label">Click a candle in the 3D view and drag its arrows to move it. Every candle keeps its own spot.</span>
+          <button className="btn sm" onClick={() => edit({ path: 'grid', spots: [] })} {...help('Lay the candles out in a grid again (their dragged spots are forgotten).')}>
+            Back to a grid
+          </button>
+        </div>
+      )}
       {s.path === 'custom' && (
         <div className="mp-row ap-edit ob-edit">
           <input aria-label="Path points" style={{ width: 320 }} value={s.points} onChange={(e) => edit({ points: e.target.value }, 'candles:points')} {...help('Points the path runs through, as "x, z" in mm from the centre of the base, separated by semicolons. Forward is +z. The path curves smoothly through them.')} />
@@ -202,14 +221,14 @@ export default function CandlePanel() {
                 value={+s[f.key].toFixed(2)}
                 onChange={(e) => {
                   const x = parseFloat(e.target.value);
-                  if (Number.isFinite(x)) edit({ [f.key]: f.key === 'fins' ? Math.max(2, Math.min(8, Math.round(x))) : x }, `candles:${f.key}`);
+                  if (Number.isFinite(x)) edit({ [f.key]: f.key === 'fins' ? Math.max(2, Math.min(8, Math.round(x))) : f.key === 'cols' || f.key === 'every' ? Math.max(1, Math.round(x)) : x }, `candles:${f.key}`);
                 }}
               />
             </label>
           );
         })}
       </div>
-      <div className="mp-info">{hint ?? (s.on ? `${summary} ${fmt(s.size / 10, 0)} cm path.` : 'The candelabra is off.')}</div>
+      <div className="mp-info">{hint ?? (s.on ? `${summary}${s.path === "grid" || s.path === "free" ? "" : ` ${fmt(s.size / 10, 0)} cm path.`}` : 'The candelabra is off.')}</div>
     </>
   );
 }

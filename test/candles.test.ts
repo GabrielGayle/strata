@@ -186,3 +186,43 @@ describe('candles on a map', () => {
     }
   });
 });
+
+import { candleSpots, localToSpot, spotToLocal } from '../src/core/candles';
+import { plateDefs } from '../src/core/slicer';
+import { evaluateParams } from '../src/core/params';
+
+describe('candle placement', () => {
+  it('lays a grid row by row and spaces snapped columns by whole plates', () => {
+    const spots = candleSpots({ ...DEFAULT_CANDLES, path: 'grid', cols: 3, gapX: 50, gapZ: 40 }, 6);
+    expect(spots.map((s) => s.p)).toEqual([[-50, -20], [0, -20], [50, -20], [-50, 20], [0, 20], [50, 20]]);
+    const snapped = candleSpots({ ...DEFAULT_CANDLES, path: 'grid', cols: 3, snap: 'on', every: 4 }, 3, 18.5);
+    expect(snapped[1].p[0] - snapped[0].p[0]).toBeCloseTo(74);
+  });
+
+  it('snaps candles onto plates or midway between them', () => {
+    const p = newProject();
+    const planes = plateDefs(evaluateParams(p.params).values).filter((d) => d.family === 'P').map((d) => d.plane);
+    const n = planes[0].normal;
+    const offs = planes.map((q) => q.origin[0] * n[0] + q.origin[2] * n[2]);
+    const compute = createPipeline();
+    for (const snap of ['on', 'between'] as const) {
+      const m = compute({ ...p, candles: { ...DEFAULT_CANDLES, path: 'grid', candles: '6 tealight', cols: 3, snap } }, assets);
+      for (const b of m.objects.filter((o) => o.object.id.startsWith('candle'))) {
+        const s = b.object.x * n[0] + b.object.z * n[2];
+        const best = Math.min(...offs.map((o) => Math.abs(o - s)));
+        if (snap === 'on') expect(best).toBeLessThan(0.01);
+        else expect(Math.abs(best - Math.abs(offs[1] - offs[0]) / 2)).toBeLessThan(0.01);
+      }
+    }
+  });
+
+  it('free spots round-trip through the candelabra frame', () => {
+    const spec = { ...DEFAULT_CANDLES, x: 30, z: -20, turn: 35 };
+    const q = spotToLocal(spec, [12, 34]);
+    const back = localToSpot(spec, q);
+    expect(back[0]).toBeCloseTo(12);
+    expect(back[1]).toBeCloseTo(34);
+    const objs = candleObjects({ ...DEFAULT_CANDLES, path: 'free', candles: '2 tealight', spots: [[10, 20], [-40, 5]] }, 100).filter((o) => o.id.startsWith('candle'));
+    expect(objs.map((o) => [o.x, o.z])).toEqual([[10, 20], [-40, 5]]);
+  });
+});
