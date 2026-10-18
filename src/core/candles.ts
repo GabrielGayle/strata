@@ -21,11 +21,12 @@ export const PATH_NAMES: Record<CandlePath, string> = {
   custom: 'My own path (typed points)',
 };
 
-export type Holder = 'target' | 'socket';
+export type Holder = 'target' | 'slotted' | 'socket';
 
 export const HOLDER_NAMES: Record<Holder, string> = {
-  target: 'Target (fins around it)',
-  socket: 'Socket in the plates',
+  target: 'Target fins (set in the concrete)',
+  slotted: 'Slotted fins (keyed into the plates)',
+  socket: 'Cup in the plates (like tealights)',
 };
 
 /** Candle presets: diameter × height (mm) and whether it is a tealight (sits in a cup) or a candlestick. */
@@ -80,6 +81,22 @@ export interface CandleSize {
   name: string;
 }
 
+export type Choke = 'off' | 'candles' | 'path';
+
+export const CHOKE_NAMES: Record<Choke, string> = {
+  off: 'Plates full length',
+  candles: 'Choke round each candle',
+  path: 'Choke along the path',
+};
+
+export type Sit = 'auto' | 'lift' | 'surface';
+
+export const SIT_NAMES: Record<Sit, string> = {
+  auto: 'Height: auto (sit into a map)',
+  lift: 'Height: lift above the concrete',
+  surface: 'Height: sit into the plates under it',
+};
+
 export interface CandleSpec {
   on: boolean;
   /** One candle per line: "5 taper", "tealight", "40 x 18 tealight", "24 x 300 stick target". */
@@ -95,6 +112,8 @@ export interface CandleSpec {
   points: string;
   /** Custom path: join the last point back to the first. */
   closed: boolean;
+  /** Where the candles stand: at Lift above the concrete, or sunk into whatever plates are under them (auto does that on a map). */
+  sit: Sit;
   /** Height of the candle bottoms above the concrete (mm). */
   lift: number;
   /** Extra height for the middle candles, like a candelabra's crown (mm). */
@@ -111,10 +130,16 @@ export interface CandleSpec {
   fins: number;
   reach: number;
   spin: number;
+  /** Slotted fins: how far each fin and plate overlap where they slot together (mm). */
+  engage: number;
   /** Gap around each candle (mm). */
   slack: number;
   /** Plate kept either side of each cup or socket as it steps up (mm). */
   shoulder: number;
+  /** Choke the plates in to the candles: off, round each candle, or along the path between them. */
+  choke: Choke;
+  /** Plate kept beyond each candle (or holder) when choked (mm). */
+  pad: number;
   /** Step the plate tops up to meet the candles (off: plates stay as they are, with just the cuts). */
   trim: boolean;
   x: number;
@@ -131,6 +156,7 @@ export const DEFAULT_CANDLES: CandleSpec = {
   bend: 120,
   points: '-250, 0; -120, -80; 0, 0; 120, 80; 250, 0',
   closed: false,
+  sit: 'auto',
   lift: 60,
   crown: 60,
   ramp: 0,
@@ -140,8 +166,11 @@ export const DEFAULT_CANDLES: CandleSpec = {
   fins: 4,
   reach: 18,
   spin: 45,
+  engage: 16,
   slack: 0.8,
   shoulder: 6,
+  choke: 'off',
+  pad: 15,
   trim: true,
   x: 0,
   z: 0,
@@ -156,8 +185,8 @@ export function parseCandles(text: string): { lines: { size: CandleSize; count: 
     let s = raw.trim().toLowerCase();
     if (!s) continue;
     let holder: Holder | undefined;
-    s = s.replace(/\b(target|socket|fins?)\b/g, (w) => {
-      holder = w === 'socket' ? 'socket' : 'target';
+    s = s.replace(/\b(target|socket|cup|slotted|slots?|fins?)\b/g, (w) => {
+      holder = w === 'socket' || w === 'cup' ? 'socket' : w.startsWith('slot') ? 'slotted' : 'target';
       return '';
     }).trim();
     const dims = s.match(/^(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:x|×|\*|by)\s*(\d+(?:\.\d+)?)\s*(?:mm)?\s*(.*)$/);
@@ -223,17 +252,21 @@ export function cleanCandles(raw: unknown): CandleSpec | undefined {
     bend: num(r.bend, d.bend),
     points: typeof r.points === 'string' ? r.points : d.points,
     closed: r.closed === true,
+    sit: (Object.keys(SIT_NAMES) as Sit[]).includes(r.sit as Sit) ? (r.sit as Sit) : d.sit,
     lift: num(r.lift, d.lift, 0),
     crown: num(r.crown, d.crown),
     ramp: num(r.ramp, d.ramp),
-    holder: r.holder === 'socket' ? 'socket' : 'target',
+    holder: r.holder === 'socket' || r.holder === 'slotted' ? r.holder : 'target',
     grip: num(r.grip, d.grip, 2),
     cup: num(r.cup, d.cup, 1),
     fins: Math.round(num(r.fins, d.fins, 2, 8)),
     reach: num(r.reach, d.reach, 3),
     spin: num(r.spin, d.spin),
+    engage: num(r.engage, d.engage, 4),
     slack: num(r.slack, d.slack, 0),
     shoulder: num(r.shoulder, d.shoulder, 0),
+    choke: (Object.keys(CHOKE_NAMES) as Choke[]).includes(r.choke as Choke) ? (r.choke as Choke) : d.choke,
+    pad: num(r.pad, d.pad, 0),
     trim: r.trim !== false,
     x: num(r.x, d.x),
     z: num(r.z, d.z),
@@ -384,8 +417,10 @@ const D = Math.PI / 180;
  * target-held candlesticks also get a hidden "well" that clears the plates for
  * their fins and carries the seat the plates step up to around it.
  */
-export function candleObjects(spec: CandleSpec | undefined, baseTop: number): CutObject[] {
-  if (!spec?.on) return [];
+export function candleObjects(spec0: CandleSpec | undefined, baseTop: number, onSurface = false): CutObject[] {
+  if (!spec0?.on) return [];
+  // sitting on the plates: heights come later from the plates themselves, and the plates keep their own tops
+  const spec = onSurface ? { ...spec0, trim: false } : spec0;
   const list = candleList(spec);
   if (!list.length) return [];
   const { pts, closed } = pathPolyline(spec);
@@ -402,12 +437,23 @@ export function candleObjects(spec: CandleSpec | undefined, baseTop: number): Cu
     const holder: Holder = c.tealight ? c.holder ?? 'socket' : c.holder ?? spec.holder;
     const grip = c.tealight ? Math.min(spec.cup, c.h - 1) : Math.min(spec.grip, c.h - 2);
     const id = `candle${i + 1}`;
+    const sink = onSurface ? { sink: grip } : {};
+    const choke = spec.choke === 'off' ? {} : { choke: { reach: c.d / 2 + spec.slack + (c.tealight || holder === 'socket' ? 0 : spec.reach) + spec.pad, join: spec.choke === 'path', closed } };
     const base = { kind: 'cylinder' as const, x, z, rx: 0, ry: spec.turn, rz: 0, on: true };
     if (holder === 'socket') {
-      out.push({ ...base, id, name: c.name, w: c.d, h: c.h, d: c.d, y: yb + c.h / 2, clearance: spec.slack, look: c.tealight ? 'tealight' : 'candle', ...(spec.trim ? { seat: grip + spec.slack, shoulder: spec.shoulder } : {}) });
+      out.push({ ...base, id, name: c.name, w: c.d, h: c.h, d: c.d, y: yb + c.h / 2, clearance: spec.slack, look: c.tealight ? 'tealight' : 'candle', ...choke, ...sink, ...(spec.trim ? { seat: grip + spec.slack, shoulder: spec.shoulder } : {}) });
       return;
     }
-    out.push({ ...base, id, name: c.name, w: c.d, h: c.h, d: c.d, y: yb + c.h / 2, clearance: spec.slack, look: c.tealight ? 'tealight' : 'candle', holder: { fins: spec.fins, reach: spec.reach, grip, spin: spec.spin } });
+    const slotted = holder === 'slotted';
+    out.push({ ...base, id, name: c.name, w: c.d, h: c.h, d: c.d, y: yb + c.h / 2, clearance: spec.slack, look: c.tealight ? 'tealight' : 'candle', ...choke, ...sink, holder: { fins: spec.fins, reach: spec.reach, grip, spin: spec.spin, ...(slotted ? { slotted, engage: spec.engage } : {}) } });
+    if (slotted && onSurface) return;
+    if (slotted) {
+      // slotted fins sit in the plates rather than a cleared well: the plates under them only step up to the candle's bottom
+      const rp = c.d / 2 + spec.slack + spec.reach;
+      const bottom = baseTop + 0.2;
+      out.push({ ...base, id: `pad${i + 1}`, name: `${c.name} holder`, w: 2 * rp, h: Math.max(1, yb - bottom), d: 2 * rp, y: (bottom + yb) / 2, clearance: 0, look: 'hidden', noCut: true, ...(spec.trim ? { seat: Math.max(0.5, yb - bottom), shoulder: spec.shoulder } : {}) });
+      return;
+    }
     // the well: clears the plates for the fins (a little wider than they reach) from the concrete up past the candle
     const rw = c.d / 2 + spec.slack + spec.reach + Math.max(2, spec.slack * 2);
     const bottom = baseTop + 0.2;
@@ -435,7 +481,7 @@ export interface CandleFin {
  */
 export function targetFins(
   c: { x: number; z: number; r: number; bottom: number; ry: number },
-  h: { fins: number; reach: number; grip: number; spin: number },
+  h: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number },
   o: { t: number; embed: number; baseTop: number; slack: number; minFeature: number },
   index: number,
 ): CandleFin[] {
@@ -448,16 +494,152 @@ export function targetFins(
   const yb = c.bottom - o.baseTop;
   const yTop = yb + h.grip;
   const tip = Math.min(uOut, rc + Math.max(o.minFeature, 3));
-  const y0 = -o.embed;
+  // target fins stand in the concrete; slotted fins hang down into the plates by their engagement
+  const y0 = h.slotted ? Math.max(0, yb - (h.engage ?? 16)) : -o.embed;
   for (let k = 0; k < n; k++) {
     const a = (h.spin + c.ry) * D + (k / n) * 2 * Math.PI;
     const d: P2 = [Math.cos(a), -Math.sin(a)];
     const plane: Plane = { origin: [c.x, o.baseTop, c.z], normal: [-d[1], 0, d[0]], u: [d[0], 0, d[1]], v: [0, 1, 0] };
     const outer: P2[] =
-      yb > 0.5
+      yb - y0 > 0.5
         ? [[uIn, y0], [uOut, y0], [uOut, yb], [tip, yTop], [rc, yTop], [rc, yb], [uIn, yb]]
-        : [[rc, y0], [uOut, y0], [uOut, Math.max(yb, 0)], [tip, yTop], [rc, yTop]];
-    out.push({ holder: index, fin: k, plane, shape: [{ outer, holes: [] }], labelAt: [(uIn + uOut) / 2, (y0 + Math.max(yb, 0)) / 2], labelMax: Math.max(2, Math.min(uOut - uIn, Math.max(yb, 0) - y0) * 0.5) });
+        : [[rc, y0], [uOut, y0], [uOut, Math.max(yb, y0)], [tip, yTop], [rc, yTop]];
+    out.push({ holder: index, fin: k, plane, shape: [{ outer, holes: [] }], labelAt: h.slotted ? [(rc + uOut) / 2, yb + (yTop - yb) / 3] : [(uIn + uOut) / 2, (y0 + Math.max(yb, 0)) / 2], labelMax: Math.max(2, (h.slotted ? Math.min(uOut - rc, yTop - yb) : Math.min(uOut - uIn, Math.max(yb, 0) - y0)) * 0.5) });
   }
   return out;
+}
+
+/** Where a slotted fin crosses a plate: the halving slot cut in each, in their own plate coordinates. */
+export interface FinSlot {
+  /** Plate key and the slot rect in the plate (u0, y0, u1, y1). */
+  plate: string;
+  plateRect: [number, number, number, number];
+  /** Slot rect in the fin. */
+  finRect: [number, number, number, number];
+}
+
+/**
+ * Halving joints between a slotted fin and the plates it crosses: the plate is
+ * slotted from its top down to half the engagement, the fin from its bottom up
+ * to the same line, so the fin drops onto the plates and they lock square.
+ * A fin running nearly along the plates (under 30°) can't be slotted and gets none.
+ */
+export function finSlots(
+  fin: CandleFin,
+  plates: { key: string; plane: Plane; u0: number; u1: number }[],
+  o: { t: number; candleBottom: number; baseTop: number; engage: number; fit: number },
+): FinSlot[] {
+  const c = fin.plane.origin;
+  const d = fin.plane.u;
+  const bb = fin.shape[0].outer.reduce((a, [u]) => [Math.min(a[0], u), Math.max(a[1], u)], [Infinity, -Infinity]);
+  const yMid = o.candleBottom - o.baseTop - o.engage / 2;
+  const out: FinSlot[] = [];
+  for (const p of plates) {
+    const n = p.plane.normal;
+    if (Math.abs(n[1]) > 0.5) continue; // flat layers
+    const dn = d[0] * n[0] + d[2] * n[2];
+    if (Math.abs(dn) < 0.5) continue;
+    const uf = ((p.plane.origin[0] - c[0]) * n[0] + (p.plane.origin[2] - c[2]) * n[2]) / dn;
+    const w = o.t / Math.abs(dn) + o.fit;
+    if (uf < bb[0] - w / 2 || uf > bb[1] + w / 2) continue;
+    const pu = p.plane.u;
+    const up = (c[0] + uf * d[0] - p.plane.origin[0]) * pu[0] + (c[2] + uf * d[2] - p.plane.origin[2]) * pu[2];
+    if (up < p.u0 || up > p.u1) continue;
+    out.push({ plate: p.key, plateRect: [up - w / 2, yMid, up + w / 2, 20000], finRect: [uf - w / 2, -20000, uf + w / 2, yMid] });
+  }
+  return out;
+}
+
+/** A circle in plan (world x, z) the choked plates keep. */
+export type ChokeCircle = [number, number, number];
+
+/**
+ * The plan area choked plates keep, as circles: one round each candle, and
+ * along the path a chain of circles joining each candle to the next, so the
+ * plates follow the line of candles.
+ */
+export function chokeCircles(candles: { x: number; z: number; choke?: { reach: number; join: boolean; closed: boolean } }[]): ChokeCircle[] {
+  const cs = candles.filter((c) => c.choke);
+  const out: ChokeCircle[] = cs.map((c) => [c.x, c.z, c.choke!.reach]);
+  if (!cs.length || !cs[0].choke!.join) return out;
+  const n = cs.length;
+  const links = cs[0].choke!.closed && n > 2 ? n : n - 1;
+  for (let i = 0; i < links; i++) {
+    const a = cs[i];
+    const b = cs[(i + 1) % n];
+    const r = Math.min(a.choke!.reach, b.choke!.reach);
+    const L = Math.hypot(b.x - a.x, b.z - a.z);
+    const k = Math.ceil(L / Math.max(2, r / 3));
+    for (let j = 1; j < k; j++) {
+      const f = j / k;
+      out.push([a.x + (b.x - a.x) * f, a.z + (b.z - a.z) * f, a.choke!.reach + (b.choke!.reach - a.choke!.reach) * f]);
+    }
+  }
+  return out;
+}
+
+/** The u-spans of a plate inside the choke circles, merged; spans narrower than `min` are dropped. */
+export function chokeSpans(plane: Plane, circles: ChokeCircle[], min: number): [number, number][] {
+  const o = plane.origin;
+  const n = plane.normal;
+  const pu = plane.u;
+  const raw: [number, number][] = [];
+  for (const [x, z, r] of circles) {
+    const d = (x - o[0]) * n[0] + (z - o[2]) * n[2];
+    if (Math.abs(d) >= r) continue;
+    const h = Math.sqrt(r * r - d * d);
+    const uc = (x - o[0]) * pu[0] + (z - o[2]) * pu[2];
+    raw.push([uc - h, uc + h]);
+  }
+  raw.sort((a, b) => a[0] - b[0]);
+  const out: [number, number][] = [];
+  for (const s of raw) {
+    const last = out[out.length - 1];
+    if (last && s[0] <= last[1]) last[1] = Math.max(last[1], s[1]);
+    else out.push([...s]);
+  }
+  return out.filter(([a, b]) => b - a >= min);
+}
+
+/** The lowest plate top across the plates crossing a circle in plan (world x, z, radius), or null if none cross it. */
+export function surfaceTop(parts: { family: string; plane: Plane; shape: Shape }[], x: number, z: number, r: number, cut: (s: Shape, u0: number, u1: number) => number | null): number | null {
+  let low = Infinity;
+  for (const p of parts) {
+    if (p.family !== 'P' && p.family !== 'X' && p.family !== 'R') continue;
+    const o = p.plane.origin;
+    const n = p.plane.normal;
+    if (Math.abs(n[1]) > 0.5) continue;
+    const d = (x - o[0]) * n[0] + (z - o[2]) * n[2];
+    if (Math.abs(d) >= r) continue;
+    const h = Math.sqrt(r * r - d * d);
+    const uc = (x - o[0]) * p.plane.u[0] + (z - o[2]) * p.plane.u[2];
+    const top = cut(p.shape, uc - h, uc + h);
+    if (top !== null) low = Math.min(low, o[1] + top);
+  }
+  return Number.isFinite(low) ? low : null;
+}
+
+/**
+ * Candles that sit into the plates: each one's bottom drops (or rises) to its
+ * sink depth below the lowest plate top under it, so every plate it crosses is
+ * cut to hold it. Its holder (a target well) moves with it.
+ */
+export function sitOnSurface(objs: CutObject[], topAt: (x: number, z: number, r: number) => number | null): CutObject[] {
+  const delta = new Map<string, number>();
+  for (const o of objs) {
+    if (o.sink === undefined || !o.id.startsWith('candle')) continue;
+    const top = topAt(o.x, o.z, o.w / 2 + o.clearance);
+    if (top === null) continue;
+    delta.set(o.id.slice(6), top - o.sink - (o.y - o.h / 2));
+  }
+  return objs.map((o) => {
+    const k = o.id.replace(/^(candle|well)/, '');
+    const dy = delta.get(k);
+    if (dy === undefined || (!o.id.startsWith('candle') && !o.id.startsWith('well'))) return o;
+    if (o.id.startsWith('candle')) return { ...o, y: o.y + dy };
+    // the well keeps its bottom on the concrete and reaches up past the candle
+    const bottom = o.y - o.h / 2;
+    const h = Math.max(1, o.h + dy);
+    return { ...o, h, y: bottom + h / 2 };
+  });
 }

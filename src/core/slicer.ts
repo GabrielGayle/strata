@@ -52,7 +52,7 @@ import {
   type StackRodPlan,
 } from './stackRods';
 import { orientMapPlatePlane } from './mapPlateHeight';
-import { targetFins } from './candles';
+import { chokeSpans, finSlots, targetFins } from './candles';
 
 export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T' | 'K';
 
@@ -200,11 +200,13 @@ export interface SliceInput {
   /** Metal each plate is cut from, by plate key (tuned plates ring by it). */
   materialFor?: (key: string) => string;
   /** Placed objects (postcards, boxes…) cut out of every plate they pass through, each with its own clearance. */
-  objects?: { mesh: IndexedMesh; clearance: number; seat?: number; shoulder?: number }[];
+  objects?: { mesh: IndexedMesh; clearance: number; seat?: number; shoulder?: number; noCut?: boolean }[];
   /** Map terrain: skip image impression / strata-flow flatten; heights come from the map field. */
   mapTerrain?: boolean;
+  /** Plan circles (x, z, r) the plates are choked in to: each plate keeps only what lies inside them. */
+  choke?: [number, number, number][];
   /** Candlesticks held by target fins: where each stands and how its fins grip it. */
-  candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: { fins: number; reach: number; grip: number; spin: number } }[];
+  candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number } }[];
 }
 
 const UP: V3 = [0, 1, 0];
@@ -1362,8 +1364,23 @@ export function slice(input: SliceInput): SliceResult {
   // shelf cards: each plate is trimmed down to just above the bottom edge of the cards it holds
   const seats = seatTops(input.objects, defs, t);
 
+  // candle holders: target fins round each candlestick; slotted ones key into the plates with halving slots
+  const fins = (input.candles ?? []).flatMap((c, i) =>
+    targetFins(c, c.holder, { t, embed: e, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i).map((f) => ({
+      f,
+      slots: c.holder.slotted ? finSlots(f, defs, { t, candleBottom: c.bottom, baseTop: baseTop(v), engage: c.holder.engage ?? 16, fit: 0.3 }) : [],
+    })),
+  );
+  const finSlotsByPlate = new Map<string, Shape[]>();
+  for (const { slots } of fins) for (const s of slots) finSlotsByPlate.set(s.plate, [...(finSlotsByPlate.get(s.plate) ?? []), rect(...s.plateRect)]);
+
   defs.forEach((def, di) => {
     let shape = outlines[di];
+    // choked plates keep only the lengths round the candles (vertical plates; flat layers are left as they are)
+    if (input.choke?.length && Math.abs(def.plane.normal[1]) < 0.5 && shape.length) {
+      const spans = chokeSpans(def.plane, input.choke, Math.max(6, 2 * v.minFeature));
+      shape = spans.length ? intersection(shape, unionShapes(...spans.map(([a, b]) => rect(a, -BIG, b, BIG)))) : [];
+    }
     const info: PlateInfo = { def, parts: [], bevel: 0, collision: 0, collisionAt: null, islands: 0, cavity: [], sweptInsert: [], tenons: tenons[di].spans.length };
     if (!shape.length) {
       plates.push(info);
@@ -1397,6 +1414,7 @@ export function slice(input: SliceInput): SliceResult {
 
     // 3b. placed objects: each one's section through the plate, grown by its clearance
     for (const o of input.objects ?? []) {
+      if (o.noCut) continue;
       const cav = insertCavity(o.mesh, def.plane, t, 'larger', o.clearance);
       // a thin object crossing at a slant leaves one slit per section; close the slivers between them into one slot
       if (cav) cuts.push(cached(o.mesh, `close:${def.key}:${def.plane.origin.join(',')}:${def.plane.normal.join(',')}:${t}:${o.clearance}`, () => offset(offset(cav.cavity, t, 'round'), -t, 'round')));
@@ -1497,6 +1515,7 @@ export function slice(input: SliceInput): SliceResult {
 
     // 6. waffle slots
     if (slots[di].length) cuts.push(slots[di]);
+    for (const s of finSlotsByPlate.get(def.key) ?? []) cuts.push(s);
     if (cuts.length) shape = difference(shape, cuts.flat());
 
     // 7. split into physical pieces; islands inside holes would fall out
@@ -1692,9 +1711,12 @@ export function slice(input: SliceInput): SliceResult {
     }
   }
   // 10. candle holders: target fins standing in the concrete round each candlestick
-  const fins = (input.candles ?? []).flatMap((c, i) => targetFins(c, c.holder, { t, embed: e, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i));
-  fins.forEach((f, j) => {
-    const ex = f.shape[0];
+  const unslotted = fins.filter(({ f, slots: fs }) => input.candles![f.holder].holder.slotted && !fs.length).length;
+  if (unslotted) warnings.push(`${unslotted} slotted candle fin${unslotted > 1 ? 's run' : ' runs'} along the plates, so ${unslotted > 1 ? 'they have' : 'it has'} nothing to slot into: turn the fins with Spin (45° crosses them all).`);
+  fins.forEach(({ f, slots: fs }, j) => {
+    const cut = fs.length ? difference(f.shape, unionShapes(...fs.map((s) => rect(...s.finRect)))) : f.shape;
+    // keep the biggest piece should a slot ever cut a fin through
+    const ex = cut.reduce((a, b) => (shapeArea([b]) > shapeArea([a]) ? b : a), cut[0] ?? f.shape[0]);
     const id = partLabel(v, 'K', j, fins.length);
     const lab = placeLabel(id, ex, f.labelAt, Math.min(v.labelHeight, f.labelMax));
     allParts.push({
