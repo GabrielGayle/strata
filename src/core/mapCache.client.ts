@@ -30,7 +30,7 @@ export async function cachedMapBytes(
   const hit = await browserMapCacheGet(kind, url, MAX_AGE_MS[kind]);
   if (hit instanceof Uint8Array) return hit;
   const data = await inner(url);
-  void browserMapCacheSet(kind, url, data);
+  if (looksLike(kind, data)) void browserMapCacheSet(kind, url, data);
   return data;
 }
 
@@ -46,6 +46,17 @@ export async function cachedMapJson<T>(_dir: string | undefined, kind: MapCacheK
   const data = await inner();
   if (cacheable(kind, data)) void browserMapCacheSet(kind, key, JSON.stringify(data));
   return data;
+}
+
+/**
+ * A server can answer 200 with an error page (EA WCS sends XML exception
+ * reports). Only keep bytes that are the format the caller expects, so a bad
+ * answer is retried next build instead of pinned forever.
+ */
+function looksLike(kind: MapCacheKind, b: Uint8Array): boolean {
+  if (kind === 'terrarium') return b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+  if (kind === 'cog') return b.length > 8 && ((b[0] === 0x49 && b[1] === 0x49) || (b[0] === 0x4d && b[1] === 0x4d));
+  return b.length > 0;
 }
 
 /** Overpass reports runtime errors (timeouts, memory) as a 200 with a `remark`; never keep those. */

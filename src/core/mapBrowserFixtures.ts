@@ -5,7 +5,6 @@ import type { RegionalGridLoader } from './mapRegionalLidar';
 import { cropRegionalGridToBbox } from './mapRegionalLidar';
 import type { OverpassFetcher } from './mapOverpass';
 import { metricBounds } from './mapProject';
-import { cachedMapBytes } from './mapCache';
 
 function gridOverlapsBbox(grid: Float32Grid, bbox: MapSpec['bbox']): boolean {
   if (grid.crs !== 'EPSG:27700') return true;
@@ -45,19 +44,10 @@ function coverBbox(grid: Float32Grid, bbox: MapSpec['bbox']): Float32Grid {
   return gridOverlapsBbox(grid, bbox) ? cropRegionalGridToBbox(grid, bbox) : retargetGridToBbox(grid, bbox);
 }
 
-/** Through the map cache like a real EA raster, so e2e can check a rebuild stays off the network. */
 async function fetchJsonGrid(path: string): Promise<Float32Grid | null> {
-  let bytes: Uint8Array;
-  try {
-    bytes = await cachedMapBytes(undefined, 'bytes', path, async (u) => {
-      const res = await fetch(u);
-      if (!res.ok) throw new Error(`fixture ${u} (${res.status})`);
-      return new Uint8Array(await res.arrayBuffer());
-    });
-  } catch {
-    return null;
-  }
-  const raw = JSON.parse(new TextDecoder().decode(bytes)) as {
+  const res = await fetch(path);
+  if (!res.ok) return null;
+  const raw = (await res.json()) as {
     w: number;
     h: number;
     data: number[];

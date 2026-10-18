@@ -173,11 +173,12 @@ describe('browser map cache', () => {
 
   it('serves a repeat tile and Overpass answer without the network', async () => {
     useInMemoryMapCache();
-    const tile = vi.fn(async () => new Uint8Array([1, 2, 3]));
+    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0];
+    const tile = vi.fn(async () => new Uint8Array(png));
     const url = terrariumUrl(13, 4090, 2721);
     await cachedMapBytes(undefined, 'terrarium', url, tile);
     await Promise.resolve();
-    expect(Array.from(await cachedMapBytes(undefined, 'terrarium', url, tile))).toEqual([1, 2, 3]);
+    expect(Array.from(await cachedMapBytes(undefined, 'terrarium', url, tile))).toEqual(png);
     expect(tile).toHaveBeenCalledTimes(1);
 
     const overpass = vi.fn(async () => ({ elements: [{ id: 1 }] }));
@@ -185,6 +186,15 @@ describe('browser map cache', () => {
     await Promise.resolve();
     expect(await cachedMapJson(undefined, 'overpass', 'q', overpass)).toEqual({ elements: [{ id: 1 }] });
     expect(overpass).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not keep an error page served in place of a raster', async () => {
+    useInMemoryMapCache();
+    const xml = new TextEncoder().encode('<?xml version="1.0"?><ows:ExceptionReport/>');
+    const wcs = vi.fn(async () => xml);
+    await cachedMapBytes(undefined, 'cog', 'https://example.com/wcs', wcs);
+    await cachedMapBytes(undefined, 'cog', 'https://example.com/wcs', wcs);
+    expect(wcs).toHaveBeenCalledTimes(2);
   });
 
   it('does not keep an Overpass runtime error', async () => {
