@@ -2,6 +2,7 @@
 // images, composition, pour), so you can flip between designs like browser tabs.
 import { useStore } from '../state/store';
 import { Menu } from './Toolbar';
+import { Tab as TabItem } from './Tab';
 
 export default function SetupTabs() {
   const setups = useStore((s) => s.setups);
@@ -16,24 +17,39 @@ export default function SetupTabs() {
       {setups.map((t) => {
         const on = t.id === active;
         const name = (on ? project : t.project).name || 'Untitled';
+        const close = () => {
+          if (window.confirm(`Close the setup "${name}"? Save it as a project file first if you want to keep it.`)) closeSetup(t.id);
+        };
         return (
-          <li key={t.id} role="tab" aria-selected={on} className="setup-tab">
-            <a href={`#${t.id}`} onClick={(e) => { e.preventDefault(); switchSetup(t.id); }} title={on ? 'Rename it in the box at the top left' : `Switch to ${name}`}>
-              {name}
-            </a>
-            {setups.length > 1 && (
+          <TabItem
+            key={t.id}
+            selected={on}
+            className="setup-tab"
+            onSelect={() => switchSetup(t.id)}
+            onKeyDown={(e) => {
+              if (e.key === 'Delete' && setups.length > 1) {
+                e.preventDefault();
+                close();
+              }
+            }}
+            title={on ? 'Rename it in the box at the top left' : `Switch to ${name}${setups.length > 1 ? ' (Delete closes it)' : ''}`}
+            after={setups.length > 1 && (
               <button
                 className="setup-x"
+                tabIndex={-1}
                 aria-label={`Close ${name}`}
                 title="Close this setup"
-                onClick={() => {
-                  if (window.confirm(`Close the setup "${name}"? Save it as a project file first if you want to keep it.`)) closeSetup(t.id);
+                onClick={(e) => {
+                  e.stopPropagation();
+                  close();
                 }}
               >
                 ✕
               </button>
             )}
-          </li>
+          >
+            {name}
+          </TabItem>
         );
       })}
       </menu>

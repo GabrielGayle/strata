@@ -7,6 +7,7 @@ import { zoneAt, type Float, type LayoutNode, type Pane, type Zone } from '../co
 import { useStore, type Tab } from '../state/store';
 import { activeLayout, PRESETS, TABS, useWorkspaces } from '../state/workspaces';
 import { Menu } from './Toolbar';
+import { Tab as TabItem } from './Tab';
 import { ViewportParkedContext } from './viewportKeepAlive';
 
 // Every view loads on first open (the 3D one included), so the first screen only
@@ -117,12 +118,11 @@ function TabStrip({ p }: { p: Pane | Float }) {
   return (
     <menu className="ws-tabs" role="tablist">
       {p.tabs.map((t) => (
-        <li
+        <TabItem
           key={t}
-          role="tab"
           draggable
-          aria-selected={p.active === t}
-          onClick={() => setUi({ tab: t as Tab })}
+          selected={p.active === t}
+          onSelect={() => setUi({ tab: t as Tab })}
           onPointerEnter={() => preloadView(t)}
           onFocus={() => preloadView(t)}
           onDragStart={(e) => {
@@ -133,13 +133,8 @@ function TabStrip({ p }: { p: Pane | Float }) {
           }}
           title={`${label(t)} (${keyOf(t)}) · drag to another pane, or onto an edge to split`}
         >
-          <a
-            href={`#${t}`}
-            onClick={(e) => e.preventDefault()}
-          >
-            {label(t)}
-          </a>
-        </li>
+          {label(t)}
+        </TabItem>
       ))}
     </menu>
   );

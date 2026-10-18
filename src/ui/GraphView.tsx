@@ -90,8 +90,10 @@ export default function GraphView() {
                 <div
                   style={{
                     border: '1px solid var(--line)',
-                    background: !s.cached ? 'var(--accent)' : s.stale ? 'var(--panel-2)' : 'var(--panel)',
-                    color: !s.cached ? 'var(--accent-ink)' : undefined,
+                    // rebuilt stages: accent edge on the selection tint, so the text keeps AA contrast whatever the accent
+                    borderLeft: !s.cached ? '4px solid var(--accent)' : '1px solid var(--line)',
+                    background: !s.cached ? 'var(--sel)' : s.stale ? 'var(--panel-2)' : 'var(--panel)',
+                    color: 'var(--ink)',
                     padding: '6px 8px',
                     minWidth: 118,
                     margin: '4px 0',
@@ -99,7 +101,7 @@ export default function GraphView() {
                   title={STAGE_INPUTS[s.name]}
                 >
                   <div style={{ fontWeight: 700, fontSize: 12 }}>{s.name}</div>
-                  <div className="mono" style={{ fontSize: 10, opacity: 0.85 }}>
+                  <div className="mono" style={{ fontSize: 10 }}>
                     {s.stale ? 'pending' : s.cached ? 'cached' : 'rebuilt'} · {fmt(s.ms, 0)} ms
                   </div>
                 </div>
@@ -122,7 +124,7 @@ export default function GraphView() {
               </button>
             </span>
           </div>
-          <div style={{ overflow: 'auto', background: 'var(--viewport)' }}>
+          <div style={{ overflow: 'auto', background: 'var(--viewport)' }} tabIndex={0} role="region" aria-label="Parameter graph">
             <svg width={layout.W + 20} height={layout.H + 20} style={{ display: 'block' }}>
               <g transform="translate(10 10)">
                 {layout.ids.flatMap((id) =>

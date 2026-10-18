@@ -13,6 +13,7 @@ import { isLayered, LayerNodes, SurfaceLayers, useLiveLayers } from './SurfaceLa
 import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, invertDataUrl, sampleDepthMetres, wakeDepth } from '../core/depth';
 import { isMapDepthFace } from '../core/depthFlat';
 import { exifFocalFromDataUrl } from '../core/exifFocal';
+import { Tab as TabItem } from './Tab';
 
 function GrayCanvas({ g, picking, onPick }: { g: Gray | null; picking?: boolean; onPick?: (u: number, v: number) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -201,16 +202,12 @@ export default function ImageView() {
       <div className="pad" style={{ display: 'grid', gap: 12 }}>
         <div className="sl-bar">
           <menu role="tablist" aria-label="Surfaces view">
-            <li role="tab" aria-selected={board === 'cards'}>
-              <a href="#cards" onClick={(e) => (e.preventDefault(), setBoard('cards'))} title="One card per surface, its layers arranged on it">
-                Cards
-              </a>
-            </li>
-            <li role="tab" aria-selected={board === 'nodes'}>
-              <a href="#nodes" onClick={(e) => (e.preventDefault(), setBoard('nodes'))} title="Every layer as a node, wired into a surface">
-                Layer nodes
-              </a>
-            </li>
+            <TabItem selected={board === 'cards'} onSelect={() => setBoard('cards')} title="One card per surface, its layers arranged on it">
+              Cards
+            </TabItem>
+            <TabItem selected={board === 'nodes'} onSelect={() => setBoard('nodes')} title="Every layer as a node, wired into a surface">
+              Layer nodes
+            </TabItem>
           </menu>
           <span className="note">
             {board === 'nodes'

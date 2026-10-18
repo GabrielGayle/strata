@@ -367,10 +367,10 @@ export default function ParamPanel() {
   return (
     <div>
       <div className="title-bar panel-title left-panes">
-        <button type="button" className={leftPane === 'params' ? 'on' : ''} onClick={() => setUi({ leftPane: 'params' })} data-testid="left-params-tab">
+        <button type="button" className={leftPane === 'params' ? 'on' : ''} aria-pressed={leftPane === 'params'} onClick={() => setUi({ leftPane: 'params' })} data-testid="left-params-tab">
           Parameters
         </button>
-        <button type="button" className={leftPane === 'saves' ? 'on' : ''} onClick={() => setUi({ leftPane: 'saves' })} data-testid="left-saves-tab">
+        <button type="button" className={leftPane === 'saves' ? 'on' : ''} aria-pressed={leftPane === 'saves'} onClick={() => setUi({ leftPane: 'saves' })} data-testid="left-saves-tab">
           Saves
         </button>
         {leftPane === 'params' && <span className="pill" title="Every value regenerates everything downstream">live graph</span>}
