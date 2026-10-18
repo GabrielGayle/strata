@@ -75,7 +75,16 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   });
   await openApp(page);
   await page.waitForSelector('[data-testid="viewport-3d"] canvas', { timeout: 120_000 });
+  await page.locator('.overlay.tr').getByRole('button', { name: /^Objects/ }).click();
+  await expect(page.locator('.overlay.appearance.objects')).toBeVisible();
   await openPointPanel(page);
+  const lookBtn = page.getByTestId('view-from-point-look');
+  await expect(lookBtn).toBeVisible();
+  await lookBtn.click({ trial: true });
+  await lookFrom(page, WOOLWICH);
+  await expect(page.getByTestId('view-from-point-warning')).toBeVisible();
+  await page.locator('.overlay.tr').getByRole('button', { name: /^Objects/ }).click();
+  await expect(page.locator('.overlay.appearance.objects')).toHaveCount(0);
 
   await lookFrom(page, 'not a google earth view');
   await expect(page.getByTestId('view-from-point-warning')).toContainText(/Paste a Google Earth|Could not read|lat, lon/i);
@@ -85,8 +94,12 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   await expect(warn).toBeVisible();
   await expect(warn).toContainText(/map box/i);
 
+  await expect(page.getByTestId('view-from-point-match-base')).toBeChecked();
   await page.getByTestId('view-from-point-fit').click();
   await waitApplied(page);
+  await page.getByTestId('view-from-point-look').click();
+  await waitApplied(page);
+  await expect(page.getByTestId('view-from-point-warning')).toHaveCount(0);
 
   const wool = await pointView(page);
   expect(wool).toBeTruthy();
@@ -94,6 +107,16 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   expect(wool!.look.x, 'WNW look has −X north').toBeLessThan(0);
   expect(Math.abs(wool!.look.z)).toBeGreaterThan(Math.abs(wool!.look.x) * 0.8);
   expect(wool!.position[1], 'camera sits above the look-at').toBeGreaterThan(wool!.target[1]);
+  const horiz = Math.hypot(wool!.look.x, wool!.look.z);
+  const tiltDeg = (Math.atan2(horiz, -wool!.look.y) * 180) / Math.PI;
+  expect(tiltDeg).toBeCloseTo(72.7, 0);
+  const baseLine = await page.locator('.overlay.bl').textContent();
+  const dims = baseLine?.match(/base\s+([\d.]+)\s*×\s*([\d.]+)/);
+  expect(dims, 'base readout after Match base to map shape').toBeTruthy();
+  const baseLength = Number(dims![1]);
+  const baseWidth = Number(dims![2]);
+  expect(Math.max(baseLength, baseWidth)).toBeCloseTo(800, 0);
+  expect(baseWidth, 'E–W side grew to the map aspect').toBeGreaterThan(300);
   await shot(page, 'view-from-point-woolwich');
 
   await openWorkspaceTab(page, 'Map');
@@ -130,6 +153,8 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   await page.waitForSelector('[data-testid="viewport-3d"] canvas', { timeout: 120_000 });
   await openPointPanel(page);
   await expect(page.getByTestId('view-from-point-return')).toBeEnabled({ timeout: 30_000 });
+  await expect(page.getByLabel('Latitude')).toHaveValue(/51\.48/);
+  await expect(page.getByLabel('Longitude')).toHaveValue(/0\.04/);
   await page.getByTestId('view-from-point-return').click();
   await waitApplied(page);
   const back = await pointView(page);

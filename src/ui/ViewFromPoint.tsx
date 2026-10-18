@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import {
@@ -6,11 +6,13 @@ import {
   earthWorldFrame,
   fitMapBoxToView,
   mapSpecWithBbox,
+  matchBaseToMapBbox,
   parseEarthView,
   pointViewMessage,
   type EarthView,
   type EarthWorldPose,
 } from '../core/earthView';
+import { evaluateParams } from '../core/params';
 import { useStore } from '../state/store';
 import { useModel } from './model';
 
@@ -79,12 +81,26 @@ export default function ViewFromPointPanel() {
   const setUi = useStore((s) => s.setUi);
   const setSavedView = useStore((s) => s.setSavedView);
   const setTopMap = useStore((s) => s.setTopMap);
+  const setParams = useStore((s) => s.setParams);
   const model = useModel();
-  const [paste, setPaste] = useState('');
+  const [paste, setPaste] = useState(() => {
+    const v = useStore.getState().project.savedView;
+    return v ? fieldsToText(viewToFields(v)) : '';
+  });
   const [pasteDirty, setPasteDirty] = useState(false);
-  const [fields, setFields] = useState(EMPTY);
+  const [fields, setFields] = useState(() => {
+    const v = useStore.getState().project.savedView;
+    return v ? viewToFields(v) : EMPTY;
+  });
+  const [matchBase, setMatchBase] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!saved) return;
+    setFields((f) => (f.lat.trim() || f.lon.trim() ? f : viewToFields(saved)));
+    setPaste((p) => (p.trim() ? p : fieldsToText(viewToFields(saved))));
+  }, [saved]);
 
   const fill = (view: EarthView) => {
     setFields(viewToFields(view));
@@ -161,11 +177,16 @@ export default function ViewFromPointPanel() {
     const bbox = fitMapBoxToView(r.view, { aspect: canvasAspect() });
     const spec = mapSpecWithBbox(useStore.getState().project.images.top?.map, bbox);
     setTopMap(spec);
+    if (matchBase) {
+      const outline = matchBaseToMapBbox(bbox, useStore.getState().project.params);
+      if (outline) setParams(outline, 'match-base-to-map');
+    }
     setSavedView(r.view);
     setError(null);
     setMessage('Map box fitted to this view. Rebuild runs from the Map tab settings — wait for terrain, then the camera will match.');
     const project = useStore.getState().project;
-    const frame = earthWorldFrame(project.images.top?.map, model.v, project.images.top?.depth);
+    const values = evaluateParams(project.params).values;
+    const frame = earthWorldFrame(project.images.top?.map, values, project.images.top?.depth);
     if (!frame) return;
     const pose = earthViewToWorldPose(r.view, frame);
     const ui = useStore.getState().ui;
@@ -198,7 +219,7 @@ export default function ViewFromPointPanel() {
 
   return (
     <div
-      className="overlay appearance viewpoint"
+      className="overlay viewpoint"
       data-testid="view-from-point"
       data-view-lat={fields.lat}
       data-view-lon={fields.lon}
@@ -280,6 +301,15 @@ export default function ViewFromPointPanel() {
           Fit map box to view
         </button>
       </div>
+      <label className="vp-match">
+        <input
+          type="checkbox"
+          data-testid="view-from-point-match-base"
+          checked={matchBase}
+          onChange={(e) => setMatchBase(e.target.checked)}
+        />
+        Match base to map shape
+      </label>
       {(error || message) && (
         <div
           className={`mp-info ${error ? 'vp-error' : 'vp-warn'}`}

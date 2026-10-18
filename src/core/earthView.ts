@@ -21,6 +21,7 @@
 //
 // Typed fields without a distance (lat, lon, altitude, heading, tilt [, FOV])
 // place the *camera* at lat/lon/alt and look along heading/tilt.
+import { mapBboxWidthHeightM } from './mapGiftSizing';
 import { mapGridUvToWorld, mapMasterWidthMm, MAP_HEIGHT_FLOOR_MM, mapScaleMmPerM } from './mapPlateHeight';
 import { pickMetricCrs, lonLatToMetric, metricBounds } from './mapProject';
 import { bboxContainsPoint } from './mapPresets';
@@ -239,15 +240,23 @@ export function earthForwardEnu(headingDeg: number, tiltDeg: number): EnuM {
 
 /**
  * Look direction in the map world frame (+X south, +Y up, +Z west).
- * Horizontal metres scale uniformly; vertical is multiplied by exaggeration.
+ * This is the Earth heading/tilt ray — vertical exaggeration must not steepen it.
  */
-export function lookDirectionWorld(headingDeg: number, tiltDeg: number, exaggeration = 1): { x: number; y: number; z: number } {
+export function lookDirectionWorld(headingDeg: number, tiltDeg: number): { x: number; y: number; z: number } {
   const f = earthForwardEnu(headingDeg, tiltDeg);
   const x = -f.north;
-  const y = f.up * Math.max(0, exaggeration);
+  const y = f.up;
   const z = -f.east;
   const len = Math.hypot(x, y, z) || 1;
   return { x: x / len, y: y / len, z: z / len };
+}
+
+/** Tilt from nadir (0 = straight down, 90 = horizon) of a world-space look vector. */
+export function worldPoseTiltDeg(pose: EarthWorldPose): number {
+  const dx = pose.target[0] - pose.position[0];
+  const dy = pose.target[1] - pose.position[1];
+  const dz = pose.target[2] - pose.position[2];
+  return (Math.atan2(Math.hypot(dx, dz), -dy) * 180) / Math.PI;
 }
 
 function addEnu(a: EnuM, b: EnuM, k = 1): EnuM {
@@ -361,13 +370,43 @@ function rollUp(position: [number, number, number], target: [number, number, num
   ];
 }
 
+/**
+ * World pose that keeps Earth's heading and tilt.
+ *
+ * Look-at sits on the exaggerated terrain (URL `a` × exaggeration × plan scale).
+ * The camera is then `d` metres back along the *true* heading/tilt ray, with `d`
+ * converted at the plan scale only — the same millimetres-per-metre on X, Y and Z
+ * so ×4 terrain does not turn a 17° dip into a 51° dip.
+ *
+ * Typed fields with no `d` put the camera on the exaggerated surface at lat/lon/alt
+ * and look along that same un-exaggerated ray.
+ */
 export function earthViewToWorldPose(view: EarthView, frame: EarthWorldFrame): EarthWorldPose {
+  const scale = mapScaleMmPerM(frame.widthM, mapMasterWidthMm(frame.v));
+  const fwd = lookDirectionWorld(view.heading, view.tilt);
+  const dM = view.distance != null && view.distance > 0 ? view.distance : EARTH_DEFAULT_LOOK_M;
+  const dMm = dM * scale;
+
+  if (view.distance != null && view.distance > 0) {
+    const tgt = earthViewLookAtLonLat(view);
+    const t = lonLatToWorldXz(tgt.lon, tgt.lat, frame);
+    const target: [number, number, number] = [t.x, altitudeToWorldY(tgt.alt, frame), t.z];
+    const position: [number, number, number] = [
+      target[0] - fwd.x * dMm,
+      target[1] - fwd.y * dMm,
+      target[2] - fwd.z * dMm,
+    ];
+    return { position, target, up: rollUp(position, target, view.roll), fov: view.fov };
+  }
+
   const cam = earthViewCameraLonLat(view);
-  const tgt = earthViewLookAtLonLat(view);
   const c = lonLatToWorldXz(cam.lon, cam.lat, frame);
-  const t = lonLatToWorldXz(tgt.lon, tgt.lat, frame);
   const position: [number, number, number] = [c.x, altitudeToWorldY(cam.alt, frame), c.z];
-  const target: [number, number, number] = [t.x, altitudeToWorldY(tgt.alt, frame), t.z];
+  const target: [number, number, number] = [
+    position[0] + fwd.x * dMm,
+    position[1] + fwd.y * dMm,
+    position[2] + fwd.z * dMm,
+  ];
   return { position, target, up: rollUp(position, target, view.roll), fov: view.fov };
 }
 
@@ -496,6 +535,44 @@ export function pointViewMessage(view: EarthView, bbox: MapSpec['bbox'] | undefi
 
 export function mapSpecWithBbox(prev: MapSpec | undefined, bbox: MapSpec['bbox']): MapSpec {
   return defaultMapSpec({ ...prev, bbox, title: prev?.title ?? 'Map terrain' });
+}
+
+const BASE_LENGTH_MIN = 20;
+const BASE_LENGTH_MAX = 3000;
+const BASE_WIDTH_MIN = 20;
+const BASE_WIDTH_MAX = 1500;
+
+/**
+ * Keep the longer base millimetre and resize the shorter side so the sculpture
+ * matches the map bbox aspect (N–S = baseLength, E–W = baseWidth). A 800×300
+ * portrait base on a wide WNW footprint stretches north and turns WNW into NW.
+ */
+export function matchBaseToMapBbox(
+  bbox: MapSpec['bbox'],
+  params: { baseLength?: unknown; baseWidth?: unknown },
+): { baseLength: string; baseWidth: string } | undefined {
+  const { widthM, heightM } = mapBboxWidthHeightM(bbox);
+  if (!(widthM > 0) || !(heightM > 0)) return undefined;
+  const length = Number(params.baseLength);
+  const width = Number(params.baseWidth);
+  if (!Number.isFinite(length) || !Number.isFinite(width) || length <= 0 || width <= 0) return undefined;
+  const longMm = Math.max(length, width);
+  let baseLength: number;
+  let baseWidth: number;
+  if (heightM >= widthM) {
+    baseLength = longMm;
+    baseWidth = longMm * (widthM / heightM);
+  } else {
+    baseWidth = longMm;
+    baseLength = longMm * (heightM / widthM);
+  }
+  baseLength = Math.min(BASE_LENGTH_MAX, Math.max(BASE_LENGTH_MIN, baseLength));
+  baseWidth = Math.min(BASE_WIDTH_MAX, Math.max(BASE_WIDTH_MIN, baseWidth));
+  if (Math.abs(baseLength - length) < 0.05 && Math.abs(baseWidth - width) < 0.05) return undefined;
+  return {
+    baseLength: String(+baseLength.toFixed(4)),
+    baseWidth: String(+baseWidth.toFixed(4)),
+  };
 }
 
 /** Round-trip helper used by tests: keep only cleaned fields. */

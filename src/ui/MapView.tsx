@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { defaultMapSpec, type MapModel, type MapSource, type MapSpec, type MapWater, type LayerBudgetMode } from '../core/mapSpec';
 import { MAP_ENGRAVE_PRESETS, type MapEngravePresetId } from '../core/mapEngravePresets';
 import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
@@ -102,6 +102,7 @@ export default function MapView() {
   const [north, setNorth] = useState(String(existing?.bbox?.[3] ?? ''));
   const [searchStatus, setSearchStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const bboxFocus = useRef<null | 'west' | 'south' | 'east' | 'north'>(null);
 
   const applyBbox = useCallback((bbox: MapSpec['bbox']) => {
     setWest(String(bbox[0]));
@@ -113,8 +114,13 @@ export default function MapView() {
   const bboxKey = existing?.bbox?.join(',') ?? '';
   useEffect(() => {
     if (!existing?.bbox) return;
-    applyBbox(existing.bbox);
-  }, [bboxKey, existing?.bbox, applyBbox]);
+    const [w, s, e, n] = existing.bbox;
+    const focus = bboxFocus.current;
+    if (focus !== 'west') setWest(String(w));
+    if (focus !== 'south') setSouth(String(s));
+    if (focus !== 'east') setEast(String(e));
+    if (focus !== 'north') setNorth(String(n));
+  }, [bboxKey, existing?.bbox]);
 
   const search = async () => {
     setBusy(true);
@@ -282,10 +288,10 @@ export default function MapView() {
         <fieldset>
           <legend>Bbox (WGS84)</legend>
           <div className="map-bbox-grid">
-            <label>West <input data-testid="map-bbox-west" inputMode="decimal" value={west} onChange={(e) => setWest(e.target.value)} /></label>
-            <label>South <input data-testid="map-bbox-south" inputMode="decimal" value={south} onChange={(e) => setSouth(e.target.value)} /></label>
-            <label>East <input data-testid="map-bbox-east" inputMode="decimal" value={east} onChange={(e) => setEast(e.target.value)} /></label>
-            <label>North <input data-testid="map-bbox-north" inputMode="decimal" value={north} onChange={(e) => setNorth(e.target.value)} /></label>
+            <label>West <input data-testid="map-bbox-west" inputMode="decimal" value={west} onChange={(e) => setWest(e.target.value)} onFocus={() => { bboxFocus.current = 'west'; }} onBlur={() => { bboxFocus.current = null; }} /></label>
+            <label>South <input data-testid="map-bbox-south" inputMode="decimal" value={south} onChange={(e) => setSouth(e.target.value)} onFocus={() => { bboxFocus.current = 'south'; }} onBlur={() => { bboxFocus.current = null; }} /></label>
+            <label>East <input data-testid="map-bbox-east" inputMode="decimal" value={east} onChange={(e) => setEast(e.target.value)} onFocus={() => { bboxFocus.current = 'east'; }} onBlur={() => { bboxFocus.current = null; }} /></label>
+            <label>North <input data-testid="map-bbox-north" inputMode="decimal" value={north} onChange={(e) => setNorth(e.target.value)} onFocus={() => { bboxFocus.current = 'north'; }} onBlur={() => { bboxFocus.current = null; }} /></label>
           </div>
         </fieldset>
         {searchStatus && <p className="map-window-status">{searchStatus}</p>}

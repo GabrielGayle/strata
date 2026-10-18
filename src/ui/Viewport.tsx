@@ -267,38 +267,41 @@ export default function Viewport() {
           View from point
         </button>
       </div>
-      <div className="overlay tr col">
-        <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false, objectsMode: false, measureMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
-          Materials{bucketed ? ` (${bucketed})` : ''}
-        </button>
-        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false, objectsMode: false, measureMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
-          Move plates{movedCount ? ` (${movedCount})` : ''}
-        </button>
-        <button className={`btn sm ${ui.objectsMode ? 'on' : ''}`} onClick={() => setUi({ objectsMode: !ui.objectsMode, paintMode: false, moveMode: false, measureMode: false })} title="Place postcards, boxes and other objects; each is cut out of the plates it passes through">
-          Objects{objectCount ? ` (${objectCount})` : ''}
-        </button>
-        <button className={`btn sm ${ui.measureMode ? 'on' : ''}`} onClick={() => setUi({ measureMode: !ui.measureMode, moveMode: false, paintMode: false, objectsMode: false })} title="Measuring tape: point to point, edge to edge, point to edge or face (M; Esc leaves)">
-          Measure
-        </button>
-        <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
-          X-ray concrete
-        </button>
-        <button className={`btn sm ${ui.showMoulds ? 'on' : ''}`} onClick={() => setUi({ showMoulds: !ui.showMoulds })}>
-          Moulds
-        </button>
-        {ui.showMoulds && (
-          <button className={`btn sm ${ui.explode ? 'on' : ''}`} onClick={() => setUi({ explode: !ui.explode })}>
-            Exploded
+      <div className="vp-tr-column">
+        <div className="overlay tr col">
+          <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false, objectsMode: false, measureMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
+            Materials{bucketed ? ` (${bucketed})` : ''}
           </button>
-        )}
-        <button className={`btn sm ${ui.showIssues ? 'on' : ''}`} onClick={() => setUi({ showIssues: !ui.showIssues })}>
-          Issue markers
-        </button>
-        {v.stackSource === 'form' && (
-          <button className={`btn sm ${ui.showSource ? 'on' : ''}`} onClick={() => setUi({ showSource: !ui.showSource })}>
-            Source ghost
+          <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false, objectsMode: false, measureMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
+            Move plates{movedCount ? ` (${movedCount})` : ''}
           </button>
-        )}
+          <button className={`btn sm ${ui.objectsMode ? 'on' : ''}`} onClick={() => setUi({ objectsMode: !ui.objectsMode, paintMode: false, moveMode: false, measureMode: false })} title="Place postcards, boxes and other objects; each is cut out of the plates it passes through">
+            Objects{objectCount ? ` (${objectCount})` : ''}
+          </button>
+          <button className={`btn sm ${ui.measureMode ? 'on' : ''}`} onClick={() => setUi({ measureMode: !ui.measureMode, moveMode: false, paintMode: false, objectsMode: false })} title="Measuring tape: point to point, edge to edge, point to edge or face (M; Esc leaves)">
+            Measure
+          </button>
+          <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
+            X-ray concrete
+          </button>
+          <button className={`btn sm ${ui.showMoulds ? 'on' : ''}`} onClick={() => setUi({ showMoulds: !ui.showMoulds })}>
+            Moulds
+          </button>
+          {ui.showMoulds && (
+            <button className={`btn sm ${ui.explode ? 'on' : ''}`} onClick={() => setUi({ explode: !ui.explode })}>
+              Exploded
+            </button>
+          )}
+          <button className={`btn sm ${ui.showIssues ? 'on' : ''}`} onClick={() => setUi({ showIssues: !ui.showIssues })}>
+            Issue markers
+          </button>
+          {v.stackSource === 'form' && (
+            <button className={`btn sm ${ui.showSource ? 'on' : ''}`} onClick={() => setUi({ showSource: !ui.showSource })}>
+              Source ghost
+            </button>
+          )}
+        </div>
+        {fromPoint && <ViewFromPointPanel />}
       </div>
       <div className="overlay bl info">
         <span>
@@ -329,7 +332,6 @@ export default function Viewport() {
         </span>
         {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
       </div>
-      {fromPoint && <ViewFromPointPanel />}
       {ui.moveMode && !ui.paintMode && !ui.measureMode && <MovePanel />}
       {ui.paintMode && !ui.measureMode && <AppearancePanel />}
       {ui.objectsMode && !ui.measureMode && <ObjectsPanel />}

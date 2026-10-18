@@ -7,8 +7,10 @@ import {
   earthWorldFrame,
   fitMapBoxToView,
   lookDirectionWorld,
+  matchBaseToMapBbox,
   parseEarthView,
   pointViewMessage,
+  worldPoseTiltDeg,
   wrapHeadingDeg,
   type EarthView,
 } from '../src/core/earthView';
@@ -133,17 +135,17 @@ describe('Earth URL camera vs look-at', () => {
 
 describe('camera math in +X south / +Z west', () => {
   it('heading 0 looks north (−X); heading 90 looks east (−Z); tilt 0 looks down (−Y)', () => {
-    const north = lookDirectionWorld(0, 90, 1);
+    const north = lookDirectionWorld(0, 90);
     expect(north.x).toBeCloseTo(-1, 5);
     expect(north.y).toBeCloseTo(0, 5);
     expect(north.z).toBeCloseTo(0, 5);
 
-    const east = lookDirectionWorld(90, 90, 1);
+    const east = lookDirectionWorld(90, 90);
     expect(east.x).toBeCloseTo(0, 5);
     expect(east.y).toBeCloseTo(0, 5);
     expect(east.z).toBeCloseTo(-1, 5);
 
-    const down = lookDirectionWorld(0, 0, 1);
+    const down = lookDirectionWorld(0, 0);
     expect(down.x).toBeCloseTo(0, 5);
     expect(down.y).toBeCloseTo(-1, 5);
     expect(down.z).toBeCloseTo(0, 5);
@@ -190,6 +192,22 @@ describe('camera math in +X south / +Z west', () => {
   });
 });
 
+describe('tilt is independent of vertical exaggeration', () => {
+  it('keeps Earth tilt at ×1, ×4 and ×10', () => {
+    const view = mustParse(WOOLWICH);
+    const { frame } = defaultFrame();
+    const tilts: number[] = [];
+    for (const exaggeration of [1, 4, 10]) {
+      const pose = earthViewToWorldPose(view, { ...frame, exaggeration });
+      const tilt = worldPoseTiltDeg(pose);
+      tilts.push(tilt);
+      expect(tilt, `×${exaggeration}`).toBeCloseTo(view.tilt, 5);
+      expect(pose.position[1]).toBeGreaterThan(pose.target[1]);
+    }
+    expect(Math.max(...tilts) - Math.min(...tilts)).toBeLessThan(1e-6);
+  });
+});
+
 describe('fit map box to view', () => {
   it('Woolwich bbox contains the camera and extends WNW toward the Thames', () => {
     const v = mustParse(WOOLWICH);
@@ -206,6 +224,20 @@ describe('fit map box to view', () => {
     expect(northSpan, 'footprint runs north of the camera (WNW)').toBeGreaterThan(southSpan * 0.4);
     expect(w).toBeLessThan(v.lon);
     expect(n).toBeGreaterThan(v.lat - 0.002);
+  });
+
+  it('Match base to map shape keeps the long side and resizes the short one', () => {
+    const v = mustParse(WOOLWICH);
+    const bbox = fitMapBoxToView(v, { aspect: 16 / 9 });
+    const outline = matchBaseToMapBbox(bbox, { baseLength: 800, baseWidth: 300 });
+    expect(outline).toBeTruthy();
+    const length = Number(outline!.baseLength);
+    const width = Number(outline!.baseWidth);
+    expect(Math.max(length, width)).toBeCloseTo(800, 2);
+    expect(Math.min(length, width)).toBeLessThan(800);
+    expect(Math.min(length, width)).toBeGreaterThan(20);
+    // Woolwich looks WNW, so the footprint is wider E–W than N–S → landscape base.
+    expect(width, 'E–W is the long millimetre').toBeGreaterThan(length);
   });
 
   it('warns when the point is outside the current bbox', () => {
