@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { assemble, createDeferredPipeline, createFrontPipeline, deferredInput, type DeferredInput, type DeferredModel, type FrontModel, type Model } from '../core/pipeline';
-import { DeferredWorker, sameInput, shareResult } from '../core/deferred';
+import { EngineWorker, type EngineMode } from '../core/engine';
+import type { Assets } from '../core/pipeline';
+import type { Project } from '../core/project';
 import { useStore } from '../state/store';
 import { activeLayout, TABS, useWorkspaces } from '../state/workspaces';
 import { findTab, visibleTabs } from '../core/workspace';
@@ -17,10 +19,15 @@ import DesignBox from './DesignBox';
 import { designShortcutFromKey } from './designShortcut';
 import { useMapTerrainBuild } from './useMapTerrainBuild';
 import { BusyLight, BusyWindows, useAppBusy } from './BusyWindow';
-import { isMapTerrainFailure, reportMapTerrainFailure, runFrontPipelineSafe } from './mapTerrainError';
+import { isMapTerrainFailure, reportMapTerrainFailure, reportMapTerrainMessage, runFrontPipelineSafe } from './mapTerrainError';
 import { isMapDepth, mapMasterWidthMm, mapScaleMmPerM, mapTrueRangePlateMm } from '../core/mapPlateHeight';
 import { flatStackHeightMm, flatStackIsCapped } from '../core/mapGeometryReadout';
 import { countPlatesAtMaxHeight, plateTopHeightRangeMm } from '../core/slicer';
+
+/** After a drag, how long the edits must rest before the full model is built. */
+const FULL_AFTER_MS = 150;
+const DEFERRED_KEYS = ['v', 'sliced', 'insert', 'pourRows', 'appearance'] as const;
+const sameDeferredInput = (a: DeferredInput, b: DeferredInput) => DEFERRED_KEYS.every((k) => a[k] === b[k]);
 
 
 export default function App() {
@@ -33,17 +40,22 @@ export default function App() {
   useMapTerrainBuild();
   const layout = useWorkspaces(activeLayout);
   const reveal = useWorkspaces((s) => s.reveal);
+  // the pipeline on this thread: the first frame, exports the engine hasn't caught up with, and browsers without workers
   const front = useMemo(() => createFrontPipeline(), []);
-  // the deferred stages run here only for the first frame, exports, and when workers are unavailable
   const local = useMemo(() => createDeferredPipeline(), []);
-  // the latest front pass, and the last deferred result with the input it was computed from
+  // the latest front pass, and the last deferred result with the input it was computed from (this-thread path)
   const latest = useRef<{ f: FrontModel; input: DeferredInput } | null>(null);
   const deferred = useRef<{ result: DeferredModel; input: DeferredInput } | null>(null);
+  // the model on screen and what it was built from
+  const shown = useRef<{ project: Project; assets: Assets; mode: EngineMode } | null>(null);
+  const inputs = useRef({ project, assets });
+  inputs.current = { project, assets };
   const [model, setModelState] = useState<Model>(() => {
     const f = runFrontPipelineSafe(front, project, assets);
     const input = deferredInput(f, project);
     latest.current = { f, input };
     deferred.current = { result: local(input, 'full'), input };
+    shown.current = { project, assets, mode: 'full' };
     return assemble(f, deferred.current.result);
   });
   const modelRef = useRef(model);
@@ -55,17 +67,31 @@ export default function App() {
     modelRef.current = m;
     setModelState(m);
   };
-  const worker = useRef<DeferredWorker | null>(null);
+  const engine = useRef<EngineWorker | null>(null);
+  // what the engine worker is building right now, for the status bar light and the busy window
+  const [engineBusy, setEngineBusy] = useState<EngineMode | null>(null);
+  const runEngine = (w: EngineWorker, project: Project, assets: Assets, mode: EngineMode) => {
+    lastMode.current = mode;
+    w.run(project, assets, mode);
+    setEngineBusy(mode);
+  };
   const localTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const showDeferred = (result: DeferredModel, input: DeferredInput) => {
-    const shared = shareResult(deferred.current?.result ?? null, result);
-    deferred.current = { result: shared, input };
+    deferred.current = { result, input };
     const now = latest.current!;
-    setModel(assemble(now.f, shared, !sameInput(input, now.input)));
+    setModel(assemble(now.f, result, !sameDeferredInput(input, now.input)));
   };
-  // no worker: the old way, on this thread once edits settle
-  const runLocal = (input: DeferredInput) => {
+  // no engine worker: the old way, the plates on this thread on the next frame, then the rest once edits settle
+  const runLocal = (project: Project, assets: Assets) => {
+    const f = runFrontPipelineSafe(front, project, assets);
+    const input = deferredInput(f, project);
+    latest.current = { f, input };
+    shown.current = { project, assets, mode: 'full' };
+    const d = deferred.current!;
+    const fresh = sameDeferredInput(d.input, input);
+    setModel(assemble(f, d.result, !fresh));
+    if (fresh) return;
     clearTimeout(localTimer.current);
     localTimer.current = setTimeout(() => {
       if (latest.current?.input !== input) return;
@@ -78,45 +104,83 @@ export default function App() {
     }, 320);
   };
 
+  // while a pointer is down (a slider or gizmo being dragged) the engine builds a coarse preview;
+  // the full model follows FULL_AFTER_MS after the last change once it is let go
+  const held = useRef(false);
+  const lastMode = useRef<EngineMode>('full');
+  const fullTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const scheduleFull = () => {
+    clearTimeout(fullTimer.current);
+    fullTimer.current = setTimeout(() => {
+      if (held.current || lastMode.current === 'full' || !engine.current) return;
+      runEngine(engine.current, inputs.current.project, inputs.current.assets, 'full');
+    }, FULL_AFTER_MS);
+  };
+  useEffect(() => {
+    const down = () => (held.current = true);
+    const up = () => {
+      held.current = false;
+      if (lastMode.current === 'preview') scheduleFull();
+    };
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+    return () => {
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (typeof Worker === 'undefined') return;
-    let w: DeferredWorker;
+    let w: EngineWorker;
     try {
-      w = new DeferredWorker(
-        new Worker(new URL('../core/deferred.worker.ts', import.meta.url), { type: 'module' }),
-        // an older job's results still beat what's on screen; they stay marked as updating
-        (_id, result, input) => showDeferred(result, input),
-        (_id, input, fatal) => {
-          if (fatal && worker.current === w) worker.current = null;
-          if (latest.current?.input === input) runLocal(input);
+      w = new EngineWorker(
+        new Worker(new URL('../core/engine.worker.ts', import.meta.url), { type: 'module' }),
+        (job, m, reply) => {
+          setEngineBusy(w.working ? lastMode.current : null);
+          if (reply.mapError) reportMapTerrainMessage(reply.mapError);
+          const s = shown.current;
+          // the warm-up pass (and any repeat of what is on screen) changes nothing
+          if (s && s.mode === 'full' && job.mode === 'full' && s.project === job.project && s.assets === job.assets) return;
+          shown.current = { project: job.project, assets: job.assets, mode: job.mode };
+          // an older job's model still beats what's on screen; it stays marked as updating
+          setModel({ ...m, stale: m.stale || job.mode === 'preview' || w.working });
+        },
+        (job, fatal, error) => {
+          setEngineBusy(null);
+          if (fatal && engine.current === w) engine.current = null;
+          console.error('Strata engine worker:', error);
+          // run it here instead (an error in the pipeline itself shows the same way it always has)
+          if (job.project === inputs.current.project && job.assets === inputs.current.assets) runLocal(job.project, job.assets);
         },
       );
     } catch {
       return;
     }
-    worker.current = w;
-    // catch up on anything edited before the worker was ready
-    if (latest.current && deferred.current && !sameInput(latest.current.input, deferred.current.input)) w.run(latest.current.input);
+    engine.current = w;
+    // warm the worker's caches with what is on screen, and catch up on anything edited meanwhile (quietly: it changes nothing on screen)
+    w.run(inputs.current.project, inputs.current.assets, 'full');
     return () => {
       w.terminate();
-      if (worker.current === w) worker.current = null;
+      if (engine.current === w) engine.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // regenerate: the plates on the next frame, then checks, nesting, moulds and BOM in the worker
+  // regenerate: in the engine worker when there is one, else on this thread
   useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      const f = runFrontPipelineSafe(front, project, assets);
-      const input = deferredInput(f, project);
-      latest.current = { f, input };
-      const d = deferred.current!;
-      const fresh = sameInput(d.input, input);
-      setModel(assemble(f, d.result, !fresh));
-      if (fresh) return;
-      if (worker.current) worker.current.run(input);
-      else runLocal(input);
-    });
+    const s = shown.current;
+    if (s && s.project === project && s.assets === assets) return;
+    if (engine.current) {
+      const mode: EngineMode = held.current ? 'preview' : 'full';
+      runEngine(engine.current, project, assets, mode);
+      if (mode === 'preview') scheduleFull();
+      return;
+    }
+    const raf = requestAnimationFrame(() => runLocal(project, assets));
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, assets, front]);
@@ -161,24 +225,28 @@ export default function App() {
   // exports want everything current: the model on screen when it is, else finish it here
   const getFull = useMemo(
     () => () => {
+      const { project, assets } = inputs.current;
+      const s = shown.current;
+      const m = modelRef.current;
+      if (s && s.mode === 'full' && s.project === project && s.assets === assets && !m.stale) return m;
       const f = runFrontPipelineSafe(front, project, assets);
       const input = deferredInput(f, project);
       const d = deferred.current;
       try {
-        return assemble(f, d && sameInput(d.input, input) ? d.result : local(input, 'full'), false);
+        return assemble(f, d && sameDeferredInput(d.input, input) ? d.result : local(input, 'full'), false);
       } catch (e) {
         if (isMapTerrainFailure(e)) {
           reportMapTerrainFailure(e);
-          return assemble(f, d && sameInput(d.input, input) ? d.result : local(input, 'fast'), false);
+          return assemble(f, d && sameDeferredInput(d.input, input) ? d.result : local(input, 'fast'), false);
         }
         throw e;
       }
     },
-    [front, local, project, assets],
+    [front, local],
   );
   const [designOpen, setDesignOpen] = useState(false);
   const mapTerrain = useStore((s) => s.mapTerrain);
-  useAppBusy(!!model.stale);
+  useAppBusy(!!model.stale, engineBusy);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
   const stackRodCount = model.sliced.stackRods?.rods.length ?? 0;
@@ -202,6 +270,8 @@ export default function App() {
     : 0;
   const mapZMaxM = topDepth?.mapOrtho?.zMaxM;
   const platesAtMax = mapFace ? countPlatesAtMaxHeight(model.sliced.plates) : 0;
+  // the model on screen is the full one for the current project (it lags edits while the engine works)
+  const modelCurrent = shown.current?.mode === 'full' && shown.current.project === project && shown.current.assets === assets && !model.stale;
 
   return (
     <FullModelContext.Provider value={getFull}>
@@ -219,6 +289,7 @@ export default function App() {
         data-strata-map-stack-capped={mapFace && model.v.sliceMode === 'flat' ? (stackCapped ? '1' : '0') : undefined}
         data-strata-map-z-max-m={mapFace && mapZMaxM != null ? String(mapZMaxM) : undefined}
         data-strata-plates-at-max={mapFace ? String(platesAtMax) : undefined}
+        data-strata-model-current={modelCurrent ? '1' : '0'}
         data-strata-slice-mode={model.v.sliceMode}
         data-strata-stack-rods={String(stackRodCount)}
         data-strata-stack-rods-visible={stackRodsVisible ? '1' : '0'}

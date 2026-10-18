@@ -200,8 +200,16 @@ export const deferredInput = (f: FrontModel, project: Project): DeferredInput =>
   appearance: project.appearance,
 });
 
-/** The front stages. Fast enough to run on every edit. */
-export function createFrontPipeline() {
+/** Profile resolution used while a slider or gizmo is held down (mm; finer settings are coarsened to it). */
+export const PREVIEW_SAMPLE_STEP = 4;
+
+/**
+ * The front stages. Fast enough to run on every edit.
+ * A `preview` pipeline is the coarse one used while dragging: plate profiles
+ * sampled every PREVIEW_SAMPLE_STEP mm at most, and no shadow carve.
+ */
+export function createFrontPipeline(options: { preview?: boolean } = {}) {
+  const preview = !!options.preview;
   const cache: Cache = new Map();
   return function computeFront(project: Project, assets: Assets): FrontModel {
     const t0 = performance.now();
@@ -226,7 +234,9 @@ export function createFrontPipeline() {
     const mapTop = isMapDepth(project.images.top?.depth) && project.images.top?.map;
     const mapParams = mapTop ? mapFaceParams(project.params) : { raw: project.params, forced: false };
     const ev = stage('Parameters', [mapParams.raw, imgAspect, frontAspect, sideAspect], () => evaluateParams(mapParams.raw, { imgAspect, frontAspect, sideAspect }));
-    const v = ev.values;
+    const v = preview
+      ? stage('Preview values', [ev], () => (ev.values.sampleStep < PREVIEW_SAMPLE_STEP ? { ...ev.values, sampleStep: PREVIEW_SAMPLE_STEP } : ev.values))
+      : ev.values;
 
     const mkForm = (prefix: 'ins' | 'src', mesh: THREE.BufferGeometry | null): FormBuild | null => {
       const form = buildForm(formSpec(v, prefix), mesh);
@@ -325,7 +335,9 @@ export function createFrontPipeline() {
     attachMapPartEtch(sliced, project.images.top?.map);
     // checked against the cut plates, so a plate standing in front of a card counts as hiding it
     const cardVisibility = stage('Card visibility', [objects, shelfViewKey(project.shelf), project.shelf?.seat, sliced], () => reportShelfVisibility(objects, project.shelf, sliced.parts));
-    const carved = stage('Shadow carve', [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow], () => {
+    // the preview shows the plates uncarved; the full pass that follows the drag carves them
+    if (preview && v.shadowOn && (v.sunOn || isCandle(v)) && v.sliceMode === 'parallel') stages.push({ name: 'Shadow carve', ms: 0, cached: true, stale: true });
+    const carved = preview ? null : stage('Shadow carve', [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow], () => {
       if (!v.shadowOn || (!v.sunOn && !isCandle(v)) || v.sliceMode !== 'parallel') return null;
       const frames = (project.shadow?.frames ?? []).flatMap((f, i) => {
         const gray = assets.shadowFrames?.[i];

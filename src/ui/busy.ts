@@ -133,7 +133,8 @@ export function busyElapsed(t: Pick<BusyTask, 'startedAt'>, now = Date.now()): s
 /**
  * Keeps a busy task up while `on` is true, for waits that live in store state
  * rather than in one function (map terrain, background checks). Title and
- * detail follow `input`; the window joins in once it has run `windowAfterMs`.
+ * detail follow `input`; the window joins in once it has run `windowAfterMs`
+ * (Infinity: the status bar light only, never a window).
  */
 export function useBusyWhile(on: boolean, input: Omit<BusyInput, 'window'>, windowAfterMs = 0) {
   const handle = useRef<BusyHandle | null>(null);
@@ -144,7 +145,7 @@ export function useBusyWhile(on: boolean, input: Omit<BusyInput, 'window'>, wind
     if (!on) return;
     const h = beginBusy({ ...latest.current, window: windowAfterMs === 0, delayMs: windowAfterMs === 0 ? undefined : 0 });
     handle.current = h;
-    const t = windowAfterMs > 0 ? setTimeout(() => h.update({ window: true }), windowAfterMs) : undefined;
+    const t = windowAfterMs > 0 && Number.isFinite(windowAfterMs) ? setTimeout(() => h.update({ window: true }), windowAfterMs) : undefined;
     return () => {
       clearTimeout(t);
       h.end();
