@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { mapBuildKey, mapTerrainIsCurrent } from '../core/mapBuildKey';
 import { MAP_TERRAIN_NO_SAMPLES_ERROR, userFacingMapBuildError } from '../core/mapBuildError';
 import { buildMapTerrainAsset } from '../core/mapTerrainBuild';
+import { mapStackFromProject } from '../core/mapStack';
 import { useStore } from '../state/store';
 import { reportMapTerrainFailure } from './mapTerrainError';
 
@@ -17,8 +18,12 @@ export function useMapTerrainBuild() {
   const lastFailedError = useRef<string | null>(null);
   const seenEpoch = useRef(rebuildEpoch);
 
-  const buildKey = spec ? mapBuildKey(spec) : '';
-  const stale = spec && !mapTerrainIsCurrent(spec, depth);
+  // Plate count, thickness, base size, kerf and slicing feed the terrain build,
+  // so a change to any of them rebuilds it (the key string keeps this cheap).
+  const stackKey = useStore((s) => (spec ? JSON.stringify(mapStackFromProject(s.project, spec.layerBudget)) : ''));
+  const stack = useMemo(() => (stackKey ? JSON.parse(stackKey) : undefined), [stackKey]);
+  const buildKey = spec ? mapBuildKey(spec, stack) : '';
+  const stale = spec && !mapTerrainIsCurrent(spec, depth, stack);
 
   useEffect(() => {
     if (rebuildEpoch !== seenEpoch.current) {
@@ -27,7 +32,7 @@ export function useMapTerrainBuild() {
     }
     if (!stale || !spec) {
       if (!stale) failedKey.current = null;
-      if (spec && mapTerrainIsCurrent(spec, depth)) {
+      if (spec && mapTerrainIsCurrent(spec, depth, stack)) {
         setMapTerrain({ phase: 'ready', message: 'Map terrain ready', error: undefined });
       } else if (!spec) {
         setMapTerrain({ phase: 'idle', message: '', error: undefined });
@@ -68,5 +73,5 @@ export function useMapTerrainBuild() {
         lastFailedError.current = userFacingMapBuildError(e);
         reportMapTerrainFailure(e);
       });
-  }, [stale, spec, depth, buildKey, rebuildEpoch, setMapTerrain, finishMapTerrainBuild]);
+  }, [stale, spec, depth, stack, buildKey, rebuildEpoch, setMapTerrain, finishMapTerrainBuild]);
 }

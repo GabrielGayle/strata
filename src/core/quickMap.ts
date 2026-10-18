@@ -127,7 +127,7 @@ export function quickMapSpecKeepingUser(prev?: MapSpec): MapSpec | undefined {
   const mode = defaultMapSpec({
     ...place,
     exaggeration: 'auto',
-    water: 'bathy',
+    water: prev.water,
     model: 'dtm',
     layerBudget: 'jenks',
     engrave: quickMapEngrave(prev.engrave),
@@ -137,7 +137,7 @@ export function quickMapSpecKeepingUser(prev?: MapSpec): MapSpec | undefined {
   const kept = keepUserMapSettings(prev, mode);
   return defaultMapSpec({
     ...stripDerivedMapFields(kept),
-    water: 'bathy',
+    water: prev.water,
     model: 'dtm',
     layerBudget: 'jenks',
     engrave: quickMapEngrave(prev.engrave),

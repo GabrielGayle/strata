@@ -53,6 +53,7 @@ import {
   type StackRodPlan,
 } from './stackRods';
 import { orientMapPlatePlane } from './mapPlateHeight';
+import { MAP_WIDTH_AXIS_NOTE } from './mapStack';
 import { chokeSpans, finSlots, targetFins } from './candles';
 
 export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T' | 'K';
@@ -208,6 +209,8 @@ export interface SliceInput {
   mapTerrain?: boolean;
   /** Plan circles (x, z, r) the plates are choked in to: each plate keeps only what lies inside them. */
   choke?: [number, number, number][];
+  /** The project asked for sliceAxis 'width' on a map face, which was evaluated as 'length'. */
+  mapAxisForced?: boolean;
   /** Candlesticks held by target fins: where each stands and how its fins grip it. */
   candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number } }[];
 }
@@ -1209,6 +1212,7 @@ export function slice(input: SliceInput): SliceResult {
   const hf = input.hf;
   const v = input.mapTerrain ? { ...input.v, edgeFlow: 0 } : input.v;
   const warnings: string[] = [];
+  if (input.mapTerrain && input.mapAxisForced) warnings.push(MAP_WIDTH_AXIS_NOTE);
   if (input.mapTerrain && hf?.heightCapScale != null && hf.heightCapScale < 1 - 1e-9) {
     warnings.push(
       `Terrain is taller than the ${v.stackHeight} mm plate height, so the whole map was scaled to fit (×${hf.heightCapScale.toFixed(2)}). Summits are not clipped.`,

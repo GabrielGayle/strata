@@ -20,7 +20,9 @@ export function pickMetricCrs(bbox: MapSpec['bbox']): string {
   const [gw, gs, ge, gn] = GB_BBOX;
   if (w >= gw && e <= ge && s >= gs && n <= gn) return 'EPSG:27700';
   const lon = (w + e) / 2;
-  const zone = Math.floor((lon + 180) / 12) + 1;
+  // UTM zones are 6 degrees wide. (Dividing by 12 picked a zone up to 180 degrees away,
+  // which distorts and, past 90 degrees, mirrors maps outside Great Britain.)
+  const zone = Math.min(60, Math.max(1, Math.floor((lon + 180) / 6) + 1));
   const north = n >= 0;
   return north ? `EPSG:326${String(zone).padStart(2, '0')}` : `EPSG:327${String(zone).padStart(2, '0')}`;
 }

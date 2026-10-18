@@ -152,7 +152,7 @@ test('live Buttermere 500×500: lakes sit in the valleys, not a highland plateau
 
   await expect(page.locator('.app.window')).toHaveAttribute('data-strata-map-phase', 'ready');
   await expect(page.locator('.overlay.bl.info')).toContainText(/500\s*×\s*500/);
-  await expect(page.locator('#map-water-bathy')).toBeChecked();
+  await expect(page.locator('#map-water-flat')).toBeChecked();
   if (!isBefore) await expect(page.getByText(/Each lake uses its own shoreline/)).toBeVisible();
 
   await snapViewportDir(page, 'top', true);

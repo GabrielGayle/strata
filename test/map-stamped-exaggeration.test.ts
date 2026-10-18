@@ -15,6 +15,7 @@ import {
   mm0,
 } from '../src/core/mapGeometryReadout';
 import { applyBuiltMapAsset } from '../src/core/mapTopAsset';
+import { mapStackFromProject } from '../src/core/mapStack';
 
 /** Live EA Neasden-like DEM: valley ~35 m, peak 86 m — km-scale bbox, not a 48 m cone. */
 function liveLikeNeasdenGrid(): Float32Grid {
@@ -64,6 +65,8 @@ function stampedParams(plateCount: number) {
 
 async function runStamped(ex: number, plateCount = 20) {
   const grid = liveLikeNeasdenGrid();
+  const p = newProject();
+  p.params = { ...p.params, ...stampedParams(plateCount) };
   const bundle = await buildMapBundle(
     defaultMapSpec({
       ...mapPresetSpec('neasden'),
@@ -77,11 +80,9 @@ async function runStamped(ex: number, plateCount = 20) {
     {
       eaLoader: async () => grid,
       allowOverpassNetwork: false,
-      stack: { plateCount, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' },
+      stack: mapStackFromProject(p, 'jenks'),
     },
   );
-  const p = newProject();
-  p.params = { ...p.params, ...stampedParams(plateCount) };
   p.images.top = bundle.asset;
   const gray = mapDepthToGray(bundle.depth);
   const m = createPipeline()(p, { sideImg: null, frontImg: null, topImg: gray, insMesh: null, srcMesh: null });

@@ -75,9 +75,10 @@ export async function parseFloat32Geotiff(buf: Uint8Array): Promise<Float32Grid>
   const sy = height / readH;
   const pixelW = (res?.[0] ?? 1) * sx;
   const pixelH = -Math.abs(res?.[1] ?? 1) * sy;
+  // GeoTIFF bbox / origin is the outer edge of the top-left pixel; GridTransform wants its centre.
   const transform: GridTransform = {
-    originX: bbox?.[0] ?? origin?.[0] ?? 0,
-    originY: bbox?.[3] ?? origin?.[1] ?? 0,
+    originX: (bbox?.[0] ?? origin?.[0] ?? 0) + pixelW / 2,
+    originY: (bbox?.[3] ?? origin?.[1] ?? 0) + pixelH / 2,
     pixelW,
     pixelH,
   };
