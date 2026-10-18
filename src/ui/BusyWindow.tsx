@@ -25,12 +25,13 @@ function useNow(on: boolean, every = 250) {
  * the engine worker building plates (a preview while dragging only lights the
  * status bar), and the background checks after an edit (only worth a window when slow).
  */
-export function useAppBusy(checksStale: boolean, engine: 'preview' | 'full' | null = null) {
+export function useAppBusy(checksStale: boolean, engine: 'preview' | 'full' | null = null, carving = false) {
   const map = useStore((s) => s.mapTerrain);
   useBusyWhile(map.phase === 'working', { scene: 'map', title: 'Building map terrain', detail: map.message || 'Fetching elevation…' });
   useBusyWhile(engine === 'preview', { scene: 'engine', title: 'Previewing your edit', detail: 'Coarse plates while you drag. The full build follows when you let go.' }, Infinity);
   useBusyWhile(engine === 'full', { scene: 'engine', title: 'Building your edit', detail: 'Slicing, carving and checking in the background. You can keep working.' }, 1500);
-  useBusyWhile(checksStale && !engine, { scene: 'engine', title: 'Checking plates', detail: 'Fit checks, nesting, moulds and the cut list are catching up with your last edit.' }, 1500);
+  useBusyWhile(carving && !engine, { scene: 'engine', title: 'Carving shadows', detail: 'The plates show uncarved until the carve lands. Your next edit starts it again.' }, 1500);
+  useBusyWhile(checksStale && !engine && !carving, { scene: 'engine', title: 'Checking plates', detail: 'Fit checks, nesting, moulds and the cut list are catching up with your last edit.' }, 1500);
 }
 
 export function BusyWindows() {

@@ -12,6 +12,7 @@ import { activeLayout, useWorkspaces } from './state/workspaces';
 import { visibleTabs } from './core/workspace';
 import { preloadView } from './ui/Workspace';
 import { installE2eMapTileFixtures } from './core/mapBrowserTiles';
+import { preloadModel } from './state/results';
 
 installE2eMapTileFixtures();
 
@@ -24,6 +25,9 @@ for (const t of new Set([...visibleTabs(activeLayout(useWorkspaces.getState())),
 // read the last session back from browser storage before the first render
 hydrate()
   .catch((e) => console.warn('Could not read the last session', e))
+  // and the model it last showed, from the result cache, so the first frame needn't slice the plates here
+  .then(() => preloadModel(useStore.getState().project))
+  .catch(() => {})
   .finally(() =>
     createRoot(document.getElementById('root')!).render(
       <StrictMode>

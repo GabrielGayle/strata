@@ -13,6 +13,7 @@ import { activeLibraryLinkId, CloudSyncMark, grabThumb, keepOpenedInLibrary, lin
 import { recordLibrarySave } from '../state/recordLibrary';
 import { isProjectZipName, projectFromZip } from '../core/projectZip';
 import { busyThen } from './busy';
+import { clearSavedResults, resultsStored, savedResultsUsage } from '../state/results';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -123,6 +124,57 @@ function Swatch({ t }: { t: ThemeSeed }) {
       <i style={{ background: k['--accent'] }} />
       <i style={{ background: k['--svg-etch'] }} />
     </span>
+  );
+}
+
+/** Results the engine keeps so undo, compare and reopening are instant: how much there is, and one button to clear them. */
+function SavedResults() {
+  const [usage, setUsage] = useState<{ entries: number; bytes: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    savedResultsUsage()
+      .then((u) => alive && setUsage(u))
+      .catch(() => alive && setUsage({ entries: 0, bytes: 0 }));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const clear = async () => {
+    setBusy(true);
+    try {
+      await clearSavedResults();
+      setUsage({ entries: 0, bytes: 0 });
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!resultsStored()) return <p className="note">Finished designs are kept in memory for undo. Saving them in the browser is off here (development server).</p>;
+  return (
+    <>
+      <p className="note" data-testid="saved-results">
+        {usage ? `${usage.entries} finished design${usage.entries === 1 ? '' : 's'} kept, ${(usage.bytes / 1e6).toFixed(1)} MB` : 'Counting…'}
+      </p>
+      <div className="btnrow">
+        <button className="btn sm" onClick={clear} disabled={busy} title="Forget every kept result: the next undo, compare or reopen builds the design again">
+          Clear saved results
+        </button>
+      </div>
+    </>
+  );
+}
+
+function SettingsMenu() {
+  return (
+    <Menu label="Settings">
+      {() => (
+        <div style={{ width: 300 }}>
+          <div className="head">Saved results</div>
+          <p className="note">Undo, Compare and reopening a design show finished results straight from this browser instead of building them again.</p>
+          <SavedResults />
+        </div>
+      )}
+    </Menu>
   );
 }
 
@@ -503,6 +555,7 @@ export default function Toolbar() {
       </div>
       <div className="group">
         <AppearanceMenu />
+        <SettingsMenu />
       </div>
       <div className="spacer" />
       <button className="tb" onClick={buildPack} title="One printable page for the workshop wall: numbered plate layout, assembly order, rods and spacers, glue-up and pour plan">
