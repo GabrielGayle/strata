@@ -26,6 +26,8 @@ export function mapBuildKey(spec: MapSpec, stack?: MapBuildStackKey): string {
     // builds store the budget they used; an unset budget means jenks
     layerBudget: spec.layerBudget ?? 'jenks',
     terraced: spec.terraced === true,
+    // unset (the default) leaves keys of earlier builds unchanged
+    smoothMm: spec.smoothMm,
     buildingClampM: spec.buildingClampM,
     engrave: spec.engrave,
     sunkenFrame: spec.sunkenFrame,

@@ -355,6 +355,76 @@ export function plateDefs(v: Values): PlateDef[] {
   return defs;
 }
 
+/**
+ * A map plate's top line: sampled every `curveStep` mm, smoothed with a Gaussian
+ * of `curveSmooth` mm and simplified at `curveTolerance` mm, so the arc fitter
+ * can write most of it as arcs instead of hundreds of short kinked lines.
+ */
+function mapOutline(def: PlateDef, hf: HeightField, v: Values): Shape {
+  const { u0, u1, plane } = def;
+  const n = Math.max(2, Math.ceil((u1 - u0) / Math.max(0.05, v.curveStep)));
+  const du = (u1 - u0) / n;
+  const raw = new Float64Array(n + 1);
+  for (let k = 0; k <= n; k++) {
+    const p = planeToWorld(plane, u0 + du * k, 0);
+    raw[k] = hf.at(p[0], p[2]);
+  }
+  const h = gaussian1d(raw, v.curveSmooth / du);
+  const top: Path = [];
+  for (let k = 0; k <= n; k++) top.push([u0 + du * k, h[k]]);
+  // simplify before the union so Clipper sees hundreds of points, not thousands
+  const tol = Math.max(0.001, v.curveTolerance);
+  return outlineUnder(def, simplifyOpen(top, tol), v, tol);
+}
+
+/** Douglas-Peucker on an open line; both ends are kept. */
+function simplifyOpen(p: Path, tol: number): Path {
+  const n = p.length;
+  if (n < 3) return p;
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  const stack: [number, number][] = [[0, n - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    const A = p[a], B = p[b];
+    const dx = B[0] - A[0], dy = B[1] - A[1];
+    const L = Math.hypot(dx, dy) || 1e-12;
+    let idx = -1, dmax = tol;
+    for (let i = a + 1; i < b; i++) {
+      const d = Math.abs((p[i][0] - A[0]) * dy - (p[i][1] - A[1]) * dx) / L;
+      if (d > dmax) {
+        dmax = d;
+        idx = i;
+      }
+    }
+    if (idx >= 0) {
+      keep[idx] = 1;
+      stack.push([a, idx], [idx, b]);
+    }
+  }
+  return p.filter((_, i) => keep[i]);
+}
+
+/** Gaussian low-pass of a profile, `sigma` in samples, ends clamped. */
+export function gaussian1d(src: Float64Array, sigma: number): Float64Array {
+  if (!(sigma >= 0.3)) return src;
+  const r = Math.ceil(3 * sigma);
+  const wts = new Float64Array(r + 1);
+  let total = 0;
+  for (let j = 0; j <= r; j++) {
+    wts[j] = Math.exp(-(j * j) / (2 * sigma * sigma));
+    total += j ? 2 * wts[j] : wts[j];
+  }
+  const last = src.length - 1;
+  const out = new Float64Array(src.length);
+  for (let k = 0; k <= last; k++) {
+    let sum = wts[0] * src[k];
+    for (let j = 1; j <= r; j++) sum += wts[j] * (src[Math.max(0, k - j)] + src[Math.min(last, k + j)]);
+    out[k] = sum / total;
+  }
+  return out;
+}
+
 function strataOutline(def: PlateDef, hf: HeightField, v: Values): Shape {
   const { u0, u1, plane } = def;
   const step = Math.max(0.5, v.sampleStep);
@@ -389,7 +459,7 @@ function tunedOutline(def: PlateDef, height: number, v: Values): Shape {
 }
 
 /** The plate outline: the given top line (left to right), the sides, and the embedded tab. */
-function outlineUnder(def: PlateDef, top: Path, v: Values): Shape {
+function outlineUnder(def: PlateDef, top: Path, v: Values, tol = 0.01): Shape {
   const { u0, u1 } = def;
   const e = embedOf(v);
   const inset = Math.max(0, Math.min(v.tabInset, (u1 - u0) / 2 - 5));
@@ -399,7 +469,7 @@ function outlineUnder(def: PlateDef, top: Path, v: Values): Shape {
   else poly.push([u0, 0], [u1, 0]);
   for (let k = top.length - 1; k >= 0; k--) poly.push(top[k]);
   if (e > 0 && inset > 0) poly.push([u0, 0], [u0 + inset, 0]);
-  return simplifyShape(union([poly]), 0.01);
+  return simplifyShape(union([poly]), tol);
 }
 
 function formOutline(def: PlateDef, mesh: IndexedMesh, v: Values): Shape {
@@ -1278,7 +1348,8 @@ export function slice(input: SliceInput): SliceResult {
     // outline still grows an embed tab when one is asked for
     if (tune) return tunedOutline(d, tune.model === 'free' ? tune.cut - e : tune.cut, v);
     if (isFlat) return flat ? flatOutline(flat, flatFootprint(v), (d.index + 0.5) * t) : [];
-    return hf ? strataOutline(d, hf, v) : [];
+    if (!hf) return [];
+    return input.mapTerrain ? mapOutline(d, hf, v) : strataOutline(d, hf, v);
   });
 
   // 1a. trim every plate to the top image's silhouette

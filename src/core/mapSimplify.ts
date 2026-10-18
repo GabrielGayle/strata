@@ -10,8 +10,10 @@ export interface MapSimplifyOptions {
   kerfMm?: number;
   /** Ground metres per pixel (for kerf-derived defaults). */
   pixelSizeM?: number;
-  /** Box-blur radius in pixels after cleanup (0 = off). */
+  /** Box-blur radius in pixels after cleanup (0 = off). Ignored when `smoothSigmaPx` is set. */
   smoothRadiusPx?: number;
+  /** Gaussian sigma in pixels after cleanup (0 = off); smooths evenly in every direction. */
+  smoothSigmaPx?: number;
 }
 
 export interface MapSimplifyResult {
@@ -137,6 +139,56 @@ function boxBlur(src: Float32Array, w: number, h: number, r: number): Float32Arr
 }
 
 /**
+ * Gaussian blur of the finite cells (nodata stays nodata and doesn't bleed in),
+ * edges clamped. Separable, so it is round where a box is square.
+ */
+export function gaussianBlur(src: Float32Array, w: number, h: number, sigma: number): Float32Array {
+  if (!(sigma >= 0.3)) return src;
+  const r = Math.ceil(3 * sigma);
+  const k = new Float64Array(2 * r + 1);
+  for (let j = -r; j <= r; j++) k[j + r] = Math.exp(-(j * j) / (2 * sigma * sigma));
+  const rowSum = new Float64Array(src.length);
+  const rowWt = new Float64Array(src.length);
+  for (let y = 0; y < h; y++) {
+    const base = y * w;
+    for (let x = 0; x < w; x++) {
+      let sum = 0;
+      let wt = 0;
+      for (let j = -r; j <= r; j++) {
+        const xx = x + j;
+        const v = src[base + (xx < 0 ? 0 : xx > w - 1 ? w - 1 : xx)];
+        if (isFiniteNum(v)) {
+          sum += k[j + r] * v;
+          wt += k[j + r];
+        }
+      }
+      rowSum[base + x] = sum;
+      rowWt[base + x] = wt;
+    }
+  }
+  const out = new Float32Array(src.length);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!isFiniteNum(src[i])) {
+        out[i] = src[i];
+        continue;
+      }
+      let sum = 0;
+      let wt = 0;
+      for (let j = -r; j <= r; j++) {
+        const yy = y + j;
+        const jj = (yy < 0 ? 0 : yy > h - 1 ? h - 1 : yy) * w + x;
+        sum += k[j + r] * rowSum[jj];
+        wt += k[j + r] * rowWt[jj];
+      }
+      out[i] = wt > 0 ? sum / wt : src[i];
+    }
+  }
+  return out;
+}
+
+/**
  * Remove small elevated islands and small depressions in the elevation field.
  */
 export function simplifyMetricGrid(grid: Float32Grid, opts: MapSimplifyOptions = {}): MapSimplifyResult {
@@ -203,8 +255,12 @@ export function simplifyMetricGrid(grid: Float32Grid, opts: MapSimplifyOptions =
     fillFromBorder(pixels, label, id);
   });
 
-  const sr = opts.smoothRadiusPx ?? 1;
-  const out: Float32Array = sr > 0 ? boxBlur(data, w, h, sr) : data;
+  let out: Float32Array;
+  if (opts.smoothSigmaPx != null) out = gaussianBlur(data, w, h, opts.smoothSigmaPx);
+  else {
+    const sr = opts.smoothRadiusPx ?? 1;
+    out = sr > 0 ? boxBlur(data, w, h, sr) : data;
+  }
   return { grid: { ...grid, data: out }, lostFeatures: lost };
 }
 

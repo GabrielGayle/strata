@@ -22,6 +22,9 @@ export interface EngraveSpec {
   preset?: string;
 }
 
+/** Default Gaussian width (sigma, mm on the model) for the map elevation grid: about what the old 3×3 box gave at 1 mm per cell. */
+export const MAP_SMOOTH_MM = 0.75;
+
 export interface MapSpec {
   kind: 'map';
   /** WGS84 west, south, east, north (degrees). */
@@ -48,6 +51,11 @@ export interface MapSpec {
    * Flat stacks always snap; upright stacks keep continuous heights unless this is on.
    */
   terraced?: boolean;
+  /**
+   * Gaussian smoothing of the elevation grid, as a width (sigma) in millimetres on
+   * the model, so it smooths the same amount at any grid size. Default MAP_SMOOTH_MM.
+   */
+  smoothMm?: number;
   /** Resolved vertical exaggeration factor when auto was requested. */
   exaggerationFactor?: number;
   /** Human readout, e.g. "×21". */
@@ -200,6 +208,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   const commemorativeText =
     typeof o.commemorativeText === 'string' && o.commemorativeText.trim() ? o.commemorativeText.trim() : undefined;
   const buildingClampM = num(o.buildingClampM);
+  const smoothMm = num(o.smoothMm);
   const sunkenFrame = cleanSunkenFrame(o.sunkenFrame);
   const giftSizeId = typeof o.giftSizeId === 'string' && o.giftSizeId.trim() ? o.giftSizeId.trim() : undefined;
   return {
@@ -218,6 +227,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(cacheDir ? { cacheDir } : {}),
     ...(layerBudget ? { layerBudget } : {}),
     ...(o.terraced === true ? { terraced: true } : {}),
+    ...(smoothMm != null && smoothMm >= 0 ? { smoothMm } : {}),
     ...(exaggerationFactor != null && exaggerationFactor > 0 ? { exaggerationFactor } : {}),
     ...(exaggerationReadout ? { exaggerationReadout } : {}),
     ...(layerBreaksM?.length ? { layerBreaksM } : {}),

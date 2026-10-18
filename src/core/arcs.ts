@@ -116,7 +116,7 @@ export function fitArcs(path: Path, tol: number, closed = true): Seg[] {
       ja = j;
       arc = f;
     }
-    if (arc && ja > jl) {
+    if (arc && ja >= jl) {
       out.push({ kind: 'arc', a: P[i], b: P[ja], c: arc.c, r: arc.r, sweep: arc.sweep });
       i = ja;
     } else {

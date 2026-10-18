@@ -1,7 +1,7 @@
 import proj4 from 'proj4';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Float32Grid } from '../src/core/mapGrid';
-import { gridSampleBilinear } from '../src/core/mapGrid';
+import { gridSampleBicubic } from '../src/core/mapGrid';
 import { metricBounds, pickMetricCrs, projectionLattice, reprojectResample } from '../src/core/mapProject';
 import { simplifyMetricGrid } from '../src/core/mapSimplify';
 import { reliefMetres } from '../src/core/mapExaggeration';
@@ -28,7 +28,7 @@ function worstVsExact(source: Float32Grid, dest: Float32Grid, useMax: boolean): 
   const at = (x: number, y: number) => {
     const [lon, lat] = proj4(dest.crs, 'EPSG:4326', [x, y]);
     const [mx, my] = proj4('EPSG:4326', 'EPSG:3857', [lon, lat]);
-    return gridSampleBilinear(source, mx, my, true);
+    return gridSampleBicubic(source, mx, my, true);
   };
   const diffs: number[] = [];
   for (let row = 0; row < dest.h; row += 7) {
@@ -81,7 +81,7 @@ describe('projection lattice', () => {
     expect(worst).toBeLessThan(0.05);
   });
 
-  it('resamples Neasden the same as per-cell proj4, for bilinear and max-pool', async () => {
+  it('resamples Neasden the same as per-cell proj4, for bicubic and max-pool', async () => {
     const source = await neasdenSource();
     const spec = defaultMapSpec({ bbox: NEASDEN_BBOX, source: 'terrarium' });
     const dtm = reprojectResample(source, { ...spec, model: 'dtm' });
