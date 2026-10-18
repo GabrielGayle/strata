@@ -67,6 +67,13 @@ Vite dev and preview serve `/api/ea-proxy` and `/api/overpass` so browser map bu
 
 `playwright.config.ts` and `playwright.live.config.ts` share `playwright.env.ts` for **`STRATA_E2E_PORT`** (default **4173**) on both `baseURL` and `webServer` (`vite preview --strictPort`). Fixture e2e: `reuseExistingServer` is **false when `CI` is set** (a leftover preview on 4173 is never reused). Live (`LIVE_MAP=1 npm run e2e:live`, and `LIVE_MAP=1` on the fixture config): **never** reuses an existing server, CI or not. Occupied default port: `CI=1 STRATA_E2E_PORT=4199 npm run e2e`.
 
+### UI smoke + accessibility (WCAG 2.2 AA)
+
+`npm run e2e:smoke` runs `e2e/ui-smoke.spec.ts` (every workspace tab, every parameter group fold, toolbar menus, a preset, no page errors) and `e2e/a11y.spec.ts` (axe-core on every workspace tab in Paper, Dusk and Ink, plus keyboard tabs). Rules for new UI:
+- Tabs: use `Tab` from `src/ui/Tab.tsx` (li is the focusable tab, inner `a` has no href; arrows/Home/End move). Never put a focusable control inside a tab; a close ✕ is `tabIndex={-1}` with a keyboard shortcut instead.
+- Text on silver (`#c0c0c0`) or on white sunken lists/tables gets the silver-safe `--muted/--ok/--warn/--err` from `form-chrome.css`; add new silver containers to that selector rather than hard-coding greys. Themed surfaces (`.view`, panels) use `--ink`/`--muted`.
+- `target-size` is deliberately not checked: the 18px 98.css icon buttons are the look.
+
 ## 3D skills (all agents)
 
 `.claude/skills/` holds vendored three.js / React Three Fiber guidance (sources and pinned commits in `.claude/skills/README.md`). Claude Code loads them automatically. Cursor, Grok and other agents: before changing 3D code (`src/ui/Viewport*.tsx`, `ViewFromPoint.tsx`, anything using `three` or `@react-three/*`), read the matching `SKILL.md`:

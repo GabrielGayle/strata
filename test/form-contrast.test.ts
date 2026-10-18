@@ -97,7 +97,7 @@ describe('form + chrome contrast (WCAG AA)', () => {
       const { fg, panel, panel2 } = mapTabLabelContrast(mode);
       expect(meetsWcagAaNormal(fg, panel)).toBe(true);
       expect(meetsWcagAaNormal(fg, panel2)).toBe(true);
-      const muted = mode === 'light' ? '#6a6862' : '#9b998f';
+      const muted = mode === 'light' ? '#5c5a55' : '#9b998f';
       expect(meetsWcagAaNormal(muted, panel2)).toBe(true);
     }
     expect(meetsWcagAaNormal(CHROME.fg, THEME_SURFACES.dark.panel2)).toBe(false);
