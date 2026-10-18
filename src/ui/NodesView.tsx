@@ -3,7 +3,7 @@ import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, type ShelfLayout, type ShelfSpec } from '../core/shelf';
 import { DEFAULT_ORIGIN, ORIGIN_NAMES, type OriginRef, type WorldOrigin } from '../core/origin';
-import { FIELDS, fitShelf, rainbowPlates, type NumKey } from './ShelfPanel';
+import { FIELDS, fitShelf, rainbowPlates, ShelfFieldControl, type NumKey } from './ShelfPanel';
 
 /**
  * The postcard shelf as a chain of nodes, read left to right, in the spirit of
@@ -159,21 +159,7 @@ export default function NodesView() {
   const shelfNum = (key: NumKey) => {
     const f = FIELDS.find((x) => x.key === key)!;
     if (!s || (f.show && !f.show(s))) return null;
-    return (
-      <label key={key} className="nd-field" {...help(f.hint)}>
-        <span>{f.label}</span>
-        <input
-          type="number"
-          step={f.step}
-          aria-label={f.hint}
-          value={+s[key].toFixed(2)}
-          onChange={(e) => {
-            const x = parseFloat(e.target.value);
-            if (Number.isFinite(x)) editShelf({ [key]: key === 'rows' ? Math.max(1, Math.round(x)) : x }, `shelf:${key}`);
-          }}
-        />
-      </label>
-    );
+    return <ShelfFieldControl key={key} spec={s} field={f} className="nd-field" help={help(f.hint)} />;
   };
   const paramNum = (id: string, label: string, hint: string, step = 1) => (
     <label className="nd-field" {...help(hint)}>
