@@ -24,6 +24,7 @@ import { share } from './memo';
 import { carveShadow, type ShadowReport } from './shadow';
 import type { Project } from './project';
 import { buildObjects, type ObjectBuild } from './objects';
+import { candleObjects } from './candles';
 import { originFrame, toWorld, type Frame } from './origin';
 import { baseTop } from './slicer';
 import { basePlan } from './base';
@@ -261,11 +262,13 @@ export function createFrontPipeline() {
     const laid = stage('Postcard shelf', [shelfLayoutKey(project.shelf), baseTop(v), project.shelf?.unobstructed ? origin : 0], () =>
       layoutShelfResult(project.shelf, baseTop(v), project.shelf?.unobstructed ? origin : undefined),
     );
-    const objects = stage('Objects', [project.objects, laid, origin], () =>
-      buildObjects([...(project.objects ?? []).map((o) => toWorld(o, origin)), ...laid.cards.map((o) => toWorld(o, origin, true))]),
+    const candles = stage('Candelabra', [project.candles, baseTop(v)], () => candleObjects(project.candles, baseTop(v)));
+    const objects = stage('Objects', [project.objects, laid, candles, origin], () =>
+      buildObjects([...(project.objects ?? []).map((o) => toWorld(o, origin)), ...laid.cards.map((o) => toWorld(o, origin, true)), ...candles.map((o) => toWorld(o, origin, true))]),
     );
     const cardVisibility = stage('Card visibility', [objects, shelfViewKey(project.shelf)], () => reportShelfVisibility(objects, project.shelf));
     const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder }));
+    const holders = objects.flatMap(({ object: o }) => (o.holder ? [{ x: o.x, z: o.z, r: o.w / 2, bottom: o.y - o.h / 2, ry: o.ry, slack: o.clearance, holder: o.holder }] : []));
     const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, !!mapTop], () =>
       share(
         cache.get('Slice plates')?.value as SliceResult | undefined,
@@ -280,6 +283,7 @@ export function createFrontPipeline() {
           moves: project.moves,
           materialFor,
           objects: cutters,
+          candles: holders,
           mapTerrain: !!mapTop,
         }),
       ),

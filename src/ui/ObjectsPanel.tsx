@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import ShelfPanel from './ShelfPanel';
+import CandlePanel from './CandlePanel';
 import { KIND_NAMES, newObject, type CutObject, type ObjectKind } from '../core/objects';
 
 type NumKey = 'w' | 'h' | 'd' | 'x' | 'y' | 'z' | 'rx' | 'ry' | 'rz' | 'clearance';
@@ -35,7 +36,10 @@ const DEFAULT_HINT = 'Objects are cut out of every plate they pass through, so t
 
 /** Placed objects and the postcard shelf, in the 3D view. */
 export default function ObjectsPanel() {
-  const [view, setView] = useState<'objects' | 'shelf'>(() => (useStore.getState().project.shelf ? 'shelf' : 'objects'));
+  const [view, setView] = useState<'objects' | 'shelf' | 'candles'>(() => {
+    const p = useStore.getState().project;
+    return p.candles ? 'candles' : p.shelf ? 'shelf' : 'objects';
+  });
   return (
     <div className="overlay movepanel appearance objects">
       <div className="mp-row">
@@ -45,8 +49,11 @@ export default function ObjectsPanel() {
         <button className={`btn sm ${view === 'shelf' ? 'on' : ''}`} onClick={() => setView('shelf')} title="A list of postcards laid along an arc, each held in a notch">
           Postcard shelf
         </button>
+        <button className={`btn sm ${view === 'candles' ? 'on' : ''}`} onClick={() => setView('candles')} title="Candlesticks and tealights along a curve, a path or a shape, the plates rising to hold them">
+          Candelabra
+        </button>
       </div>
-      {view === 'shelf' ? <ShelfPanel /> : <ObjectList />}
+      {view === 'shelf' ? <ShelfPanel /> : view === 'candles' ? <CandlePanel /> : <ObjectList />}
     </div>
   );
 }

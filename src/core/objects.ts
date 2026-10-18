@@ -31,6 +31,10 @@ export interface CutObject {
   seat?: number;
   /** Shelf cards: plate kept either side of the notch above the trimmed tops (mm). */
   shoulder?: number;
+  /** How it is drawn: candles read as wax, tealights as a metal cup, a hidden cutter not at all. */
+  look?: 'candle' | 'tealight' | 'hidden';
+  /** Candlesticks held by a target: fins standing round it, gripping it from every side. */
+  holder?: { fins: number; reach: number; grip: number; spin: number };
 }
 
 export const KIND_NAMES: Record<ObjectKind, string> = {

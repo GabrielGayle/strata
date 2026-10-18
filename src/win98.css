@@ -648,3 +648,8 @@ button.card.sel {
 .round-steps button {
   min-width: 28px;
 }
+
+/* object panels size their text inputs; keep wrapped checkboxes square */
+.appearance .ap-edit label > input[type='checkbox'] {
+  width: 13px;
+}
