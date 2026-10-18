@@ -35,7 +35,8 @@ export interface MapTerrainUi {
   message: string;
   error?: string;
 }
-export type Snap = 'iso' | 'front' | 'side' | 'top';
+/** `shelf` looks from the postcard shelf's Unobstructed view angle. */
+export type Snap = 'iso' | 'front' | 'side' | 'top' | 'shelf';
 
 export interface UiState {
   tab: Tab;

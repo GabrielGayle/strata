@@ -50,6 +50,9 @@ export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { di
           ? new THREE.Vector3(-f.stack[0], 0, -f.stack[1])
           : new THREE.Vector3(f.stack[0], 0, f.stack[1]),
       };
+    case 'shelf':
+      if (model.shelfEye) return { dir: new THREE.Vector3(...model.shelfEye), up };
+      return { dir: new THREE.Vector3(0.95, 0.75, 1.25).normalize(), up };
     default:
       return { dir: new THREE.Vector3(0.95, 0.75, 1.25).normalize(), up };
   }

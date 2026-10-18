@@ -4,6 +4,8 @@ import { deserialize, newProject, serialize } from '../src/core/project';
 import { newObject, type CutObject } from '../src/core/objects';
 import { DEFAULT_SHELF, MAGENTA_EYE_SHELF, SHELF_SOLVE_KEYS, cleanShelf, clearShelfOverride, commitShelfLock, shelfCards, withShelfOverride } from '../src/core/shelf';
 import { formatSolverDelta, layoutShelf, solveUnobstructed, solverDeltas } from '../src/core/shelfSolve';
+import { sightCard, sightSection } from '../src/core/sightLine';
+import { shapeBBox } from '../src/core/geom2d';
 import { assertExportable, fitExportErrors } from '../src/core/exporters';
 import {
   DEFAULT_FLEX_MM,
@@ -239,5 +241,39 @@ describe('view defaults', () => {
     expect(v.maxHiddenPct).toBe(2);
     expect(v.flexMm).toBe(1.5);
     expect(v.unobstructed).toBe(false);
+  });
+});
+
+describe('plates in a card’s line of sight', () => {
+  // Gabriel's case: bands, cards lying almost flat, camera 8° az / 31° el
+  const gabriel = { ...DEFAULT_SHELF, layout: 'bands' as const, lean: 90, viewAzimuth: 7.68, viewElevation: 30.94, overrides: { lean: true as const } };
+
+  it('counts plates standing in front of a card as hiding it', () => {
+    const m = createPipeline()({ ...newProject(), shelf: { ...gabriel, unobstructed: false } }, assets);
+    expect(m.cardVisibility!.hiddenCount).toBeGreaterThan(0);
+  });
+
+  it('cuts the plates back out of every sight line when Unobstructed view is on', () => {
+    for (const trim of [true, false]) {
+      const off = createPipeline()({ ...newProject(), shelf: { ...gabriel, trim, unobstructed: false } }, assets);
+      const on = createPipeline()({ ...newProject(), shelf: { ...gabriel, trim, unobstructed: true } }, assets);
+      expect(on.cardVisibility!.hiddenCount).toBe(0);
+      const area = (m: Model) => m.sliced.parts.reduce((a, p) => a + p.area, 0);
+      expect(area(on)).toBeLessThan(area(off));
+      expect(on.shelfEye).toBeDefined();
+    }
+  });
+
+  it('keeps the seat strip that holds each card', () => {
+    const plane = { origin: [0, 0, 0] as [number, number, number], normal: [1, 0, 0] as [number, number, number], u: [0, 0, 1] as [number, number, number], v: [0, 1, 0] as [number, number, number] };
+    // an upright card facing +Z, bottom edge at y = 0, crossing the plate at x = 0
+    const c = card({ id: 'shelf1', name: 'A', w: 100, h: 80, y: 40, z: 0 });
+    const sight = sightCard(c, 18, 0)!;
+    const sec = sightSection(sight, [0, 0, 1], plane, 3);
+    const bb = shapeBBox(sec);
+    expect(bb.minY).toBeCloseTo(18, 3);
+    expect(bb.maxY).toBeCloseTo(80, 3);
+    expect(bb.minX).toBeLessThan(1);
+    expect(bb.maxX).toBeGreaterThan(1000);
   });
 });

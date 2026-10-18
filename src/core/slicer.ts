@@ -31,6 +31,7 @@ import { offsetPlane, planeToWorld, sectionShape, type Plane, type V3 } from './
 import { stackFrame, type HeightField } from './heightfield';
 import { flatFootprint, flatGrid, flatOutline, flatPinPoints, flatStampCut, outlinePaths, pinFits, type FlatGrid } from './flatstack';
 import type { IndexedMesh } from './forms';
+import { sightCut, type SightCard } from './sightLine';
 import { boxBlur, distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
 import { MAX_TUNED, MIN_TUNED, tunePlates, tuningActive, type PlateTune } from './tuning';
@@ -201,6 +202,8 @@ export interface SliceInput {
   materialFor?: (key: string) => string;
   /** Placed objects (postcards, boxes…) cut out of every plate they pass through, each with its own clearance. */
   objects?: { mesh: IndexedMesh; clearance: number; seat?: number; shoulder?: number }[];
+  /** Unobstructed view: plate material in these sight lines (card face to eye) is cut away. */
+  sight?: { eye: V3; cards: SightCard[] } | null;
   /** Map terrain: skip image impression / strata-flow flatten; heights come from the map field. */
   mapTerrain?: boolean;
   /** Candlesticks held by target fins: where each stands and how its fins grip it. */
@@ -1424,6 +1427,11 @@ export function slice(input: SliceInput): SliceResult {
     // the top impression rounds its own floor (topCarve), so it is only cut out here
     if (carveCut.length) shape = v.cutSmooth > 0.05 ? simplifyShape(difference(shape, carveCut), SMOOTH_TOL / 2) : difference(shape, carveCut);
     if (seats) shape = difference(shape, seatTrim(seats.plates[di], seats.floor));
+    // unobstructed view: push the plate back out of every card's sight line
+    if (input.sight) {
+      const clear = sightCut(input.sight.cards, input.sight.eye, def.plane, t);
+      if (clear.length) shape = difference(shape, clear);
+    }
     // all-edges rounding happens before the functional cuts below, so they stay crisp
     if (v.edgeRound > 0.05 || v.edgeRoundIn > 0.05) {
       const before = shape;
