@@ -1909,6 +1909,13 @@ canvas.thumb {
   color: var(--accent, #b45309);
   white-space: normal;
 }
+.viewpoint .vp-match {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px 6px;
+  font-size: 11px;
+}
 /* appearance: material buckets */
 .overlay.appearance {
   /* under the view buttons, clear of the toggles on the right */
