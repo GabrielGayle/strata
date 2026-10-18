@@ -130,7 +130,7 @@ function ShortcutSheet() {
 
 const byText = (sel: string, re: RegExp) => [...document.querySelectorAll<HTMLElement>(sel)].find((el) => re.test(el.textContent ?? '') && el.offsetParent !== null) ?? null;
 
-const TOUR: { title: string; body: string; tab?: Tab; target: () => HTMLElement | null }[] = [
+const TOUR: { title: string; body: string; tab?: Tab; group?: string; target: () => HTMLElement | null }[] = [
   {
     title: 'Composer',
     body: 'Image / Graphic › Composer places several pictures, patterns, drawings and sounds freely on a surface, and moves them between Top, Front and Side.',
@@ -161,6 +161,7 @@ const TOUR: { title: string; body: string; tab?: Tab; target: () => HTMLElement 
   {
     title: 'Sun study',
     body: 'Switch Sun on to set the place and date, then scrub the sun across the day in 3D. Press ? any time for shortcuts or to see this tour again.',
+    group: 'Sun',
     target: () => document.querySelector<HTMLElement>('.left .section[data-group="Sun"]'),
   },
 ];
@@ -176,6 +177,11 @@ function Tour({ step }: { step: number }) {
 
   useEffect(() => {
     if (s.tab) useStore.getState().setUi({ tab: s.tab });
+    // left panels start closed, so open the one this step points at
+    if (s.group) {
+      const st = useStore.getState();
+      st.setUi({ collapsed: { ...st.ui.collapsed, [s.group]: false } });
+    }
     let first = true;
     // follow the target as panes move, panels scroll and views mount
     const find = () => {
