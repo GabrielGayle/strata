@@ -19,6 +19,8 @@ import { isProjectZipName, projectFromZip } from '../core/projectZip';
 import { LibraryBrowser } from './LibraryBrowser';
 import { libraryThumbFromProject } from '../state/libraryDescribe';
 import { recordLibrarySave } from '../state/recordLibrary';
+import { trackBusy } from './busy';
+import { Loading } from './BusyWindow';
 
 const host = () => (typeof location !== 'undefined' ? location.host : '');
 
@@ -186,7 +188,7 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
   const run = async (what: () => Promise<void>) => {
     setBusy(true);
     try {
-      await what();
+      await trackBusy({ scene: 'save', title: 'Projects', detail: 'Reading and writing your saved projects…' }, what());
     } catch (e) {
       toast(`Library: ${(e as Error).message}`);
     } finally {
@@ -508,7 +510,7 @@ export function SavesPanel() {
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     try {
-      await fn();
+      await trackBusy({ scene: 'save', title: 'Projects', detail: 'Reading and writing your saved projects…' }, fn());
     } catch (e) {
       toast(`Library: ${(e as Error).message}`);
     } finally {
@@ -602,7 +604,7 @@ function ShareDialog({ onClose }: { onClose: () => void }) {
     <Modal title="Share link" onClose={onClose}>
       <div className="lib-share">
         {!res ? (
-          <div className="empty">Making the link…</div>
+          <Loading label="Making the link…" />
         ) : (
           <>
             <p>{copied ? 'Copied to the clipboard.' : copied === false ? 'Copy the link below.' : 'Copying…'} Anyone who opens it gets this design's settings: parameters, pour, plate moves, materials and variants.</p>

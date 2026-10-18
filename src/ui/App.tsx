@@ -16,6 +16,7 @@ import HelpLayer, { HelpButton } from './Help';
 import DesignBox from './DesignBox';
 import { designShortcutFromKey } from './designShortcut';
 import { useMapTerrainBuild } from './useMapTerrainBuild';
+import { BusyLight, BusyWindows, useAppBusy } from './BusyWindow';
 import { isMapTerrainFailure, reportMapTerrainFailure, runFrontPipelineSafe } from './mapTerrainError';
 import { isMapDepth, mapMasterWidthMm, mapScaleMmPerM, mapTrueRangePlateMm } from '../core/mapPlateHeight';
 import { flatStackHeightMm, flatStackIsCapped } from '../core/mapGeometryReadout';
@@ -177,6 +178,7 @@ export default function App() {
   );
   const [designOpen, setDesignOpen] = useState(false);
   const mapTerrain = useStore((s) => s.mapTerrain);
+  useAppBusy(!!model.stale);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
   const stackRodCount = model.sliced.stackRods?.rods.length ?? 0;
@@ -262,9 +264,11 @@ export default function App() {
               {mapTerrain.message}{mapTerrain.error ? `: ${mapTerrain.error}` : ''}
             </p>
           )}
+          <BusyLight />
           <p className="status-bar-field">mm</p>
           <HelpButton />
         </footer>
+        <BusyWindows />
         {ui.toast && (
           <div className="toast window" role="status">
             <div className="title-bar">

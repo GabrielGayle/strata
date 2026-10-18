@@ -11,6 +11,8 @@ import { clock, shiftSite, siteOf, sunTimes } from '../core/sun';
 import { SunBar } from './SunStudy';
 import { installCardHtml } from '../core/installCard';
 import { receiveShadowDrops } from './dropInbox';
+import { beginBusy, type BusyHandle } from './busy';
+import { BusyNote, Loading } from './BusyWindow';
 
 // only needed once a video is chosen
 const VideoPicker = lazy(() => import('./VideoPicker'));
@@ -142,7 +144,11 @@ function ScreenCanvas({ zoom, soft }: { zoom: ScreenZoom; soft: boolean }) {
   return (
     <>
       <canvas ref={ref} className={`shadow-wall ${zoom === 'wall' ? 'whole' : ''}`} aria-label="The screen behind the piece at this time" />
-      {busy && <span className="sp-busy">Sharpening…</span>}
+      {busy && (
+        <span className="sp-busy">
+          <BusyNote>Sharpening…</BusyNote>
+        </span>
+      )}
     </>
   );
 }
@@ -237,18 +243,41 @@ function FitPanel() {
   const setParams = useStore((s) => s.setParams);
   const [state, setState] = useState<{ done: number; total: number; tries: FitTry[] } | null>(null);
   const stop = useRef(false);
-  useEffect(() => () => void (stop.current = true), []);
+  const progress = useRef<BusyHandle | null>(null);
+  useEffect(
+    () => () => {
+      stop.current = true;
+      progress.current?.end();
+    },
+    [],
+  );
   const run = () => {
     const layouts = fitLayouts(v);
     const pipe = createFrontPipeline();
     const tries: FitTry[] = [];
     stop.current = false;
     setState({ done: 0, total: layouts.length, tries });
+    progress.current?.end();
+    const h = beginBusy({
+      scene: 'shadow',
+      title: 'Fit plates',
+      detail: 'Trying plate counts and heights against this sun…',
+      done: 0,
+      total: layouts.length,
+      cancel: () => {
+        stop.current = true;
+        h.end();
+        setState((s) => (s ? { ...s, total: s.done } : s));
+      },
+    });
+    progress.current = h;
     const step = (k: number) => {
-      if (stop.current) return;
+      if (stop.current) return h.end();
       tries.push(tryLayout(pipe, project, assets, v, layouts[k]));
       setState({ done: k + 1, total: layouts.length, tries: [...tries] });
+      h.update({ done: k + 1 });
       if (k + 1 < layouts.length) window.setTimeout(() => step(k + 1), 0);
+      else h.end();
     };
     window.setTimeout(() => step(0), 30);
   };
@@ -446,7 +475,7 @@ export default function ShadowView() {
             </span>
           </div>
           {video && (
-            <Suspense fallback={<p className="note">Opening the video…</p>}>
+            <Suspense fallback={<p className="note"><BusyNote>Opening the video…</BusyNote></p>}>
             <VideoPicker
               key={video.name + video.size}
               file={video}
@@ -539,7 +568,7 @@ export default function ShadowView() {
             )}
           </div>
           <div className={`sp-wall ${candle ? 'night' : ''}`}>
-            {rep ? <ScreenCanvas zoom={v.shadowScreen === 'wall' ? zoom : 'picture'} soft={soft} /> : <div className="empty">{needs ? 'Nothing carved yet.' : frames.length ? 'Carving…' : 'Add a picture to start.'}</div>}
+            {rep ? <ScreenCanvas zoom={v.shadowScreen === 'wall' ? zoom : 'picture'} soft={soft} /> : needs || !frames.length ? <div className="empty">{needs ? 'Nothing carved yet.' : 'Add a picture to start.'}</div> : <Loading label="Carving…" />}
             {v.sunOn && !candle && <SunBar model={model} />}
           </div>
           <p className="note">
