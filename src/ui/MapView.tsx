@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { defaultMapSpec, type MapModel, type MapSource, type MapSpec, type MapWater, type LayerBudgetMode } from '../core/mapSpec';
 import { MAP_ENGRAVE_PRESETS, type MapEngravePresetId } from '../core/mapEngravePresets';
 import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
@@ -109,6 +109,12 @@ export default function MapView() {
     setEast(String(bbox[2]));
     setNorth(String(bbox[3]));
   }, []);
+
+  const bboxKey = existing?.bbox?.join(',') ?? '';
+  useEffect(() => {
+    if (!existing?.bbox) return;
+    applyBbox(existing.bbox);
+  }, [bboxKey, existing?.bbox, applyBbox]);
 
   const search = async () => {
     setBusy(true);
@@ -276,10 +282,10 @@ export default function MapView() {
         <fieldset>
           <legend>Bbox (WGS84)</legend>
           <div className="map-bbox-grid">
-            <label>West <input inputMode="decimal" value={west} onChange={(e) => setWest(e.target.value)} /></label>
-            <label>South <input inputMode="decimal" value={south} onChange={(e) => setSouth(e.target.value)} /></label>
-            <label>East <input inputMode="decimal" value={east} onChange={(e) => setEast(e.target.value)} /></label>
-            <label>North <input inputMode="decimal" value={north} onChange={(e) => setNorth(e.target.value)} /></label>
+            <label>West <input data-testid="map-bbox-west" inputMode="decimal" value={west} onChange={(e) => setWest(e.target.value)} /></label>
+            <label>South <input data-testid="map-bbox-south" inputMode="decimal" value={south} onChange={(e) => setSouth(e.target.value)} /></label>
+            <label>East <input data-testid="map-bbox-east" inputMode="decimal" value={east} onChange={(e) => setEast(e.target.value)} /></label>
+            <label>North <input data-testid="map-bbox-north" inputMode="decimal" value={north} onChange={(e) => setNorth(e.target.value)} /></label>
           </div>
         </fieldset>
         {searchStatus && <p className="map-window-status">{searchStatus}</p>}
