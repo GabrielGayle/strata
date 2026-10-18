@@ -273,6 +273,7 @@ function planSvg(m: Model, view: View, names: Map<string, string>): string {
 
   // labels
   const labels: string[] = [];
+  let thinned = 0;
   const leftEdge = f.X(b.minX), rightEdge = f.X(b.maxX), topEdge = f.Y(b.maxY);
   if (!flat) {
     const byKey = new Map<string, Part[]>();
@@ -280,14 +281,37 @@ function planSvg(m: Model, view: View, names: Map<string, string>): string {
     const P = [...byKey.values()].filter((ps) => ps[0].family === 'P').sort((a, c) => a[0].index - c[0].index);
     const spacing = P.length > 1 ? Math.abs(f.Y(view.plan(P[1][0].plane.origin)[1]) - f.Y(view.plan(P[0][0].plane.origin)[1])) : 99;
     const alternate = spacing < font + 3;
-    P.forEach((ps, i) => {
+    // where plates stand closer than a line of text, name what fits on each side (first and last always) rather than print them over each other
+    const gap = font + 2;
+    const rows = P.map((ps) => {
       const pts = ps.flatMap((p) => foot.get(p)!.flat()).map(([x, y]) => [f.X(x), f.Y(y)] as P2);
-      const y = pts.reduce((a, q) => a + q[1], 0) / pts.length;
-      const left = alternate && i % 2 === 1;
+      return { ps, pts, y: pts.reduce((a, q) => a + q[1], 0) / pts.length };
+    });
+    const placed: { i: number; left: boolean }[] = [];
+    const lastY = { left: -Infinity, right: -Infinity };
+    const fits = (y: number, left: boolean) => Math.abs(y - (left ? lastY.left : lastY.right)) >= gap;
+    rows.forEach((r, i) => {
+      const order = alternate ? (i % 2 ? [true, false] : [false, true]) : [false];
+      const left = order.find((l) => fits(r.y, l));
+      if (left === undefined) {
+        if (i !== rows.length - 1) return;
+        // the last plate always gets its name: drop whichever neighbour is in its way
+        const side = placed.length && placed[placed.length - 1].left ? true : false;
+        while (placed.length && placed[placed.length - 1].left === side && Math.abs(rows[placed[placed.length - 1].i].y - r.y) < gap && placed[placed.length - 1].i !== 0) placed.pop();
+        placed.push({ i, left: side });
+        return;
+      }
+      placed.push({ i, left });
+      if (left) lastY.left = r.y;
+      else lastY.right = r.y;
+    });
+    if (placed.length < rows.length) thinned = rows.length;
+    for (const { i, left } of placed) {
+      const { ps, pts, y } = rows[i];
       const end = left ? Math.min(...pts.map((q) => q[0])) : Math.max(...pts.map((q) => q[0]));
       const lx = left ? leftEdge - 8 : rightEdge + 8;
       labels.push(`<line x1="${px(end + (left ? -2 : 2))}" y1="${px(y)}" x2="${px(lx + (left ? 2 : -2))}" y2="${px(y)}" stroke="#999" stroke-width="0.5"/><text x="${px(lx + (left ? -2 : 2))}" y="${px(y + 3.8)}" text-anchor="${left ? 'end' : 'start'}" font-size="${font}" font-weight="600">${esc(names.get(ps[0].plateKey) ?? ps[0].id)}</text>`);
-    });
+    }
     for (const ps of byKey.values()) {
       const p0 = ps[0];
       if (p0.family === 'X') {
@@ -319,6 +343,7 @@ function planSvg(m: Model, view: View, names: Map<string, string>): string {
       const x = pts.reduce((a, q) => a + q[0], 0) / pts.length;
       labels.push(`<text x="${px(f.X(x))}" y="${px(topEdge - (v.sliceMode === 'waffle' ? 24 : 8) - (p.family === 'T' ? 13 : 0))}" text-anchor="middle" font-size="${font}" font-style="italic">${esc(p.id)}</text>`);
     });
+  if (thinned) labels.push(`<text x="${px(f.w - 12)}" y="${px(f.h - (ins.length > 2 ? 26 : 10))}" text-anchor="end" font-size="11">plates too close to name each: all ${thinned} are in the schedule</text>`);
   if (ins.length > 2) {
     labels.push(`<text x="${px(f.w - 12)}" y="${px(f.h - 10)}" text-anchor="end" font-size="11">dashed outline: insert</text>`);
   }
@@ -413,12 +438,105 @@ function aboveGround(ring: V3[]): V3[] {
   return out;
 }
 
+/** A vertex of a ring in world space; `e` says whether the edge on to the next vertex is the part's own (not a cut). */
+export type Vtx = { p: V3; e: boolean };
+export type Plane3 = { n: V3; d: number };
+export interface PaintItem {
+  /** Depth of the whole part, nearest smallest. */
+  d: number;
+  rings: Vtx[][];
+  fill: string;
+  stroke: string;
+  sw: number;
+  tri?: boolean;
+  plate?: boolean;
+  spacer?: boolean;
+  /** Index in m.sliced.parts. */
+  part?: number;
+  /** Index of the plane this part lies in. */
+  plane?: number;
+}
+
+/** Cut a ring by a plane: the pieces on its front (n·p ≥ d) and back. Cut edges are marked. */
+function splitRing(ring: Vtx[], pl: Plane3): { front: Vtx[]; back: Vtx[] } {
+  const s = ring.map((q) => q.p[0] * pl.n[0] + q.p[1] * pl.n[1] + q.p[2] * pl.n[2] - pl.d);
+  const front: Vtx[] = [], back: Vtx[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const j = (i + 1) % ring.length;
+    const a = ring[i], b = ring[j];
+    const af = s[i] >= 0, bf = s[j] >= 0;
+    (af ? front : back).push(a);
+    if (af !== bf) {
+      const t = s[i] / (s[i] - s[j]);
+      const x: V3 = [a.p[0] + (b.p[0] - a.p[0]) * t, a.p[1] + (b.p[1] - a.p[1]) * t, a.p[2] + (b.p[2] - a.p[2]) * t];
+      // the side we are leaving closes along the cut; the side we enter carries on along a's edge
+      (af ? front : back).push({ p: x, e: false });
+      (af ? back : front).push({ p: x, e: a.e });
+    }
+  }
+  return { front, back };
+}
+
+/**
+ * Far-to-near order for an orthographic view looking along -`toCam`. A BSP
+ * over the parts' own planes: each node draws the side away from the camera,
+ * then the parts lying in its plane, then the near side, splitting anything
+ * that straddles it. So crossing plates (waffle, radial, candle fins) and the
+ * insert threading through a row come out right, not just roughly by distance.
+ */
+export function paintOrder(items: PaintItem[], planes: Plane3[], toCam: V3, depth: (w: V3) => number): PaintItem[] {
+  const eps = 0.01;
+  const out: PaintItem[] = [];
+  const centroid = (it: PaintItem) => {
+    const r = it.rings[0];
+    return r.reduce((s, q) => s + depth(q.p), 0) / r.length;
+  };
+  const walk = (list: PaintItem[], k: number) => {
+    if (!list.length) return;
+    if (k >= planes.length || list.length === 1) {
+      list.map((it) => ({ it, d: centroid(it) })).sort((a, b) => b.d - a.d).forEach(({ it }) => out.push(it));
+      return;
+    }
+    const pl = planes[k];
+    const front: PaintItem[] = [], back: PaintItem[] = [], on: PaintItem[] = [];
+    for (const it of list) {
+      if (it.plane === k) {
+        on.push(it);
+        continue;
+      }
+      let lo = Infinity, hi = -Infinity;
+      for (const r of it.rings) for (const q of r) {
+        const sd = q.p[0] * pl.n[0] + q.p[1] * pl.n[1] + q.p[2] * pl.n[2] - pl.d;
+        if (sd < lo) lo = sd;
+        if (sd > hi) hi = sd;
+      }
+      if (lo >= -eps) front.push(it);
+      else if (hi <= eps) back.push(it);
+      else {
+        const f: Vtx[][] = [], b: Vtx[][] = [];
+        for (const r of it.rings) {
+          const sp = splitRing(r, pl);
+          if (sp.front.length > 2) f.push(sp.front);
+          if (sp.back.length > 2) b.push(sp.back);
+        }
+        if (f.length) front.push({ ...it, rings: f });
+        if (b.length) back.push({ ...it, rings: b });
+      }
+    }
+    const camFront = pl.n[0] * toCam[0] + pl.n[1] * toCam[1] + pl.n[2] * toCam[2] >= 0;
+    const [far, near] = camFront ? [back, front] : [front, back];
+    walk(far, k + 1);
+    on.map((it) => ({ it, d: centroid(it) })).sort((a, b) => b.d - a.d).forEach(({ it }) => out.push(it));
+    walk(near, k + 1);
+  };
+  walk(items, 0);
+  return out;
+}
+
 /**
  * The finished piece in an orthographic view from above one corner: every
- * part in its metal and finish, the insert, and the concrete base. Drawn back
- * to front, so parts that cross each other (a waffle, a radial star) can
- * overlap a little wrongly where they meet; it is for seeing the design, not
- * for measuring.
+ * part in its metal and finish, the insert, and the concrete base, painted far
+ * to near (see `paintOrder`). It is for seeing the design, not for measuring.
  * `turn` is the camera's angle round from the front, in degrees (positive:
  * from the right); `tilt` how far it looks down.
  */
@@ -452,8 +570,9 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   };
   const clip = v.baseOn;
 
-  type Item = { d: number; pts: P2[][]; fill: string; stroke: string; sw: number; tri?: boolean; plate?: boolean; spacer?: boolean };
-  const items: Item[] = [];
+  const items: PaintItem[] = [];
+  // the camera's direction (towards it) in world x, y, z
+  const camWorld: V3 = [cam[0] * view.right[0] + cam[1] * view.back[0], cam[2], cam[0] * view.right[1] + cam[1] * view.back[1]];
   const all: P2[] = [];
 
   // the base: a convex block, so faces turned towards us are all that shows
@@ -494,47 +613,46 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
     }
   }
 
-  // the parts
-  for (const p of m.sliced.parts) {
+  // the parts: kept in world space, so the drawing order below can split them where they cross
+  const planes: Plane3[] = [];
+  const planeOf = (n: V3, o: V3): number => {
+    const d = n[0] * o[0] + n[1] * o[1] + n[2] * o[2];
+    const i = planes.findIndex((q) => (Math.abs(dot(q.n, n) - 1) < 1e-6 && Math.abs(q.d - d) < 0.01) || (Math.abs(dot(q.n, n) + 1) < 1e-6 && Math.abs(q.d + d) < 0.01));
+    if (i >= 0) return i;
+    planes.push({ n, d });
+    return planes.length - 1;
+  };
+  m.sliced.parts.forEach((p, idx) => {
     const metal = metalOf(project, m, p.plateKey);
     const b = bucketOf(project.appearance, p.plateKey);
     const look = lookOf(metal.material, b ? b.finish : project.appearance?.main?.finish, b ? b.color : project.appearance?.main?.color);
     const nr = nOf(p.plane.normal);
-    const rings = p.shape.flatMap((ex2) => [ex2.outer, ...ex2.holes]).map((path) => {
-      const w = path.map(([a, c]) => planeToWorld(p.plane, a, c));
-      return clip ? aboveGround(w) : w;
-    }).filter((r) => r.length > 2);
-    if (!rings.length) {
-      // Plates fully below the ground clip still need a path (embedded tabs); project the raw outline.
-      if (isMain(p)) {
-        const worldRings = p.shape
-          .flatMap((ex2) => [ex2.outer, ...ex2.holes])
-          .map((path) => path.map(([a, c]) => planeToWorld(p.plane, a, c)))
-          .filter((r) => r.length > 2);
-        if (worldRings.length) {
-          const flatPts = worldRings[0];
-          const d = flatPts.reduce((s, q) => s + depth(q), 0) / flatPts.length;
-          const pts = worldRings.map((r) => r.map(scr));
-          items.push({
-            d,
-            pts,
-            fill: shade(look.color, lit(nr) * 0.9),
-            stroke: shade(look.color, 1.6),
-            sw: 0.6,
-            plate: true,
-            spacer: false,
-          });
-          all.push(...pts[0]);
-        }
-      }
-      continue;
+    const world = p.shape
+      .flatMap((ex2) => [ex2.outer, ...ex2.holes])
+      .map((path) => path.map(([a, c]) => planeToWorld(p.plane, a, c)))
+      .filter((r) => r.length > 2);
+    let rings = clip ? world.map(aboveGround).filter((r) => r.length > 2) : world;
+    // plates wholly below the ground (embedded tabs) still get drawn, unclipped, so every plate shows
+    const buried = !rings.length;
+    if (buried) {
+      if (!isMain(p)) return;
+      rings = world;
     }
-    const flatPts = rings[0];
-    const d = flatPts.reduce((s, q) => s + depth(q), 0) / flatPts.length;
-    const pts = rings.map((r) => r.map(scr));
-    all.push(...pts[0]);
-    items.push({ d, pts, fill: shade(look.color, lit(nr) * (p.family === 'S' ? 0.85 : 1)), stroke: shade(look.color, 1.6), sw: 0.6, plate: isMain(p), spacer: p.family === 'C' || p.family === 'T' });
-  }
+    if (!rings.length) return;
+    const d = rings[0].reduce((s, q) => s + depth(q), 0) / rings[0].length;
+    all.push(...rings[0].map(scr));
+    items.push({
+      d,
+      rings: rings.map((r) => r.map((q) => ({ p: q, e: true }))),
+      fill: shade(look.color, lit(nr) * (buried ? 0.9 : p.family === 'S' ? 0.85 : 1)),
+      stroke: shade(look.color, 1.6),
+      sw: 0.6,
+      plate: isMain(p),
+      spacer: p.family === 'C' || p.family === 'T',
+      part: idx,
+      plane: planeOf(p.plane.normal, p.plane.origin),
+    });
+  });
 
   // the insert, a triangle at a time (only the side facing us)
   const ins = m.insert && v.insShape !== 'none' && v.insMaterial !== 'void' ? m.insert.mesh : null;
@@ -551,11 +669,10 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
       if (dot(nn, cam) <= 0) continue;
       const ring = clip ? aboveGround(tri) : tri;
       if (ring.length < 3) continue;
-      const pts = ring.map(scr);
-      all.push(...pts);
+      all.push(...ring.map(scr));
       // a few shades only, so neighbouring triangles merge into one path below
       const col = shade(tint, 0.55 + Math.round(10 * Math.max(0, dot(nn, light))) / 20);
-      items.push({ d: ring.reduce((s, q) => s + depth(q), 0) / ring.length, pts: [pts], fill: col, stroke: col, sw: 0.5, tri: true });
+      items.push({ d: ring.reduce((s, q) => s + depth(q), 0) / ring.length, rings: [ring.map((q) => ({ p: q, e: true }))], fill: col, stroke: col, sw: 0.5, tri: true });
     }
   }
   if (!all.length) return '';
@@ -564,37 +681,48 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   const f = fitBox(bx, opts.maxW ?? 690, opts.maxH ?? 520, [16, 16, 16, 16]);
   const out: string[] = [];
   for (const b of baseFaces) out.push(`<path d="${pathD(b.pts, f.X, f.Y)}" fill="${b.fill}" stroke="${shade(b.fill, 0.6)}" stroke-width="0.8" stroke-linejoin="round"/>`);
-  const byDepth = (a: Item, b: Item) => b.d - a.d;
-  const tris = items.filter((it) => it.tri).sort(byDepth);
-  const plates = items.filter((it) => !it.tri).sort(byDepth);
-  // a little haze with distance, so plates standing one behind another read apart
-  const d0 = plates.length ? plates[plates.length - 1].d : 0, d1 = plates.length ? plates[0].d : 1;
-  for (const it of plates) {
-    const k = 1 - 0.3 * ((it.d - d0) / Math.max(1e-6, d1 - d0));
-    it.fill = shade(it.fill, k);
-  }
+  // a little haze with distance, so plates standing one behind another read apart (per part, before any split)
+  const solid = items.filter((it) => !it.tri);
+  const d0 = Math.min(...solid.map((it) => it.d)), d1 = Math.max(...solid.map((it) => it.d));
+  for (const it of solid) it.fill = shade(it.fill, 1 - 0.3 * ((it.d - d0) / Math.max(1e-6, d1 - d0)));
+
+  const ordered = paintOrder(items, planes, camWorld, depth);
   const triTol = { tol: 0.6, minPts: 3 };
   const platePrec = { prec: 2 };
-  const emit = (list: Item[], pathOpts: PathDOpts) => {
-    for (let i = 0; i < list.length; i++) {
-      const it = list[i];
-      let d = it.pts.map((r) => pathD(r, f.X, f.Y, true, pathOpts)).join('');
-      if (it.tri) {
-        while (list[i + 1]?.tri && list[i + 1].fill === it.fill) d += pathD(list[++i].pts[0], f.X, f.Y, true, pathOpts);
-      }
-      if (!d && it.plate && it.pts[0]?.length) d = pathD(it.pts[0], f.X, f.Y, true, { ...pathOpts, prec: 3 });
-      if (!d && it.plate) d = `M${px(f.X(0))},${px(f.Y(0))}h1v1h-1Z`;
-      if (d) {
-        const cls = it.plate ? ' class="plate"' : it.spacer ? ' class="spacer"' : '';
-        out.push(
-          `<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"${it.tri ? '' : ' fill-rule="evenodd"'}${cls}/>`,
-        );
-      }
+  const toScr = (r: Vtx[]) => r.map((q) => scr(q.p));
+  for (let i = 0; i < ordered.length; i++) {
+    const it = ordered[i];
+    if (it.tri) {
+      let d = pathD(toScr(it.rings[0]), f.X, f.Y, true, triTol);
+      // a run of insert triangles in one shade: one path (they don't overlap, so nonzero fill is right)
+      while (ordered[i + 1]?.tri && ordered[i + 1].fill === it.fill) d += pathD(toScr(ordered[++i].rings[0]), f.X, f.Y, true, triTol);
+      if (d) out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"/>`);
+      continue;
     }
-  };
-  // insert and other meshes first; plates on top so thin rows stay visible through the cast-in shape
-  emit(tris, triTol);
-  emit(plates, platePrec);
+    const attrs = `${it.plate ? ' class="plate"' : it.spacer ? ' class="spacer"' : ''}${it.part !== undefined ? ` data-part="${it.part}"` : ''}`;
+    let d = it.rings.map((r) => pathD(toScr(r), f.X, f.Y, true, platePrec)).join('');
+    if (!d && it.plate) d = `M${px(f.X(0))},${px(f.Y(0))}h1v1h-1Z`;
+    if (!d) continue;
+    const cut = it.rings.some((r) => r.some((q) => !q.e));
+    if (!cut) {
+      out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round" fill-rule="evenodd"${attrs}/>`);
+      continue;
+    }
+    // a piece split off where another part crosses it: fill it whole, but only outline the part's own edges
+    const edges = it.rings
+      .map((r) => {
+        let s = '';
+        r.forEach((q, j) => {
+          if (!q.e) return;
+          const a = scr(q.p), b = scr(r[(j + 1) % r.length].p);
+          s += `M${px(f.X(a[0]))},${px(f.Y(a[1]))}L${px(f.X(b[0]))},${px(f.Y(b[1]))}`;
+        });
+        return s;
+      })
+      .join('');
+    out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.fill}" stroke-width="0.3" fill-rule="evenodd"${attrs}/>`);
+    if (edges) out.push(`<path d="${edges}" fill="none" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linecap="round"/>`);
+  }
   return `<svg class="drawing angled" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="${esc(title)}">${out.join('')}</svg>`;
 }
 
@@ -602,7 +730,8 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
 export function angledPlatePathCount(project: Project, m: Model, opts: { turn?: number; tilt?: number; maxW?: number; maxH?: number } = {}): { expected: number; drawn: number; pitchPx: number } {
   const svg = angledSvg(project, m, viewOf(m), 'count', { turn: opts.turn ?? 35, tilt: opts.tilt ?? 30, maxW: opts.maxW ?? 690, maxH: opts.maxH ?? 400 });
   const expected = m.sliced.parts.filter((p) => p.family === 'P' || p.family === 'X' || p.family === 'R').length;
-  const drawn = svg ? [...svg.matchAll(/class="plate"/g)].length : 0;
+  // a plate split where another crosses it is several paths: count plates, not paths
+  const drawn = svg ? new Set([...svg.matchAll(/class="plate" data-part="(\d+)"/g)].map((x) => x[1])).size : 0;
   const v = m.v;
   const f = stackFrame(v);
   const back: P2 = [f.stack[0], f.stack[1]];
