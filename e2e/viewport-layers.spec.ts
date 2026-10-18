@@ -23,7 +23,7 @@ test('layer toolbar is one row and clear of the caption at 1280', async ({ page 
   expect(tb!.height, 'toolbar should stay on one row').toBeLessThan(40);
   expect(overlap(tb!, cap!), 'toolbar must not cover the bottom-left caption').toBe(false);
   const buttons = toolbar.getByRole('button');
-  await expect(buttons).toHaveCount(9);
+  await expect(buttons).toHaveCount(8);
   const ys = [];
   for (const btn of await buttons.all()) {
     const box = await btn.boundingBox();
