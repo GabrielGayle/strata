@@ -642,10 +642,12 @@ export function topProfileField(v: Values, img: Gray, win: TopWindow): Gray {
     for (let i = 0; i < n; i++) max = Math.max(max, dist[i]);
     R = Math.max(1, max);
   }
+  const puff = Math.min(5, Math.max(0.2, Number.isFinite(v.topPuff) ? v.topPuff : 1));
   for (let i = 0; i < n; i++) {
     if (!inside[i]) continue;
     const t = Math.min(1, dist[i] / R);
-    data[i] = v.topProfile === 'chamfer' ? t : Math.sqrt(1 - (1 - t) * (1 - t)); // quarter-circle shoulder
+    const f = v.topProfile === 'chamfer' ? t : Math.sqrt(1 - (1 - t) * (1 - t)); // quarter-circle shoulder
+    data[i] = puff === 1 ? f : Math.pow(f, puff);
   }
   return { w: img.w, h: img.h, data };
 }

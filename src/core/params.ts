@@ -367,6 +367,13 @@ export const PARAMS: ParamDef[] = [
     rand: true,
     help: 'How far in from the edge of the shape the rounded shoulder reaches',
   }),
+  num('topPuff', 'Profile curve', 'Image', 1, 0.2, 5, {
+    step: 0.05,
+    unit: '',
+    show: (v) => v.imgTopMode !== 'off' && v.topProfile !== 'tone' && !!v.topProfile,
+    rand: true,
+    help: 'Bends the profile: below 1 puffs it fuller (steep sides, broad flat crown), above 1 draws it to a soft point in the middle. 1 keeps the plain round or straight shape.',
+  }),
   num('topThreshold', 'Ignore lighter than', 'Image', 0.15, 0, 0.95, { step: 0.01, unit: '', show: (v) => v.imgTopMode !== 'off', help: 'Darkness below this is left flat (keeps a white background uncut)' }),
   num('topScale', 'Image size', 'Image', 0.9, 0.1, 1, { step: 0.01, unit: '×', show: (v) => v.imgTopMode !== 'off' }),
   choice('topRotate', 'Turn image', 'Image', '0', [

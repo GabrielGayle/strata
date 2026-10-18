@@ -136,4 +136,19 @@ describe('edges, master size and fit to image', () => {
     expect(d2).toBeGreaterThan(0.5);
     expect(balloon.issues.filter((x) => x.severity === 'error')).toEqual([]);
   });
+  it('profile curve puffs the balloon fuller or draws it to a point', () => {
+    const depthAt = (m: ReturnType<typeof run>, u: number) => {
+      const plate = m.sliced.plates[Math.floor(m.sliced.plates.length / 2)].parts[0];
+      return m.v.stackHeight - topAt(plate.shape, u)!;
+    };
+    const base = { imgTopMode: 'carve', erosionAmp: '0', crest: '0', topDepth: '20', topSteps: '0', imgSmooth: '0', imgContrast: '1', topProfile: 'balloon' };
+    const plain = run(base, disc());
+    const full = run({ ...base, topPuff: '0.4' }, disc());
+    const point = run({ ...base, topPuff: '3' }, disc());
+    // the crown stays near full depth while the shoulder moves
+    expect(Math.abs(depthAt(full, 0) - depthAt(plain, 0))).toBeLessThan(2);
+    expect(Math.abs(depthAt(point, 0) - depthAt(plain, 0))).toBeLessThan(2);
+    expect(depthAt(full, 22)).toBeGreaterThan(depthAt(plain, 22) + 2);
+    expect(depthAt(point, 22)).toBeLessThan(depthAt(plain, 22) - 2);
+  });
 });
