@@ -21,7 +21,7 @@ import { buildMoulds, pourPlan, type MouldResult, type PourPlanRow } from './mou
 import { unfold, type UnfoldResult } from './unfold';
 import { buildBom, type Bom } from './bom';
 import { share } from './memo';
-import { carveShadow, type ShadowReport } from './shadow';
+import { carveShadow, isCandle, type ShadowReport } from './shadow';
 import type { Project } from './project';
 import { buildObjects, type ObjectBuild } from './objects';
 import { candleObjects } from './candles';
@@ -114,7 +114,8 @@ const IMG_KEYS = ['imgContrast', 'imgSmooth', 'imgInvert', 'imgRotate', ...BLUR_
 const BASE_KEYS = ['baseOn', 'baseLength', 'baseWidth', 'baseHeight', 'baseCornerChamfer', 'baseEdgeChamfer'];
 const CHECK_KEYS = ['minFeature', 'kerf', 'minPartSize', 'sheetW', 'sheetH', 'partSpacing', 'pitch', 'thickness', 'radialHub', 'radialCount', 'sliceMode', 'embedMode', ...BASE_KEYS];
 const MOULD_KEYS = [...PARAMS.filter((p) => p.group === 'Mould').map((p) => p.id), ...BASE_KEYS, 'embedDepth', 'thickness', 'insMaterial', 'insShape', 'clearance', 'sliceMode'];
-const SHADOW_KEYS = PARAMS.filter((p) => p.group === 'Shadow' || p.group === 'Sun').map((p) => p.id);
+// the wall's size only changes how it is drawn, so it doesn't re-carve
+const SHADOW_KEYS = PARAMS.filter((p) => (p.group === 'Shadow' || p.group === 'Sun') && p.id !== 'shadowWallW' && p.id !== 'shadowWallH').map((p) => p.id);
 const UNFOLD_KEYS = PARAMS.filter((p) => p.group === 'Unfold').map((p) => p.id);
 
 type Cache = Map<string, { deps: unknown[]; value: unknown; ms: number }>;
@@ -290,7 +291,7 @@ export function createFrontPipeline() {
     );
     attachMapPartEtch(sliced, project.images.top?.map);
     const carved = stage('Shadow carve', [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow], () => {
-      if (!v.shadowOn || !v.sunOn || v.sliceMode !== 'parallel') return null;
+      if (!v.shadowOn || (!v.sunOn && !isCandle(v)) || v.sliceMode !== 'parallel') return null;
       const frames = (project.shadow?.frames ?? []).flatMap((f, i) => {
         const gray = assets.shadowFrames?.[i];
         return gray ? [{ gray, time: f.time, hold: f.hold }] : [];

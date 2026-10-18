@@ -20,7 +20,7 @@ import { useStore } from '../state/store';
 import { objectMatrix, type CutObject } from '../core/objects';
 import type { CardSight } from '../core/shelfView';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
-import { SunStudy3D } from './SunStudy';
+import { Candle3D, SunStudy3D } from './SunStudy';
 import { showInsertMesh, type ViewportLayers } from './viewportLayers';
 
 export interface SceneOpts {
@@ -44,19 +44,19 @@ export function cssVar(name: string, fallback: string): string {
   return v || fallback;
 }
 
-export function Env() {
+export function Env({ intensity = 0.55 }: { intensity?: number }) {
   const { gl, scene } = useThree();
   useEffect(() => {
     const pm = new THREE.PMREMGenerator(gl);
     const env = pm.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = env;
-    scene.environmentIntensity = 0.55;
+    scene.environmentIntensity = intensity;
     return () => {
       scene.environment = null;
       env.dispose();
       pm.dispose();
     };
-  }, [gl, scene]);
+  }, [gl, scene, intensity]);
   return null;
 }
 
@@ -491,13 +491,15 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const dragKey = opts.moveMode ? (moveTarget(model, opts.selected)?.key ?? null) : null;
   const L = opts.viewportLayers;
   const showEngrave = L.engraving || (L.water && !!topMap);
+  // a candle-lit shadow design is seen at night, by the candle
+  const candle = !!v.shadowOn && v.shadowLight === 'candle' && v.sliceMode === 'parallel';
   return (
     <>
-      <Env />
+      <Env intensity={candle ? 0.06 : 0.55} />
       <color attach="background" args={[cssVar('--viewport', '#e6e3dc')]} />
-      <ambientLight intensity={v.sunOn ? 0.28 : 0.35} />
-      {v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
-      <directionalLight position={[-900, 500, -600]} intensity={v.sunOn ? 0.18 : 0.45} />
+      <ambientLight intensity={candle ? 0.06 : v.sunOn ? 0.28 : 0.35} />
+      {candle ? <Candle3D model={model} /> : v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
+      <directionalLight position={[-900, 500, -600]} intensity={candle ? 0.04 : v.sunOn ? 0.18 : 0.45} />
       {L.grid && (
         <ViewportGrid
           args={[Math.max(bounds.size * 6, 1200), Math.max(bounds.size * 6, 1200)]}
@@ -578,7 +580,7 @@ function ShadowSun({ model }: { model: Model }) {
 }
 
 /** Bounding size of the design, for camera framing. */
-export function modelBounds(model: Model): { center: THREE.Vector3; size: number } {
+export function modelBounds(model: Model): { center: THREE.Vector3; size: number; radius: number } {
   const v = model.v;
   const box = new THREE.Box3();
   const frame = model.sunkenFrame;
@@ -597,5 +599,5 @@ export function modelBounds(model: Model): { center: THREE.Vector3; size: number
   if (model.insert) box.union(model.insert.form.bbox);
   if (box.isEmpty()) box.set(new THREE.Vector3(-300, 0, -300), new THREE.Vector3(300, 300, 300));
   const size = box.getSize(new THREE.Vector3());
-  return { center: box.getCenter(new THREE.Vector3()), size: Math.max(size.x, size.y, size.z) };
+  return { center: box.getCenter(new THREE.Vector3()), size: Math.max(size.x, size.y, size.z), radius: size.length() / 2 };
 }
