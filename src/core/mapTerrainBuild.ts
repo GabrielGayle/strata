@@ -7,13 +7,14 @@ import { browserEaGridLoader, browserOverpassFetcher, browserRegionalGridLoader 
 
 const e2eFixtures = import.meta.env.VITE_E2E_MAP_FIXTURES === '1';
 
-export async function buildMapTerrainAsset(project: Project, spec: MapSpec): Promise<ImageAsset> {
+export async function buildMapTerrainAsset(project: Project, spec: MapSpec, signal?: AbortSignal): Promise<ImageAsset> {
   const key = mapBuildKey(spec);
   const asset = await buildMapTopAsset(
     { ...spec, buildKey: key },
     {
       stack: mapStackFromProject(project, spec.layerBudget),
       allowOverpassNetwork: !e2eFixtures,
+      signal,
       fetch: getBrowserMapTileFetcher(),
       ...(e2eFixtures
         ? {

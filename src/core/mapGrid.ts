@@ -59,9 +59,15 @@ export function gridSampleBilinear(g: Float32Grid, x: number, y: number, clamp =
   const y1 = Math.min(h - 1, y0 + 1);
   const tx = col - x0;
   const ty = row - y0;
-  const v = (ix: number, iy: number) => data[iy * w + ix];
-  const lerp = (a: number, b: number, u: number) => (Number.isFinite(a) && Number.isFinite(b) ? a + (b - a) * u : Number.isFinite(a) ? a : b);
-  const a = lerp(v(x0, y0), v(x1, y0), tx);
-  const b = lerp(v(x0, y1), v(x1, y1), tx);
-  return lerp(a, b, ty);
+  const a = lerpFinite(data[y0 * w + x0], data[y0 * w + x1], tx);
+  const b = lerpFinite(data[y1 * w + x0], data[y1 * w + x1], tx);
+  return lerpFinite(a, b, ty);
+}
+
+/** Lerp that falls back to whichever end is finite (NaN = nodata). Hot path: no closures. */
+function lerpFinite(a: number, b: number, u: number): number {
+  const fa = a === a && a !== Infinity && a !== -Infinity;
+  const fb = b === b && b !== Infinity && b !== -Infinity;
+  if (fa && fb) return a + (b - a) * u;
+  return fa ? a : b;
 }
