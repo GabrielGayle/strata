@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handleEaProxyHttp } from './src/server/eaProxyHttp';
@@ -124,6 +125,24 @@ function threeCore(): Plugin {
 }
 
 // Libraries in their own files, so an app update doesn't make phones fetch them again.
+// The engine's version for the result cache: a hash of the geometry code and the
+// locked dependencies, so a deploy that changes neither keeps everyone's cached
+// results, and any change to the engine starts afresh.
+function engineBuild(): string {
+  const root = fileURLToPath(new URL('.', import.meta.url));
+  const h = createHash('sha256');
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir).sort()) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else (h.update(path.slice(root.length)), h.update(readFileSync(path)));
+    }
+  };
+  walk(join(root, 'src/core'));
+  if (existsSync(join(root, 'package-lock.json'))) h.update(readFileSync(join(root, 'package-lock.json')));
+  return h.digest('hex').slice(0, 16);
+}
+
 function vendorChunk(id: string): string | undefined {
   if (!id.includes('node_modules')) return;
   if (/[\\/]three[\\/]build[\\/]three\.core\.js$/.test(id)) return 'three-core';
@@ -136,6 +155,7 @@ export default defineConfig({
   plugins: [react(), threeCore(), excludeNodeTerrarium(), mapCacheBrowser(), mapFixtures()],
   define: {
     'process.env': {},
+    __STRATA_ENGINE__: JSON.stringify(engineBuild()),
   },
   resolve: {
     alias: {

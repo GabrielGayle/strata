@@ -22,7 +22,7 @@ import { buildMoulds, pourPlan, type MouldResult, type PourPlanRow } from './mou
 import { unfold, type UnfoldResult } from './unfold';
 import { buildBom, type Bom } from './bom';
 import { share } from './memo';
-import { carveShadow, isCandle, type ShadowReport } from './shadow';
+import { carveShadow, isCandle, type CarveResult, type ShadowInput, type ShadowReport } from './shadow';
 import type { Project } from './project';
 import { buildObjects, type ObjectBuild } from './objects';
 import { candleObjects, chokeCircles, sitOnSurface, snapToPlates, surfaceTop } from './candles';
@@ -48,6 +48,9 @@ export interface Assets {
   /** Shadow pictures, decoded, in the order of project.shadow.frames. */
   shadowFrames?: (Gray | null)[];
 }
+
+/** Every asset the engine reads, in a fixed order. */
+export const ASSET_KEYS = ['sideImg', 'frontImg', 'topImg', 'insMesh', 'srcMesh', 'shadowFrames'] as const satisfies readonly (keyof Assets)[];
 
 export interface FormBuild {
   form: Form;
@@ -85,6 +88,8 @@ export interface Model {
   origin: Frame;
   /** Shadow carving: the wall, carved plate grids and how well each frame comes out (null when off). */
   shadow: ShadowReport | null;
+  /** The shadow carve is still running on another thread: the plates show uncarved until it lands. */
+  shadowPending?: boolean;
   issues: Issue[];
   nested: NestResult;
   moulds: MouldResult;
@@ -203,12 +208,31 @@ export const deferredInput = (f: FrontModel, project: Project): DeferredInput =>
 /** Profile resolution used while a slider or gizmo is held down (mm; finer settings are coarsened to it). */
 export const PREVIEW_SAMPLE_STEP = 4;
 
+/** A shadow carve to run, and what it depends on (compared one by one, by identity). */
+export interface CarveJob {
+  deps: unknown[];
+  v: Values;
+  sliced: SliceResult;
+  frames: ShadowInput[];
+}
+
+export interface FrontOptions {
+  /** The coarse pipeline used while dragging (see PREVIEW_SAMPLE_STEP); it doesn't carve shadows. */
+  preview?: boolean;
+  /**
+   * Carves shadows somewhere else (the engine's shadow worker): returns the carve
+   * when it is done, or undefined while it runs, and the plates show uncarved.
+   * Without it the carve runs here.
+   */
+  carve?: (job: CarveJob) => CarveResult | undefined;
+}
+
 /**
  * The front stages. Fast enough to run on every edit.
  * A `preview` pipeline is the coarse one used while dragging: plate profiles
  * sampled every PREVIEW_SAMPLE_STEP mm at most, and no shadow carve.
  */
-export function createFrontPipeline(options: { preview?: boolean } = {}) {
+export function createFrontPipeline(options: FrontOptions = {}) {
   const preview = !!options.preview;
   const cache: Cache = new Map();
   return function computeFront(project: Project, assets: Assets): FrontModel {
@@ -340,15 +364,32 @@ export function createFrontPipeline(options: { preview?: boolean } = {}) {
     // checked against the cut plates, so a plate standing in front of a card counts as hiding it
     const cardVisibility = stage('Card visibility', [objects, shelfViewKey(project.shelf), project.shelf?.seat, sliced], () => reportShelfVisibility(objects, project.shelf, sliced.parts));
     // the preview shows the plates uncarved; the full pass that follows the drag carves them
-    if (preview && v.shadowOn && (v.sunOn || isCandle(v)) && v.sliceMode === 'parallel') stages.push({ name: 'Shadow carve', ms: 0, cached: true, stale: true });
-    const carved = preview ? null : stage('Shadow carve', [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow], () => {
-      if (!v.shadowOn || (!v.sunOn && !isCandle(v)) || v.sliceMode !== 'parallel') return null;
-      const frames = (project.shadow?.frames ?? []).flatMap((f, i) => {
+    const shadowWanted = !!v.shadowOn && (!!v.sunOn || isCandle(v)) && v.sliceMode === 'parallel';
+    if (preview && shadowWanted) stages.push({ name: 'Shadow carve', ms: 0, cached: true, stale: true });
+    const carveDeps = [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow];
+    const carveFrames = () =>
+      (project.shadow?.frames ?? []).flatMap((f, i) => {
         const gray = assets.shadowFrames?.[i];
         return gray ? [{ gray, time: f.time, hold: f.hold }] : [];
       });
-      return frames.length ? carveShadow(v, sliced, frames) : null;
-    });
+    let shadowPending = false;
+    const carveElsewhere = (): CarveResult | null => {
+      const frames = shadowWanted ? carveFrames() : [];
+      if (!frames.length) return null;
+      const done = options.carve!({ deps: carveDeps, v, sliced, frames });
+      stages.push({ name: 'Shadow carve', ms: done?.report.ms ?? 0, cached: true, stale: !done });
+      shadowPending = !done;
+      return done ?? null;
+    };
+    const carved = preview
+      ? null
+      : options.carve
+        ? carveElsewhere()
+        : stage('Shadow carve', carveDeps, () => {
+            if (!shadowWanted) return null;
+            const frames = carveFrames();
+            return frames.length ? carveShadow(v, sliced, frames) : null;
+          });
     const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
     const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
     const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
@@ -362,7 +403,7 @@ export function createFrontPipeline(options: { preview?: boolean } = {}) {
           ? buildMapSunkenFrameLayout(finalSliced, { sunkenFrame: mapFrame }, v.thickness, baseTop(v), v.baseOn ? union([basePlan(v)]) : undefined)
           : null,
     );
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, shelfSolve: laid.solve ?? undefined, shelfEye: project.shelf?.on ? shelfEye(project.shelf) : undefined, origin, shadow: carved?.report ?? null, unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, shelfSolve: laid.solve ?? undefined, shelfEye: project.shelf?.on ? shelfEye(project.shelf) : undefined, origin, shadow: carved?.report ?? null, ...(shadowPending ? { shadowPending } : {}), unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
   };
 }
 

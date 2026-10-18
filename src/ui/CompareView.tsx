@@ -1,9 +1,11 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { useStore } from '../state/store';
 import { useAssets } from '../state/assets';
-import { createPipeline, type Model } from '../core/pipeline';
+import { createPipeline, type Assets, type Model } from '../core/pipeline';
+import { lookupModel, storeModel } from '../state/results';
+import { Loading } from './BusyWindow';
 import { PARAMS, PARAM_MAP } from '../core/params';
 import { applyVariant, type Project } from '../core/project';
 import Scene from './Scene';
@@ -31,6 +33,25 @@ function MiniView({ model, label }: { model: Model; label: string }) {
   );
 }
 
+/** One side's model: from the result cache when this design was built before, else built here (and kept for next time). */
+function useCompareModel(pipe: ReturnType<typeof createPipeline>, p: Project, assets: Assets): Model | null {
+  const [m, setM] = useState<Model | null>(null);
+  useEffect(() => {
+    let alive = true;
+    lookupModel(p, assets).then((hit) => {
+      if (!alive) return;
+      if (hit) return setM(hit);
+      const built = pipe(p, assets);
+      setM(built);
+      storeModel(p, assets, built);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [p, assets, pipe]);
+  return m;
+}
+
 export default function CompareView() {
   const project = useStore((s) => s.project);
   const ui = useStore((s) => s.ui);
@@ -47,8 +68,8 @@ export default function CompareView() {
   // each side decodes its own images: variants can carry different pictures
   const assetsA = useAssets(A.p);
   const assetsB = useAssets(B.p);
-  const mA = useMemo(() => pipeA(A.p, assetsA), [A.p, assetsA, pipeA]);
-  const mB = useMemo(() => pipeB(B.p, assetsB), [B.p, assetsB, pipeB]);
+  const mA = useCompareModel(pipeA, A.p, assetsA);
+  const mB = useCompareModel(pipeB, B.p, assetsB);
   const diffs = PARAMS.filter((d) => String(A.p.params[d.id] ?? d.def) !== String(B.p.params[d.id] ?? d.def));
   const metrics: [string, (m: Model) => number, number, string][] = [
     ['Parts', (m) => m.sliced.parts.length, 0, ''],
@@ -87,8 +108,8 @@ export default function CompareView() {
       </div>
       {project.variants.length === 0 && <div className="note">Save variants from the toolbar (Variants › Save current) to compare them side by side.</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', borderBottom: '1px solid var(--line)', height: '46vh' }}>
-        <MiniView model={mA} label={`A · ${A.name}`} />
-        <MiniView model={mB} label={`B · ${B.name}`} />
+        {mA ? <MiniView model={mA} label={`A · ${A.name}`} /> : <Loading label={`Building A · ${A.name}…`} />}
+        {mB ? <MiniView model={mB} label={`B · ${B.name}`} /> : <Loading label={`Building B · ${B.name}…`} />}
       </div>
       <div className="pad grid2">
         <div className="window box">
@@ -104,6 +125,7 @@ export default function CompareView() {
             </thead>
             <tbody>
               {metrics.map(([k, f, d, u]) => {
+                if (!mA || !mB) return null;
                 const a = f(mA), b = f(mB);
                 return (
                   <tr key={k}>

@@ -23,6 +23,8 @@ import { isMapTerrainFailure, reportMapTerrainFailure, reportMapTerrainMessage, 
 import { isMapDepth, mapMasterWidthMm, mapScaleMmPerM, mapTrueRangePlateMm } from '../core/mapPlateHeight';
 import { flatStackHeightMm, flatStackIsCapped } from '../core/mapGeometryReadout';
 import { countPlatesAtMaxHeight, plateTopHeightRangeMm } from '../core/slicer';
+import { onResultsCleared, takePreloaded } from '../state/results';
+import type { CacheSource } from '../core/resultCache';
 
 /** After a drag, how long the edits must rest before the full model is built. */
 const FULL_AFTER_MS = 150;
@@ -46,18 +48,25 @@ export default function App() {
   // the latest front pass, and the last deferred result with the input it was computed from (this-thread path)
   const latest = useRef<{ f: FrontModel; input: DeferredInput } | null>(null);
   const deferred = useRef<{ result: DeferredModel; input: DeferredInput } | null>(null);
-  // the model on screen and what it was built from
-  const shown = useRef<{ project: Project; assets: Assets; mode: EngineMode } | null>(null);
+  // the model on screen and what it was built from; complete once it is the full model with every carve in
+  const shown = useRef<{ project: Project; assets: Assets; mode: EngineMode; complete: boolean } | null>(null);
   const inputs = useRef({ project, assets });
   inputs.current = { project, assets };
   const [model, setModelState] = useState<Model>(() => {
+    shown.current = { project, assets, mode: 'full', complete: true };
+    // after a reload, the last session's model from the result cache (main.tsx read it); else built here
+    const saved = takePreloaded(project);
+    if (saved) return saved;
     const f = runFrontPipelineSafe(front, project, assets);
     const input = deferredInput(f, project);
     latest.current = { f, input };
     deferred.current = { result: local(input, 'full'), input };
-    shown.current = { project, assets, mode: 'full' };
     return assemble(f, deferred.current.result);
   });
+  // where the model on screen came from when it wasn't built (for the status bar and tests)
+  const [cachedFrom, setCachedFrom] = useState<CacheSource | null>(() => (takePreloaded(project) ? 'disk' : null));
+  // the shadow carve is still running on its own thread
+  const [carving, setCarving] = useState(false);
   const modelRef = useRef(model);
   // what the last edit actually rebuilt (the deferred pass that follows is often all cache hits)
   const work = useRef({ stages: 0, ms: 0 });
@@ -87,8 +96,15 @@ export default function App() {
     const f = runFrontPipelineSafe(front, project, assets);
     const input = deferredInput(f, project);
     latest.current = { f, input };
-    shown.current = { project, assets, mode: 'full' };
-    const d = deferred.current!;
+    shown.current = { project, assets, mode: 'full', complete: true };
+    setCachedFrom(null);
+    const d = deferred.current;
+    if (!d) {
+      const result = local(input, 'full');
+      deferred.current = { result, input };
+      setModel(assemble(f, result, false));
+      return;
+    }
     const fresh = sameDeferredInput(d.input, input);
     setModel(assemble(f, d.result, !fresh));
     if (fresh) return;
@@ -141,16 +157,20 @@ export default function App() {
         new Worker(new URL('../core/engine.worker.ts', import.meta.url), { type: 'module' }),
         (job, m, reply) => {
           setEngineBusy(w.working ? lastMode.current : null);
+          setCarving(!!reply.carving && !w.working);
           if (reply.mapError) reportMapTerrainMessage(reply.mapError);
           const s = shown.current;
           // the warm-up pass (and any repeat of what is on screen) changes nothing
-          if (s && s.mode === 'full' && job.mode === 'full' && s.project === job.project && s.assets === job.assets) return;
-          shown.current = { project: job.project, assets: job.assets, mode: job.mode };
-          // an older job's model still beats what's on screen; it stays marked as updating
-          setModel({ ...m, stale: m.stale || job.mode === 'preview' || w.working });
+          if (s && s.complete && s.project === job.project && s.assets === job.assets) return;
+          // a preview request can be answered with the full model, from the result cache
+          shown.current = { project: job.project, assets: job.assets, mode: reply.mode, complete: reply.mode === 'full' && !reply.carving };
+          setCachedFrom(reply.cached ?? null);
+          // an older job's model still beats what's on screen; it stays marked as updating, as do plates still to be carved
+          setModel({ ...m, stale: m.stale || reply.mode === 'preview' || w.working || !!reply.carving });
         },
         (job, fatal, error) => {
           setEngineBusy(null);
+          setCarving(false);
           if (fatal && engine.current === w) engine.current = null;
           console.error('Strata engine worker:', error);
           // run it here instead (an error in the pipeline itself shows the same way it always has)
@@ -161,10 +181,21 @@ export default function App() {
       return;
     }
     engine.current = w;
+    // shadow carves run on a worker of their own, so a Sun or Shadow edit shows the plates at once
+    let shadow: Worker | null = null;
+    try {
+      shadow = new Worker(new URL('../core/shadow.worker.ts', import.meta.url), { type: 'module' });
+      w.attachShadow(shadow);
+    } catch {
+      /* the engine carves inline */
+    }
+    const unhook = onResultsCleared(() => w.clearCache());
     // warm the worker's caches with what is on screen, and catch up on anything edited meanwhile (quietly: it changes nothing on screen)
     w.run(inputs.current.project, inputs.current.assets, 'full');
     return () => {
+      unhook();
       w.terminate();
+      shadow?.terminate();
       if (engine.current === w) engine.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,7 +259,7 @@ export default function App() {
       const { project, assets } = inputs.current;
       const s = shown.current;
       const m = modelRef.current;
-      if (s && s.mode === 'full' && s.project === project && s.assets === assets && !m.stale) return m;
+      if (s && s.complete && s.project === project && s.assets === assets && !m.stale) return m;
       const f = runFrontPipelineSafe(front, project, assets);
       const input = deferredInput(f, project);
       const d = deferred.current;
@@ -246,7 +277,7 @@ export default function App() {
   );
   const [designOpen, setDesignOpen] = useState(false);
   const mapTerrain = useStore((s) => s.mapTerrain);
-  useAppBusy(!!model.stale, engineBusy);
+  useAppBusy(!!model.stale, engineBusy, carving);
   const errors = model.issues.filter((i) => i.severity === 'error').length;
   const warns = model.issues.filter((i) => i.severity === 'warn').length;
   const stackRodCount = model.sliced.stackRods?.rods.length ?? 0;
@@ -271,7 +302,7 @@ export default function App() {
   const mapZMaxM = topDepth?.mapOrtho?.zMaxM;
   const platesAtMax = mapFace ? countPlatesAtMaxHeight(model.sliced.plates) : 0;
   // the model on screen is the full one for the current project (it lags edits while the engine works)
-  const modelCurrent = shown.current?.mode === 'full' && shown.current.project === project && shown.current.assets === assets && !model.stale;
+  const modelCurrent = !!shown.current?.complete && shown.current.project === project && shown.current.assets === assets && !model.stale;
 
   return (
     <FullModelContext.Provider value={getFull}>
@@ -290,6 +321,9 @@ export default function App() {
         data-strata-map-z-max-m={mapFace && mapZMaxM != null ? String(mapZMaxM) : undefined}
         data-strata-plates-at-max={mapFace ? String(platesAtMax) : undefined}
         data-strata-model-current={modelCurrent ? '1' : '0'}
+        data-strata-model-cached={modelCurrent && cachedFrom ? cachedFrom : undefined}
+        data-strata-model-ms={modelCurrent ? String(Math.round(model.totalMs)) : undefined}
+        data-strata-shadow-carving={carving ? '1' : undefined}
         data-strata-slice-mode={model.v.sliceMode}
         data-strata-stack-rods={String(stackRodCount)}
         data-strata-stack-rods-visible={stackRodsVisible ? '1' : '0'}

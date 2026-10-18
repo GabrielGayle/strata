@@ -912,8 +912,11 @@ function openFace(cv: Carving, side: number, g: ShadowGeom, N: V3, lt: Light, sg
 /** Smallest signal an open node gets: keeps cut edges a little way off the nodes, so no hair-thin slivers. */
 const OPEN = 0.1;
 
-/** Cut the frames' tunnels into the parallel plates. Returns the carved plates and a report. */
-export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[]): { sliced: SliceResult; report: ShadowReport } {
+/**
+ * The carve, a step at a time: it yields after each light, plate and frame, so
+ * a worker can stop it when a newer edit arrives. carveShadow runs it through.
+ */
+export function* carveShadowSteps(v: Values, sliced: SliceResult, frames: ShadowInput[]): Generator<void, CarveResult> {
   const t0 = performance.now();
   const candle = isCandle(v);
   const allDay = !candle && v.shadowExec === 'allday';
@@ -962,7 +965,8 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
   const D: V3 = [0, 0, 0];
 
   // 2. open the plates wherever the light through them falls on the bright parts of the picture
-  use.forEach((f, fi) => {
+  for (let fi = 0; fi < use.length; fi++) {
+    const f = use[fi];
     const k = byTime.indexOf(f.time);
     const prev = k > 0 ? byTime[k - 1] : null;
     const next = k >= 0 && k < byTime.length - 1 ? byTime[k + 1] : null;
@@ -997,12 +1001,13 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
           : geom.screen === 'wall'
             ? 'The sun is behind the wall at this time: it must shine on the front of the piece.'
             : 'The sun is too low to reach the screen at this time.';
-      return;
+      continue;
     }
     const sg = pictureSignal(geom, f.gray, threshold, !!v.shadowInvert, geom.slots?.[fi] ?? null, valid);
     const tgt = targets[fi];
     for (const lt of lights) {
       for (const cv of carvings) for (let side = -1; side <= 1; side += 2) openFace(cv, side, geom, N, lt, sg);
+      yield;
       if (!rays.has(lt)) continue;
       // and every lit pixel's own ray, so features thinner than a cell (or stretched across a slanting screen) still get through
       for (let r = 0; r < geom.rows; r++)
@@ -1055,7 +1060,8 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
         geom.screen === 'wall'
           ? `Most of this picture's light would have to pass the uncut rim at the plates' sides or bottom${v.insertOn ? ', or round the insert' : ''}. Move the picture${geom.candle ? ' or the candle' : ''}, or lower the Solid rim.`
           : "Most of this picture's light would have to pass the concrete or the uncut rim low on the plates. Move the picture further back, or lower the Solid rim.";
-  });
+    yield;
+  }
   for (const cv of carvings) for (let i = 0; i < cv.hole.length; i++) if (cv.carvable[i] && cv.val[i] > 0) cv.hole[i] = 1;
 
   // tidy the cuts for the laser: no lone pinholes, and no steel joined only at a corner
@@ -1136,6 +1142,7 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
       if (cv.carvable[i]) carvableTotal++;
       if (hole[i] && cv.carvable[i]) carved++;
     }
+    yield;
   }
   const cutAway = islands - bridged;
 
@@ -1200,6 +1207,7 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
         bbox: bboxOf([ex.outer]),
       });
     }
+    yield;
   }
 
   const grids: PlateGrid[] = carvings.map((cv) => {
@@ -1211,18 +1219,55 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
   const report: ShadowReport = { geom, grids, targets, valid, scores: [], removed: carvableTotal ? carved / carvableTotal : 0, islands, bridged, plates: carvings.length, cut: carvings.filter((cv) => cv.hole.some((h, i) => h && cv.carvable[i])).length, ms: 0 };
 
   // 5. how well each frame comes out
-  report.scores = use.map((f, fi) => {
-    if (problems[fi]) return { time: f.time, match: 0, stray: 0, problem: problems[fi] };
-    return { time: f.time, ...frameMatch(v, report, fi, f.time), problem: null, hint: hints[fi] };
-  });
+  for (let fi = 0; fi < use.length; fi++) {
+    const f = use[fi];
+    report.scores.push(problems[fi] ? { time: f.time, match: 0, stray: 0, problem: problems[fi] } : { time: f.time, ...frameMatch(v, report, fi, f.time), problem: null, hint: hints[fi] });
+    yield;
+  }
 
+  report.ms = performance.now() - t0;
+  return { sliced: swapParts(sliced, replaced, cutAway), report };
+}
+
+/** Puts the carved parts in place of the ones they were cut from. */
+function swapParts(sliced: SliceResult, replaced: Map<Part, Part>, cutAway: number): SliceResult {
   const swap = (p: Part) => replaced.get(p) ?? p;
-  const out: SliceResult = replaced.size
+  const out: SliceResult = replaced.size || cutAway
     ? { ...sliced, plates: sliced.plates.map((pl) => (pl.parts.some((p) => replaced.has(p)) ? { ...pl, parts: pl.parts.map(swap) } : pl)), parts: sliced.parts.map(swap) }
     : sliced;
   if (cutAway) out.warnings = [...sliced.warnings, `Shadow carve: ${cutAway} loose bit(s) inside the cut-outs were cut away so nothing falls out.`];
-  report.ms = performance.now() - t0;
-  return { sliced: out, report };
+  return out;
+}
+
+/** Cut the frames' tunnels into the parallel plates. Returns the carved plates and a report. */
+export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[]): CarveResult {
+  const steps = carveShadowSteps(v, sliced, frames);
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+}
+
+export interface CarveResult {
+  sliced: SliceResult;
+  report: ShadowReport;
+}
+
+/** What a carve changed, small enough to send back to the thread that sliced the plates: the replaced parts by index, and how many loose bits were cut away. */
+export interface CarveDiff {
+  parts: [number, Part][];
+  cutAway: number;
+}
+
+export function carveDiff(sliced: SliceResult, carved: CarveResult): CarveDiff {
+  const parts: [number, Part][] = [];
+  carved.sliced.parts.forEach((p, i) => p !== sliced.parts[i] && parts.push([i, p]));
+  return { parts, cutAway: carved.report.islands - carved.report.bridged };
+}
+
+/** The carved plates from the plates as sliced and a carve's diff: the same as carveShadow's own. */
+export function applyCarveDiff(sliced: SliceResult, diff: CarveDiff): SliceResult {
+  return swapParts(sliced, new Map(diff.parts.map(([i, p]) => [sliced.parts[i], p])), diff.cutAway);
 }
 
 /** Frames as saved in a project file, cleaned up. */

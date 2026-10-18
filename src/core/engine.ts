@@ -6,13 +6,18 @@
 // reply. The page folds each reply into the model it holds, so anything an edit
 // didn't touch keeps its identity and the 3D view skips it.
 import * as THREE from 'three';
-import { assemble, createDeferredPipeline, createFrontPipeline, deferredInput, type Assets, type FormBuild, type FrontModel, type Model } from './pipeline';
+import { ASSET_KEYS, assemble, createDeferredPipeline, createFrontPipeline, deferredInput, type Assets, type FormBuild, type FrontModel, type Model } from './pipeline';
 import type { HeightField } from './heightfield';
 import type { ObjectBuild } from './objects';
 import type { Project } from './project';
 import { isMapTerrainFailure, userFacingMapBuildError } from './mapBuildError';
 import { partGeometry, setPartGeometry } from './partMesh';
 import type { Part } from './slicer';
+import { isPlainObject, packPoints, unpackPoints } from './packPoints';
+import { resultKey, type CacheSource, type ResultCache } from './resultCache';
+import type { ShadowClient } from './shadowJob';
+
+export { packPoints };
 
 export type EngineMode = 'preview' | 'full';
 
@@ -183,65 +188,6 @@ export function modelFromPlain(p: PlainModel): Model {
   return { ...rest, insert: p.insert && formFromPlain(p.insert), source: p.source && formFromPlain(p.source), objects: p.objects.map(objectFromPlain), hf: p.hf && fieldFromPlain(p.hf) };
 }
 
-// ---- point lists as flat arrays ----
-// Outlines are arrays of [x, y] pairs, which are slow to copy between threads one
-// small array at a time; they cross as one Float64Array each (exact, no rounding).
-
-const PTS = '__strataPoints';
-const packedLists = new WeakMap<object, unknown>();
-
-const isPointList = (a: unknown[]) => {
-  if (a.length < 2) return false;
-  for (const p of a) if (!Array.isArray(p) || p.length !== 2 || typeof p[0] !== 'number' || typeof p[1] !== 'number') return false;
-  return true;
-};
-
-/** Swaps every list of [x, y] pairs in `x` for a flat array. Unchanged values pack to the same object every time. */
-export function packPoints<T>(x: T): T {
-  const pack = (v: unknown): unknown => {
-    if (typeof v !== 'object' || v === null || ArrayBuffer.isView(v)) return v;
-    if (packedLists.has(v)) return packedLists.get(v);
-    let out: unknown = v;
-    if (Array.isArray(v)) {
-      if (isPointList(v)) {
-        const flat = new Float64Array(v.length * 2);
-        v.forEach((p, i) => ((flat[i * 2] = p[0]), (flat[i * 2 + 1] = p[1])));
-        out = { [PTS]: flat };
-      } else {
-        const m = v.map(pack);
-        if (m.some((e, i) => e !== v[i])) out = m;
-      }
-    } else if (isPlainObject(v)) {
-      let o: Record<string, unknown> | null = null;
-      for (const [k, e] of Object.entries(v)) {
-        const pe = pack(e);
-        if (pe !== e) (o ??= { ...v })[k] = pe;
-      }
-      if (o) out = o;
-    }
-    packedLists.set(v, out);
-    return out;
-  };
-  return pack(x) as T;
-}
-
-/** Turns the flat arrays back into [x, y] lists, in place (the value is fresh off the wire). */
-function unpackPoints(x: unknown, done: Map<object, unknown>): unknown {
-  if (typeof x !== 'object' || x === null || ArrayBuffer.isView(x)) return x;
-  if (done.has(x)) return done.get(x);
-  if (isPlainObject(x) && PTS in x) {
-    const flat = x[PTS] as Float64Array;
-    const pts: [number, number][] = new Array(flat.length / 2);
-    for (let i = 0; i < pts.length; i++) pts[i] = [flat[i * 2], flat[i * 2 + 1]];
-    done.set(x, pts);
-    return pts;
-  }
-  done.set(x, x);
-  if (Array.isArray(x)) for (let i = 0; i < x.length; i++) x[i] = unpackPoints(x[i], done);
-  else if (isPlainObject(x)) for (const k of Object.keys(x)) x[k] = unpackPoints(x[k], done);
-  return x;
-}
-
 // ---- identity deltas ----
 
 /** How deep a reply is compared by identity: model › sliced › parts › part › fields. */
@@ -249,11 +195,6 @@ const DELTA_DEPTH = 4;
 const TAG = '__strataDelta';
 type Delta = { [TAG]: 'same' } | { [TAG]: 'obj'; v: Record<string, unknown> } | { [TAG]: 'arr'; v: unknown[] };
 
-const isPlainObject = (x: unknown): x is Record<string, unknown> => {
-  if (typeof x !== 'object' || x === null || Array.isArray(x) || ArrayBuffer.isView(x)) return false;
-  const proto = Object.getPrototypeOf(x);
-  return proto === Object.prototype || proto === null;
-};
 const isDelta = (x: unknown): x is Delta => isPlainObject(x) && TAG in x;
 
 /**
@@ -314,7 +255,6 @@ export function applyDelta(prev: unknown, delta: unknown): unknown {
 
 // ---- the worker's side ----
 
-const ASSET_KEYS = ['sideImg', 'frontImg', 'topImg', 'insMesh', 'srcMesh', 'shadowFrames'] as const;
 type MeshKey = 'insMesh' | 'srcMesh';
 /** Assets as posted: meshes as plain geometry. */
 export type PlainAssets = Omit<Assets, MeshKey> & { insMesh: PlainGeometry | null; srcMesh: PlainGeometry | null };
@@ -331,20 +271,54 @@ export interface EngineRequest {
 }
 
 export type EngineReply =
-  | { id: number; mode: EngineMode; model: unknown; mapError?: string; ms: number }
+  | {
+      id: number;
+      /** 'full' also when a preview request was answered from the result cache. */
+      mode: EngineMode;
+      model: unknown;
+      mapError?: string;
+      ms: number;
+      /** Taken from the result cache instead of built. */
+      cached?: CacheSource;
+      /** The shadow carve is still running: a second reply for the same request follows with the carved plates. */
+      carving?: boolean;
+    }
   | { id: number; error: string };
+
+export type EngineResult = Exclude<EngineReply, { error: string }>;
+
+/** Messages to the engine worker besides requests. */
+export type EngineControl = { type: 'shadow-port'; port: MessagePort } | { type: 'clear-cache' };
+
+export interface EngineOptions {
+  /** Finished models by what they were built from (see resultCache.ts). */
+  cache?: ResultCache;
+  /** Carves shadows on the shadow worker (see shadowJob.ts); without it they are carved inline. */
+  shadow?: ShadowClient;
+}
+
+/** A finished model as the cache keeps it, checked before use: one mesh per part. */
+export const validCachedModel = (m: unknown) => {
+  const p = m as PlainModel | undefined;
+  return !!p && Array.isArray(p.partMeshes) && !!p.sliced && Array.isArray(p.sliced.parts) && p.partMeshes.length === p.sliced.parts.length && !p.shadowPending;
+};
 
 /**
  * The worker's side: keeps the inputs, the stage caches and the last reply between
  * requests. Takes every request that arrived while it was busy, applies their
- * changes in order and builds only the newest.
+ * changes in order and builds only the newest. A full build of something it
+ * has built before comes from the result cache.
  */
-export function createEngineHandler() {
-  const front = { preview: createFrontPipeline({ preview: true }), full: createFrontPipeline() };
+export function createEngineHandler(opts: EngineOptions = {}) {
+  const { cache, shadow } = opts;
+  const front = { preview: createFrontPipeline({ preview: true }), full: createFrontPipeline({ carve: shadow?.carve }) };
   const deferred = createDeferredPipeline();
   let project = {} as Project;
   const assets: Assets = { sideImg: null, frontImg: null, insMesh: null, srcMesh: null };
   let lastSent: PlainModel | undefined;
+  let key: string | null = null;
+  // the stage caches are cold until a build has run (a reply from the cache doesn't fill them)
+  let built = false;
   const apply = (req: EngineRequest) => {
     project = { ...project, ...req.project };
     for (const k of req.dropped) delete (project as unknown as Record<string, unknown>)[k];
@@ -355,23 +329,68 @@ export function createEngineHandler() {
         assets[k] = g ? geometryFromPlain(g) : null;
       } else (assets as unknown as Record<string, unknown>)[k] = req.assets[k];
     }
+    key = null;
   };
-  return (reqs: EngineRequest[]): EngineReply => {
+  /** The result-cache key of the inputs as they stand. */
+  const currentKey = () => (cache ? (key ??= resultKey(project, assets)) : null);
+  const compute = (mode: EngineMode) => {
+    let mapError: string | undefined;
+    const f = frontWithMapFallback(front[mode], project, assets, (m) => (mapError = m));
+    // while the carve runs, the checks and nesting wait for the carved plates
+    const model = packPoints(modelToPlain(assemble(f, deferred(deferredInput(f, project), mode === 'preview' || f.shadowPending ? 'fast' : 'full'))));
+    built = true;
+    return { model, mapError, carving: !!f.shadowPending };
+  };
+  const build = (id: number, mode: EngineMode): EngineReply => {
     const t0 = performance.now();
-    const { id, mode } = reqs[reqs.length - 1];
     try {
-      reqs.forEach(apply);
-      let mapError: string | undefined;
-      const f = frontWithMapFallback(front[mode], project, assets, (m) => (mapError = m));
-      const model = packPoints(modelToPlain(assemble(f, deferred(deferredInput(f, project), mode === 'preview' ? 'fast' : 'full'))));
+      const k = mode === 'full' ? currentKey() : null;
+      const hit = k ? cache!.peek(k) : undefined;
+      if (hit) {
+        const m = hit.model as PlainModel;
+        const ms = performance.now() - t0;
+        const model: PlainModel = { ...m, stages: [{ name: `Result cache (${hit.source})`, ms, cached: true }, ...m.stages.map((s) => ({ ...s, cached: true }))], totalMs: ms, stale: false };
+        const delta = encodeDelta(lastSent, model);
+        lastSent = model;
+        return { id, mode: 'full', model: delta, ms, cached: hit.source };
+      }
+      if (mode === 'preview') shadow?.cancel();
+      const { model, mapError, carving } = compute(mode);
+      // only finished models: no preview, no carve still running, no stand-in for a map that failed
+      if (k && !carving && !mapError) cache!.put(k, model);
       const delta = encodeDelta(lastSent, model);
       lastSent = model;
-      return { id, mode, model: delta, mapError, ms: performance.now() - t0 };
+      return { id, mode, model: delta, mapError, ms: performance.now() - t0, ...(carving ? { carving } : {}) };
     } catch (e) {
       lastSent = undefined; // the page drops its copy too
       return { id, error: e instanceof Error ? e.message : String(e) };
     }
   };
+  /** Fills the stage caches after a reply from the cache, so the next edit only rebuilds what it changes. */
+  const warm = () => {
+    if (built) return;
+    if (shadow) shadow.quiet = true;
+    try {
+      compute('full');
+    } catch {
+      /* the next edit reports it */
+    } finally {
+      if (shadow) shadow.quiet = false;
+    }
+  };
+  const handle = (reqs: EngineRequest[]): EngineReply => {
+    reqs.forEach(apply);
+    const { id, mode } = reqs[reqs.length - 1];
+    return build(id, mode);
+  };
+  return Object.assign(handle, {
+    apply,
+    build,
+    warm,
+    key: currentKey,
+    /** False until a build has filled the stage caches. */
+    built: () => built,
+  });
 }
 
 // ---- the page's side ----
@@ -403,25 +422,29 @@ export class EngineWorker {
   private sentAssets: Partial<Assets> | null = null;
   private nextId = 1;
   private plain: unknown;
+  /** The newest job answered: a carve that lands later answers it again. */
+  private answered: EngineJob | null = null;
 
   constructor(
     private worker: Worker,
-    private onResult: (job: EngineJob, model: Model, reply: { mapError?: string; ms: number }) => void,
+    private onResult: (job: EngineJob, model: Model, reply: EngineResult) => void,
     /** The worker couldn't do this job (fatal: it died, so stop using it). */
     private onFail: (job: EngineJob, fatal: boolean, error: string) => void,
   ) {
     worker.onmessage = (e: MessageEvent<EngineReply>) => {
       const reply = e.data;
-      const job = this.jobs.find((j) => j.id === reply.id);
+      const job = this.jobs.find((j) => j.id === reply.id) ?? (this.answered?.id === reply.id ? this.answered : undefined);
       // that job and everything posted before it are answered
       this.jobs = this.jobs.filter((j) => j.id > reply.id);
-      if (!job) return;
       if ('error' in reply) {
         this.plain = undefined;
         this.sentProject = this.sentAssets = null; // resend everything next time
-        if (!this.jobs.length) this.onFail(job, false, reply.error);
+        if (job && !this.jobs.length) this.onFail(job, false, reply.error);
       } else {
+        // every reply is a change to the one before, so each is folded in, shown or not
         this.plain = applyDelta(this.plain, reply.model);
+        if (!job) return;
+        this.answered = job;
         this.onResult(job, modelFromPlain(this.plain as PlainModel), reply);
       }
     };
@@ -451,6 +474,18 @@ export class EngineWorker {
     this.jobs.push(job);
     this.worker.postMessage({ id: job.id, mode, project: changes, dropped, assets: plainAssets } satisfies EngineRequest);
     return job;
+  }
+
+  /** Hands the engine a shadow worker to carve on: the two talk directly over a channel of their own. */
+  attachShadow(shadow: Worker) {
+    const ch = new MessageChannel();
+    shadow.postMessage({ port: ch.port2 }, [ch.port2]);
+    this.worker.postMessage({ type: 'shadow-port', port: ch.port1 } satisfies EngineControl, [ch.port1]);
+  }
+
+  /** Forgets the results the engine keeps in memory (browser storage is cleared by the caller). */
+  clearCache() {
+    this.worker.postMessage({ type: 'clear-cache' } satisfies EngineControl);
   }
 
   /** True while an edit has been posted and not answered. */
