@@ -3685,3 +3685,29 @@ kbd {
     transform: rotate(360deg);
   }
 }
+/* Edge view aids: a second small row just above the layer toggles. */
+.view-aids.overlay {
+  bottom: 116px;
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  background: var(--surface);
+  white-space: nowrap;
+  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
+}
+.view-aids .btn {
+  font-size: 11px;
+  padding: 0 6px;
+}
+.view-aids .view-aid-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.view-aids select {
+  font-size: 11px;
+  height: 20px;
+}
