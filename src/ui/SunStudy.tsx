@@ -140,7 +140,7 @@ export function ShadowScreen({ model }: { model: Model }) {
     <>
       <mesh position={[g.s[0] * at, wh / 2, g.s[1] * at]} rotation={[0, rotY, 0]} receiveShadow>
         <planeGeometry args={[ww, wh]} />
-        <meshStandardMaterial color="#fffaf0" roughness={0.95} metalness={0} side={THREE.FrontSide} />
+        <meshStandardMaterial color="#efe4cc" roughness={0.95} metalness={0} side={THREE.FrontSide} />
       </mesh>
       {/* from behind, a faint sheet and its edge show where the wall is */}
       <mesh position={[g.s[0] * at, wh / 2, g.s[1] * at]} rotation={[0, rotY, 0]}>
