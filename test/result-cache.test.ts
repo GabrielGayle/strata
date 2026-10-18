@@ -69,6 +69,10 @@ describe('result cache key', () => {
     const reordered = Object.fromEntries(Object.entries(p.params).reverse());
     expect(resultKey({ ...p, params: reordered }, none)).toBe(k);
     expect(resultKey({ ...p, params: { ...p.params, erosionAmp: '31' } }, none)).not.toBe(k);
+    // the curve settings (plan PR 3) are parameters, so they are in the key
+    for (const id of ['curveStep', 'curveSmooth', 'curveTolerance', 'sampleStep']) expect(resultKey({ ...p, params: { ...p.params, [id]: '0.3' } }, none)).not.toBe(k);
+    // and so is a map's own spec, which lives in the project
+    expect(resultKey({ ...p, images: { top: { name: 'm', dataUrl: 'x', map: { terraced: true } as never } } }, none)).not.toBe(k);
     expect(resultKey(p, { ...none, sideImg: { w: 2, h: 1, data: new Float32Array([0, 1]) } })).not.toBe(k);
     // a missing asset and a null one are the same thing
     expect(resultKey(p, { ...none, shadowFrames: undefined })).toBe(k);
