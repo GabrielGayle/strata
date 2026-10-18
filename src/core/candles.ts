@@ -8,7 +8,7 @@ import type { CutObject } from './objects';
 import type { Shape } from './geom2d';
 import type { Plane } from './section';
 
-export type CandlePath = 'line' | 'arc' | 'wave' | 'circle' | 'spiral' | 'heart' | 'star' | 'custom';
+export type CandlePath = 'line' | 'arc' | 'wave' | 'circle' | 'spiral' | 'heart' | 'star' | 'custom' | 'grid' | 'free';
 
 export const PATH_NAMES: Record<CandlePath, string> = {
   line: 'Straight line',
@@ -19,6 +19,8 @@ export const PATH_NAMES: Record<CandlePath, string> = {
   heart: 'Heart',
   star: 'Star',
   custom: 'My own path (typed points)',
+  grid: 'Grid (rows and columns)',
+  free: 'Free (drag each candle)',
 };
 
 export type Holder = 'target' | 'slotted' | 'socket';
@@ -97,6 +99,14 @@ export const SIT_NAMES: Record<Sit, string> = {
   surface: 'Height: sit into the plates under it',
 };
 
+export type Snap = 'off' | 'on' | 'between';
+
+export const SNAP_NAMES: Record<Snap, string> = {
+  off: 'Anywhere',
+  on: 'Snap onto plates',
+  between: 'Snap between plates',
+};
+
 export interface CandleSpec {
   on: boolean;
   /** One candle per line: "5 taper", "tealight", "40 x 18 tealight", "24 x 300 stick target". */
@@ -112,6 +122,16 @@ export interface CandleSpec {
   points: string;
   /** Custom path: join the last point back to the first. */
   closed: boolean;
+  /** Grid: columns (across the plates; rows fill up as candles are added), and the spacing between them (mm). */
+  cols: number;
+  gapX: number;
+  gapZ: number;
+  /** Line candles up with the plates: centred on one, or midway between two. */
+  snap: Snap;
+  /** Grid with snapping: columns every this many plates (so the spacing follows the plate pitch). */
+  every: number;
+  /** Free: where each candle stands, as x, z (mm) in the candelabra's own frame. Filled in when you drag one. */
+  spots: [number, number][];
   /** Where the candles stand: at Lift above the concrete, or sunk into whatever plates are under them (auto does that on a map). */
   sit: Sit;
   /** Height of the candle bottoms above the concrete (mm). */
@@ -156,6 +176,12 @@ export const DEFAULT_CANDLES: CandleSpec = {
   bend: 120,
   points: '-250, 0; -120, -80; 0, 0; 120, 80; 250, 0',
   closed: false,
+  cols: 4,
+  gapX: 80,
+  gapZ: 80,
+  snap: 'off',
+  every: 4,
+  spots: [],
   sit: 'auto',
   lift: 60,
   crown: 60,
@@ -252,6 +278,12 @@ export function cleanCandles(raw: unknown): CandleSpec | undefined {
     bend: num(r.bend, d.bend),
     points: typeof r.points === 'string' ? r.points : d.points,
     closed: r.closed === true,
+    cols: Math.round(num(r.cols, d.cols, 1, 40)),
+    gapX: num(r.gapX, d.gapX, 5),
+    gapZ: num(r.gapZ, d.gapZ, 5),
+    snap: (Object.keys(SNAP_NAMES) as Snap[]).includes(r.snap as Snap) ? (r.snap as Snap) : d.snap,
+    every: Math.round(num(r.every, d.every, 1, 100)),
+    spots: Array.isArray(r.spots) ? (r.spots as unknown[]).filter((p): p is [number, number] => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n))).map(([x, z]) => [x, z] as [number, number]) : [],
     sit: (Object.keys(SIT_NAMES) as Sit[]).includes(r.sit as Sit) ? (r.sit as Sit) : d.sit,
     lift: num(r.lift, d.lift, 0),
     crown: num(r.crown, d.crown),
@@ -368,6 +400,11 @@ export function pathPolyline(spec: CandleSpec): { pts: P2[]; closed: boolean } {
       }
       break;
     }
+    case 'grid':
+    case 'free':
+      // laid out in candleObjects; a line stands in for anything that asks for the path itself
+      pts = [[-W / 2, 0], [W / 2, 0]];
+      break;
     case 'custom': {
       closed = spec.closed;
       const raw = parsePathPoints(spec.points);
@@ -417,14 +454,77 @@ const D = Math.PI / 180;
  * target-held candlesticks also get a hidden "well" that clears the plates for
  * their fins and carries the seat the plates step up to around it.
  */
-export function candleObjects(spec0: CandleSpec | undefined, baseTop: number, onSurface = false): CutObject[] {
+/** Where the candles stand in the candelabra's own frame, with how far along the run each is (0 to 1). */
+export function candleSpots(spec: CandleSpec, n: number, pitch = 0): { p: P2; f: number }[] {
+  if (spec.path === 'grid') {
+    const cols = Math.max(1, spec.cols);
+    const rows = Math.max(1, Math.ceil(n / cols));
+    const gx = spec.snap !== 'off' && pitch > 0 ? spec.every * pitch : spec.gapX;
+    return Array.from({ length: n }, (_, k) => {
+      const i = k % cols;
+      const j = Math.floor(k / cols);
+      return { p: [(i - (cols - 1) / 2) * gx, (j - (rows - 1) / 2) * spec.gapZ] as P2, f: cols > 1 ? i / (cols - 1) : 0.5 };
+    });
+  }
+  if (spec.path === 'free') {
+    // dragged spots first; any candles beyond them line up behind the last one
+    const s = spec.spots;
+    return Array.from({ length: n }, (_, k) => {
+      const p: P2 = k < s.length ? s[k] : [(s[s.length - 1]?.[0] ?? 0) + (k - s.length + 1) * 60, s[s.length - 1]?.[1] ?? 0];
+      return { p, f: n > 1 ? k / (n - 1) : 0.5 };
+    });
+  }
+  const { pts, closed } = pathPolyline(spec);
+  return spreadAlong(pts, closed, n);
+}
+
+/** The world point of a spot in the candelabra frame (before the world origin). */
+export function spotToLocal(spec: CandleSpec, p: P2): P2 {
+  const turn = spec.turn * D;
+  return [spec.x + p[0] * Math.cos(turn) + p[1] * Math.sin(turn), spec.z - p[0] * Math.sin(turn) + p[1] * Math.cos(turn)];
+}
+
+/** The candelabra-frame spot of a point measured from the world origin (the inverse of spotToLocal). */
+export function localToSpot(spec: CandleSpec, q: P2): P2 {
+  const turn = spec.turn * D;
+  const dx = q[0] - spec.x;
+  const dz = q[1] - spec.z;
+  return [dx * Math.cos(turn) - dz * Math.sin(turn), dx * Math.sin(turn) + dz * Math.cos(turn)];
+}
+
+/**
+ * Line the candles up with the plates: each candle (with its holder) slides along the
+ * stack to the nearest plate, or midway between the nearest two. `planes` are the
+ * plates' planes (all facing the same way); world coordinates.
+ */
+export function snapToPlates(objs: CutObject[], planes: { origin: [number, number, number]; normal: [number, number, number] }[], snap: Snap): CutObject[] {
+  if (snap === 'off' || planes.length < 2) return objs;
+  const n = planes[0].normal;
+  const offs = planes.map((p) => p.origin[0] * n[0] + p.origin[2] * n[2]).sort((a, b) => a - b);
+  const targets = snap === 'on' ? offs : offs.slice(1).map((s, i) => (s + offs[i]) / 2);
+  const shift = new Map<string, number>();
+  for (const o of objs) {
+    if (!o.id.startsWith('candle')) continue;
+    const s = o.x * n[0] + o.z * n[2];
+    let best = targets[0];
+    for (const t of targets) if (Math.abs(t - s) < Math.abs(best - s)) best = t;
+    shift.set(o.id.slice(6), best - s);
+  }
+  return objs.map((o) => {
+    const m = o.id.match(/^(candle|well|pad)(\d+)$/);
+    const d = m ? shift.get(m[2]) : undefined;
+    return d ? { ...o, x: o.x + d * n[0], z: o.z + d * n[2] } : o;
+  });
+}
+
+export function candleObjects(spec0: CandleSpec | undefined, baseTop: number, onSurface = false, pitch = 0): CutObject[] {
   if (!spec0?.on) return [];
   // sitting on the plates: heights come later from the plates themselves, and the plates keep their own tops
   const spec = onSurface ? { ...spec0, trim: false } : spec0;
   const list = candleList(spec);
   if (!list.length) return [];
-  const { pts, closed } = pathPolyline(spec);
-  const spots = spreadAlong(pts, closed, list.length);
+  const closed = spec.path !== 'grid' && spec.path !== 'free' && pathPolyline(spec).closed;
+  const spots = candleSpots(spec, list.length, pitch);
   const turn = spec.turn * D;
   const out: CutObject[] = [];
   spots.forEach(({ p, f }, i) => {

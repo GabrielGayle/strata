@@ -8,7 +8,7 @@ import { blurSpec } from './blur';
 import { processImage, rotate, silhouetteMask, type Gray } from './image';
 import { buildHeightField, type HeightField } from './heightfield';
 import { buildMapHeightField, isMapDepth } from './mapPlateHeight';
-import { slice, type SliceResult } from './slicer';
+import { plateDefs, slice, type SliceResult } from './slicer';
 import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
 import { layoutShelfResult, type SolveResult } from './shelfSolve';
@@ -24,7 +24,7 @@ import { share } from './memo';
 import { carveShadow, isCandle, type ShadowReport } from './shadow';
 import type { Project } from './project';
 import { buildObjects, type ObjectBuild } from './objects';
-import { candleObjects, chokeCircles, sitOnSurface, surfaceTop } from './candles';
+import { candleObjects, chokeCircles, sitOnSurface, snapToPlates, surfaceTop } from './candles';
 import { intersection, rect, shapeBBox, type Shape } from './geom2d';
 
 /** Top of a plate shape between two u values (plate coordinates), or null where it has no steel. */
@@ -273,7 +273,10 @@ export function createFrontPipeline() {
       layoutShelfResult(project.shelf, baseTop(v), project.shelf?.unobstructed ? origin : undefined),
     );
     const onSurface = project.candles?.sit === 'surface' || (project.candles?.sit === 'auto' && !!mapTop);
-    const candles = stage('Candelabra', [project.candles, baseTop(v), onSurface], () => candleObjects(project.candles, baseTop(v), onSurface));
+    // the plates' planes, for candles that line up with them (they depend only on the settings)
+    const stackPlanes = stage('Plate planes', [...pick(v, SLICE_KEYS)], () => plateDefs(v).filter((d) => d.family === 'P').map((d) => d.plane));
+    const pitch = stackPlanes.length > 1 ? Math.abs((stackPlanes[1].origin[0] - stackPlanes[0].origin[0]) * stackPlanes[0].normal[0] + (stackPlanes[1].origin[2] - stackPlanes[0].origin[2]) * stackPlanes[0].normal[2]) : 0;
+    const candles = stage('Candelabra', [project.candles, baseTop(v), onSurface, pitch], () => candleObjects(project.candles, baseTop(v), onSurface, pitch));
     const others = stage('Placed objects', [project.objects, laid, origin], () => [...(project.objects ?? []).map((o) => toWorld(o, origin)), ...laid.cards.map((o) => toWorld(o, origin, true))]);
     // candles sitting into the plates need the plates as they are without them first
     const bare = onSurface
@@ -282,8 +285,12 @@ export function createFrontPipeline() {
           return slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: mapTop ? null : topImg, topMask: mapTop ? null : topMask, moves: project.moves, materialFor, objects: b.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut })), mapTerrain: !!mapTop });
         })
       : null;
-    const placedCandles = stage('Candles placed', [candles, origin, bare], () => {
-      const w = candles.map((o) => toWorld(o, origin, true));
+    const placedCandles = stage('Candles placed', [candles, origin, bare, stackPlanes], () => {
+      const w = snapToPlates(
+        candles.map((o) => toWorld(o, origin, true)),
+        stackPlanes,
+        project.candles?.snap ?? 'off',
+      );
       return bare ? sitOnSurface(w, (x, z, r) => surfaceTop(bare.parts, x, z, r, topWithin)) : w;
     });
     const objects = stage('Objects', [others, placedCandles], () => buildObjects([...others, ...placedCandles]));

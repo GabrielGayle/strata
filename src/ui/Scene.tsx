@@ -20,6 +20,7 @@ import { useStore } from '../state/store';
 import { objectMatrix, type CutObject } from '../core/objects';
 import type { CardSight } from '../core/shelfView';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
+import CandleGizmo from './CandleGizmo';
 import { Candle3D, SunStudy3D } from './SunStudy';
 import { showBaseMesh, showInsertMesh, showObject, type ViewportLayers } from './viewportLayers';
 
@@ -182,7 +183,7 @@ function PlacedObjects({ model, layers }: { model: Model; layers: ViewportLayers
     <>
       {model.objects.map(({ object: o, geometry }) => {
         if (o.look === 'hidden' || !showObject(layers, hidden, o.id)) return null;
-        if (o.look) return <Candle key={o.id} o={o} geometry={geometry} picked={o.id === sel || hl === 'objects'} />;
+        if (o.look) return <Candle key={o.id} o={o} geometry={geometry} picked={o.id === sel || hl === 'objects'} onPick={() => useStore.getState().ui.objectsMode && setUi({ objectSel: o.id })} />;
         const shelf = o.seat !== undefined || o.id.startsWith('shelf');
         const lit = hl === 'notches' || (hl === 'cards' && shelf) || (hl === 'objects' && !shelf);
         const picked = o.id === sel || lit;
@@ -206,6 +207,7 @@ function PlacedObjects({ model, layers }: { model: Model; layers: ViewportLayers
       })}
       <OriginMarker model={model} />
       <HiddenFaceTint model={model} />
+      <CandleGizmo model={model} />
     </>
   );
 }
@@ -259,14 +261,24 @@ function HiddenFaceTint({ model }: { model: Model }) {
 }
 
 /** A candle or tealight: wax (in a metal cup for a tealight), a wick and a small flame. */
-function Candle({ o, geometry, picked }: { o: CutObject; geometry: THREE.BufferGeometry; picked: boolean }) {
+function Candle({ o, geometry, picked, onPick }: { o: CutObject; geometry: THREE.BufferGeometry; picked: boolean; onPick: () => void }) {
   const accent = cssVar('--accent', '#d4521c');
   const tea = o.look === 'tealight';
   const top = o.y + o.h / 2;
   const flame = Math.min(22, Math.max(9, o.w * 0.45));
   return (
     <group>
-      <mesh geometry={geometry} userData={{ measure: o.id }} castShadow receiveShadow>
+      <mesh
+        geometry={geometry}
+        userData={{ measure: o.id }}
+        castShadow
+        receiveShadow
+        onClick={(e) => {
+          if (!useStore.getState().ui.objectsMode) return;
+          e.stopPropagation();
+          onPick();
+        }}
+      >
         {tea ? <meshStandardMaterial color="#c9ccd1" metalness={0.85} roughness={0.35} /> : <meshStandardMaterial color="#f1e8d6" roughness={0.6} />}
         {picked && <Edges color={accent} threshold={20} />}
       </mesh>
