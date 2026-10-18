@@ -29,7 +29,69 @@ function compassSvg(facing: number): string {
 </svg>`;
 }
 
+const STYLE = `<style>
+  body { font: 13px/1.45 system-ui, sans-serif; color: #222; max-width: 760px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 20px; margin: 0 0 2px; } h2 { font-size: 14px; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .06em; }
+  .sub { color: #666; margin: 0 0 12px; }
+  .top { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .big { font-size: 28px; font-weight: 700; }
+  table { border-collapse: collapse; width: 100%; } th, td { border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: left; vertical-align: middle; }
+  th { font-size: 11px; color: #666; font-weight: 600; } td.t { font-weight: 700; white-space: nowrap; }
+  td img { height: 36px; border: 1px solid #ccc; display: block; }
+  ol { padding-left: 18px; } li { margin: 3px 0; }
+  .note { color: #666; font-size: 12px; }
+  @media print { body { margin: 0 auto; } a { color: inherit; } }
+</style>`;
+
+/** The card for a candle-lit piece: where the candle stands, in a dark room. */
+function candleCardHtml(project: Project, v: Values, rep: ShadowReport): string {
+  const g = rep.geom;
+  const C = g.candle!;
+  const frame = project.shadow?.frames[0];
+  const d = Number(v.candleD) || 0;
+  const x = Number(v.candleX) || 0;
+  // the front plate's face, along the stack
+  const front = C[0] * g.s[0] + C[2] * g.s[1] + d;
+  const toWall = g.wallS - front;
+  // a sideways nudge of the flame moves the picture the other way, scaled by how far the wall is beyond the middle of the stack
+  const mid = d + (g.wallS - front) / 2;
+  const nudge = (10 * (d + toWall - mid)) / Math.max(1, mid);
+  const sc = rep.scores[0];
+  const screen =
+    g.screen === 'wall'
+      ? `A flat pale wall or panel, square to the stack, ${mm(Number(v.shadowGap) || 0)} behind the back plate. The picture is ${mm(Number(v.shadowW))} wide × ${mm(Number(v.shadowH))} tall, its bottom ${mm(g.y0)} above the floor${Math.abs(Number(v.shadowX) || 0) > 0.5 ? `, centred ${mm(Math.abs(Number(v.shadowX)))} to the ${Number(v.shadowX) > 0 ? 'right' : 'left'} of the middle (looking from the front)` : ', centred on the middle'}.`
+      : g.screen === 'ground'
+        ? `Level, pale floor behind the piece. The picture starts ${mm(Number(v.shadowGap) || 0)} behind the back plate and runs ${mm(Number(v.shadowH))} further back, ${mm(Number(v.shadowW))} wide.`
+        : `The top of the concrete, from ${mm(Number(v.shadowGap) || 0)} behind the back plate. Keep it clean and pale.`;
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(project.name)} install card</title>
+${STYLE}</head>
+<body>
+<h1>${esc(project.name)}: install card</h1>
+<p class="sub">A shadow picture carved for a candle. It shows whenever the candle is lit, best in a dark room.</p>
+<div class="top">
+  ${frame ? `<img src="${esc(frame.dataUrl)}" alt="" style="height:90px;border:1px solid #ccc">` : ''}
+  <div>
+    <div class="big">Flame ${mm(d)} in front, ${mm(C[1])} up</div>
+    <p>Measure from the face of the front plate to the middle of the flame, ${Math.abs(x) > 0.5 ? `${mm(Math.abs(x))} to the ${x > 0 ? 'right' : 'left'} of the middle (looking from the front)` : 'on the middle line of the piece'}, and from the floor the base stands on up to the middle of the flame.</p>
+  </div>
+</div>
+<h2>Setting it down</h2>
+<ol>
+  <li>Stand the base on firm, level ground and check it with a spirit level both ways.</li>
+  <li>Screen: ${screen}</li>
+  <li>Candle: on a stand or shelf so the middle of the flame is ${mm(C[1])} up and ${mm(d)} in front of the front plate. A candle burns down, so set the height for a fresh candle and raise it as it goes, or use a candle in a glass that keeps its flame height. Moving the flame 10 mm sideways moves the picture about ${mm(Math.max(1, nudge))} the other way.</li>
+  <li>Keep draughts away: a flickering flame blurs the picture. Other lights in the room wash it out.</li>
+</ol>
+${sc ? `<p class="note">The picture comes out about ${Math.round((sc.problem ? 0 : sc.match) * 100)}% like the original with the flame in place.</p>` : ''}
+<p class="note">Made with Strata.</p>
+</body></html>
+`;
+}
+
 export function installCardHtml(project: Project, v: Values, rep: ShadowReport): string {
+  if (rep.geom.candle) return candleCardHtml(project, v, rep);
   const site = siteOf(v);
   const frames = project.shadow?.frames ?? [];
   const allDay = v.shadowExec === 'allday';
@@ -68,19 +130,7 @@ export function installCardHtml(project: Project, v: Values, rep: ShadowReport):
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(project.name)} install card</title>
-<style>
-  body { font: 13px/1.45 system-ui, sans-serif; color: #222; max-width: 760px; margin: 24px auto; padding: 0 16px; }
-  h1 { font-size: 20px; margin: 0 0 2px; } h2 { font-size: 14px; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .06em; }
-  .sub { color: #666; margin: 0 0 12px; }
-  .top { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
-  .big { font-size: 28px; font-weight: 700; }
-  table { border-collapse: collapse; width: 100%; } th, td { border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: left; vertical-align: middle; }
-  th { font-size: 11px; color: #666; font-weight: 600; } td.t { font-weight: 700; white-space: nowrap; }
-  td img { height: 36px; border: 1px solid #ccc; display: block; }
-  ol { padding-left: 18px; } li { margin: 3px 0; }
-  .note { color: #666; font-size: 12px; }
-  @media print { body { margin: 0 auto; } a { color: inherit; } }
-</style></head>
+${STYLE}</head>
 <body>
 <h1>${esc(project.name)}: install card</h1>
 <p class="sub">Shadow pictures carved for ${site.lat.toFixed(2)}° ${site.lat >= 0 ? 'N' : 'S'}, ${Math.abs(site.lon).toFixed(2)}° ${site.lon >= 0 ? 'E' : 'W'}, around ${dateName(0)}${days.length > 1 ? ` (${dateName(days[0])} to ${dateName(days[days.length - 1])})` : ''}. Times are clock times at ${utc}.</p>

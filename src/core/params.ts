@@ -510,11 +510,19 @@ export const PARAMS: ParamDef[] = [
 
   // Shadow carving: holes through the plates so the sun casts pictures on a wall behind
   { id: 'shadowOn', label: 'Shadow pictures', group: 'Shadow', kind: 'toggle', def: false, help: 'Carve the plates so the sun casts your pictures on a wall, the ground or the concrete behind the piece. Add pictures and their times in the Shadow view.' },
+  choice('shadowLight', 'Light', 'Shadow', 'sun', [
+    { value: 'sun', label: 'Sun' },
+    { value: 'candle', label: 'Candle' },
+  ], { help: 'Sun: carved for the real sun at the Sun panel\'s place, date and times. Candle: a candle flame in front of the piece, which casts one picture whenever it is lit (no Sun study needed). Its shadows grow the further the screen is from the flame' }),
+  num('candleD', 'Candle distance', 'Shadow', 200, 10, 5000, { show: (v) => v.shadowLight === 'candle', help: 'From the front plate to the flame. Closer makes the picture bigger and uses more of each plate' }),
+  num('candleH', 'Flame height', 'Shadow', 'baseHeight + 80', 1, 5000, { show: (v) => v.shadowLight === 'candle', help: 'Height of the flame above the ground the base stands on. Level with the middle of the picture throws it straight back' }),
+  num('candleX', 'Candle across', 'Shadow', 0, -3000, 3000, { show: (v) => v.shadowLight === 'candle', help: 'Right of the middle as you look from the front' }),
+  num('candleFlame', 'Flame size', 'Shadow', 12, 0, 60, { show: (v) => v.shadowLight === 'candle', help: 'How wide the flame is. Only softens the preview (a bigger flame blurs the shadow more); the carve aims at its middle' }),
   choice('shadowExec', 'Execution', 'Shadow', 'frames', [
     { value: 'frames', label: 'Timed frames in place (a flip book)' },
     { value: 'side', label: 'Timed frames side by side (a film strip)' },
     { value: 'allday', label: 'One picture, all day' },
-  ], { help: 'In place: each picture appears at its own time, all on the same patch of screen. Side by side: each picture sits where its own light comes straight through the plates, so they make a row along the screen (spaced by the sun) and light up in turn. All day: the first picture is carved for every hour of daylight (softer, but always there)' }),
+  ], { show: (v) => v.shadowLight !== 'candle', help: 'In place: each picture appears at its own time, all on the same patch of screen. Side by side: each picture sits where its own light comes straight through the plates, so they make a row along the screen (spaced by the sun) and light up in turn. All day: the first picture is carved for every hour of daylight (softer, but always there)' }),
   choice('shadowScreen', 'Screen', 'Shadow', 'wall', [
     { value: 'wall', label: 'Wall behind' },
     { value: 'ground', label: 'Ground behind' },
@@ -523,11 +531,14 @@ export const PARAMS: ParamDef[] = [
   num('shadowGap', 'Screen distance', 'Shadow', 30, -3000, 3000, {
     help: 'Wall: from the back plate to the wall (closer is crisper: the sun blurs shadows about 1 mm per 100 mm). Ground or concrete top: from the back plate to the near edge of the picture; negative starts it under the plates',
   }),
+  num('shadowWallW', 'Wall width', 'Shadow', 3000, 100, 20000, { show: (v) => v.shadowScreen === 'wall', help: 'The whole wall the shadow lands on, centred behind the piece. Room scale by default' }),
+  num('shadowWallH', 'Wall height', 'Shadow', 2400, 100, 10000, { show: (v) => v.shadowScreen === 'wall' }),
   num('shadowW', 'Picture width', 'Shadow', 180, 10, 3000, { help: 'Each picture, side by side or not' }),
   num('shadowH', 'Picture height', 'Shadow', 120, 10, 3000, { help: 'On the ground or the concrete, this runs away from the front of the piece' }),
   num('shadowX', 'Picture across', 'Shadow', 0, -3000, 3000, { help: 'Centre of the picture (or the row of pictures), right of the middle as you look from the front' }),
   num('shadowY', 'Picture bottom', 'Shadow', 'baseHeight + 20', 0, 3000, { show: (v) => v.shadowScreen === 'wall', help: 'Height of the bottom of the picture above the ground' }),
   num('shadowDays', 'Date window', 'Shadow', 21, 0, 90, {
+    show: (v) => v.shadowLight !== 'candle',
     unit: 'days',
     int: true,
     noScale: true,
@@ -536,7 +547,7 @@ export const PARAMS: ParamDef[] = [
   num('shadowFade', 'Crossfade', 'Shadow', 0, 0, 100, {
     unit: '%',
     noScale: true,
-    show: (v) => v.shadowExec !== 'allday',
+    show: (v) => v.shadowExec !== 'allday' && v.shadowLight !== 'candle',
     help: 'Stretches each frame toward its neighbours\' times so one fades out as the next fades in. 50% meets halfway; more overlaps. Softer pictures and more stray light',
   }),
   num('shadowBridge', 'Bridge width', 'Shadow', 'thickness', 0, 30, {
@@ -544,7 +555,7 @@ export const PARAMS: ParamDef[] = [
     help: 'Loose bits inside the cut-outs are held in by bridges this wide, like a stencil. 0 cuts them away instead (cleaner plates, more stray light)',
   }),
   num('shadowRim', 'Solid rim', 'Shadow', 8, 0, 100, { help: 'Uncut border kept up both sides of every plate and above the concrete. The top edge may be notched where the low sun reaches over it' }),
-  num('shadowCell', 'Resolution', 'Shadow', 3, 1, 10, { step: 0.5, noScale: true, help: 'Size of one picture pixel on the wall and in the plates. Finer is sharper but makes more, smaller holes' }),
+  num('shadowCell', 'Resolution', 'Shadow', 2, 0.5, 10, { step: 0.5, noScale: true, help: 'Grid the cuts are worked out on. The cut edges follow the picture smoothly between grid points, so finer mainly catches smaller details (and makes more, smaller holes and a slower carve)' }),
   num('shadowThreshold', 'Light above', 'Shadow', 0.5, 0, 1, { unit: '', step: 0.01, noScale: true, help: 'Picture brightness above which the wall should be lit' }),
   { id: 'shadowInvert', label: 'Swap light and dark', group: 'Shadow', kind: 'toggle', def: false, help: 'Light the dark parts of the pictures instead' },
 
@@ -645,7 +656,7 @@ export const GROUP_IDLE: Partial<Record<(typeof GROUPS)[number], (v: Values) => 
       : v.sliceMode === 'parallel' || v.sliceMode === 'radial'
         ? null
         : `Not used with ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing: tuning works on parallel or radial plates.`,
-  Shadow: (v) => (!v.shadowOn ? null : !v.sunOn ? 'Needs Sun study on: the pictures are carved for the real sun at its place and date.' : v.sliceMode !== 'parallel' ? `Works with parallel plates for now, not ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing.` : null),
+  Shadow: (v) => (!v.shadowOn ? null : !v.sunOn && v.shadowLight !== 'candle' ? 'Needs Sun study on (or set Light to Candle): the pictures are carved for the real sun at its place and date.' : v.sliceMode !== 'parallel' ? `Works with parallel plates for now, not ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing.` : null),
 };
 
 export const SWITCH_IDS = new Set(Object.values(GROUP_SWITCHES).map((s) => s!.id));

@@ -6,7 +6,7 @@ import { useModel, fmt } from './model';
 import { useAssets } from '../state/assets';
 import { createFrontPipeline } from '../core/pipeline';
 import { bestTry, fitLayouts, tryLayout, type FitTry } from '../core/shadowFit';
-import { frameMatch, renderWall, windowDays, type ShadowFrame } from '../core/shadow';
+import { frameMatch, isCandle, lightAt, lightSpread, renderScreen, windowDays, type ScreenView, type ShadowFrame } from '../core/shadow';
 import { clock, shiftSite, siteOf, sunTimes } from '../core/sun';
 import { SunBar } from './SunStudy';
 import { installCardHtml } from '../core/installCard';
@@ -43,40 +43,108 @@ const fromHHMM = (s: string) => {
   return Number.isFinite(a) ? a + (Number.isFinite(b) ? b : 0) / 60 : NaN;
 };
 
-/** The wall at the current time: sunlit where light gets through. */
-function WallCanvas() {
+type ScreenZoom = 'picture' | 'wall';
+
+/**
+ * The screen at the current time, traced through the carved plates' real
+ * outlines: a quick pass first, then a fine one (a quarter of a picture cell
+ * per pixel) a few rows at a time, so scrubbing the time stays smooth. Soft
+ * spreads the light over its real size (the sun's disc, the candle flame).
+ * Whole wall shows the entire wall with the picture area outlined.
+ */
+function ScreenCanvas({ zoom, soft }: { zoom: ScreenZoom; soft: boolean }) {
   const model = useModel();
   const rep = model.shadow;
+  const v = model.v;
   const time = useStore((s) => s.ui.sunTime);
   const ref = useRef<HTMLCanvasElement>(null);
-  const margin = rep ? Math.round(Math.max(rep.geom.cols, rep.geom.rows) * 0.15) : 0;
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     const cv = ref.current;
     if (!cv || !rep) return;
-    const { lit, cols, rows, up } = renderWall(model.v, rep, time, margin);
-    cv.width = cols;
-    cv.height = rows;
-    const ctx = cv.getContext('2d')!;
-    const img = ctx.createImageData(cols, rows);
-    for (let r = 0; r < rows; r++)
-      for (let c = 0; c < cols; c++) {
-        const x = lit[r * cols + c];
-        const k = ((rows - 1 - r) * cols + c) * 4; // row 0 is the bottom of the screen
-        // sunlit, shadow, or not screen at all (inside the concrete or a plate), hatched
-        const [cr, cg, cb] = x === 2 ? ((r + c) % 4 < 2 ? [120, 116, 108] : [104, 100, 94]) : up && x === 1 ? [250, 236, 205] : [70, 66, 62];
-        img.data[k] = cr;
-        img.data[k + 1] = cg;
-        img.data[k + 2] = cb;
-        img.data[k + 3] = 255;
+    const g = rep.geom;
+    const { light, up } = lightAt(v, g, time);
+    const lights = !up ? [] : soft ? lightSpread(g, light, Number(v.candleFlame) || 12) : [light];
+    const whole = zoom === 'wall' && g.screen === 'wall';
+    // the patch of screen to show, at a given pixel size
+    const viewAt = (px: number): ScreenView => {
+      if (whole) {
+        const ww = Math.max(Number(v.shadowWallW) || 3000, g.w + 40);
+        const wh = Math.max(Number(v.shadowWallH) || 2400, g.y0 + g.h + 40);
+        return { a0: -ww / 2, b0: 0, px, cols: Math.max(1, Math.round(ww / px)), rows: Math.max(1, Math.round(wh / px)) };
       }
-    ctx.putImageData(img, 0, 0);
-    // the picture rectangle (one per frame side by side)
-    ctx.strokeStyle = 'rgba(224,112,28,0.8)';
-    ctx.lineWidth = 1;
-    for (const sl of rep.geom.slots ?? [{ c0: 0, cols: rep.geom.cols }]) ctx.strokeRect(margin + sl.c0 + 0.5, margin + 0.5, sl.cols - 1, rep.geom.rows - 1);
-  }, [rep, time, margin, model.v]);
+      const m = Math.max(g.w, g.h) * 0.15;
+      return { a0: g.x0 - m, b0: g.y0 - m, px, cols: Math.max(1, Math.round((g.w + 2 * m) / px)), rows: Math.max(1, Math.round((g.h + 2 * m) / px)) };
+    };
+    const span = whole ? Math.max(Number(v.shadowWallW) || 3000, Number(v.shadowWallH) || 2400) : Math.max(g.w, g.h) * 1.3;
+    const quick = viewAt(Math.max(g.cell, span / 160));
+    const fine = viewAt(Math.max(whole ? span / 900 : g.cell / 4, 0.25));
+    const candle = !!g.candle;
+    const paint = (view: ScreenView, out: Float32Array) => {
+      cv.width = view.cols;
+      cv.height = view.rows;
+      const ctx = cv.getContext('2d')!;
+      const img = ctx.createImageData(view.cols, view.rows);
+      // lit colour and shadow colour: warm sunlight on a pale wall by day, candlelight at night
+      const lit = candle ? [255, 200, 128] : [250, 236, 205];
+      const dark = candle ? [30, 26, 24] : [70, 66, 62];
+      for (let r = 0; r < view.rows; r++)
+        for (let c = 0; c < view.cols; c++) {
+          const x = out[r * view.cols + c];
+          const k = ((view.rows - 1 - r) * view.cols + c) * 4; // row 0 is the bottom of the screen
+          if (x < 0) {
+            // not screen at all (inside the concrete or a plate), hatched
+            const h = (r + c) % 4 < 2 ? [120, 116, 108] : [104, 100, 94];
+            img.data.set([h[0], h[1], h[2], 255], k);
+            continue;
+          }
+          const t = Math.min(1, x);
+          img.data[k] = dark[0] + (lit[0] - dark[0]) * t;
+          img.data[k + 1] = dark[1] + (lit[1] - dark[1]) * t;
+          img.data[k + 2] = dark[2] + (lit[2] - dark[2]) * t;
+          img.data[k + 3] = 255;
+        }
+      ctx.putImageData(img, 0, 0);
+      // the picture rectangle (one per frame side by side)
+      ctx.strokeStyle = 'rgba(224,112,28,0.85)';
+      ctx.lineWidth = Math.max(1, view.cols / 400);
+      for (const sl of g.slots ?? [{ c0: 0, cols: g.cols }]) {
+        const x = (g.x0 + sl.c0 * g.cell - view.a0) / view.px;
+        const y = view.rows - (g.y0 + g.h - view.b0) / view.px;
+        ctx.strokeRect(x, y, (sl.cols * g.cell) / view.px, g.h / view.px);
+      }
+    };
+    const q = new Float32Array(quick.cols * quick.rows);
+    renderScreen(rep, lights, quick, q);
+    paint(quick, q);
+    // then the fine pass, a slice at a time
+    const out = new Float32Array(fine.cols * fine.rows);
+    let row = 0;
+    let timer = 0;
+    setBusy(true);
+    const step = () => {
+      const t0 = performance.now();
+      while (row < fine.rows && performance.now() - t0 < 14) {
+        const r1 = Math.min(fine.rows, row + 4);
+        renderScreen(rep, lights, fine, out, row, r1);
+        row = r1;
+      }
+      if (row < fine.rows) timer = window.setTimeout(step, 0);
+      else {
+        paint(fine, out);
+        setBusy(false);
+      }
+    };
+    timer = window.setTimeout(step, 60);
+    return () => clearTimeout(timer);
+  }, [rep, time, v, zoom, soft]);
   if (!rep) return null;
-  return <canvas ref={ref} className="shadow-wall" aria-label="The screen behind the piece at this time" />;
+  return (
+    <>
+      <canvas ref={ref} className={`shadow-wall ${zoom === 'wall' ? 'whole' : ''}`} aria-label="The screen behind the piece at this time" />
+      {busy && <span className="sp-busy">Sharpening…</span>}
+    </>
+  );
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -240,6 +308,8 @@ export default function ShadowView() {
   const [failed, setFailed] = useState<string[]>([]);
   const videoRef = useRef<HTMLInputElement>(null);
   const [video, setVideo] = useState<File | null>(null);
+  const [zoom, setZoom] = useState<ScreenZoom>('picture');
+  const [soft, setSoft] = useState(false);
 
   const save = (next: ShadowFrame[], key?: string) => setShadow({ frames: next }, key);
   const patch = (id: string, p: Partial<ShadowFrame>, key?: string) => save(frames.map((f) => (f.id === id ? { ...f, ...p } : f)), key);
@@ -281,9 +351,11 @@ export default function ShadowView() {
     save(frames.map((f, i) => ({ ...f, time: noon + (i - (frames.length - 1) / 2) * step })));
   };
 
-  const needs = !v.sunOn ? 'sun' : !v.shadowOn ? 'shadow' : v.sliceMode !== 'parallel' ? 'parallel' : null;
-  const allDay = v.shadowExec === 'allday';
-  const allSide = v.shadowExec === 'side' && frames.length > 1;
+  const candle = isCandle(v);
+  const needs = !v.sunOn && !candle ? 'sun' : !v.shadowOn ? 'shadow' : v.sliceMode !== 'parallel' ? 'parallel' : null;
+  // a candle, like all day, shows one picture: the first
+  const allDay = candle || v.shadowExec === 'allday';
+  const allSide = !candle && v.shadowExec === 'side' && frames.length > 1;
   return (
     <div className="scroll shadow-view">
       <div className="title-bar panel-title">
@@ -301,6 +373,9 @@ export default function ShadowView() {
               The pictures are carved for the real sun, so Sun study needs to be on (set the place, date and which way the piece faces in the Sun panel).{' '}
               <button className="btn sm" onClick={() => setParams({ sunOn: true }, 'Sun study on')}>
                 Turn on Sun study
+              </button>{' '}
+              <button className="btn sm" onClick={() => setParams({ shadowLight: 'candle' }, 'Light the shadow with a candle')}>
+                Use a candle instead
               </button>
             </>
           )}
@@ -315,7 +390,7 @@ export default function ShadowView() {
           {needs === 'parallel' && <>Shadow pictures work with parallel plates for now. Set Slicer › Slicing to parallel.</>}
         </div>
       )}
-      {rep && !needs && rep.cut > 0 && rep.cut < rep.plates / 3 && (
+      {rep && !needs && !candle && rep.cut > 0 && rep.cut < rep.plates / 3 && (
         <div className="note shadow-needs">
           Only the {rep.cut} plate{rep.cut === 1 ? '' : 's'} nearest the screen {rep.cut === 1 ? 'is' : 'are'} cut: the sun is high enough that its light drops through the back of the stack before it reaches the screen. A lower sun (winter months, or morning and evening times) uses more of the plates and makes each frame show for a shorter time.
         </div>
@@ -331,7 +406,7 @@ export default function ShadowView() {
       <div className="shadow-grid">
         <section className="shadow-frames">
           <div className="sf-head">
-            <strong>{allDay ? 'Picture (all day)' : 'Frames'}</strong>
+            <strong>{candle ? 'Picture (candle)' : allDay ? 'Picture (all day)' : 'Frames'}</strong>
             <span className="sf-actions">
               <button className="btn sm" onClick={() => fileRef.current?.click()}>
                 Add pictures
@@ -409,7 +484,9 @@ export default function ShadowView() {
                   )}
                   <div className="sf-score">
                     {inactive
-                      ? 'Not used: All day carves the first picture only'
+                      ? candle
+                        ? 'Not used: a candle casts the first picture only'
+                        : 'Not used: All day carves the first picture only'
                       : sc?.problem
                         ? <span className="err">{sc.problem}</span>
                         : sc
@@ -441,9 +518,29 @@ export default function ShadowView() {
           })}
         </section>
         <section className="shadow-preview">
-          <div className="sp-wall">
-            {rep ? <WallCanvas /> : <div className="empty">{needs ? 'Nothing carved yet.' : frames.length ? 'Carving…' : 'Add a picture to start.'}</div>}
-            {v.sunOn && <SunBar model={model} />}
+          <div className="sp-tools">
+            {v.shadowScreen === 'wall' && (
+              <span className="sp-zoom" role="tablist" aria-label="How much of the wall to show">
+                <button className={`btn sm ${zoom === 'picture' ? 'on' : ''}`} role="tab" aria-selected={zoom === 'picture'} onClick={() => setZoom('picture')}>
+                  Picture
+                </button>
+                <button className={`btn sm ${zoom === 'wall' ? 'on' : ''}`} role="tab" aria-selected={zoom === 'wall'} onClick={() => setZoom('wall')}>
+                  Whole wall
+                </button>
+              </span>
+            )}
+            <label title={candle ? 'Blur the shadow by the real size of the flame (Flame size in the Shadow panel)' : "Blur the shadow by the real size of the sun's disc"}>
+              <input type="checkbox" checked={soft} onChange={(e) => setSoft(e.target.checked)} /> Soft edges ({candle ? 'flame size' : "sun's size"})
+            </label>
+            {candle && (
+              <span className="note">
+                Candle {fmt(v.candleD, 0)} mm in front, flame {fmt(v.candleH, 0)} mm up
+              </span>
+            )}
+          </div>
+          <div className={`sp-wall ${candle ? 'night' : ''}`}>
+            {rep ? <ScreenCanvas zoom={v.shadowScreen === 'wall' ? zoom : 'picture'} soft={soft} /> : <div className="empty">{needs ? 'Nothing carved yet.' : frames.length ? 'Carving…' : 'Add a picture to start.'}</div>}
+            {v.sunOn && !candle && <SunBar model={model} />}
           </div>
           <p className="note">
             {v.shadowScreen === 'ground' || v.shadowScreen === 'base' ? (
@@ -453,13 +550,13 @@ export default function ShadowView() {
               </>
             ) : (
               <>
-                The wall {fmt(v.shadowGap, 0)} mm behind the back plate, seen from the front of the piece, with the picture's bottom {fmt(v.shadowY, 0)} mm up.
+                The wall {fmt(v.shadowGap, 0)} mm behind the back plate ({fmt(v.shadowWallW, 0)} × {fmt(v.shadowWallH, 0)} mm), seen from the front of the piece, with the picture's bottom {fmt(v.shadowY, 0)} mm up.
               </>
             )}{' '}
-            The orange box{allSide ? 'es are' : ' is'} the picture area ({fmt(v.shadowW, 0)} × {fmt(v.shadowH, 0)} mm{allSide ? ' each, placed where each frame\'s light comes straight through the plates' : ''}). Warm light is sun and dark is shadow. The carved
-            plates are live in the 3D view, where the screen catches the real shadow.
+            The orange box{allSide ? 'es are' : ' is'} the picture area ({fmt(v.shadowW, 0)} × {fmt(v.shadowH, 0)} mm{allSide ? ' each, placed where each frame\'s light comes straight through the plates' : ''}). Warm light is {candle ? 'candlelight, fading with distance from the flame,' : 'sun'} and dark is shadow, traced through the real cut outlines. The carved
+            plates are live in the 3D view, where the {candle ? 'candle lights the room and the wall' : 'screen'} catches the real shadow.
           </p>
-          {rep && !needs && <QualityStrip names={allDay ? frames.slice(0, 1).map((f) => f.name) : frames.map((f) => f.name)} />}
+          {rep && !needs && !candle && <QualityStrip names={allDay ? frames.slice(0, 1).map((f) => f.name) : frames.map((f) => f.name)} />}
         </section>
       </div>
     </div>
