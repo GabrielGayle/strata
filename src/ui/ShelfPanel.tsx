@@ -344,7 +344,7 @@ function UnobstructedToggle({ spec, edit, setHint }: { spec: ShelfSpec; edit: (p
     <div className="shelf-dev" data-testid="shelf-unobstructed">
       <label
         className="ob-num"
-        {...help('When on, the layout solver opens the gap, eases the lean and the other arc numbers just enough that every postcard face is fully visible from the viewing angle. Numbers you typed stay put.')}
+        {...help('When on, the layout solver opens the gap, eases the lean and the other arc numbers just enough that no card hides another from the viewing angle (numbers you typed stay put), and the plates are cut back out of every card’s line of sight. Only the seat strip along each card’s bottom edge stays held.')}
       >
         <input
           type="checkbox"
@@ -426,6 +426,16 @@ export function UnobstructedDevDock() {
           title="Copy the 3D camera’s current azimuth and elevation into these fields."
         >
           Use current camera
+        </button>
+        <button
+          className="btn sm"
+          onClick={() => {
+            const ui = useStore.getState().ui;
+            useStore.getState().setUi({ snap: { dir: 'shelf', n: ui.snap.n + 1 }, pointViewFov: undefined, pointView: undefined });
+          }}
+          title="Turn the 3D camera to this azimuth and elevation, to see the shelf as the check sees it."
+        >
+          Look from here
         </button>
       </div>
       <div className="mp-row ap-edit ob-edit">

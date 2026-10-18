@@ -1,10 +1,12 @@
 // Postcard visibility: project each card face onto a view plane and measure
 // how much of it is hidden by cards in front (2D polygon clipping).
 import * as THREE from 'three';
-import { circle, difference, intersection, shapeArea, shapeBBox, signedArea, union, unionShapes, type Path, type Shape, type Vec2 } from './geom2d';
+import { circle, difference, intersection, shapeArea, shapeBBox, signedArea, unionShapes, type Path, type Shape, type Vec2 } from './geom2d';
 import { objectMatrix, type CutObject } from './objects';
 import type { Issue } from './checks';
 import type { ShelfSpec } from './shelf';
+import { planeToWorld, type Plane } from './section';
+import { sightCard, sightSection, type SightCard } from './sightLine';
 
 export type V3 = [number, number, number];
 
@@ -301,8 +303,38 @@ function issuesFor(report: Pick<VisibilityReport, 'cards' | 'hiddenCount'>, on: 
   return issues;
 }
 
-/** How much of each card face is occluded by cards in front, from `view`. */
-export function cardVisibility(cards: CutObject[], view: UnobstructedView): VisibilityReport {
+/** A cut plate piece, for plate-in-front checks. */
+export interface PlateSlab {
+  plane: Plane;
+  thickness: number;
+  shape: Shape;
+}
+
+/** Plate material standing in a card's sight line, as seen from the eye. */
+function plateOccluders(sight: SightCard, plates: PlateSlab[], b: ViewBasis): Shape[] {
+  const out: Shape[] = [];
+  for (const p of plates) {
+    const sec = sightSection(sight, b.eye, p.plane, p.thickness);
+    if (!sec.length) continue;
+    const hit = intersection(p.shape, sec);
+    if (shapeArea(hit) < 0.05) continue;
+    for (const w of [-p.thickness / 2, p.thickness / 2]) {
+      const map = (q: Vec2) => projectPt(planeToWorld(p.plane, q[0], q[1], w), b);
+      out.push(hit.map((e) => ({ outer: e.outer.map(map), holes: e.holes.map((h) => h.map(map)) })));
+    }
+  }
+  return out;
+}
+
+export interface VisibilityOptions {
+  /** Cut plates: material between a card face and the eye hides it too. */
+  plates?: PlateSlab[];
+  /** Strip along each card's bottom edge the plates hold (mm); plates may cover it. */
+  seat?: number;
+}
+
+/** How much of each card face is occluded by cards (and plates) in front, from `view`. */
+export function cardVisibility(cards: CutObject[], view: UnobstructedView, opts: VisibilityOptions = {}): VisibilityReport {
   const b = viewBasis(view.azimuth, view.elevation);
   const padR = view.maxOverlapMm + view.flexMm;
   const prepared = cards.filter((c) => c.on && c.kind === 'card').map((c) => prepare(c, b));
@@ -332,7 +364,9 @@ export function cardVisibility(cards: CutObject[], view: UnobstructedView): Visi
       const occ = occluderShape(other, b);
       if (occ.length) occluders.push(occ);
     }
-    const mask = occluders.length ? union(occluders.flatMap((s) => s.map((e) => e.outer))) : [];
+    const sight = opts.plates?.length ? sightCard(card.object, opts.seat ?? 0, 0) : null;
+    if (sight) occluders.push(...plateOccluders(sight, opts.plates!, b));
+    const mask = occluders.length ? unionShapes(...occluders) : [];
     const rawHidden = mask.length ? intersection(face, mask) : [];
     const allowed = cornerAllowance(face, card, b, padR);
     const excess = allowed.length && rawHidden.length ? difference(rawHidden, allowed) : rawHidden;
@@ -365,11 +399,27 @@ function shelfCardsOf(objects: Array<CutObject | { object: CutObject }>): CutObj
 }
 
 /** Visibility of the postcard-shelf cards among placed objects (undefined when there is no shelf). */
-export function reportShelfVisibility(objects: Array<CutObject | { object: CutObject }>, spec: ShelfSpec | undefined): VisibilityReport | undefined {
+export function reportShelfVisibility(objects: Array<CutObject | { object: CutObject }>, spec: ShelfSpec | undefined, plates?: PlateSlab[]): VisibilityReport | undefined {
   if (!spec?.on) return undefined;
   const cards = shelfCardsOf(objects);
   if (!cards.length) return undefined;
-  return cardVisibility(cards, viewSettings(spec));
+  return cardVisibility(cards, viewSettings(spec), { plates, seat: spec.seat });
+}
+
+/** Unit direction from the shelf toward its viewing eye. */
+export function shelfEye(spec: ShelfSpec): V3 {
+  const v = viewSettings(spec);
+  return viewBasis(v.azimuth, v.elevation).eye;
+}
+
+/**
+ * What Unobstructed view clears out of the plates: each shelf card's sight line above its seat,
+ * toward the chosen eye (null when the tool is off).
+ */
+export function shelfSight(objects: Array<CutObject | { object: CutObject }>, spec: ShelfSpec | undefined): { eye: V3; cards: SightCard[] } | null {
+  if (!spec?.on || !spec.unobstructed) return null;
+  const cards = shelfCardsOf(objects).flatMap((o) => sightCard(o, spec.seat, o.clearance) ?? []);
+  return cards.length ? { eye: shelfEye(spec), cards } : null;
 }
 
 /** Cache key: view numbers always; placement lives on the object list identity. */
