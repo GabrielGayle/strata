@@ -1,6 +1,9 @@
 // Layer budget: choose elevation plateaus per plate (equal, quantile, Jenks).
 import type { Float32Grid } from './mapGrid';
 import { gridFiniteMinMax } from './mapGrid';
+import { localMaximaElevations } from './mapSummits';
+
+export { localMaximaElevations } from './mapSummits';
 
 export type LayerBudgetMode = 'equal' | 'quantile' | 'jenks';
 
@@ -23,9 +26,6 @@ export const PINNED_BREAK_EPS_M = 0.05;
 const SNAP_EPS_M = 1e-3;
 /** Keep extra summit pins at least this far apart (Grasmoor / Crag Hill / High Stile). */
 const SUMMIT_PIN_EPS_M = 2;
-/** Only pin local maxima in the top 40% of relief. */
-const SUMMIT_BAND_FRAC = 0.4;
-const MAX_SUMMIT_PINS = 12;
 
 function sampleValues(data: Float32Array, max = 8000, extra: number[] = []): number[] {
   const finite: number[] = [];
@@ -110,55 +110,6 @@ function uniqueSorted(values: number[]): number[] {
     if (!out.length || v - out[out.length - 1] >= PINNED_BREAK_EPS_M) out.push(v);
   }
   return out;
-}
-
-function isLocalMaxCell(data: Float32Array, w: number, h: number, x: number, y: number): boolean {
-  const z = data[y * w + x];
-  if (!Number.isFinite(z)) return false;
-  let anyLower = false;
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (!dx && !dy) continue;
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-      const n = data[ny * w + nx];
-      if (!Number.isFinite(n)) continue;
-      if (n > z + SNAP_EPS_M) return false;
-      if (n < z - SNAP_EPS_M) anyLower = true;
-    }
-  }
-  return anyLower;
-}
-
-/**
- * Distinct summit elevations (metres) from local maxima in the top relief band.
- * Extra pins, like lake surfaces — they must not steal the plate budget.
- */
-export function localMaximaElevations(grid: Float32Grid): number[] {
-  const { w, h, data } = grid;
-  const { min, max } = gridFiniteMinMax(data);
-  if (!(max > min) || !Number.isFinite(max)) return [];
-  const band = max - SUMMIT_BAND_FRAC * (max - min);
-  const minDistPx = Math.max(4, Math.round(0.06 * Math.min(w, h)));
-  const candidates: { z: number; x: number; y: number }[] = [];
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const z = data[y * w + x];
-      if (!Number.isFinite(z) || z < band) continue;
-      if (z >= max - SNAP_EPS_M || isLocalMaxCell(data, w, h, x, y)) {
-        candidates.push({ z, x, y });
-      }
-    }
-  }
-  candidates.sort((a, b) => b.z - a.z);
-  const kept: { z: number; x: number; y: number }[] = [];
-  for (const c of candidates) {
-    if (kept.some((k) => Math.hypot(k.x - c.x, k.y - c.y) < minDistPx)) continue;
-    kept.push(c);
-    if (kept.length >= MAX_SUMMIT_PINS) break;
-  }
-  return uniqueSorted(kept.map((k) => k.z));
 }
 
 /** Split a wide top class so distinct summits do not ceil onto one plateau. */

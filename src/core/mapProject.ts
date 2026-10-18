@@ -1,9 +1,10 @@
 // Reproject elevation grids to a local metric CRS and resample to map resolution.
 import proj4 from 'proj4';
 import type { Float32Grid, GridTransform } from './mapGrid';
-import { gridCellCentre, gridFiniteMinMax, gridSampleBilinear } from './mapGrid';
+import { gridCellCentre, gridSampleBilinear } from './mapGrid';
 import type { MapModel, MapSpec } from './mapSpec';
 import { DEPTH_RESOLUTIONS } from './depth';
+import { prominentSummitCells } from './mapSummits';
 
 proj4.defs(
   'EPSG:27700',
@@ -97,46 +98,22 @@ function sourceXYToDestCell(source: Float32Grid, dest: Float32Grid, x: number, y
 }
 
 /**
- * Bilinear resample averages away 1-pixel summits. Stamp source local maxima
- * (and the global max) onto the nearest output cell so DEM max survives.
+ * Bilinear resample averages away 1-pixel summits. Stamp the top-N prominent
+ * source peaks (and the global max) onto the nearest output cell.
  */
 export function stampSourceMaxima(dest: Float32Grid, source: Float32Grid): Float32Grid {
-  const { w, h, data } = source;
-  const { min, max } = gridFiniteMinMax(data);
-  if (!(max > min) || !Number.isFinite(max)) return dest;
-  const band = max - 0.4 * (max - min);
+  const peaks = prominentSummitCells(source);
+  if (!peaks.length) return dest;
   const out = new Float32Array(dest.data);
-  const stamp = (col: number, row: number, z: number) => {
-    const c = gridCellCentre(source, col, row);
+  for (const p of peaks) {
+    const z = p.z;
+    if (!Number.isFinite(z)) continue;
+    const c = gridCellCentre(source, p.x, p.y);
     const cell = sourceXYToDestCell(source, dest, c.x, c.y);
-    if (!cell) return;
+    if (!cell) continue;
     const i = cell.row * dest.w + cell.col;
     const cur = out[i];
     if (!Number.isFinite(cur) || z > cur) out[i] = z;
-  };
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const z = data[y * w + x];
-      if (!Number.isFinite(z) || z < band) continue;
-      let anyLower = false;
-      let isMax = true;
-      for (let dy = -1; dy <= 1 && isMax; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (!dx && !dy) continue;
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-          const n = data[ny * w + nx];
-          if (!Number.isFinite(n)) continue;
-          if (n > z + 1e-3) {
-            isMax = false;
-            break;
-          }
-          if (n < z - 1e-3) anyLower = true;
-        }
-      }
-      if (z >= max - 0.05 || (isMax && anyLower)) stamp(x, y, z);
-    }
   }
   return { ...dest, data: out };
 }

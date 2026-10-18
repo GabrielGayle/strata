@@ -36,6 +36,8 @@ describe('price estimate', () => {
     expect(thick.net).toBeGreaterThan(thin.net);
     expect(thin.warnings.filter((w) => !/etch/i.test(w))).toEqual([]);
     expect(thick.warnings.some((w) => /estimate/i.test(w))).toBe(true);
+    expect(thick.warnings.some((w) => w.includes('Mild steel (CR4)'))).toBe(true);
+    expect(thick.warnings.some((w) => /mild steel \(cr4\)/.test(w))).toBe(false);
   });
 
   it('applies the minimum order and flags thicknesses Chop Chop does not list', () => {

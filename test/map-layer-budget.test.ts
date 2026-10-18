@@ -10,6 +10,7 @@ import {
   localBreakStep,
   localMaximaElevations,
 } from '../src/core/mapLayerBudget';
+import { MAX_SUMMIT_PINS, prominentSummitCells } from '../src/core/mapSummits';
 import { gridFiniteMinMax } from '../src/core/mapGrid';
 import { createPipeline } from '../src/core/pipeline';
 import { newProject } from '../src/core/project';
@@ -174,6 +175,33 @@ describe('map layer budget + exaggeration', () => {
     expect(b).toBeGreaterThan(c);
     expect(a - b).toBeGreaterThan(2);
     expect(b - c).toBeGreaterThan(2);
+    expect(peaks.length).toBeLessThanOrEqual(MAX_SUMMIT_PINS);
+  });
+
+  it('caps summit cells to top-N bins on a noisy DEM', () => {
+    const w = 256;
+    const h = 256;
+    const data = new Float32Array(w * h);
+    for (let i = 0; i < data.length; i++) data[i] = 100 + (i % 23) + ((i * 13) % 11) * 0.3;
+    data[8 * w + 8] = 851.1;
+    data[200 * w + 40] = 839;
+    data[40 * w + 200] = 807;
+    const grid: Float32Grid = {
+      w,
+      h,
+      data,
+      crs: 'EPSG:27700',
+      transform: { originX: 0, originY: h, pixelW: 1, pixelH: -1 },
+    };
+    const t0 = performance.now();
+    const cells = prominentSummitCells(grid);
+    expect(performance.now() - t0).toBeLessThan(50);
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.length).toBeLessThanOrEqual(MAX_SUMMIT_PINS);
+    expect(Math.max(...cells.map((c) => c.z))).toBeCloseTo(851.1, 3);
+    const zs = cells.map((c) => c.z);
+    expect(zs.some((z) => Math.abs(z - 839) < 1)).toBe(true);
+    expect(zs.some((z) => Math.abs(z - 807) < 1)).toBe(true);
   });
 
   it('floors water cells and never snaps them above the raw DEM', () => {

@@ -1,6 +1,6 @@
 // Auto-simplify map elevation grids: drop tiny islands/holes, light smooth (ticket 11).
 import type { Float32Grid } from './mapGrid';
-import { gridFiniteMinMax } from './mapGrid';
+import { prominentSummitCells, type SummitCell } from './mapSummits';
 
 export interface MapSimplifyOptions {
   /** Minimum feature area in square pixels (default ≈ 3×kerf² when kerf supplied). */
@@ -171,69 +171,26 @@ export function simplifyMetricGrid(grid: Float32Grid, opts: MapSimplifyOptions =
   return { grid: { ...grid, data: out }, lostFeatures: lost };
 }
 
-function isLocalMaxCell(data: Float32Array, w: number, h: number, x: number, y: number): boolean {
-  const z = data[y * w + x];
-  if (!Number.isFinite(z)) return false;
-  let anyLower = false;
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (!dx && !dy) continue;
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-      const n = data[ny * w + nx];
-      if (!Number.isFinite(n)) continue;
-      if (n > z + 1e-3) return false;
-      if (n < z - 1e-3) anyLower = true;
-    }
-  }
-  return anyLower;
-}
-
 /**
- * After island-fill / box-blur, put snapped summit cells back so the DEM max
- * and distinct peaks survive simplify.
+ * After island-fill / box-blur, put the top-N summit cells back so the DEM
+ * max and distinct peaks survive simplify. Pass peaks from the continuous
+ * (pre-snap) grid so plateau rims are not restored.
  */
-export function restoreSummitCells(simplified: Float32Grid, snapped: Float32Grid): Float32Grid {
+export function restoreSummitCells(
+  simplified: Float32Grid,
+  snapped: Float32Grid,
+  peaks?: SummitCell[],
+): Float32Grid {
   if (simplified.w !== snapped.w || simplified.h !== snapped.h || simplified.data.length !== snapped.data.length) {
     return simplified;
   }
-  const { w, h, data: src } = snapped;
-  const { min, max } = gridFiniteMinMax(src);
-  if (!(max > min) || !Number.isFinite(max)) return simplified;
-  const band = max - 0.4 * (max - min);
-  const keep = new Uint8Array(src.length);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = y * w + x;
-      const z = src[i];
-      if (!Number.isFinite(z) || z < band) continue;
-      if (z >= max - 0.05 || isLocalMaxCell(src, w, h, x, y)) keep[i] = 1;
-    }
-  }
-  // Same-value 4-neighbours of a summit cell (narrow plateau, not the ridge below).
-  const extra: number[] = [];
-  for (let i = 0; i < keep.length; i++) if (keep[i]) extra.push(i);
-  for (const i of extra) {
-    const z = src[i]!;
-    const x = i % w;
-    const y = (i / w) | 0;
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
-    for (const [dx, dy] of dirs) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-      const ni = ny * w + nx;
-      if (keep[ni]) continue;
-      const nz = src[ni];
-      if (Number.isFinite(nz) && Math.abs(nz - z) < 0.05) keep[ni] = 1;
-    }
-  }
+  const cells = peaks ?? prominentSummitCells(snapped);
+  if (!cells.length) return simplified;
   const data = new Float32Array(simplified.data);
-  for (let i = 0; i < data.length; i++) {
-    if (!keep[i]) continue;
-    const want = src[i];
-    if (Number.isFinite(want)) data[i] = want;
+  const src = snapped.data;
+  for (const p of cells) {
+    const want = src[p.i];
+    if (Number.isFinite(want)) data[p.i] = want;
   }
   return { ...simplified, data };
 }

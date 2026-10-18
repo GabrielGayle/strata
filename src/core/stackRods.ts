@@ -260,6 +260,62 @@ function islandHasHoleAt(shape: Shape, p: Vec2, r: number): boolean {
   return false;
 }
 
+/** Even-odd crossings at `y`, matching `pointInPath`. */
+function crossingsAtY(path: Path, y: number): number[] {
+  const xs: number[] = [];
+  for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+    const yi = path[i][1]!;
+    const yj = path[j][1]!;
+    if (yi > y !== yj > y) {
+      const xi = path[i][0]!;
+      const xj = path[j][0]!;
+      xs.push(((xj - xi) * (y - yi)) / (yj - yi) + xi);
+    }
+  }
+  xs.sort((a, b) => a - b);
+  return xs;
+}
+
+/** Lattice fill of a shape (union of outers minus holes) at `step` millimetres. */
+function latticeInsideShape(shape: Shape, step: number, bb: BBox): Vec2[] {
+  const x0 = Math.ceil(bb.minX / step) * step;
+  const y0 = Math.ceil(bb.minY / step) * step;
+  const seen = new Set<string>();
+  const apply = (path: Path, y: number, add: boolean) => {
+    const xs = crossingsAtY(path, y);
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      const lo = xs[i]!;
+      const hi = xs[i + 1]!;
+      let x = x0;
+      if (x < lo) {
+        const n = Math.ceil((lo - x) / step - 1e-12);
+        x = +(x + n * step).toFixed(8);
+      }
+      for (; x <= bb.maxX + 1e-9 && x < hi; x = +(x + step).toFixed(8)) {
+        const k = `${x},${y}`;
+        if (add) seen.add(k);
+        else seen.delete(k);
+      }
+    }
+  };
+  for (const e of shape) {
+    for (let y = y0; y <= bb.maxY + 1e-9; y = +(y + step).toFixed(8)) {
+      apply(e.outer, y, true);
+      for (const hole of e.holes) apply(hole, y, false);
+    }
+  }
+  const pts: Vec2[] = [];
+  for (const k of seen) {
+    const c = k.indexOf(',');
+    pts.push([Number(k.slice(0, c)), Number(k.slice(c + 1))]);
+  }
+  return pts;
+}
+
+function onRodLattice(p: Vec2, step = STACK_ROD_GRID_MM): boolean {
+  return Math.abs(p[0] / step - Math.round(p[0] / step)) < 1e-6 && Math.abs(p[1] / step - Math.round(p[1] / step)) < 1e-6;
+}
+
 /** Grid points inside an inset region, plus the bbox centre when it sits inside. */
 export function sampleInsetGrid(inner: Shape, step = STACK_ROD_GRID_MM): Vec2[] {
   if (!inner.length) return [];
@@ -268,14 +324,7 @@ export function sampleInsetGrid(inner: Shape, step = STACK_ROD_GRID_MM): Vec2[] 
     const c = islandCentroid(inner);
     return pointInShape(c, inner) ? [c] : [];
   }
-  const x0 = Math.ceil(bb.minX / step) * step;
-  const y0 = Math.ceil(bb.minY / step) * step;
-  const pts: Vec2[] = [];
-  for (let y = y0; y <= bb.maxY + 1e-9; y = +(y + step).toFixed(8)) {
-    for (let x = x0; x <= bb.maxX + 1e-9; x = +(x + step).toFixed(8)) {
-      if (pointInShape([x, y], inner)) pts.push([x, y]);
-    }
-  }
+  const pts = latticeInsideShape(inner, step, bb);
   const c: Vec2 = [+((bb.minX + bb.maxX) / 2).toFixed(6), +((bb.minY + bb.maxY) / 2).toFixed(6)];
   if (pointInShape(c, inner) && pts.every((p) => Math.hypot(p[0] - c[0], p[1] - c[1]) > 1e-6)) pts.push(c);
   pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -438,11 +487,25 @@ export function placeStackRods(islands: StackRodIsland[], settings: StackRodSett
   const minFeat = Math.max(settings.minFeature, 0.5);
   const blocked: Blocked[] = existing.map((c) => ({ p: [c.x, c.y], r: c.radius }));
 
+  const innerPts = new Map<string, Vec2[]>();
+  const innerCells = new Map<string, Set<string>>();
+  for (const is of sorted) {
+    const pts = sampleInsetGrid(inners.get(is.key) ?? []);
+    innerPts.set(is.key, pts);
+    const cells = new Set<string>();
+    for (const p of pts) cells.add(ptKey(p));
+    innerCells.set(is.key, cells);
+  }
+
   const coverAt = (p: Vec2): { keys: string[]; topLayer: number } => {
+    const k = ptKey(p);
+    const lattice = onRodLattice(p);
     const keys: string[] = [];
     let top = -1;
     for (let layer = 0; layer <= maxL; layer++) {
-      const hits = byLayer[layer].filter((is) => pointInShape(p, inners.get(is.key) ?? []));
+      const hits = byLayer[layer].filter((is) =>
+        lattice ? (innerCells.get(is.key)?.has(k) ?? false) : pointInShape(p, inners.get(is.key) ?? []),
+      );
       if (!hits.length) break;
       for (const is of hits) keys.push(is.key);
       top = layer;
@@ -453,8 +516,7 @@ export function placeStackRods(islands: StackRodIsland[], settings: StackRodSett
   const candMap = new Map<string, Cand>();
   for (const is of sorted) {
     if (covered.has(is.key)) continue;
-    const inner = inners.get(is.key) ?? [];
-    for (const p of sampleInsetGrid(inner)) {
+    for (const p of innerPts.get(is.key) ?? []) {
       if (blocked.some((b) => tooCloseTo(p, b, holeR, minFeat))) continue;
       const cov = coverAt(p);
       if (cov.topLayer < is.layer || !cov.keys.includes(is.key)) continue;
