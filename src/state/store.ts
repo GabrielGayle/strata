@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { isLiteral } from '../core/expr';
 import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
 import { applyPreset, applyVariant, deserialize, newProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
+import type { EarthView, EarthWorldPose } from '../core/earthView';
 import type { MapSpec } from '../core/mapSpec';
 import type { Composition, Surface } from '../core/compose';
 import type { PourLayer } from '../core/mould';
@@ -74,6 +75,10 @@ export interface UiState {
   sunTime: number;
   sunPlaying: boolean;
   viewportLayers: ViewportLayers;
+  /** Apply a View-from-point pose in the 3D camera (n increments to retrigger). */
+  pointView?: { n: number; pose: EarthWorldPose };
+  /** Vertical FOV from the last point view; Iso/Front/… clear it. */
+  pointViewFov?: number;
 }
 
 /** A whole master setup (project) open in its own tab. The active one lives in `project`. */
@@ -117,6 +122,8 @@ interface Store {
   /** The postcard shelf (undefined removes it). */
   setShelf: (shelf: ShelfSpec | undefined, key?: string) => void;
   setOrigin: (origin: WorldOrigin | undefined, key?: string) => void;
+  /** Persist the 3D View-from-point camera with the project (local + cloud saves). */
+  setSavedView: (view: EarthView | undefined) => void;
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
   /** Attach or update MapSpec on the top face (map window / design parser). */
@@ -364,6 +371,7 @@ export const useStore = create<Store>((set, get) => {
     setObjects: (objects, key = `objects:${performance.now()}`) => commit({ ...get().project, objects: objects.length ? objects : undefined }, key),
     setShelf: (shelf, key = `shelf:${performance.now()}`) => commit({ ...get().project, shelf }, key),
     setOrigin: (origin, key = `origin:${performance.now()}`) => commit({ ...get().project, origin }, key),
+    setSavedView: (view) => commit({ ...get().project, savedView: view }, `saved-view:${performance.now()}`),
     setName: (name) => commit({ ...get().project, name }, 'name'),
     setAsset: (kind, slot, asset) => {
       const p = get().project;

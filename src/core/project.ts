@@ -14,6 +14,7 @@ import { cleanShadow, type ShadowSpec } from './shadow';
 import { cleanObjects, type CutObject } from './objects';
 import { cleanShelf, type ShelfSpec } from './shelf';
 import { cleanOrigin, type WorldOrigin } from './origin';
+import { cleanEarthView, type EarthView } from './earthView';
 
 export interface ImageAsset {
   name: string;
@@ -89,6 +90,8 @@ export interface Project {
   origin?: WorldOrigin;
   /** Parameter ids the user set; auto-dimension and design size patches must not overwrite them. */
   userParamOverrides?: UserParamOverrides;
+  /** 3D "View from point" (Google Earth URL / lat,lon,alt,heading,tilt). Missing on older saves. */
+  savedView?: EarthView;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -327,5 +330,6 @@ export function deserialize(text: string): Project {
     shelf: cleanShelf(raw.shelf),
     origin: cleanOrigin(raw.origin),
     userParamOverrides: cleanUserParamOverrides(raw.userParamOverrides),
+    savedView: cleanEarthView(raw.savedView),
   };
 }
