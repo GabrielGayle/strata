@@ -916,6 +916,13 @@ table.tbl {
   right: auto;
   flex-shrink: 0;
 }
+.vp-tr-column .overlay.viewpoint {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  flex-shrink: 1;
+}
 .overlay.bl {
   bottom: 8px;
   left: 8px;

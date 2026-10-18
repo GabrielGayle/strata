@@ -75,10 +75,9 @@ test('View from point: Woolwich URL, fit box, Charlton URL, saved view round-tri
   });
   await openApp(page);
   await page.waitForSelector('[data-testid="viewport-3d"] canvas', { timeout: 120_000 });
-  await openPointPanel(page);
-
   await page.locator('.overlay.tr').getByRole('button', { name: /^Objects/ }).click();
   await expect(page.locator('.overlay.appearance.objects')).toBeVisible();
+  await openPointPanel(page);
   const lookBtn = page.getByTestId('view-from-point-look');
   await expect(lookBtn).toBeVisible();
   await lookBtn.click({ trial: true });
