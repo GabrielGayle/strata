@@ -1,5 +1,5 @@
 import type { MapSpec } from './mapSpec';
-import { defaultMapSpec, TERRARIUM_ATTRIBUTION } from './mapSpec';
+import { defaultMapSpec, MAP_SMOOTH_MM, TERRARIUM_ATTRIBUTION } from './mapSpec';
 import { fetchTerrariumGrid, getTileFetcher, type TileFetcher } from './mapTerrarium';
 import { cachedTileFetch } from './mapCache';
 import { reprojectResample } from './mapProject';
@@ -235,9 +235,12 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   };
   const terraced = mapUsesLayerBudget(spec, stack);
   metric = terraced ? applyLayerBudget(rawMetric, landBudget.breaksM) : rawMetric;
+  // the smoothing width is set on the model, so convert millimetres to grid cells
+  const mmPerPx = stack.masterWidthMm / Math.max(1, metric.w);
   const simplified = simplifyMetricGrid(metric, {
     kerfMm: stack.kerfMm ?? 0.2,
     pixelSizeM: Math.abs(metric.transform.pixelW),
+    smoothSigmaPx: mmPerPx > 0 ? (spec.smoothMm ?? MAP_SMOOTH_MM) / mmPerPx : 0,
   });
   const restoredLand = restoreSummitCells(simplified.grid, metric, prominentSummitCells(rawMetric));
   metric = water ? restoreWaterSurfaces(restoredLand, rawMetric, water, terraced ? landBudget.breaksM : []) : restoredLand;

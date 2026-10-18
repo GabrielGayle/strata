@@ -235,7 +235,11 @@ export function createFrontPipeline(options: { preview?: boolean } = {}) {
     const mapParams = mapTop ? mapFaceParams(project.params) : { raw: project.params, forced: false };
     const ev = stage('Parameters', [mapParams.raw, imgAspect, frontAspect, sideAspect], () => evaluateParams(mapParams.raw, { imgAspect, frontAspect, sideAspect }));
     const v = preview
-      ? stage('Preview values', [ev], () => (ev.values.sampleStep < PREVIEW_SAMPLE_STEP ? { ...ev.values, sampleStep: PREVIEW_SAMPLE_STEP } : ev.values))
+      ? stage('Preview values', [ev], () =>
+          ev.values.sampleStep < PREVIEW_SAMPLE_STEP || ev.values.curveStep < PREVIEW_SAMPLE_STEP
+            ? { ...ev.values, sampleStep: Math.max(PREVIEW_SAMPLE_STEP, ev.values.sampleStep), curveStep: Math.max(PREVIEW_SAMPLE_STEP, ev.values.curveStep) }
+            : ev.values,
+        )
       : ev.values;
 
     const mkForm = (prefix: 'ins' | 'src', mesh: THREE.BufferGeometry | null): FormBuild | null => {

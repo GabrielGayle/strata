@@ -4,6 +4,7 @@ import type { DepthData } from './depth';
 import { decodeDepthBuffers } from './depth';
 import type { Gray } from './image';
 import type { HeightField } from './heightfield';
+import { cubicAt } from './mapGrid';
 import { stackFrame } from './heightfield';
 import type { Values } from './params';
 import type { Plane } from './section';
@@ -131,17 +132,8 @@ export function mapDepthToGray(d: DepthData): Gray {
 function sampleMetres(metres: Float32Array, w: number, h: number, u: number, v: number): number {
   const x = Math.min(w - 1, Math.max(0, u * w - 0.5));
   const y = Math.min(h - 1, Math.max(0, v * h - 0.5));
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const x1 = Math.min(w - 1, x0 + 1);
-  const y1 = Math.min(h - 1, y0 + 1);
-  const tx = x - x0;
-  const ty = y - y0;
-  const at = (ix: number, iy: number) => metres[iy * w + ix];
-  const lerp = (a: number, b: number, t: number) => (Number.isFinite(a) && Number.isFinite(b) ? a + (b - a) * t : Number.isFinite(a) ? a : b);
-  const a = lerp(at(x0, y0), at(x1, y0), tx);
-  const b = lerp(at(x0, y1), at(x1, y1), tx);
-  return lerp(a, b, ty);
+  // bicubic, so plate tops have no kink at every grid cell
+  return cubicAt(metres, w, h, x, y);
 }
 
 /**

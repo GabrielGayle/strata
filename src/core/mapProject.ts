@@ -1,7 +1,7 @@
 // Reproject elevation grids to a local metric CRS and resample to map resolution.
 import proj4 from 'proj4';
 import type { Float32Grid, GridTransform } from './mapGrid';
-import { gridCellCentre, gridSampleBilinear } from './mapGrid';
+import { gridCellCentre, gridSampleBicubic } from './mapGrid';
 import type { MapModel, MapSpec } from './mapSpec';
 import { DEPTH_RESOLUTIONS } from './depth';
 import { highestSummitCells, prominentSummitCells } from './mapSummits';
@@ -82,7 +82,7 @@ function pickOutputSize(widthM: number, heightM: number, resM: number): { w: num
 }
 
 function sampleSource(g: Float32Grid, x: number, y: number): number {
-  return gridSampleBilinear(g, x, y, true);
+  return gridSampleBicubic(g, x, y, true);
 }
 
 function sourceXYToDestCell(source: Float32Grid, dest: Float32Grid, x: number, y: number): { col: number; row: number } | null {
@@ -193,7 +193,7 @@ export function reprojectResample(
   const halfH = Math.abs(pixelH) / 2;
   const toSource = source.crs === crs ? null : projectionLattice(crs, source.crs, bounds);
   const at = (x: number, y: number): number => {
-    if (!toSource) return gridSampleBilinear(source, x, y, true);
+    if (!toSource) return gridSampleBicubic(source, x, y, true);
     toSource(x, y, xy);
     return sampleSource(source, xy[0], xy[1]);
   };

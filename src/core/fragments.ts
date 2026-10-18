@@ -69,8 +69,7 @@ export function repairThinNecks(
   if (mf <= 0 || !s.length) return s;
   const mode = (String(v.fragmentMode || 'auto') as FragmentMode) || 'auto';
   if (mode === 'keep') return s;
-  const opened = morphOpen(s, mf);
-  if (mode === 'drop') return opened;
+  if (mode === 'drop') return morphOpen(s, mf);
   const thin = thinFeatureRegions(s, mf);
   if (!thin.length) return s;
   // Thicken the thin web in place (long necks are far apart as "cores").
@@ -155,10 +154,15 @@ export function cleanupPlateShape(
   const mode = (String(v.fragmentMode || 'auto') as FragmentMode) || 'auto';
   if (mode === 'keep' || !s.length) return s;
   let out = s;
+  // set when the last kerf repair found nothing, so the final pass would too
+  let gapFree = false;
   for (let i = 0; i < 6; i++) {
     const g = repairKerfGaps(out, v);
     const next = mode === 'drop' ? g : repairThinNecks(g, v);
-    if (next === out) break;
+    if (next === out) {
+      gapFree = true;
+      break;
+    }
     out = next;
     const kerf = Number(v.kerf) || 0;
     const mf = Number(v.minFeature) || 0;
@@ -166,7 +170,7 @@ export function cleanupPlateShape(
     const thinLeft = mode !== 'drop' && mf > 0 && thinFeatureRegions(out, mf).length > 0;
     if (!gapsLeft && !thinLeft) break;
   }
-  if (mode !== 'drop') out = repairKerfGaps(out, v);
+  if (mode !== 'drop' && !gapFree) out = repairKerfGaps(out, v);
   return out;
 }
 

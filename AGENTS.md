@@ -45,6 +45,8 @@ Map world frame is **right-handed ENU**: **+X south** (S-01 / Front at −X = no
 
 Only **flat stacks** snap terrain to the layer budget (Jenks/quantile/equal breaks). Upright stacks keep continuous heights unless the map's **Terraced layers** option (`MapSpec.terraced`) is on. `mapBuildKey` includes the plate stack (`mapStackFromProject`: plate count, thickness, base length/width, kerf, slicing), so changing any of them rebuilds terrain.
 
+Map plate tops are cut as smooth curves: `mapOutline` (slicer.ts) samples every **Map profile step** (`curveStep`, 0.4 mm), smooths with a Gaussian of **Map curve smoothing** (`curveSmooth`, 0.75 mm) and simplifies at **Map curve tolerance** (`curveTolerance`, 0.01 mm) so `fitArcs` writes most of it as arcs. Height lookups are bicubic (`cubicAt`/`gridSampleBicubic` in mapGrid.ts, clamped to the nearest cells so summits and lakes never overshoot). The grid smoothing is a Gaussian set in mm on the model (`MapSpec.smoothMm`, default `MAP_SMOOTH_MM`). Preview builds keep the 4 mm profile. Measure with `npx tsx scripts/curve-audit.ts`; `test/curve-quality.test.ts` holds the acceptance numbers.
+
 One pixel convention: `GridTransform.originX/Y` is the **centre** of cell (0, 0) (GeoTIFF edge origins are shifted by half a pixel on read), and face u/v run 0..1 across the outer edges of the map, so cell i's centre is at (i + 0.5) / w, the same frame as the OSM engrave art. UTM zones are 6° wide.
 
 Map faces always stack **along the length**: `sliceAxis: 'width'` transposes the north-up frame (a mirror), so `mapFaceParams` evaluates map projects with `length` and the slicer adds a warning. Enforced by `test/map-correctness.test.ts` (corner hills read from plate planes, not `hf.at`).

@@ -250,6 +250,9 @@ export const PARAMS: ParamDef[] = [
   num('crossCount', 'Cross plates', 'Slicer', 'max(2, floor(plateWidth / 55))', 1, 200, { int: true, unit: '', show: (v) => v.sliceMode === 'waffle', scaleCount: true }),
   num('slotClearance', 'Slot allowance', 'Slicer', 0.2, 0, 3, { step: 0.05, show: (v) => v.sliceMode === 'waffle', help: 'Added to slot width (kerf allowance) for interlocking slots', noScale: true }),
   num('sampleStep', 'Profile resolution', 'Slicer', 2, 0.5, 20, { step: 0.5, noScale: true }),
+  num('curveStep', 'Map profile step', 'Slicer', 0.4, 0.1, 4, { step: 0.05, noScale: true, help: 'Map faces only: how often each plate top samples the terrain' }),
+  num('curveSmooth', 'Map curve smoothing', 'Slicer', 0.75, 0, 10, { step: 0.05, noScale: true, help: 'Map faces only: Gaussian width along each plate top, so the cut follows smooth curves instead of grid steps' }),
+  num('curveTolerance', 'Map curve tolerance', 'Slicer', 0.01, 0.005, 0.5, { step: 0.005, noScale: true, help: 'Map faces only: how far a simplified plate top may stray from the smoothed terrain' }),
 
   // Strata / erosion
   { id: 'strataOn', label: 'Strata erosion on', group: 'Strata', kind: 'toggle', def: true, show: strataSource, help: 'Off gives flat-topped plates at Plates › Plate height (images still apply)' },
