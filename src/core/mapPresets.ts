@@ -69,6 +69,8 @@ function neasdenWelshHarpMapSpec(): MapSpec {
     title: 'Neasden & Welsh Harp',
     bbox: unionMapBbox(NEASDEN_MAP_BBOX, WELSH_HARP_WATER_BBOX),
     source: 'auto',
+    // The one bbox with sample soundings, so it keeps the bathymetry mode.
+    water: 'bathy',
     engrave: { enabled: true, features: ['roads', 'water', 'title'], preset: 'city' },
   });
 }
@@ -133,6 +135,7 @@ export function keepUserMapSettings(prev: MapSpec | undefined, next: MapSpec): M
     exaggeration: prev.exaggeration,
     water: prev.water,
     layerBudget: prev.layerBudget ?? next.layerBudget,
+    terraced: prev.terraced ?? next.terraced,
     engrave: { ...prev.engrave, features: [...prev.engrave.features] },
     commemorativeText: prev.commemorativeText,
     editionNumber: prev.editionNumber,

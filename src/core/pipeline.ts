@@ -8,6 +8,7 @@ import { blurSpec } from './blur';
 import { processImage, rotate, silhouetteMask, type Gray } from './image';
 import { buildHeightField, type HeightField } from './heightfield';
 import { buildMapHeightField, isMapDepth } from './mapPlateHeight';
+import { mapFaceParams } from './mapStack';
 import { plateDefs, slice, type SliceResult } from './slicer';
 import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
@@ -222,7 +223,9 @@ export function createFrontPipeline() {
     };
     const frontAspect = faceAspect(assets.frontImg);
     const sideAspect = faceAspect(assets.sideImg);
-    const ev = stage('Parameters', [project.params, imgAspect, frontAspect, sideAspect], () => evaluateParams(project.params, { imgAspect, frontAspect, sideAspect }));
+    const mapTop = isMapDepth(project.images.top?.depth) && project.images.top?.map;
+    const mapParams = mapTop ? mapFaceParams(project.params) : { raw: project.params, forced: false };
+    const ev = stage('Parameters', [mapParams.raw, imgAspect, frontAspect, sideAspect], () => evaluateParams(mapParams.raw, { imgAspect, frontAspect, sideAspect }));
     const v = ev.values;
 
     const mkForm = (prefix: 'ins' | 'src', mesh: THREE.BufferGeometry | null): FormBuild | null => {
@@ -231,7 +234,6 @@ export function createFrontPipeline() {
       const im = toIndexedMesh(form.geometry);
       return { form, mesh: im, volume: meshVolume(im) };
     };
-    const mapTop = isMapDepth(project.images.top?.depth) && project.images.top?.map;
     const mapDepth = mapTop ? project.images.top!.depth : undefined;
     // Vermilion’s default fin insert is a 360 mm dark curve; it is not map terrain.
     const insert = stage('Insert form', [...pick(v, formKeys('ins')), assets.insMesh, !!mapTop], () =>
@@ -298,7 +300,7 @@ export function createFrontPipeline() {
     const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut }));
     const choke = chokeCircles(objects.map((o) => o.object));
     const holders = objects.flatMap(({ object: o }) => (o.holder ? [{ x: o.x, z: o.z, r: o.w / 2, bottom: o.y - o.h / 2, ry: o.ry, slack: o.clearance, holder: o.holder }] : []));
-    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, sight, !!mapTop], () =>
+    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, sight, !!mapTop, mapParams.forced], () =>
       share(
         cache.get('Slice plates')?.value as SliceResult | undefined,
         slice({
@@ -316,6 +318,7 @@ export function createFrontPipeline() {
           candles: holders,
           choke,
           mapTerrain: !!mapTop,
+          mapAxisForced: mapParams.forced,
         }),
       ),
     );

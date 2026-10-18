@@ -25,6 +25,7 @@ import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type 
 import { applyProjectPatch, type ProjectPatch } from '../core/design';
 import { applyBuiltMapAsset, projectWithTopMapSpec } from '../core/mapTopAsset';
 import { mapBuildKey } from '../core/mapBuildKey';
+import { mapStackFromProject } from '../core/mapStack';
 import { applyQuickMapToProject } from '../core/quickMap';
 import { wordsParamPatch } from '../core/chantWords';
 import { speechParamPatch } from '../core/speechTuning';
@@ -406,8 +407,10 @@ export const useStore = create<Store>((set, get) => {
     applyQuickMap: () => {
       const p = get().project;
       const next = applyQuickMapToProject(p);
-      const prevKey = p.images.top?.map ? mapBuildKey(p.images.top.map) : '';
-      const nextKey = next.images.top?.map ? mapBuildKey(next.images.top.map) : '';
+      const prevKey = p.images.top?.map ? mapBuildKey(p.images.top.map, mapStackFromProject(p, p.images.top.map.layerBudget)) : '';
+      const nextKey = next.images.top?.map
+        ? mapBuildKey(next.images.top.map, mapStackFromProject(next, next.images.top.map.layerBudget))
+        : '';
       const retryError = get().mapTerrain.phase === 'error';
       commitParams(next, `quick-map:${performance.now()}`);
       if (next.images.top?.map && (nextKey !== prevKey || !next.images.top.map.buildKey || retryError)) {

@@ -451,6 +451,8 @@ export function shelfLayoutKey(spec: ShelfSpec | undefined): string {
     spec.turn,
     spec.lift,
     spec.trim,
+    spec.choke,
+    spec.pad,
     JSON.stringify(spec.overrides ?? {}),
   ].join('\0');
   if (!spec.unobstructed) return place;

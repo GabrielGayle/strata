@@ -28,12 +28,12 @@ import { serializeMapEngraveArt } from './mapOsmEngrave';
 import type { OverpassFetcher } from './mapOverpass';
 import type { MapSource } from './mapSpec';
 import { mapBuildKey } from './mapBuildKey';
+import { mapStackFromProject, mapUsesLayerBudget, type MapStackContext } from './mapStack';
 import { mapInfo, mapWarn, noticesWithoutStaleEngraveSkip, type MapSourceNotice } from './mapNotices';
 import type { DepthData } from './depth';
 import type { Float32Grid } from './mapGrid';
 import { sanitizeElevationGrid } from './mapElevation';
-import type { ImageAsset, Project } from './project';
-import type { RawValue } from './params';
+import type { ImageAsset } from './project';
 
 const PLACEHOLDER_TOP = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
@@ -62,13 +62,7 @@ export function resolveMapSource(spec: Pick<MapSpec, 'source' | 'bbox'>): Resolv
   return { requested, effective: pick.source, warnings: pick.warnings };
 }
 
-export interface MapStackContext {
-  plateCount: number;
-  thicknessMm: number;
-  masterWidthMm: number;
-  layerBudget?: LayerBudgetMode;
-  kerfMm?: number;
-}
+
 
 export interface BuildMapImageOptions {
   cacheDir?: string;
@@ -239,13 +233,14 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     ...landBudget,
     breaksM: injectPinnedBreaks(landBudget.breaksM, water?.lakeSurfacesM ?? [], stack.plateCount),
   };
-  metric = applyLayerBudget(rawMetric, landBudget.breaksM);
+  const terraced = mapUsesLayerBudget(spec, stack);
+  metric = terraced ? applyLayerBudget(rawMetric, landBudget.breaksM) : rawMetric;
   const simplified = simplifyMetricGrid(metric, {
     kerfMm: stack.kerfMm ?? 0.2,
     pixelSizeM: Math.abs(metric.transform.pixelW),
   });
   const restoredLand = restoreSummitCells(simplified.grid, metric, prominentSummitCells(rawMetric));
-  metric = water ? restoreWaterSurfaces(restoredLand, rawMetric, water, landBudget.breaksM) : restoredLand;
+  metric = water ? restoreWaterSurfaces(restoredLand, rawMetric, water, terraced ? landBudget.breaksM : []) : restoredLand;
   const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384, bbox: spec.bbox });
   const ortho = depth.mapOrtho;
   const readout = formatExaggerationStackReadout(
@@ -272,7 +267,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   const filteredNotices = noticesWithoutStaleEngraveSkip(notices, hasEngraveArt);
   const stored: MapSpec = {
     ...spec,
-    buildKey: mapBuildKey(spec),
+    buildKey: mapBuildKey(spec, opts.stack),
     crs: metric.crs,
     fetchedAt: new Date().toISOString(),
     layerBudget: budgetMode,
@@ -327,20 +322,5 @@ export function mapSpecFromCli(parts: {
   });
 }
 
-function numParam(raw: Record<string, RawValue>, id: string, fallback: number): number {
-  const n = Number(raw[id]);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-export function mapStackFromProject(project: Project, layerBudget?: LayerBudgetMode): MapStackContext {
-  const p = project.params;
-  return {
-    plateCount: Math.round(numParam(p, 'plateCount', 12)),
-    thicknessMm: numParam(p, 'thickness', 3),
-    masterWidthMm: Math.max(numParam(p, 'baseLength', 520), numParam(p, 'baseWidth', 380)),
-    layerBudget,
-    kerfMm: numParam(p, 'kerf', 0.2),
-  };
-}
-
-export type { DepthData };
+export type { DepthData, MapStackContext };
+export { mapStackFromProject, mapUsesLayerBudget };

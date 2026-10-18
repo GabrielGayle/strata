@@ -109,7 +109,7 @@ test('live Quick map: Neasden, Kingsbarns, Royal County Down', async ({ browser 
     await openWorkspaceTab(page, 'Map');
     await expect(page.getByLabel('Preset & font pairing')).toHaveValue('survey');
     await expect(page.getByTestId('map-engrave-labels')).toBeChecked();
-    await expect(page.locator('#map-water-bathy')).toBeChecked();
+    await expect(page.locator('#map-water-flat')).toBeChecked();
     await expect(page.getByLabel('OSM engrave on top face')).toBeChecked();
     await expect(page.getByLabel('Vertical exaggeration')).toHaveValue('auto');
 

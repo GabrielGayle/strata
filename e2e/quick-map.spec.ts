@@ -41,7 +41,7 @@ test('Quick map sets display options, keeps ×21, undoes in one step', async ({ 
   await expect(page.getByLabel('Vertical exaggeration')).toHaveValue('21');
   await expect(page.getByLabel('Preset & font pairing')).toHaveValue('survey');
   await expect(page.getByTestId('map-engrave-labels')).toBeChecked();
-  await expect(page.locator('#map-water-bathy')).toBeChecked();
+  await expect(page.locator('#map-water-flat')).toBeChecked();
   await expect(page.locator('#map-model-dtm')).toBeChecked();
   await expect(page.getByLabel('OSM engrave on top face')).toBeChecked();
 

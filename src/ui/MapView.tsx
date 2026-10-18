@@ -164,7 +164,7 @@ export default function MapView() {
 
   const model = existing?.model ?? 'dtm';
   const source = existing?.source ?? 'auto';
-  const water = existing?.water ?? 'bathy';
+  const water = existing?.water ?? 'flat';
   const layerBudget = existing?.layerBudget ?? 'jenks';
   const exaggeration = existing?.exaggeration ?? 'auto';
   const engravePreset = (existing?.engrave?.preset ?? 'city') as MapEngravePresetId;
@@ -336,6 +336,17 @@ export default function MapView() {
             <option value="equal">equal</option>
           </select>
         </label>
+        <label title="Snap the terrain to one level per plate, the stepped look. Flat stacks are always stepped.">
+          <input
+            type="checkbox"
+            id="map-terraced"
+            data-testid="map-terraced"
+            checked={geom.v.sliceMode === 'flat' || existing?.terraced === true}
+            disabled={!existing || geom.v.sliceMode === 'flat'}
+            onChange={(e) => commit({ terraced: e.target.checked })}
+          />
+          Terraced layers
+        </label>
         <label>
           Ground resolution (m)
           <input
@@ -416,8 +427,9 @@ export default function MapView() {
           ]}
         />
         <p className="map-view-note">
-          Each lake uses its own shoreline from the DEM inside the water polygon. Streams follow the terrain. Quick map
-          picks Bathymetry, which falls back to the same per-lake surface when no soundings exist.
+          Each lake uses its own shoreline from the DEM inside the water polygon. Streams follow the terrain. Bathymetry
+          falls back to the same per-lake surface where no soundings exist (only the Welsh Harp sample has them). Quick
+          map keeps your choice.
         </p>
       </section>
 

@@ -653,26 +653,61 @@ export function finSlots(
 /** A circle in plan (world x, z) the choked plates keep. */
 export type ChokeCircle = [number, number, number];
 
+type Chokeable = Pick<CutObject, 'x' | 'y' | 'z' | 'kind' | 'w' | 'h' | 'rx' | 'ry' | 'rz' | 'choke'>;
+
+const RAD = Math.PI / 180;
+
+/** Where a choked object sits in plan: a point for a candle, its bottom edge (two ends) for a card. */
+function chokeEnds(o: Chokeable): [[number, number], [number, number]] {
+  if (o.kind !== 'card') return [[o.x, o.z], [o.x, o.z]];
+  // the card's own x and up axes after yaw, pitch, roll (YXZ), as objectMatrix turns them
+  const [cx, sx] = [Math.cos(o.rx * RAD), Math.sin(o.rx * RAD)];
+  const [cy, sy] = [Math.cos(o.ry * RAD), Math.sin(o.ry * RAD)];
+  const [cz, sz] = [Math.cos(o.rz * RAD), Math.sin(o.rz * RAD)];
+  const ax: [number, number, number] = [cz, sz * cx, sz * sx];
+  const up: [number, number, number] = [-sz, cz * cx, cz * sx];
+  const plan = (v: [number, number, number]): [number, number] => [v[0] * cy + v[2] * sy, -v[0] * sy + v[2] * cy];
+  const [ux, uz] = plan(up);
+  const [xx, xz] = plan(ax);
+  const bx = o.x - (ux * o.h) / 2;
+  const bz = o.z - (uz * o.h) / 2;
+  return [
+    [bx - (xx * o.w) / 2, bz - (xz * o.w) / 2],
+    [bx + (xx * o.w) / 2, bz + (xz * o.w) / 2],
+  ];
+}
+
+/** Circles of radius `r0` to `r1` spaced along a segment, close enough that the band between them has no gaps. */
+function chain(out: ChokeCircle[], a: [number, number], b: [number, number], r0: number, r1: number, ends: boolean) {
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const k = Math.max(1, Math.ceil(L / Math.max(2, Math.min(r0, r1) / 3)));
+  for (let j = ends ? 0 : 1; j <= (ends ? k : k - 1); j++) {
+    const f = j / k;
+    out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, r0 + (r1 - r0) * f]);
+  }
+}
+
 /**
- * The plan area choked plates keep, as circles: one round each candle, and
- * along the path a chain of circles joining each candle to the next, so the
- * plates follow the line of candles.
+ * The plan area choked plates keep, as circles: round each candle and along
+ * each card's bottom edge, and, where the group joins, a chain of circles from
+ * each object to the next so the plates follow the line of candles or cards.
+ * Candles and shelf cards are separate groups and never join each other.
  */
-export function chokeCircles(candles: { x: number; z: number; choke?: { reach: number; join: boolean; closed: boolean } }[]): ChokeCircle[] {
-  const cs = candles.filter((c) => c.choke);
-  const out: ChokeCircle[] = cs.map((c) => [c.x, c.z, c.choke!.reach]);
-  if (!cs.length || !cs[0].choke!.join) return out;
-  const n = cs.length;
-  const links = cs[0].choke!.closed && n > 2 ? n : n - 1;
-  for (let i = 0; i < links; i++) {
-    const a = cs[i];
-    const b = cs[(i + 1) % n];
-    const r = Math.min(a.choke!.reach, b.choke!.reach);
-    const L = Math.hypot(b.x - a.x, b.z - a.z);
-    const k = Math.ceil(L / Math.max(2, r / 3));
-    for (let j = 1; j < k; j++) {
-      const f = j / k;
-      out.push([a.x + (b.x - a.x) * f, a.z + (b.z - a.z) * f, a.choke!.reach + (b.choke!.reach - a.choke!.reach) * f]);
+export function chokeCircles(objects: Chokeable[]): ChokeCircle[] {
+  const groups = new Map<string, Chokeable[]>();
+  for (const o of objects) if (o.choke) groups.set(o.choke.group ?? 'candles', [...(groups.get(o.choke.group ?? 'candles') ?? []), o]);
+  const out: ChokeCircle[] = [];
+  for (const cs of groups.values()) {
+    const ends = cs.map(chokeEnds);
+    cs.forEach((c, i) => chain(out, ends[i][0], ends[i][1], c.choke!.reach, c.choke!.reach, true));
+    if (!cs[0].choke!.join) continue;
+    const n = cs.length;
+    const links = cs[0].choke!.closed && n > 2 ? n : n - 1;
+    for (let i = 0; i < links; i++) {
+      const j = (i + 1) % n;
+      // cards only join their neighbours in a row, not the end of one row to the start of the next
+      if (cs[i].kind === 'card' && Math.hypot(ends[j][0][0] - ends[i][1][0], ends[j][0][1] - ends[i][1][1]) > Math.max(cs[i].w, cs[j].w)) continue;
+      chain(out, ends[i][1], ends[j][0], cs[i].choke!.reach, cs[j].choke!.reach, false);
     }
   }
   return out;

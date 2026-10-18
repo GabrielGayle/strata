@@ -2,6 +2,7 @@ import type { ImageAsset, Project } from './project';
 import type { MapSpec } from './mapSpec';
 import { defaultMapSpec } from './mapSpec';
 import { mapBuildKey } from './mapBuildKey';
+import { mapStackFromProject } from './mapStack';
 
 export const MAP_TOP_PLACEHOLDER =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -33,8 +34,9 @@ export function applyBuiltMapAsset(project: Project, asset: ImageAsset): Project
   const current = project.images.top;
   const built = asset.map;
   if (!current?.map || !built) return null;
-  const wanted = mapBuildKey(current.map);
-  const incoming = built.buildKey ?? mapBuildKey(built);
+  const stack = mapStackFromProject(project, current.map.layerBudget);
+  const wanted = mapBuildKey(current.map, stack);
+  const incoming = built.buildKey ?? mapBuildKey(built, stack);
   if (incoming !== wanted) return null;
   const merged: ImageAsset = {
     ...current,

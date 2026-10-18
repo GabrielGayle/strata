@@ -156,7 +156,7 @@ describe('Quick map mode', () => {
     expect(next.giftSizeId).toBe('a6');
     expect(next.bbox).toEqual(NEASDEN_BBOX);
     expect(next.title).toBe('Neasden');
-    expect(next.water).toBe('bathy');
+    expect(next.water).toBe('raw');
     expect(next.engrave.enabled).toBe(true);
     expect(next.engrave.preset).toBe(QUICK_MAP_ENGRAVE_PRESET);
     expect(next.engrave.features).toContain('labels');
@@ -185,7 +185,7 @@ describe('Quick map mode', () => {
       expect(m.v.imgSideMode).toBe('off');
       expect(p.images.top?.map?.engrave.enabled).toBe(true);
       expect(p.images.top?.map?.engrave.preset).toBe(QUICK_MAP_ENGRAVE_PRESET);
-      expect(p.images.top?.map?.water).toBe('bathy');
+      expect(p.images.top?.map?.water).toBe(id === 'neasden-welsh-harp' ? 'bathy' : 'flat');
       expect(p.images.top?.map?.engrave.features).toContain('labels');
       assertExportable(m);
       const zip = unzipSync(buildZip(m, p));
