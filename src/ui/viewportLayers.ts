@@ -8,7 +8,8 @@ export type ViewportLayerId =
   | 'base'
   | 'engraving'
   | 'water'
-  | 'labels';
+  | 'labels'
+  | 'objects';
 
 export type ViewportLayers = Record<ViewportLayerId, boolean>;
 
@@ -23,6 +24,7 @@ export const VIEWPORT_LAYER_LABELS: Record<ViewportLayerId, string> = {
   engraving: 'Engrave / OSM',
   water: 'Water',
   labels: 'Labels / dims',
+  objects: 'Objects',
 };
 
 export const DEFAULT_VIEWPORT_LAYERS: ViewportLayers = {
@@ -36,6 +38,7 @@ export const DEFAULT_VIEWPORT_LAYERS: ViewportLayers = {
   engraving: true,
   water: true,
   labels: true,
+  objects: true,
 };
 
 /** Rods button: Stamped/flat always, or whenever any rods exist (keeps the default 9-button toolbar). */
@@ -50,6 +53,20 @@ export function showRodsLayerToggle(
 }
 
 const KEY = 'strata.viewport.layers.v1';
+
+/**
+ * The concrete base. It once had two buttons (Base and Concrete) that each drew it
+ * while the other was on, so neither hid it; now Base alone decides, and a stored
+ * Concrete off still counts so a base hidden that way stays hidden.
+ */
+export function showBaseMesh(layers: ViewportLayers): boolean {
+  return layers.base && layers.concrete !== false;
+}
+
+/** A placed object (postcard, box, candle…) in the 3D view: the Objects layer and its own eye. View only. */
+export function showObject(layers: ViewportLayers, hidden: readonly string[] | undefined, id: string): boolean {
+  return layers.objects !== false && !hidden?.includes(id);
+}
 
 /** Insert mesh (Vermilion fin) is its own object — not gated by Plates. */
 export function showInsertMesh(layers: ViewportLayers): boolean {

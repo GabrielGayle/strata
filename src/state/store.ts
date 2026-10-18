@@ -70,6 +70,8 @@ export interface UiState {
   /** Placed objects panel in the 3D view, and which object it is editing. */
   objectsMode: boolean;
   objectSel: string | null;
+  /** Placed objects hidden one by one in the 3D view (view only: they still cut and export). */
+  hiddenObjects: string[];
   /** Postcard shelf: Unobstructed view (dev) section is expanded. */
   shelfViewDevOpen: boolean;
   /** What the node view is pointing at, lit up in the 3D view (origin, cards, objects, plates). */
@@ -308,6 +310,7 @@ export const useStore = create<Store>((set, get) => {
       measureMode: false,
       objectsMode: false,
       objectSel: null,
+      hiddenObjects: [],
       shelfViewDevOpen: false,
       highlight: null,
       sunTime: 12,
@@ -562,7 +565,10 @@ export const useStore = create<Store>((set, get) => {
     },
     setUi: (patch) => set({ ui: { ...get().ui, ...patch } }),
     toggleViewportLayer: (id) => {
-      const layers = { ...get().ui.viewportLayers, [id]: !get().ui.viewportLayers[id] };
+      const cur = get().ui.viewportLayers;
+      const layers = { ...cur, [id]: !cur[id] };
+      // Base also clears an old Concrete-off, which no longer has a button of its own
+      if (id === 'base') layers.concrete = layers.base;
       saveViewportLayers(layers);
       set({ ui: { ...get().ui, viewportLayers: layers } });
     },
