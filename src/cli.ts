@@ -82,7 +82,7 @@ const USAGE = `Usage:
                  [--flat-level off|auto|plateau|percentile|<metres>] [--edge-ease <0..1>] [--step-limit <0..1>]
                  [--flat-negative] [--rates rates.json]
                  [--map <title>] [--bbox west,south,east,north]
-                 [--map-source auto|scot-dtm|wales-dtm|ni-dtm|ea-dtm|ea-dsm|cop30|terrarium]
+                 [--map-source auto|ea-dtm|ea-dsm|terrarium]
                  [--map-res <metres>] [--exaggeration auto|<n>] [--layer-budget equal|quantile|jenks]
                  [--engrave on|off|roads,water,...]
                  [--map-cache <dir>] [--map-preset <id>] [--render <out.png>]

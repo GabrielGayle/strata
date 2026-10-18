@@ -6,10 +6,10 @@ export const NEASDEN_MAP_BBOX: MapSpec['bbox'] = [-0.28, 51.543, -0.233, 51.575]
 /** Welsh Harp (Brent Reservoir) open water — used to expand Neasden pieces (ticket T18). */
 export const WELSH_HARP_WATER_BBOX: MapSpec['bbox'] = [-0.275, 51.552, -0.245, 51.572];
 
-/** Kingsbarns (St Andrews) — Scotland LiDAR acceptance bbox. */
+/** Kingsbarns (St Andrews) — Scotland bbox (Terrarium until a Scottish LiDAR adapter ships). */
 export const KINGSBARNS_MAP_BBOX: MapSpec['bbox'] = [-2.655, 56.335, -2.628, 56.352];
 
-/** Royal County Down — Northern Ireland LiDAR acceptance bbox. */
+/** Royal County Down — Northern Ireland bbox (Terrarium until an NI LiDAR adapter ships). */
 export const ROYAL_COUNTY_DOWN_MAP_BBOX: MapSpec['bbox'] = [-5.808, 54.215, -5.775, 54.238];
 
 /** Neasden clip used by `test/fixtures/map/overpass-ski.json` (ski engrave fixture). */
@@ -36,8 +36,8 @@ export interface MapPresetCatalogEntry {
 export const MAP_PRESET_CATALOG: MapPresetCatalogEntry[] = [
   { id: 'neasden', label: 'Neasden', note: 'Brent, London — EA LiDAR auto' },
   { id: 'neasden-welsh-harp', label: 'Neasden & Welsh Harp', note: 'Neasden plus Brent Reservoir water' },
-  { id: 'kingsbarns', label: 'Kingsbarns', note: 'St Andrews — Scotland 2 m LiDAR' },
-  { id: 'royal-county-down', label: 'Royal County Down', note: 'Northern Ireland 1 m LiDAR' },
+  { id: 'kingsbarns', label: 'Kingsbarns', note: 'St Andrews — Terrarium ~30 m' },
+  { id: 'royal-county-down', label: 'Royal County Down', note: 'Northern Ireland — Terrarium ~30 m' },
   { id: 'ski-example', label: 'Ski example', note: 'Offline piste fixture (Neasden clip)' },
 ];
 

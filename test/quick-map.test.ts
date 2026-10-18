@@ -104,7 +104,9 @@ async function projectQuickMap(id: string) {
   let p = newProject();
   p = projectWithTopMapSpec(p, mapPresetSpec(id));
   p = applyQuickMapToProject(p);
-  const spec = p.images.top!.map!;
+  // Auto picks Terrarium outside England; these cases drive the LiDAR fixture grids through the explicit adapter id.
+  const fixtureSource = id === 'kingsbarns' ? 'scot-dtm' : id === 'royal-county-down' ? 'ni-dtm' : null;
+  const spec = fixtureSource ? { ...p.images.top!.map!, source: fixtureSource } as const : p.images.top!.map!;
   const bundle = await buildMapBundle(spec, {
     ...loadersFor(id),
     overpass: async () => overpassFixture,

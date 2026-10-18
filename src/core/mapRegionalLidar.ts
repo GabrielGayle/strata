@@ -1,4 +1,5 @@
-// UK regional LiDAR DTM adapters (Scotland / Wales / NI). Production reads COG/WMS; tests inject fixtures.
+// UK regional LiDAR DTM adapters (Scotland / Wales / NI). Not shipped: only injected fixture loaders
+// return grids, so auto and the Map tab never offer these ids (see WORKING_MAP_SOURCES).
 import type { Float32Grid } from './mapGrid';
 import { metricBounds } from './mapProject';
 import type { MapSource, MapSpec } from './mapSpec';
@@ -19,7 +20,7 @@ export function isRegionalLidarSource(source: MapSource): boolean {
 
 /**
  * Fetch a regional LiDAR grid for the bbox. Returns null when no adapter data is available
- * (caller should warn and fall back to terrarium / cop30).
+ * (caller should warn and fall back to terrarium).
  */
 export async function fetchRegionalLidarGrid(
   source: MapSource,
