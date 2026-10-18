@@ -12,12 +12,17 @@ test('Unobstructed view on the postcard shelf shows in Fit checks', async ({ pag
   await page.getByLabel('Layout').selectOption('arch');
 
   const radius = page.getByLabel(/How tightly the arc curves/);
-  await radius.fill('450');
-  await expect(page.getByRole('button', { name: 'Reset Radius to auto' })).toHaveCount(0);
+  const auto = page.getByRole('button', { name: 'Reset Radius to auto' });
+  await radius.click();
+  await radius.press('ControlOrMeta+A');
+  await radius.pressSequentially('450');
+  await radius.blur();
+  await expect(auto).toHaveCount(0);
   await radius.fill('200');
-  await expect(page.getByRole('button', { name: 'Reset Radius to auto' })).toBeVisible();
-  await page.getByRole('button', { name: 'Reset Radius to auto' }).click();
-  await expect(page.getByRole('button', { name: 'Reset Radius to auto' })).toHaveCount(0);
+  await radius.blur();
+  await expect(auto).toBeVisible();
+  await auto.click();
+  await expect(auto).toHaveCount(0);
 
   await page.getByRole('checkbox', { name: 'Unobstructed view' }).check();
   await expect(page.getByTestId('shelf-camera-note')).toBeVisible();

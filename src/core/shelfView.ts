@@ -49,6 +49,16 @@ export function withViewDefaults(s: ShelfSpec, live?: { azimuth: number; elevati
   };
 }
 
+/** Inline camera line from the project’s stored angle (not a leftover session note). */
+export function formatCameraNote(
+  spec?: Pick<ShelfSpec, 'viewAzimuth' | 'viewElevation'> | null,
+  live?: { azimuth: number; elevation: number },
+): string {
+  const az = spec?.viewAzimuth ?? live?.azimuth ?? DEFAULT_VIEW_AZIMUTH;
+  const el = spec?.viewElevation ?? live?.elevation ?? DEFAULT_VIEW_ELEVATION;
+  return `Camera ${az.toFixed(0)}° az / ${el.toFixed(0)}° el.`;
+}
+
 export function viewSettings(s?: Pick<ShelfSpec, 'unobstructed' | 'viewAzimuth' | 'viewElevation' | 'maxOverlapMm' | 'maxHiddenPct' | 'flexMm'> | null): UnobstructedView {
   return {
     azimuth: s?.viewAzimuth ?? DEFAULT_VIEW_AZIMUTH,

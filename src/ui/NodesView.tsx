@@ -1,10 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, SHELF_SOLVE_KEYS, clearShelfOverride, withShelfOverride, type ShelfLayout, type ShelfSolveKey, type ShelfSpec } from '../core/shelf';
-import { formatSolverDelta } from '../core/shelfSolve';
+import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, type ShelfLayout, type ShelfSpec } from '../core/shelf';
 import { DEFAULT_ORIGIN, ORIGIN_NAMES, type OriginRef, type WorldOrigin } from '../core/origin';
-import { FIELDS, fitShelf, rainbowPlates, type NumKey } from './ShelfPanel';
+import { FIELDS, fitShelf, rainbowPlates, ShelfFieldControl, type NumKey } from './ShelfPanel';
 
 /**
  * The postcard shelf as a chain of nodes, read left to right, in the spirit of
@@ -160,47 +159,7 @@ export default function NodesView() {
   const shelfNum = (key: NumKey) => {
     const f = FIELDS.find((x) => x.key === key)!;
     if (!s || (f.show && !f.show(s))) return null;
-    const solveKey = (SHELF_SOLVE_KEYS as string[]).includes(key) ? (key as ShelfSolveKey) : null;
-    const locked = !!(solveKey && s.overrides?.[solveKey]);
-    const used = solveKey && model.shelfSolve?.spec ? Number(model.shelfSolve.spec[solveKey]) : undefined;
-    const stored = Number(s[key]);
-    const delta = solveKey && used !== undefined && used !== stored ? formatSolverDelta(solveKey, stored, used) : null;
-    return (
-      <label key={key} className="nd-field" data-locked={locked ? '1' : undefined} {...help(f.hint)}>
-        <span>{f.label}</span>
-        <input
-          type="number"
-          step={f.step}
-          aria-label={f.hint}
-          value={+s[key].toFixed(2)}
-          onChange={(e) => {
-            const x = parseFloat(e.target.value);
-            if (!Number.isFinite(x)) return;
-            const value = key === 'rows' ? Math.max(1, Math.round(x)) : x;
-            if (solveKey) {
-              const next = withShelfOverride(s, { [key]: value }, [solveKey]);
-              if (next !== s) setShelf(next, `shelf:${key}`);
-            } else if (value !== s[key]) editShelf({ [key]: value }, `shelf:${key}`);
-          }}
-        />
-        {delta && (
-          <span className="shelf-solver evald" data-testid={`shelf-solver-${key}`}>
-            {delta}
-          </span>
-        )}
-        {locked && solveKey && (
-          <button
-            type="button"
-            className="btn sm"
-            aria-label={`Reset ${f.label} to auto`}
-            title="Reset to auto: the unobstructed solver may adjust this number again"
-            onClick={() => setShelf(clearShelfOverride(s, [solveKey]), `shelf:${key}:auto`)}
-          >
-            auto
-          </button>
-        )}
-      </label>
-    );
+    return <ShelfFieldControl key={key} spec={s} field={f} className="nd-field" help={help(f.hint)} />;
   };
   const paramNum = (id: string, label: string, hint: string, step = 1) => (
     <label className="nd-field" {...help(hint)}>

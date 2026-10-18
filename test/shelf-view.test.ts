@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createPipeline, type Assets, type Model } from '../src/core/pipeline';
 import { deserialize, newProject, serialize } from '../src/core/project';
 import { newObject, type CutObject } from '../src/core/objects';
-import { DEFAULT_SHELF, MAGENTA_EYE_SHELF, SHELF_SOLVE_KEYS, cleanShelf, clearShelfOverride, shelfCards, withShelfOverride } from '../src/core/shelf';
+import { DEFAULT_SHELF, MAGENTA_EYE_SHELF, SHELF_SOLVE_KEYS, cleanShelf, clearShelfOverride, commitShelfLock, shelfCards, withShelfOverride } from '../src/core/shelf';
 import { formatSolverDelta, layoutShelf, solveUnobstructed, solverDeltas } from '../src/core/shelfSolve';
 import { assertExportable, fitExportErrors } from '../src/core/exporters';
 import {
@@ -12,6 +12,7 @@ import {
   DEFAULT_VIEW_AZIMUTH,
   DEFAULT_VIEW_ELEVATION,
   cardVisibility,
+  formatCameraNote,
   viewSettings,
   type UnobstructedView,
 } from '../src/core/shelfView';
@@ -171,6 +172,34 @@ describe('typed-value locks', () => {
     expect(again).toBe(locked);
     expect(again.overrides?.radius).toBe(true);
   });
+
+  it('does not lock when the same number is typed key by key', () => {
+    const from = 300;
+    let s = { ...DEFAULT_SHELF, radius: 300 };
+    for (const n of [3, 30, 300]) s = { ...s, radius: n };
+    s = commitShelfLock(s, 'radius', from);
+    expect(s.radius).toBe(300);
+    expect(s.overrides).toBeUndefined();
+  });
+
+  it('does not lock when the last digit is deleted and retyped', () => {
+    const from = 300;
+    let s = { ...DEFAULT_SHELF, radius: 300 };
+    s = { ...s, radius: 30 };
+    s = { ...s, radius: 300 };
+    s = commitShelfLock(s, 'radius', from);
+    expect(s.radius).toBe(300);
+    expect(s.overrides).toBeUndefined();
+  });
+
+  it('locks on blur only if the number differs from the value at focus', () => {
+    const from = 300;
+    let s = { ...DEFAULT_SHELF, radius: 300 };
+    for (const n of [3, 31, 310]) s = { ...s, radius: n };
+    s = commitShelfLock(s, 'radius', from);
+    expect(s.radius).toBe(310);
+    expect(s.overrides?.radius).toBe(true);
+  });
 });
 
 describe('hidden cards are a warning, not an export error', () => {
@@ -196,6 +225,12 @@ describe('hidden cards are a warning, not an export error', () => {
 });
 
 describe('view defaults', () => {
+  it('derives the camera note from the loaded project, not a leftover live angle', () => {
+    const live = { azimuth: 37, elevation: 26 };
+    expect(formatCameraNote({ viewAzimuth: 70, viewElevation: 10 }, live)).toBe('Camera 70° az / 10° el.');
+    expect(formatCameraNote({ viewAzimuth: 37, viewElevation: 26 }, live)).toBe('Camera 37° az / 26° el.');
+  });
+
   it('match the iso camera and the sensible overlap pair', () => {
     const v = viewSettings(undefined);
     expect(v.azimuth).toBeCloseTo(DEFAULT_VIEW_AZIMUTH, 8);

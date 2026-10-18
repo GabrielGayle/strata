@@ -210,6 +210,16 @@ export function withShelfOverride(s: ShelfSpec, patch: Partial<ShelfSpec>, keys:
   return { ...s, ...patch, overrides: Object.keys(overrides).length ? overrides : s.overrides };
 }
 
+/**
+ * Lock a placement field only when the committed number differs from `from`
+ * (the value at focus). Intermediate keystrokes are not compared.
+ */
+export function commitShelfLock(s: ShelfSpec, key: ShelfSolveKey, from: number): ShelfSpec {
+  if (s[key] === from) return s;
+  if (s.overrides?.[key]) return s;
+  return { ...s, overrides: { ...s.overrides, [key]: true } };
+}
+
 /** Drop typed locks so the unobstructed solver may adjust those fields again. */
 export function clearShelfOverride(s: ShelfSpec, keys: ShelfSolveKey[]): ShelfSpec {
   if (!s.overrides) return s;

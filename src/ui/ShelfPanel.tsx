@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, SHELF_SOLVE_KEYS, clearShelfOverride, withShelfOverride, type ShelfLayout, type ShelfSolveKey, type ShelfSpec } from '../core/shelf';
+import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, SHELF_SOLVE_KEYS, clearShelfOverride, commitShelfLock, type ShelfLayout, type ShelfSolveKey, type ShelfSpec } from '../core/shelf';
 import { formatSolverDelta } from '../core/shelfSolve';
 import {
   DEFAULT_FLEX_MM,
   DEFAULT_MAX_HIDDEN_PCT,
   DEFAULT_MAX_OVERLAP_MM,
+  formatCameraNote,
   viewSettings,
   withViewDefaults,
 } from '../core/shelfView';
@@ -118,6 +119,90 @@ export const FIELDS: Field[] = [
 
 export const DEFAULT_HINT =
   'Type one postcard per line as width × height in mm, with an optional name. The cards are laid edge to edge along the arc, each standing in a notch, and the plate tops step down so every card shows. Hover any value to see what it does.';
+
+function parseShelfField(field: Field, raw: string): number | null {
+  const x = parseFloat(raw);
+  if (!Number.isFinite(x)) return null;
+  return field.key === 'rows' ? Math.max(1, Math.round(x)) : x;
+}
+
+/** Placement number: live value as you type; lock only on blur / Enter vs the value at focus. */
+export function ShelfFieldControl({
+  spec,
+  field,
+  className = 'ob-num',
+  help,
+}: {
+  spec: ShelfSpec;
+  field: Field;
+  className?: string;
+  help?: { onMouseEnter: () => void; onMouseLeave: () => void; title: string };
+}) {
+  const setShelf = useStore((st) => st.setShelf);
+  const model = useModel();
+  const from = useRef(Number(spec[field.key]));
+  const solveKey = (SHELF_SOLVE_KEYS as string[]).includes(field.key) ? (field.key as ShelfSolveKey) : null;
+  const locked = !!(solveKey && spec.overrides?.[solveKey]);
+  const used = solveKey && model.shelfSolve?.spec ? Number(model.shelfSolve.spec[solveKey]) : undefined;
+  const stored = Number(spec[field.key]);
+  const delta = solveKey && used !== undefined && used !== stored ? formatSolverDelta(solveKey, stored, used) : null;
+  const commitValue = (value: number) => {
+    if (value === spec[field.key]) return spec;
+    const next = { ...spec, [field.key]: value };
+    setShelf(next, `shelf:${field.key}`);
+    return next;
+  };
+  const commit = (raw: string) => {
+    const value = parseShelfField(field, raw);
+    if (value == null) return;
+    if (!solveKey) {
+      commitValue(value);
+      return;
+    }
+    const withVal = spec[field.key] === value ? spec : { ...spec, [field.key]: value };
+    const next = commitShelfLock(withVal, solveKey, from.current);
+    if (next !== spec) setShelf(next, `shelf:${field.key}`);
+  };
+  return (
+    <label className={className} data-locked={locked ? '1' : undefined} {...help}>
+      <span>{field.label}</span>
+      <input
+        type="number"
+        step={field.step}
+        aria-label={field.hint}
+        value={+spec[field.key].toFixed(2)}
+        onFocus={() => {
+          from.current = Number(spec[field.key]);
+        }}
+        onChange={(e) => {
+          const value = parseShelfField(field, e.target.value);
+          if (value == null) return;
+          commitValue(value);
+        }}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+      />
+      {delta && (
+        <span className="shelf-solver evald" data-testid={`shelf-solver-${field.key}`}>
+          {delta}
+        </span>
+      )}
+      {locked && solveKey && (
+        <button
+          type="button"
+          className="btn sm"
+          aria-label={`Reset ${field.label} to auto`}
+          title="Reset to auto: the unobstructed solver may adjust this number again"
+          onClick={() => setShelf(clearShelfOverride(spec, [solveKey]), `shelf:${field.key}:auto`)}
+        >
+          auto
+        </button>
+      )}
+    </label>
+  );
+}
 
 /** Settings that make the plates flat-topped and tall enough for every shelf card, on a base big enough to hold them (null with no cards). */
 export function fitShelf(model: Model, s: ShelfSpec): Record<string, RawValue> | null {
@@ -231,49 +316,9 @@ export default function ShelfPanel() {
         </div>
       </div>
       <div className="mp-row ap-edit ob-edit">
-        {FIELDS.filter((f) => !f.show || f.show(s)).map((f) => {
-          const solveKey = (SHELF_SOLVE_KEYS as string[]).includes(f.key) ? (f.key as ShelfSolveKey) : null;
-          const locked = !!(solveKey && s.overrides?.[solveKey]);
-          const used = solveKey && model.shelfSolve?.spec ? Number(model.shelfSolve.spec[solveKey]) : undefined;
-          const stored = Number(s[f.key]);
-          const delta = solveKey && used !== undefined && used !== stored ? formatSolverDelta(solveKey, stored, used) : null;
-          return (
-            <label key={f.key} className="ob-num" data-locked={locked ? '1' : undefined} {...help(f.hint)}>
-              <span>{f.label}</span>
-              <input
-                type="number"
-                step={f.step}
-                aria-label={f.hint}
-                value={+s[f.key].toFixed(2)}
-                onChange={(e) => {
-                  const x = parseFloat(e.target.value);
-                  if (!Number.isFinite(x)) return;
-                  const value = f.key === 'rows' ? Math.max(1, Math.round(x)) : x;
-                  if (solveKey) {
-                    const next = withShelfOverride(s, { [f.key]: value }, [solveKey]);
-                    if (next !== s) setShelf(next, `shelf:${f.key}`);
-                  } else if (value !== s[f.key]) edit({ [f.key]: value }, `shelf:${f.key}`);
-                }}
-              />
-              {delta && (
-                <span className="shelf-solver evald" data-testid={`shelf-solver-${f.key}`}>
-                  {delta}
-                </span>
-              )}
-              {locked && solveKey && (
-                <button
-                  type="button"
-                  className="btn sm"
-                  aria-label={`Reset ${f.label} to auto`}
-                  title="Reset to auto: the unobstructed solver may adjust this number again"
-                  onClick={() => setShelf(clearShelfOverride(s, [solveKey]), `shelf:${f.key}:auto`)}
-                >
-                  auto
-                </button>
-              )}
-            </label>
-          );
-        })}
+        {FIELDS.filter((f) => !f.show || f.show(s)).map((f) => (
+          <ShelfFieldControl key={f.key} spec={s} field={f} help={help(f.hint)} />
+        ))}
       </div>
       <UnobstructedToggle spec={s} edit={edit} setHint={setHint} />
       <div className="mp-info">
@@ -287,12 +332,9 @@ export default function ShelfPanel() {
 }
 
 function UnobstructedToggle({ spec, edit, setHint }: { spec: ShelfSpec; edit: (patch: Partial<ShelfSpec>, key?: string) => void; setHint: (h: string | null) => void }) {
-  const [camNote, setCamNote] = useState<string | null>(null);
   const open = useStore((st) => st.ui.shelfViewDevOpen);
   const setUi = useStore((st) => st.setUi);
   const live = getLiveView();
-  const az = spec.viewAzimuth ?? live.azimuth;
-  const el = spec.viewElevation ?? live.elevation;
   const help = (h: string) => ({
     onMouseEnter: () => setHint(h),
     onMouseLeave: () => setHint(null),
@@ -311,27 +353,18 @@ function UnobstructedToggle({ spec, edit, setHint }: { spec: ShelfSpec; edit: (p
           onChange={(e) => {
             const on = e.target.checked;
             if (!on) {
-              setCamNote(null);
               edit({ unobstructed: false }, 'shelf:unobstructed');
               return;
             }
             const liveNow = getLiveView();
-            const captured = spec.viewAzimuth == null || spec.viewElevation == null;
-            const nextAz = spec.viewAzimuth ?? liveNow.azimuth;
-            const nextEl = spec.viewElevation ?? liveNow.elevation;
             edit({ ...withViewDefaults(spec, liveNow), unobstructed: true }, 'shelf:unobstructed');
-            setCamNote(
-              captured
-                ? `Captured the current 3D camera angle (${nextAz.toFixed(0)}° az / ${nextEl.toFixed(0)}° el).`
-                : `Using camera ${nextAz.toFixed(0)}° az / ${nextEl.toFixed(0)}° el.`,
-            );
           }}
         />
         <span>Unobstructed view</span>
       </label>
       {spec.unobstructed && (
         <span className="shelf-cam-note" data-testid="shelf-camera-note">
-          {camNote ?? `Camera ${az.toFixed(0)}° az / ${el.toFixed(0)}° el.`}
+          {formatCameraNote(spec, live)}
         </span>
       )}
       <button
