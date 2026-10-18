@@ -6,14 +6,32 @@ import { isPlausibleMapElevation } from './mapElevation';
 import type { Float32Grid } from './mapGrid';
 import { gridMetricWidthHeight } from './mapProject';
 
-function b64FromU16(words: Uint16Array): string {
+const B64 = new TextEncoder().encode('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/');
+
+/** Little-endian uint16 as base64, written straight into a byte buffer (a 1024 px grid is 2.8 MB). */
+export function b64FromU16(words: Uint16Array): string {
   const b = new Uint8Array(words.length * 2);
   const view = new DataView(b.buffer);
   for (let i = 0; i < words.length; i++) view.setUint16(i * 2, words[i], true);
-  let s = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < b.length; i += chunk) s += String.fromCharCode(...b.subarray(i, i + chunk));
-  return btoa(s);
+  const out = new Uint8Array(Math.ceil(b.length / 3) * 4);
+  let o = 0;
+  let i = 0;
+  for (; i + 2 < b.length; i += 3) {
+    const n = (b[i] << 16) | (b[i + 1] << 8) | b[i + 2];
+    out[o++] = B64[n >> 18];
+    out[o++] = B64[(n >> 12) & 63];
+    out[o++] = B64[(n >> 6) & 63];
+    out[o++] = B64[n & 63];
+  }
+  const rest = b.length - i;
+  if (rest > 0) {
+    const n = (b[i] << 16) | (rest > 1 ? b[i + 1] << 8 : 0);
+    out[o++] = B64[n >> 18];
+    out[o++] = B64[(n >> 12) & 63];
+    out[o++] = rest > 1 ? B64[(n >> 6) & 63] : 61;
+    out[o++] = 61;
+  }
+  return new TextDecoder().decode(out);
 }
 
 export interface MapDepthMeta {

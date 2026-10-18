@@ -92,7 +92,8 @@ export interface DepthData {
   mapOrtho?: MapOrthoMeta;
 }
 
-export const DEPTH_RESOLUTIONS = [128, 256, 384, 512];
+/** 768 and 1024 only show for map grids that big (photo depth is 512 px). */
+export const DEPTH_RESOLUTIONS = [128, 256, 384, 512, 768, 1024];
 
 export interface DepthResult {
   png: string;

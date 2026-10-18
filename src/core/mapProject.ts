@@ -2,8 +2,7 @@
 import proj4 from 'proj4';
 import type { Float32Grid, GridTransform } from './mapGrid';
 import { gridCellCentre, gridSampleBicubic } from './mapGrid';
-import type { MapModel, MapSpec } from './mapSpec';
-import { DEPTH_RESOLUTIONS } from './depth';
+import type { MapModel, MapSource, MapSpec } from './mapSpec';
 import { highestSummitCells, prominentSummitCells } from './mapSummits';
 
 proj4.defs(
@@ -69,12 +68,56 @@ export function metricBounds(bbox: MapSpec['bbox'], crs: string): { west: number
   return { west, south, east, north };
 }
 
-function pickOutputSize(widthM: number, heightM: number, resM: number): { w: number; h: number } {
+/** Long-edge sizes a map depth grid can take. */
+export const MAP_RESOLUTIONS = [128, 256, 384, 512, 768, 1024];
+/** Long-edge cap for coarse sources (Terrarium, ~30 m) and the fallback when fine data is missing. */
+export const MAP_FALLBACK_MAX_PX = 512;
+/** Long-edge cap for fine sources built in the browser or the CLI. 2048 px belongs to cloud jobs. */
+export const MAP_LOCAL_MAX_PX = 1024;
+/** Model millimetres per grid cell a fine source is built at: a 500 mm model wants 1000 px, so 1024. */
+export const MAP_TARGET_MM_PER_PX = 0.5;
+
+/** Native ground cell of a source fine enough to beat the fallback grid, else null. */
+function fineSourceNativeM(source: MapSource): number | null {
+  return source === 'ea-dtm' || source === 'ea-dsm' ? 1 : null;
+}
+
+export interface MapGridSize {
+  /** Ground metres per cell to aim for along the long edge. */
+  resM: number;
+  /** Long-edge cap in pixels. */
+  maxSide: number;
+}
+
+/** Ground cell for coarse sources when Ground resolution is auto (the old default). */
+export const MAP_COARSE_RES_M = 8;
+
+/**
+ * Grid size for a build. With Ground resolution on auto, fine sources (EA 1 m LiDAR) are cut at
+ * 0.5 mm per cell on the model, up to 1024 px; coarse sources (Terrarium) keep 8 m and 512 px.
+ * A typed Ground resolution is used as given, within the same caps.
+ */
+export function mapGridSize(spec: Pick<MapSpec, 'bbox' | 'resM'>, source: MapSource, masterWidthMm?: number): MapGridSize {
+  const userM = Number.isFinite(spec.resM) && spec.resM > 0 ? spec.resM : null;
+  const nativeM = fineSourceNativeM(source);
+  if (nativeM == null) return { resM: userM ?? MAP_COARSE_RES_M, maxSide: MAP_FALLBACK_MAX_PX };
+  let wantM = userM;
+  if (wantM == null) {
+    const b = metricBounds(spec.bbox, pickMetricCrs(spec.bbox));
+    const mm = masterWidthMm != null && masterWidthMm > 0 ? masterWidthMm : 520;
+    wantM = ((b.east - b.west) / mm) * MAP_TARGET_MM_PER_PX;
+  }
+  return { resM: Math.max(nativeM, wantM), maxSide: MAP_LOCAL_MAX_PX };
+}
+
+function pickOutputSize(widthM: number, heightM: number, resM: number, maxSide = MAP_FALLBACK_MAX_PX): { w: number; h: number } {
+  const sizes = MAP_RESOLUTIONS.filter((r) => r <= maxSide);
+  const cap = sizes[sizes.length - 1];
   const longM = Math.max(widthM, heightM);
-  let side = DEPTH_RESOLUTIONS.find((r) => longM / r <= resM * 1.05) ?? DEPTH_RESOLUTIONS[DEPTH_RESOLUTIONS.length - 1];
+  let side = sizes.find((r) => longM / r <= resM * 1.05) ?? cap;
   if (longM / side > resM) {
-    side = Math.min(512, Math.max(128, Math.round(longM / resM)));
-    if (!DEPTH_RESOLUTIONS.includes(side)) side = DEPTH_RESOLUTIONS.reduce((a, b) => (Math.abs(b - side) < Math.abs(a - side) ? b : a));
+    side = Math.min(cap, Math.max(128, Math.round(longM / resM)));
+    if (!sizes.includes(side)) side = sizes.reduce((a, b) => (Math.abs(b - side) < Math.abs(a - side) ? b : a));
   }
   const aspect = widthM / heightM;
   if (aspect >= 1) return { w: side, h: Math.max(2, Math.round(side / aspect)) };
@@ -131,7 +174,7 @@ export const PROJECTION_LATTICE_STEPS = 32;
 type XYTransform = (x: number, y: number, out: [number, number]) => void;
 
 /**
- * proj4 costs ~1 µs per call and a 512 px grid needs a quarter of a million.
+ * proj4 costs ~1 µs per call and a 1024 px grid needs a million.
  * Project a (steps+1)² lattice over `bounds` once and interpolate bilinearly
  * between nodes; points past the edge extrapolate from the outer cell.
  */
@@ -174,16 +217,16 @@ export function projectionLattice(
   };
 }
 
-/** Bilinear or max-pool resample into metric CRS at `resM` ground metres per pixel (long edge). */
+/** Bicubic or max-pool resample into metric CRS at `resM` ground metres per pixel (long edge), at most `maxSide` px. */
 export function reprojectResample(
   source: Float32Grid,
-  spec: Pick<MapSpec, 'bbox' | 'resM'> & { model?: MapModel },
+  spec: Pick<MapSpec, 'bbox' | 'resM'> & { model?: MapModel; maxSide?: number },
 ): Float32Grid {
   const crs = pickMetricCrs(spec.bbox);
   const bounds = metricBounds(spec.bbox, crs);
   const widthM = bounds.east - bounds.west;
   const heightM = bounds.north - bounds.south;
-  const { w, h } = pickOutputSize(widthM, heightM, spec.resM);
+  const { w, h } = pickOutputSize(widthM, heightM, spec.resM > 0 ? spec.resM : MAP_COARSE_RES_M, spec.maxSide);
   const pixelW = widthM / w;
   /** Negative: row 0 is north so the depth image, OSM, and S-01 agree. */
   const pixelH = -heightM / h;

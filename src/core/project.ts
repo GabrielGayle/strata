@@ -248,7 +248,8 @@ export function serialize(p: Project): string {
     }
     return { ...v, images };
   }).map((v) => (v.shadow && p.shadow && JSON.stringify(v.shadow) === JSON.stringify(p.shadow) ? { ...v, shadow: SAME_IMAGE } : v));
-  return JSON.stringify({ ...p, variants }, null, 2);
+  // compact: a 1024 px map depth plus engrave paths pretty-printed would pass 4 MB
+  return JSON.stringify({ ...p, variants });
 }
 
 function readVariants(raw: any): Variant[] {

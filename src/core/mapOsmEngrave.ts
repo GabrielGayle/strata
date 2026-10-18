@@ -36,10 +36,15 @@ export function serializeMapEngraveArt(art: MapEngraveArt): SerializedMapEngrave
   return {
     imageW: art.imageW,
     imageH: art.imageH,
-    lines: art.lines.map((l) => ({ kind: l.kind, path: l.path.map(([x, y]) => [x, y]) })),
+    lines: art.lines.map((l) => ({ kind: l.kind, path: l.path.map(([x, y]) => [tenth(x), tenth(y)]) })),
     texts: art.texts,
     osmAttribution: art.osmAttribution,
   };
+}
+
+/** Engrave art is in grid pixels; 0.1 px is 0.05 mm on a 500 mm, 1024 px map. */
+function tenth(v: number): number {
+  return Math.round(v * 10) / 10;
 }
 
 export function deserializeMapEngraveArt(raw: SerializedMapEngraveArt): MapEngraveArt {

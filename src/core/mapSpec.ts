@@ -22,6 +22,9 @@ export interface EngraveSpec {
   preset?: string;
 }
 
+/** `MapSpec.resM` value that sizes the grid from the source and the model. */
+export const MAP_RES_AUTO = 0;
+
 /** Default Gaussian width (sigma, mm on the model) for the map elevation grid: about what the old 3×3 box gave at 1 mm per cell. */
 export const MAP_SMOOTH_MM = 0.75;
 
@@ -33,7 +36,10 @@ export interface MapSpec {
   crs?: string;
   source: MapSource;
   model: MapModel;
-  /** Target ground metres per depth-grid pixel along the long edge. */
+  /**
+   * Target ground metres per depth-grid pixel along the long edge. MAP_RES_AUTO (0) picks it from
+   * the source and the model size (see mapGridSize).
+   */
   resM: number;
   exaggeration: number | 'auto';
   water: MapWater;
@@ -104,7 +110,7 @@ export function defaultMapSpec(patch: Partial<MapSpec> & { bbox: MapSpec['bbox']
     kind: 'map',
     source: patch.source ?? 'auto',
     model: patch.model ?? 'dtm',
-    resM: patch.resM ?? 8,
+    resM: patch.resM ?? MAP_RES_AUTO,
     exaggeration: patch.exaggeration ?? 'auto',
     water: patch.water ?? 'flat',
     title: patch.title,
@@ -217,7 +223,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(crs ? { crs } : {}),
     source,
     model,
-    resM: resM != null && resM > 0 ? resM : 8,
+    resM: resM != null && resM >= 0 ? resM : MAP_RES_AUTO,
     exaggeration,
     water,
     engrave: cleanEngrave(o.engrave),

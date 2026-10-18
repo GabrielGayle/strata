@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { defaultMapSpec, type MapModel, type MapSource, type MapSpec, type MapWater, type LayerBudgetMode } from '../core/mapSpec';
+import { defaultMapSpec, MAP_RES_AUTO, type MapModel, type MapSource, type MapSpec, type MapWater, type LayerBudgetMode } from '../core/mapSpec';
 import { MAP_ENGRAVE_PRESETS, type MapEngravePresetId } from '../core/mapEngravePresets';
 import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
 import { engraveHasLabels } from '../core/quickMap';
@@ -7,7 +7,7 @@ import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/map
 import { MAP_SOURCE_REGISTRY } from '../core/mapSourceRegistry';
 import { WORKING_MAP_SOURCES, isWorkingMapSource } from '../core/mapSourcePick';
 import { noticesWithoutStaleEngraveSkip } from '../core/mapNotices';
-import { formatLiveMapReadout } from '../core/mapGeometryReadout';
+import { formatLiveMapReadout, formatMapGridReadout } from '../core/mapGeometryReadout';
 import { SUNKEN_FRAME_FLAT_HINT, SUNKEN_FRAME_FLAT_ONLY_HINT, sunkenFrameApplies } from '../core/mapSunkenFrame';
 import { useStore } from '../state/store';
 import { useModel } from './model';
@@ -87,6 +87,8 @@ export default function MapView() {
   const factor =
     existing?.exaggerationFactor ?? (typeof existing?.exaggeration === 'number' ? existing.exaggeration : undefined);
   const reliefM = project.images.top?.depth?.mapOrtho?.reliefM;
+  const topDepth = project.images.top?.depth;
+  const gridReadout = topDepth ? formatMapGridReadout(topDepth) : '';
   const liveReadout =
     mapTerrain.phase === 'ready' && existing && typeof factor === 'number' && factor > 0 && reliefM != null
       ? formatLiveMapReadout({
@@ -211,6 +213,7 @@ export default function MapView() {
         {liveReadout && mapTerrain.phase === 'ready' ? (
           <p className="map-readout" data-testid="map-readout">
             Exaggeration {liveReadout} · source {existing?.resolvedSource ?? source}
+            {gridReadout ? ` · ${gridReadout}` : ''}
           </p>
         ) : null}
       </div>
@@ -348,16 +351,18 @@ export default function MapView() {
           />
           Terraced layers
         </label>
-        <label>
+        <label title="Ground metres per terrain cell. Leave empty for auto: Environment Agency LiDAR is cut at 0.5 mm per cell on the model (up to 1024 px), Terrarium at 8 m (up to 512 px).">
           Ground resolution (m)
           <input
             type="number"
-            min={2}
+            min={1}
             max={64}
             step={1}
-            value={existing?.resM ?? 8}
+            placeholder="auto"
+            style={{ width: '6em' }}
+            value={existing?.resM ? existing.resM : ''}
             disabled={!existing}
-            onChange={(e) => commit({ resM: Number(e.target.value) })}
+            onChange={(e) => commit({ resM: e.target.value === '' ? MAP_RES_AUTO : Math.max(0, Number(e.target.value) || 0) })}
           />
         </label>
       </section>
