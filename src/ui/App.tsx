@@ -19,7 +19,7 @@ import { useMapTerrainBuild } from './useMapTerrainBuild';
 import { isMapTerrainFailure, reportMapTerrainFailure, runFrontPipelineSafe } from './mapTerrainError';
 import { isMapDepth, mapMasterWidthMm, mapScaleMmPerM, mapTrueRangePlateMm } from '../core/mapPlateHeight';
 import { flatStackHeightMm, flatStackIsCapped } from '../core/mapGeometryReadout';
-import { plateTopHeightRangeMm } from '../core/slicer';
+import { countPlatesAtMaxHeight, plateTopHeightRangeMm } from '../core/slicer';
 
 
 export default function App() {
@@ -198,6 +198,8 @@ export default function App() {
       ? stackMm
       : plateTopHeightRangeMm(model.sliced.plates)
     : 0;
+  const mapZMaxM = topDepth?.mapOrtho?.zMaxM;
+  const platesAtMax = mapFace ? countPlatesAtMaxHeight(model.sliced.plates) : 0;
 
   return (
     <FullModelContext.Provider value={getFull}>
@@ -213,6 +215,8 @@ export default function App() {
         data-strata-plate-height-range-mm={mapFace ? String(plateRangeMm) : undefined}
         data-strata-map-terrain-top-mm={mapFace && terrainTopMm != null ? String(terrainTopMm) : undefined}
         data-strata-map-stack-capped={mapFace && model.v.sliceMode === 'flat' ? (stackCapped ? '1' : '0') : undefined}
+        data-strata-map-z-max-m={mapFace && mapZMaxM != null ? String(mapZMaxM) : undefined}
+        data-strata-plates-at-max={mapFace ? String(platesAtMax) : undefined}
         data-strata-slice-mode={model.v.sliceMode}
         data-strata-stack-rods={String(stackRodCount)}
         data-strata-stack-rods-visible={stackRodsVisible ? '1' : '0'}

@@ -21,15 +21,40 @@ type Slot = 'top' | 'front' | 'side';
 
 const SLIDER = 1000;
 
-/** Metres on a log slider, so 0.5 m and 50 m both get room. */
-function MetreSlider({ label, value, lo, hi, onChange, title }: { label: string; value: number; lo: number; hi: number; onChange: (m: number) => void; title: string }) {
+/**
+ * Photo depth: log, so 0.5 m and 50 m both get room.
+ * Map depth: linear in encoded metres — a log slider from the 0.001 m summit
+ * floor to hundreds of metres puts 0.35/0.65 on a sliver of the peaks, which
+ * flattens the plates to the 4 mm floor.
+ */
+function MetreSlider({
+  label,
+  value,
+  lo,
+  hi,
+  onChange,
+  title,
+  linear = false,
+}: {
+  label: string;
+  value: number;
+  lo: number;
+  hi: number;
+  onChange: (m: number) => void;
+  title: string;
+  linear?: boolean;
+}) {
+  const span = Math.max(hi - lo, 1e-9);
   const a = Math.log(Math.max(lo, 1e-3));
   const b = Math.log(Math.max(hi, lo * 1.001));
-  const t = Math.round(((Math.log(Math.max(value, 1e-3)) - a) / (b - a)) * SLIDER);
+  const t = linear
+    ? Math.round(((Math.min(hi, Math.max(lo, value)) - lo) / span) * SLIDER)
+    : Math.round(((Math.log(Math.max(value, 1e-3)) - a) / (b - a)) * SLIDER);
+  const fromT = (raw: number) => (linear ? lo + (raw / SLIDER) * span : Math.exp(a + (raw / SLIDER) * (b - a)));
   return (
     <label className="field-row pm-row" title={title}>
       <span>{label}</span>
-      <input type="range" min={0} max={SLIDER} step={1} value={Math.min(SLIDER, Math.max(0, t))} onChange={(e) => onChange(Math.exp(a + (Number(e.target.value) / SLIDER) * (b - a)))} aria-label={label} />
+      <input type="range" min={0} max={SLIDER} step={1} value={Math.min(SLIDER, Math.max(0, t))} onChange={(e) => onChange(fromT(Number(e.target.value)))} aria-label={label} />
       <span className="mono">{metres(value)}</span>
     </label>
   );
@@ -71,15 +96,32 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
   }, [depth, slot, setDepthSettings]);
   const lo = depth.minM;
   const hi = depth.maxM;
+  const mapFace = isMapDepthFace(depth);
   return (
     <div className="depth-ctl">
       <div className="note">
-        {depth.mapOrtho?.source === 'map'
+        {mapFace
           ? `Map elevation: ${depth.w}×${depth.h}, ${metres(lo)} to ${metres(hi)} (exaggerated metres). Near/far window the terrain; flatten, curve and perspective do not apply to plate heights.`
           : `Depth map: ${depth.w}×${depth.h}, ${metres(lo)} to ${metres(hi)}. These shape the real depth, not the grey picture.`}
       </div>
-      <MetreSlider label="Near" value={s.near} lo={lo} hi={hi} onChange={(m) => set({ near: Math.min(m, s.far * 0.98) })} title="Anything nearer than this is full height" />
-      <MetreSlider label="Far" value={s.far} lo={lo} hi={hi} onChange={(m) => set({ far: Math.max(m, s.near * 1.02) })} title="Anything farther than this is background: white, left uncut" />
+      <MetreSlider
+        label="Near"
+        value={s.near}
+        lo={lo}
+        hi={hi}
+        linear={mapFace}
+        onChange={(m) => set({ near: Math.min(m, s.far * 0.98) })}
+        title="Anything nearer than this is full height"
+      />
+      <MetreSlider
+        label="Far"
+        value={s.far}
+        lo={lo}
+        hi={hi}
+        linear={mapFace}
+        onChange={(m) => set({ far: Math.max(m, s.near * 1.02) })}
+        title="Anything farther than this is background: white, left uncut"
+      />
       <Num label="Curve" value={s.curve} min={0.3} max={3} step={0.05} show={s.curve.toFixed(2)} onChange={(v) => set({ curve: v })} title="Below 1 lifts the low parts, above 1 sinks them so only the nearest parts stand out" />
       <Num label="Flatten" value={s.flatten} min={0} max={1} step={0.05} show={`${Math.round(s.flatten * 100)}%`} onChange={(v) => set({ flatten: v })} title="Bas-relief squash: flattens the big shapes and keeps the fine detail, so it reads in a few millimetres" />
       <div className="field-row pm-row">

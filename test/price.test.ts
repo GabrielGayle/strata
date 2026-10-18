@@ -14,7 +14,7 @@ describe('price estimate', () => {
     expect(DEFAULT_PLATE_MATERIAL).toBe('steel');
     expect(m.v.plateMaterial).toBe(DEFAULT_PLATE_MATERIAL);
     expect(m.bom.rows.every((r) => r.material === DEFAULT_PLATE_MATERIAL)).toBe(true);
-    expect(cutListCsv(m.v, m.bom)).toMatch(/Mild steel/);
+    expect(cutListCsv(m.v, m.bom)).toMatch(/Mild steel \(CR4\)/);
     const e = estimatePrice(m.bom, m.v.plateMaterial, m.v.thickness);
     console.log('estimate', e.net.toFixed(2), 'ex VAT', e.lines.length, 'lines');
     const parts = e.lines.filter((l) => l.label !== 'Minimum order charge');
@@ -36,6 +36,8 @@ describe('price estimate', () => {
     expect(thick.net).toBeGreaterThan(thin.net);
     expect(thin.warnings.filter((w) => !/etch/i.test(w))).toEqual([]);
     expect(thick.warnings.some((w) => /estimate/i.test(w))).toBe(true);
+    expect(thick.warnings.some((w) => w.includes('Mild steel (CR4)'))).toBe(true);
+    expect(thick.warnings.some((w) => /mild steel \(cr4\)/.test(w))).toBe(false);
   });
 
   it('applies the minimum order and flags thicknesses Chop Chop does not list', () => {

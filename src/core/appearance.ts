@@ -5,7 +5,7 @@
 // the finish only how it looks.
 import { mulberry32 } from './rng';
 
-export const METAL_NAMES: Record<string, string> = { corten: 'Corten steel', steel: 'Mild steel', aluminium: 'Aluminium' };
+export const METAL_NAMES: Record<string, string> = { corten: 'Corten steel', steel: 'Mild steel (CR4)', aluminium: 'Aluminium' };
 export const METAL_IDS = Object.keys(METAL_NAMES);
 
 export interface Look {

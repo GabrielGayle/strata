@@ -1,9 +1,10 @@
 // Reproject elevation grids to a local metric CRS and resample to map resolution.
 import proj4 from 'proj4';
 import type { Float32Grid, GridTransform } from './mapGrid';
-import { gridSampleBilinear } from './mapGrid';
+import { gridCellCentre, gridSampleBilinear } from './mapGrid';
 import type { MapModel, MapSpec } from './mapSpec';
 import { DEPTH_RESOLUTIONS } from './depth';
+import { highestSummitCells, prominentSummitCells } from './mapSummits';
 
 proj4.defs(
   'EPSG:27700',
@@ -82,6 +83,46 @@ function sampleSource(g: Float32Grid, x: number, y: number): number {
   return gridSampleBilinear(g, x, y, true);
 }
 
+function sourceXYToDestCell(source: Float32Grid, dest: Float32Grid, x: number, y: number): { col: number; row: number } | null {
+  let mx = x;
+  let my = y;
+  if (source.crs !== dest.crs) {
+    try {
+      const [lon, lat] = proj4(source.crs, 'EPSG:4326', [x, y]) as [number, number];
+      const p = proj4('EPSG:4326', dest.crs, [lon, lat]) as [number, number];
+      mx = p[0];
+      my = p[1];
+    } catch {
+      return null;
+    }
+  }
+  const col = Math.round((mx - dest.transform.originX) / dest.transform.pixelW);
+  const row = Math.round((my - dest.transform.originY) / dest.transform.pixelH);
+  if (col < 0 || row < 0 || col >= dest.w || row >= dest.h) return null;
+  return { col, row };
+}
+
+/**
+ * Bilinear resample averages away 1-pixel summits. Stamp the DEM-max source
+ * cell onto the nearest output cell. Other peaks are Jenks pins, not needles.
+ */
+export function stampSourceMaxima(dest: Float32Grid, source: Float32Grid): Float32Grid {
+  const peaks = highestSummitCells(prominentSummitCells(source));
+  if (!peaks.length) return dest;
+  const out = new Float32Array(dest.data);
+  for (const p of peaks) {
+    const z = p.z;
+    if (!Number.isFinite(z)) continue;
+    const c = gridCellCentre(source, p.x, p.y);
+    const cell = sourceXYToDestCell(source, dest, c.x, c.y);
+    if (!cell) continue;
+    const i = cell.row * dest.w + cell.col;
+    const cur = out[i];
+    if (!Number.isFinite(cur) || z > cur) out[i] = z;
+  }
+  return { ...dest, data: out };
+}
+
 /** Bilinear or max-pool resample into metric CRS at `resM` ground metres per pixel (long edge). */
 export function reprojectResample(
   source: Float32Grid,
@@ -142,7 +183,8 @@ export function reprojectResample(
     pixelW,
     pixelH,
   };
-  return { w, h, data, crs, transform };
+  const dest: Float32Grid = { w, h, data, crs, transform };
+  return stampSourceMaxima(dest, source);
 }
 
 export function gridMetricWidthHeight(g: Float32Grid): { widthM: number; heightM: number } {

@@ -245,8 +245,11 @@ export function createFrontPipeline() {
     const topMask = stage('Top silhouette', [assets.topImg ?? null, v.topOutline, v.topThreshold, v.imgRotate, !!mapTop], () =>
       !mapTop && assets.topImg && v.topOutline !== 'off' ? silhouetteMask(rotate(assets.topImg, Number(v.imgRotate)), String(v.topOutline), v.topThreshold) : null,
     );
-    const hf = stage('Strata field', [...pick(v, STRATA_KEYS), sideImg, mapDepth], () => {
-      if (mapDepth) return buildMapHeightField(v, mapDepth);
+    const hf = stage('Strata field', [...pick(v, STRATA_KEYS), sideImg, mapDepth, !!project.userParamOverrides?.stackHeight], () => {
+      if (mapDepth) {
+        const capMm = project.userParamOverrides?.stackHeight && v.sliceMode !== 'flat' ? v.stackHeight : undefined;
+        return buildMapHeightField(v, mapDepth, { capMm });
+      }
       return v.stackSource === 'strata' ? buildHeightField(v, sideImg) : null;
     });
     // parts that come out unchanged keep their identity, so checks, nesting and the 3D view skip them

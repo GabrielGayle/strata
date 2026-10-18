@@ -6,7 +6,8 @@ import { reprojectResample } from './mapProject';
 import { mapGridToDepth } from './mapToDepth';
 import { applyLayerBudget, computeLayerBreaks, injectPinnedBreaks, type LayerBudgetMode } from './mapLayerBudget';
 import { formatExaggerationStackReadout, resolveExaggerationFactor } from './mapExaggeration';
-import { simplifyMetricGrid } from './mapSimplify';
+import { restoreSummitCells, simplifyMetricGrid } from './mapSimplify';
+import { prominentSummitCells } from './mapSummits';
 import { fetchCop30Grid, type Cop30GridLoader } from './mapCopernicus';
 import { fetchEaLidarGrid, isEaLidarSource, type EaGridLoader } from './mapEaLidar';
 import { fetchRegionalLidarGrid, isRegionalLidarSource, type RegionalGridLoader } from './mapRegionalLidar';
@@ -234,7 +235,8 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     kerfMm: stack.kerfMm ?? 0.2,
     pixelSizeM: Math.abs(metric.transform.pixelW),
   });
-  metric = water ? restoreWaterSurfaces(simplified.grid, rawMetric, water, landBudget.breaksM) : simplified.grid;
+  const restoredLand = restoreSummitCells(simplified.grid, metric, prominentSummitCells(rawMetric));
+  metric = water ? restoreWaterSurfaces(restoredLand, rawMetric, water, landBudget.breaksM) : restoredLand;
   const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384, bbox: spec.bbox });
   const ortho = depth.mapOrtho;
   const readout = formatExaggerationStackReadout(

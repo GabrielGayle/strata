@@ -145,7 +145,7 @@ function sampleMetres(metres: Float32Array, w: number, h: number, u: number, v: 
  * Ignores mix, contrast, blur, flatten, curve, perspective, matte, and strata erosion.
  * User near/far window the elevation; linear in metres.
  */
-export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
+export function buildMapHeightField(v: Values, depth: DepthData, opts: { capMm?: number } = {}): HeightField {
   const { metres } = decodeDepthBuffers(depth);
   const ortho = depth.mapOrtho;
   const masterMm = mapMasterWidthMm(v);
@@ -156,6 +156,14 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
   const near = clampFinite(Math.min(nearRaw, farRaw - 1e-6), 1e-6, MAX_ENCODED_M, 1e-6);
   const far = clampFinite(Math.max(near + 1e-6, farRaw), near + 1e-6, MAX_ENCODED_M, near + 1e-6);
   const f = stackFrame(v);
+  const reliefMm = Math.max(0, far - near) * scale;
+  const unscaledMax = MAP_HEIGHT_FLOOR_MM + reliefMm;
+  const capMm = v.sliceMode === 'flat' ? Infinity : opts.capMm;
+  let heightCapScale = 1;
+  if (capMm != null && Number.isFinite(capMm) && capMm > MAP_HEIGHT_FLOOR_MM && unscaledMax > capMm + 1e-6 && reliefMm > 0) {
+    heightCapScale = (capMm - MAP_HEIGHT_FLOOR_MM) / reliefMm;
+  }
+  const mmPerEncodedM = scale * heightCapScale;
 
   const at = (x: number, z: number) => {
     const s = x * f.stack[0] + z * f.stack[1];
@@ -165,26 +173,30 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
     // +across / +Z is west; geographic easting on the north-up grid is 1 − an.
     const d = sampleMetres(metres, depth.w, depth.h, 1 - an, sn);
     const dd = Number.isFinite(d) ? Math.min(far, Math.max(near, d)) : far;
-    const h = MAP_HEIGHT_FLOOR_MM + (far - dd) * scale;
+    const h = MAP_HEIGHT_FLOOR_MM + (far - dd) * mmPerEncodedM;
     return clampFinite(h, 0, MAX_MAP_PLATE_MM, MAP_HEIGHT_FLOOR_MM);
   };
 
   let min = Infinity;
   let max = -Infinity;
-  for (let i = 0; i <= 24; i++) {
-    for (let j = 0; j <= 12; j++) {
-      const s = (i / 24 - 0.5) * f.stackLen;
-      const ac = (j / 12 - 0.5) * f.acrossLen;
-      const h = at(s * f.stack[0] + ac * f.across[0], s * f.stack[1] + ac * f.across[1]);
-      min = Math.min(min, h);
-      max = Math.max(max, h);
-    }
+  for (let i = 0; i < metres.length; i++) {
+    const d = metres[i];
+    if (!Number.isFinite(d)) continue;
+    const dd = Math.min(far, Math.max(near, d));
+    const h = clampFinite(MAP_HEIGHT_FLOOR_MM + (far - dd) * mmPerEncodedM, 0, MAX_MAP_PLATE_MM, MAP_HEIGHT_FLOOR_MM);
+    if (h < min) min = h;
+    if (h > max) max = h;
   }
   if (!Number.isFinite(min) || !Number.isFinite(max)) {
     min = MAP_HEIGHT_FLOOR_MM;
     max = MAP_HEIGHT_FLOOR_MM;
   }
-  return { at, min, max };
+  return {
+    at,
+    min,
+    max,
+    ...(heightCapScale < 1 - 1e-9 ? { heightCapScale } : {}),
+  };
 }
 
 /**

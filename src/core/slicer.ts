@@ -148,6 +148,18 @@ export function plateTopHeightRangeMm(plates: PlateInfo[]): number {
   return r ? r.hi - r.lo : 0;
 }
 
+/** How many P/R plates share the highest cut outline (exact summit plateau). */
+export function countPlatesAtMaxHeight(plates: PlateInfo[], epsMm = 0.05): number {
+  const all = plateOutlineYRangeMm(plates);
+  if (!all) return 0;
+  let n = 0;
+  for (const pl of plates) {
+    const r = plateOutlineYRangeMm([pl]);
+    if (r && Math.abs(r.hi - all.hi) <= epsMm) n++;
+  }
+  return n;
+}
+
 export interface SliceResult {
   plates: PlateInfo[];
   parts: Part[];
@@ -1187,6 +1199,11 @@ export function slice(input: SliceInput): SliceResult {
   const hf = input.hf;
   const v = input.mapTerrain ? { ...input.v, edgeFlow: 0 } : input.v;
   const warnings: string[] = [];
+  if (input.mapTerrain && hf?.heightCapScale != null && hf.heightCapScale < 1 - 1e-9) {
+    warnings.push(
+      `Terrain is taller than the ${v.stackHeight} mm plate height, so the whole map was scaled to fit (×${hf.heightCapScale.toFixed(2)}). Summits are not clipped.`,
+    );
+  }
   const fragmentEvents: FragmentEvent[] = [];
   const round: { spots: RoundSpot[] } = { spots: [] };
   const roundSplits: string[] = [];
