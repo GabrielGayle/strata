@@ -80,6 +80,10 @@ Vite dev and preview serve `/api/ea-proxy` and `/api/overpass` so browser map bu
 - Text on silver (`#c0c0c0`) or on white sunken lists/tables gets the silver-safe `--muted/--ok/--warn/--err` from `form-chrome.css`; add new silver containers to that selector rather than hard-coding greys. Themed surfaces (`.view`, panels) use `--ink`/`--muted`.
 - `target-size` is deliberately not checked: the 18px 98.css icon buttons are the look.
 
+### The engine runs in a Web Worker
+
+The app builds every model in `src/core/engine.worker.ts` (front and deferred stages, plus each part's 3D mesh); `src/core/engine.ts` posts only changed project fields and assets, and replies carry only what changed, so unchanged parts keep their identity on the page. While a pointer is down the worker builds a coarse **preview** (`PREVIEW_SAMPLE_STEP`, no shadow carve, deferred stages stale); the full model follows 150 ms after release. Do not add heavy work to the page side: geometry belongs in `src/core` and runs in the worker. `createPipeline` stays for `src/cli.ts`, `CompareView` and `libraryDescribe`; exports use the on-screen model when it is full and current, else build on the page. A model on the page has a height field without `at()`; sample heights inside the pipeline. `e2e/engine-drag.spec.ts` checks no page task over 50 ms during a 10 s drag (93 plates; Shadow with 8 frames).
+
 ## 3D skills (all agents)
 
 `.claude/skills/` holds vendored three.js / React Three Fiber guidance (sources and pinned commits in `.claude/skills/README.md`). Claude Code loads them automatically. Cursor, Grok and other agents: before changing 3D code (`src/ui/Viewport*.tsx`, `ViewFromPoint.tsx`, anything using `three` or `@react-three/*`), read the matching `SKILL.md`:

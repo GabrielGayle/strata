@@ -110,6 +110,8 @@ export async function waitForMapReady(page: Page) {
           const err = (await root.getAttribute('data-strata-map-error'))?.trim();
           throw new Error(err || 'map terrain error');
         }
+        // the plates come from the engine worker a moment after the project changes
+        if ((await root.getAttribute('data-strata-model-current')) !== '1') return 0;
         const range = Number(await root.getAttribute('data-strata-plate-height-range-mm'));
         const expected = Number(await root.getAttribute('data-strata-map-expected-height-mm'));
         return phase === 'ready' && range > 0 && expected > 0 ? range : 0;
@@ -171,12 +173,19 @@ export async function applyNeasdenDesign(page: Page) {
   await dismissTour(page);
 }
 
+/** Once the model on screen has caught up with the project, so intermediate engine results aren't read. */
+export async function waitForModelCurrent(page: Page) {
+  await expect(page.locator('.app.window')).toHaveAttribute('data-strata-model-current', '1', { timeout: 60_000 });
+}
+
 export async function plateHeightRangeMm(page: Page): Promise<number> {
+  await waitForModelCurrent(page);
   const raw = await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm');
   return Number(raw);
 }
 
 export async function assertPlateHeightMatchesRelief(page: Page, tolerance = 0.3) {
+  await waitForModelCurrent(page);
   await expect
     .poll(async () => Number(await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm')), {
       timeout: 60_000,

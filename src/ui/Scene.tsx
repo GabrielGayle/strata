@@ -9,7 +9,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { Model } from '../core/pipeline';
 import type { Part } from '../core/slicer';
 import type { MouldPart } from '../core/mould';
-import { etchSegments, extrudeOnPlane, extrudePlan, extrudeSunkenFrame } from '../core/geometry3d';
+import { etchSegments, extrudePlan, extrudeSunkenFrame } from '../core/geometry3d';
+import { partGeometry } from '../core/partMesh';
 import { planeToWorld } from '../core/section';
 import { baseGeometry } from '../core/base';
 import { shapeBBox } from '../core/geom2d';
@@ -65,7 +66,7 @@ export function Env({ intensity = 0.55 }: { intensity?: number }) {
 }
 
 const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selected, onSelect, onPaint, offset }: { part: Part; material: THREE.Material; selMaterial: THREE.Material; selected: boolean; onSelect?: (id: string) => void; onPaint?: (key: string, shift: boolean) => void; offset?: [number, number, number] }) {
-  const geo = useMemo(() => extrudeOnPlane(part.shape, part.thickness, part.plane), [part]);
+  const geo = useMemo(() => partGeometry(part), [part]);
   useEffect(() => () => geo.dispose(), [geo]);
   return (
     <mesh

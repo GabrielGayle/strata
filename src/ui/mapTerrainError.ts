@@ -1,4 +1,5 @@
-import { isMapTerrainFailure, userFacingMapBuildError } from '../core/mapBuildError';
+import { userFacingMapBuildError } from '../core/mapBuildError';
+import { frontWithMapFallback } from '../core/engine';
 import type { Assets, FrontModel } from '../core/pipeline';
 import type { Project } from '../core/project';
 import { useStore } from '../state/store';
@@ -12,7 +13,11 @@ export {
 } from '../core/mapBuildError';
 
 export function reportMapTerrainFailure(err: unknown): void {
-  const error = userFacingMapBuildError(err);
+  reportMapTerrainMessage(userFacingMapBuildError(err));
+}
+
+/** Shows a map build failure the engine worker already turned into words. */
+export function reportMapTerrainMessage(error: string): void {
   const st = useStore.getState();
   if (st.mapTerrain.phase === 'error' && st.mapTerrain.error === error) return;
   st.setMapTerrain({
@@ -28,15 +33,5 @@ export function runFrontPipelineSafe(
   project: Project,
   assets: Assets,
 ): FrontModel {
-  try {
-    return front(project, assets);
-  } catch (e) {
-    if (!isMapTerrainFailure(e)) throw e;
-    reportMapTerrainFailure(e);
-    const top = project.images.top;
-    if (top?.map && top.depth) {
-      return front({ ...project, images: { ...project.images, top: { ...top, depth: undefined } } }, assets);
-    }
-    throw e;
-  }
+  return frontWithMapFallback(front, project, assets, (message) => reportMapTerrainMessage(message));
 }
