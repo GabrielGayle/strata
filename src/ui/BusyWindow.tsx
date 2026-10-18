@@ -28,8 +28,8 @@ function useNow(on: boolean, every = 250) {
 export function useAppBusy(checksStale: boolean, engine: 'preview' | 'full' | null = null) {
   const map = useStore((s) => s.mapTerrain);
   useBusyWhile(map.phase === 'working', { scene: 'map', title: 'Building map terrain', detail: map.message || 'Fetching elevation…' });
-  useBusyWhile(engine === 'preview', { scene: 'engine', title: 'Previewing plates', detail: 'Coarse plates while you drag. The full build follows when you let go.' }, Infinity);
-  useBusyWhile(engine === 'full', { scene: 'engine', title: 'Building plates', detail: 'Slicing, carving and checking in the background. You can keep working.' }, 1500);
+  useBusyWhile(engine === 'preview', { scene: 'engine', title: 'Previewing your edit', detail: 'Coarse plates while you drag. The full build follows when you let go.' }, Infinity);
+  useBusyWhile(engine === 'full', { scene: 'engine', title: 'Building your edit', detail: 'Slicing, carving and checking in the background. You can keep working.' }, 1500);
   useBusyWhile(checksStale && !engine, { scene: 'engine', title: 'Checking plates', detail: 'Fit checks, nesting, moulds and the cut list are catching up with your last edit.' }, 1500);
 }
 

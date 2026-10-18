@@ -64,7 +64,7 @@ async function dismissTour(page: import('@playwright/test').Page) {
 async function waitForModel(page: import('@playwright/test').Page) {
   await page.waitForSelector('.app.window');
   await dismissTour(page);
-  await expect(page.locator('.status-bar-field').filter({ hasText: /plates/ })).toContainText(/\d+\s+plates/, { timeout: 90_000 });
+  await expect(page.getByTestId('status-counts')).toContainText(/\d+\s+plates/, { timeout: 90_000 });
   await expect(page.locator('[data-in-app-plates]')).toHaveAttribute('data-in-app-plates', /[1-9]\d*/, { timeout: 90_000 });
   await dismissTour(page);
 }
