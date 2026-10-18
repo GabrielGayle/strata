@@ -2,7 +2,7 @@ import type { MapSpec } from './mapSpec';
 import { defaultMapSpec, MAP_SMOOTH_MM, TERRARIUM_ATTRIBUTION } from './mapSpec';
 import { fetchTerrariumGrid, getTileFetcher, type TileFetcher } from './mapTerrarium';
 import { cachedTileFetch } from './mapCache';
-import { reprojectResample } from './mapProject';
+import { mapGridSize, reprojectResample } from './mapProject';
 import { mapGridToDepth } from './mapToDepth';
 import { applyLayerBudget, computeLayerBreaks, injectPinnedBreaks, type LayerBudgetMode } from './mapLayerBudget';
 import { formatExaggerationStackReadout, resolveExaggerationFactor } from './mapExaggeration';
@@ -123,7 +123,8 @@ async function fetchElevationGrid(
 
   if (isEaLidarSource(effective)) {
     let reason = '';
-    const grid = await fetchEaLidarGrid(effective, spec, { loader: opts.eaLoader, onError: (m) => (reason = m) });
+    const sized = { ...spec, ...mapGridSize(spec, effective, opts.stack?.masterWidthMm) };
+    const grid = await fetchEaLidarGrid(effective, sized, { loader: opts.eaLoader, onError: (m) => (reason = m) });
     if (grid) return ok(grid, effective);
     const why = reason ? ` (${reason})` : '';
     notices.push(mapWarn(`${effective} LiDAR not available for this bbox${why}; falling back to terrarium (~30 m).`));
@@ -161,13 +162,18 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   await nextStage(opts.signal);
   /** Actual raster after fallback — auto exaggeration and the readout source must use this, not the pick. */
   const usedSource = elevHit.used;
-  const resampleSpec = { ...spec, model: spec.model === 'dtm+buildings' ? 'dtm' : spec.model };
+  // grid size follows the raster actually fetched: a fallback to Terrarium keeps the 512 px grid
+  const resampleSpec = {
+    ...spec,
+    ...mapGridSize(spec, usedSource, opts.stack?.masterWidthMm),
+    model: spec.model === 'dtm+buildings' ? 'dtm' : spec.model,
+  };
   let metric = reprojectResample(elev, resampleSpec);
   await nextStage(opts.signal);
   let dtmMetric = metric;
   if (spec.model === 'dsm' && fetchSource !== resolved.effective) {
     const dtmElev = await fetchElevationGrid(spec, resolved.effective, notices, opts);
-    dtmMetric = reprojectResample(dtmElev.grid, { ...spec, model: 'dtm' });
+    dtmMetric = reprojectResample(dtmElev.grid, { ...resampleSpec, model: 'dtm' });
   }
   if (spec.model === 'dtm+buildings') {
     dtmMetric = metric;

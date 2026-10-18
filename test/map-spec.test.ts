@@ -22,7 +22,7 @@ describe('MapSpec schema', () => {
     };
     p.images.top = asset;
     const text = serialize(p);
-    expect(text).toContain('"kind": "map"');
+    expect(text).toContain('"kind":"map"');
     const back = deserialize(text);
     expect(back.images.top?.map).toEqual(map);
     expect(back.images.top?.depth).toBeUndefined();

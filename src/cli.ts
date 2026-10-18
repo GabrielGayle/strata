@@ -173,7 +173,7 @@ function newExportArgs(project: string): Args {
     images: {},
     autoDimension: [],
     reliefExaggeration: 1,
-    map: { source: 'auto', resM: 8, exaggeration: 'auto', engrave: parseEngraveFlag(undefined, true) },
+    map: { source: 'auto', resM: 0, exaggeration: 'auto', engrave: parseEngraveFlag(undefined, true) },
   };
 }
 
@@ -564,7 +564,7 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
           title: args.map?.title ?? preset?.title,
           bbox,
           source: args.map?.source ?? preset?.source ?? 'auto',
-          resM: args.map && args.map.resM > 0 ? args.map.resM : preset?.resM ?? 8,
+          resM: args.map && args.map.resM > 0 ? args.map.resM : preset?.resM ?? 0,
           exaggeration: args.map?.exaggeration ?? preset?.exaggeration ?? 'auto',
           engrave: args.map?.engrave ?? preset?.engrave ?? { enabled: true, features: ['roads', 'water', 'title'] },
           cacheDir: args.map?.cacheDir ?? preset?.cacheDir,

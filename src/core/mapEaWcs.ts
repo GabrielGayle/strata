@@ -16,7 +16,7 @@ const SUBSET_CRS = 'http://www.opengis.net/def/crs/EPSG/0/27700';
 
 /** Native LiDAR cell size (metres). */
 export const EA_LIDAR_NATIVE_M = 1;
-/** Cap WCS output so the long edge stays near the depth-grid max (see pickOutputSize). */
+/** Default cap on the WCS output long edge; builds pass the grid size they want (see mapGridSize). */
 export const EA_WCS_MAX_EDGE_PX = 512;
 
 function wcsBaseFor(source: MapSource): { base: string; coverageId: string } | null {
@@ -30,20 +30,25 @@ function formatScaleFactor(factor: number): string {
 }
 
 /**
- * WCS 2.0 scaling factor (native 1 m → `resM`, also capped at ~512 px).
+ * WCS 2.0 scaling factor (native 1 m → `resM`, also capped at `maxEdgePx` on the long edge).
  * Full Neasden at 1 m is ~3344×3638 / 57 MB and freezes the browser GeoTIFF path.
  */
-export function eaWcsScaleFactor(bbox: MapSpec['bbox'], resM = 8): number {
+export function eaWcsScaleFactor(bbox: MapSpec['bbox'], resM = 8, maxEdgePx = EA_WCS_MAX_EDGE_PX): number {
   const b = metricBounds(bbox, 'EPSG:27700');
   const longM = Math.max(Math.abs(b.east - b.west), Math.abs(b.north - b.south));
   const wanted = Math.max(EA_LIDAR_NATIVE_M, Number.isFinite(resM) && resM > 0 ? resM : 8);
-  const capM = longM / EA_WCS_MAX_EDGE_PX;
+  const capM = longM / maxEdgePx;
   const requestM = Math.max(wanted, capM);
   return Math.min(1, EA_LIDAR_NATIVE_M / requestM);
 }
 
 /** Build a WCS 2.0.1 GetCoverage URL for the bbox (metric subset in EPSG:27700). */
-export function buildEaWcsGetCoverageUrl(source: MapSource, bbox: MapSpec['bbox'], resM = 8): string | null {
+export function buildEaWcsGetCoverageUrl(
+  source: MapSource,
+  bbox: MapSpec['bbox'],
+  resM = 8,
+  maxEdgePx = EA_WCS_MAX_EDGE_PX,
+): string | null {
   const meta = wcsBaseFor(source);
   if (!meta) return null;
   const b = metricBounds(bbox, 'EPSG:27700');
@@ -61,11 +66,11 @@ export function buildEaWcsGetCoverageUrl(source: MapSource, bbox: MapSpec['bbox'
   });
   params.append('subset', `E(${e0},${e1})`);
   params.append('subset', `N(${n0},${n1})`);
-  const factor = eaWcsScaleFactor(bbox, resM);
+  const factor = eaWcsScaleFactor(bbox, resM, maxEdgePx);
   if (factor < 0.999) params.set('SCALEFACTOR', formatScaleFactor(factor));
   return `${meta.base}?${params.toString()}`;
 }
 
-export function eaWcsUrlForSpec(source: MapSource, spec: Pick<MapSpec, 'bbox'> & { resM?: number }): string | null {
-  return buildEaWcsGetCoverageUrl(source, spec.bbox, spec.resM ?? 8);
+export function eaWcsUrlForSpec(source: MapSource, spec: Pick<MapSpec, 'bbox'> & { resM?: number; maxSide?: number }): string | null {
+  return buildEaWcsGetCoverageUrl(source, spec.bbox, spec.resM ?? 8, spec.maxSide ?? EA_WCS_MAX_EDGE_PX);
 }
