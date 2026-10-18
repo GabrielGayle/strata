@@ -404,9 +404,3 @@ export function compressPngFile(dest: string) {
     if (existsSync(tmp)) unlinkSync(tmp);
   }
 }
-
-/** Left panels start closed on every load; open one group by its header. */
-export async function openGroup(page: Page, group: string) {
-  const head = page.locator(`.left [data-group="${group}"] button.section-head`);
-  if ((await head.getAttribute('aria-expanded')) === 'false') await head.click();
-}

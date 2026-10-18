@@ -3,7 +3,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gabrielProjectJson } from '../test/image-sliver-fixture';
 import { readFileSync } from 'node:fs';
-import { openGroup } from './map-helpers';
 import { dxfCutStructure, dxfEntitySummary, listDxfEntities } from '../src/core/dxf';
 
 const SHOT = join(process.cwd(), 'docs/screenshots/image-sliver');
@@ -13,7 +12,7 @@ async function seed(page: Page, fragmentMode: 'auto' | 'keep' = 'auto') {
     ({ project }) => {
       localStorage.setItem('strata:tour-seen', '1');
       localStorage.setItem('strata.project.v1', project);
-      localStorage.setItem('strata.ui.v1', JSON.stringify({ tab: '3d', ortho: true }));
+      localStorage.setItem('strata.ui.v1', JSON.stringify({ tab: '3d', collapsed: { Fabrication: false }, ortho: true }));
     },
     { project: gabrielProjectJson(fragmentMode) },
   );
@@ -31,7 +30,6 @@ test.describe('image sliver and cut-only sheet DXF', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
     await waitReady(page);
-    await openGroup(page, 'Fabrication');
 
     const counts = page.getByTestId('status-counts');
     await expect(counts).toContainText('6 plates · 6 parts', { timeout: 90_000 });
@@ -109,7 +107,6 @@ test.describe('image sliver and cut-only sheet DXF', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
     await waitReady(page);
-    await openGroup(page, 'Fabrication');
     await expect(page.locator('.status-bar-field').filter({ hasText: /errors/ })).not.toHaveText('0 errors', { timeout: 90_000 });
     const downloads: import('@playwright/test').Download[] = [];
     page.on('download', (d) => downloads.push(d));

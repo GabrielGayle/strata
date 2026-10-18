@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { seedAllTourSeenKeys, openGroup } from './map-helpers';
+import { seedAllTourSeenKeys } from './map-helpers';
 import { stackRodsProjectJson } from '../test/stack-rods-fixture';
 
 const SHOT = join(process.cwd(), 'docs/screenshots/stack-rods');
@@ -10,7 +10,7 @@ async function seed(page: Page) {
   await page.addInitScript(seedAllTourSeenKeys);
   await page.addInitScript((project) => {
     localStorage.setItem('strata.project.v1', project);
-    localStorage.setItem('strata.ui.v1', JSON.stringify({ tab: '3d', ortho: true }));
+    localStorage.setItem('strata.ui.v1', JSON.stringify({ tab: '3d', collapsed: { Slicer: false }, ortho: true }));
   }, stackRodsProjectJson());
 }
 
@@ -29,7 +29,6 @@ test.describe('support poles on a Stamped two-peak stack', () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');
     await waitReady(page);
-    await openGroup(page, 'Slicer');
 
     await expect(page.locator('.app.window')).toHaveAttribute('data-strata-slice-mode', 'flat');
     const root = page.locator('.app.window');

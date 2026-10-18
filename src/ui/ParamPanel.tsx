@@ -397,8 +397,7 @@ export default function ParamPanel() {
         if (changedOnly && !nChanged) return null;
         if (idle && filter) return null;
         if (!changedOnly && !idle && !defs.length && !(g === 'Concrete' && !filter)) return null;
-        // every group starts closed; only an explicit open (click, tour, jump to a setting) shows it
-        const open = filter || changedOnly ? true : ui.collapsed[g] === false;
+        const open = filter || changedOnly ? true : !ui.collapsed[g];
         const hideBody = (!on && !sw?.keepOpen) || !!idle;
         const errs = hideBody ? 0 : defs.filter((d) => model.ev.errors[d.id]).length;
         return (

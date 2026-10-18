@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { candleList, DEFAULT_CANDLES, HOLDER_NAMES, parseCandles, PATH_NAMES, PRESETS, type CandlePath, type CandleSpec, type Holder } from '../core/candles';
+import { candleList, CHOKE_NAMES, DEFAULT_CANDLES, SIT_NAMES, type Choke, type Sit, HOLDER_NAMES, parseCandles, PATH_NAMES, PRESETS, type CandlePath, type CandleSpec, type Holder } from '../core/candles';
 import type { Model } from '../core/pipeline';
 import type { RawValue } from '../core/params';
 import { baseTop } from '../core/slicer';
 
-type NumKey = 'size' | 'bend' | 'lift' | 'crown' | 'ramp' | 'grip' | 'cup' | 'fins' | 'reach' | 'spin' | 'slack' | 'shoulder' | 'x' | 'z' | 'turn';
+type NumKey = 'size' | 'bend' | 'lift' | 'crown' | 'ramp' | 'grip' | 'cup' | 'fins' | 'reach' | 'spin' | 'engage' | 'pad' | 'slack' | 'shoulder' | 'x' | 'z' | 'turn';
 
 interface Field {
   key: NumKey;
@@ -24,19 +24,27 @@ const BEND_HINT: Partial<Record<CandlePath, string>> = {
   star: 'How many points the star has.',
 };
 const hasStick = (s: CandleSpec) => candleList(s).some((c) => !c.tealight);
-const hasTarget = (s: CandleSpec) => candleList(s).some((c) => (c.tealight ? c.holder === 'target' : (c.holder ?? s.holder) === 'target'));
+const holderOf = (s: CandleSpec, c: ReturnType<typeof candleList>[number]) => (c.tealight ? c.holder ?? 'socket' : c.holder ?? s.holder);
+const hasTarget = (s: CandleSpec) => candleList(s).some((c) => holderOf(s, c) !== 'socket');
+const hasSlotted = (s: CandleSpec) => candleList(s).some((c) => holderOf(s, c) === 'slotted');
+
+// set while the panel renders: whether "auto" means sitting into a map
+let mapDesign = false;
+const sitsIn = (s: CandleSpec) => s.sit === 'surface' || (s.sit === 'auto' && mapDesign);
 
 const FIELDS: Field[] = [
   { key: 'size', label: (s) => (s.path === 'circle' ? 'Across' : s.path === 'line' || s.path === 'wave' ? 'Length' : 'Width'), step: 10, hint: 'How big the path is (mm): its length for a line or wave, the diameter for a circle, the width for the other shapes.', show: (s) => s.path !== 'custom' },
   { key: 'bend', label: (s) => BEND_LABEL[s.path] ?? 'Bend', step: 1, hint: (s) => BEND_HINT[s.path] ?? '', show: (s) => s.path in BEND_LABEL },
-  { key: 'lift', label: 'Lift', step: 5, hint: 'Height of the candle bottoms above the concrete (mm). The plates step up to meet them.' },
-  { key: 'crown', label: 'Crown', step: 5, hint: 'Extra height for the middle candles (mm), rising in a curve like a candelabra. Negative dips the middle. Rings and shapes have no middle, so it does nothing there.' },
-  { key: 'ramp', label: 'Climb', step: 5, hint: 'How much higher the last candle stands than the first (mm).' },
+  { key: 'lift', show: (s) => !sitsIn(s), label: 'Lift', step: 5, hint: 'Height of the candle bottoms above the concrete (mm). The plates step up to meet them.' },
+  { key: 'crown', show: (s) => !sitsIn(s), label: 'Crown', step: 5, hint: 'Extra height for the middle candles (mm), rising in a curve like a candelabra. Negative dips the middle. Rings and shapes have no middle, so it does nothing there.' },
+  { key: 'ramp', show: (s) => !sitsIn(s), label: 'Climb', step: 5, hint: 'How much higher the last candle stands than the first (mm).' },
   { key: 'grip', label: 'Grip', step: 1, hint: 'How far up each candlestick its holder reaches (mm). 25 to 35 holds a dinner candle steady.', show: hasStick },
   { key: 'cup', label: 'Cup', step: 1, hint: 'How deep each tealight sits in its cup (mm). About half its height shows off the metal rim and keeps it safe.' },
-  { key: 'fins', label: 'Fins', step: 1, hint: 'Target holder: how many fins stand round each candlestick. 4 makes the crosshair target; 3 a tripod; 6 or 8 a star.', show: hasTarget },
-  { key: 'reach', label: 'Reach', step: 1, hint: 'Target holder: how far each fin reaches out from the candle (mm). The plates are cleared a little wider than this.', show: hasTarget },
-  { key: 'spin', label: 'Spin', step: 5, hint: 'Target holder: turn the fins round the candle (degrees). 45 sets a 4-fin cross across the plates.', show: hasTarget },
+  { key: 'fins', label: 'Fins', step: 1, hint: 'Fin holders: how many fins stand round each candlestick. 4 makes the crosshair target; 3 a tripod; 6 or 8 a star.', show: hasTarget },
+  { key: 'reach', label: 'Reach', step: 1, hint: 'Fin holders: how far each fin reaches out from the candle (mm). For target fins the plates are cleared a little wider than this.', show: hasTarget },
+  { key: 'spin', label: 'Spin', step: 5, hint: 'Fin holders: turn the fins round the candle (degrees). 45 sets a 4-fin cross across the plates, which slotted fins need so every fin crosses them.', show: hasTarget },
+  { key: 'engage', label: 'Slot', step: 1, hint: 'Slotted fins: how deep each fin and plate overlap where they slot together (mm). The plate is slotted from its top down half this, the fin from its bottom up the other half, so the fin drops on and locks square.', show: hasSlotted },
+  { key: 'pad', label: 'Pad', step: 1, hint: 'Choked plates: how far the plates reach past each candle (and its fins) before they stop (mm).', show: (s) => s.choke !== 'off' },
   { key: 'slack', label: 'Slack', step: 0.1, hint: 'Gap left round each candle (mm), so it drops in. Candles vary, so 0.5 to 1 mm is safe.' },
   { key: 'shoulder', label: 'Shoulder', step: 1, hint: 'Plate kept either side of each cup or holder as it steps up (mm).' },
   { key: 'x', label: 'X', step: 10, hint: 'Slide the candelabra left or right (mm).' },
@@ -45,7 +53,7 @@ const FIELDS: Field[] = [
 ];
 
 const DEFAULT_HINT =
-  'Type one candle per line: a name like "5 taper", "tealight", "maxi", or diameter × height in mm like "24 x 300 stick". Add "socket" or "target" to a line to pick its holder. Hover any value to see what it does.';
+  'Type one candle per line: a name like "5 taper", "tealight", "maxi", or diameter × height in mm like "24 x 300 stick". Add "cup", "slotted" or "target" to a line to pick its holder. Hover any value to see what it does.';
 
 /** Settings that make the plates flat-topped and tall enough to meet every candle, on a base big enough to hold them (null with no candles). */
 export function fitCandles(model: Model, s: CandleSpec): Record<string, RawValue> | null {
@@ -80,6 +88,7 @@ export default function CandlePanel() {
   const setCandles = useStore((s) => s.setCandles);
   const setParams = useStore((s) => s.setParams);
   const [hint, setHint] = useState<string | null>(null);
+  mapDesign = useStore((s) => !!s.project.images.top?.map);
 
   if (!stored)
     return (
@@ -108,9 +117,12 @@ export default function CandlePanel() {
   };
 
   // candles that stand between plates in a socket have nothing holding them
-  const loose = model.objects.filter((b) => b.object.seat !== undefined && b.object.id.startsWith('candle') && !model.sliced.plates.some((p) => p.parts.length && crosses(p.def.plane.origin, p.def.plane.normal, b.geometry.boundingBox!))).length;
+  const gripping = (b: (typeof model.objects)[number]) => model.sliced.plates.filter((p) => p.parts.length && crosses(p.def.plane.origin, p.def.plane.normal, b.geometry.boundingBox!)).length;
+  const cups = model.objects.filter((b) => b.object.seat !== undefined && b.object.id.startsWith('candle'));
+  const loose = cups.filter((b) => !gripping(b)).length;
+  const wobbly = cups.filter((b) => b.object.look === 'candle' && gripping(b) === 1).length;
   const sticks = list.filter((c) => !c.tealight).length;
-  const summary = `${list.length} candle${list.length === 1 ? '' : 's'}: ${sticks} candlestick${sticks === 1 ? '' : 's'}, ${list.length - sticks} tealight${list.length - sticks === 1 ? '' : 's'}.${loose ? ` ${loose} stand${loose === 1 ? 's' : ''} between plates with nothing holding ${loose === 1 ? 'it' : 'them'}: give ${loose === 1 ? 'it' : 'them'} a target holder or nudge the path.` : ''}${bad.length ? ` Couldn't read: ${bad.join(', ')}.` : ''}`;
+  const summary = `${list.length} candle${list.length === 1 ? '' : 's'}: ${sticks} candlestick${sticks === 1 ? '' : 's'}, ${list.length - sticks} tealight${list.length - sticks === 1 ? '' : 's'}.${loose ? ` ${loose} stand${loose === 1 ? 's' : ''} between plates with nothing holding ${loose === 1 ? 'it' : 'them'}: give ${loose === 1 ? 'it' : 'them'} fins or nudge the path.` : ''}${wobbly ? ` ${wobbly} candlestick${wobbly === 1 ? ' is' : 's are'} gripped by only one plate and may wobble: closer plates, a deeper Grip or fins will steady ${wobbly === 1 ? 'it' : 'them'}.` : ''}${bad.length ? ` Couldn't read: ${bad.join(', ')}.` : ''}`;
 
   return (
     <>
@@ -127,10 +139,24 @@ export default function CandlePanel() {
               </option>
             ))}
           </select>
-          <select aria-label="Holder" value={s.holder} onChange={(e) => edit({ holder: e.target.value as Holder })} {...help('How candlesticks are held. Target: fins stand round each one like crosshairs, set in the concrete, and the plates step up to meet them. Socket: the plates it stands in are cut to grip it. Tealights always sit in a cup.')}>
+          <select aria-label="Holder" value={s.holder} onChange={(e) => edit({ holder: e.target.value as Holder })} {...help('How candlesticks are held. Target fins: fins stand round each one like crosshairs, set in the concrete, and the plates step up to meet them. Slotted fins: the same fins, but slotted onto the plates so the plates line them up. Cup: no fins; the plates it stands in are cut to grip it, like a tealight. Add "cup", "slotted" or "target" to a line to pick it for just that line.')}>
             {(Object.keys(HOLDER_NAMES) as Holder[]).map((k) => (
               <option key={k} value={k}>
                 {HOLDER_NAMES[k]}
+              </option>
+            ))}
+          </select>
+          <select aria-label="Height" value={s.sit} onChange={(e) => edit({ sit: e.target.value as Sit })} {...help('Where the candles stand. Lift: at a set height above the concrete, with the plates stepping up to meet them. Sit into the plates: each candle sinks its Cup or Grip depth below the lowest plate top under it, so the plates keep their own shape (a map, a relief) and are just cut to hold it. Auto sits them into a map and lifts them otherwise.')}>
+            {(Object.keys(SIT_NAMES) as Sit[]).map((k) => (
+              <option key={k} value={k}>
+                {SIT_NAMES[k]}
+              </option>
+            ))}
+          </select>
+          <select aria-label="Choke" value={s.choke} onChange={(e) => edit({ choke: e.target.value as Choke })} {...help('Stop the plates round the candles instead of running the full length of the base. Round each candle: every plate keeps just the length round the candles it crosses, plus Pad. Along the path: the plates follow the line of candles as one band, Pad wider than the candles each side. Plates that miss the candles are left out.')}>
+            {(Object.keys(CHOKE_NAMES) as Choke[]).map((k) => (
+              <option key={k} value={k}>
+                {CHOKE_NAMES[k]}
               </option>
             ))}
           </select>

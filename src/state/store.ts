@@ -200,8 +200,7 @@ function loadUi(): Partial<UiState> {
     const s = localStorage.getItem(UI_KEY);
     if (s) {
       const u = JSON.parse(s);
-      // panels are not restored: the left column starts with every group closed
-      return { tab: u.tab, ortho: !!u.ortho, leftPane: u.leftPane === 'saves' ? 'saves' : 'params' };
+      return { tab: u.tab, collapsed: u.collapsed ?? {}, ortho: !!u.ortho, leftPane: u.leftPane === 'saves' ? 'saves' : 'params' };
     }
   } catch {
     /* ignore */
@@ -294,7 +293,7 @@ export const useStore = create<Store>((set, get) => {
       xray: false,
       showIssues: true,
       showSource: true,
-      collapsed: {},
+      collapsed: { 'Source form': true, Concrete: true, Mould: true, Unfold: true, Fabrication: true, Image: true },
       filter: '',
       leftPane: 'params',
       focusParam: null,
