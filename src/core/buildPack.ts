@@ -424,15 +424,15 @@ function shade(hex: string, k: number): string {
   return `#${c.map((x) => x.toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** Cut a closed ring down to the part at or above the ground (y ≥ 0). */
-function aboveGround(ring: V3[]): V3[] {
+/** Cut a closed ring down to the part at or above height `h` (the top of the concrete: what's below is cast in, out of sight). */
+export function aboveGround(ring: V3[], h = 0): V3[] {
   const out: V3[] = [];
   for (let i = 0; i < ring.length; i++) {
     const a = ring[i], b = ring[(i + 1) % ring.length];
-    if (a[1] >= 0) out.push(a);
-    if (a[1] >= 0 !== b[1] >= 0) {
-      const t = a[1] / (a[1] - b[1]);
-      out.push([a[0] + (b[0] - a[0]) * t, 0, a[2] + (b[2] - a[2]) * t]);
+    if (a[1] >= h) out.push(a);
+    if (a[1] >= h !== b[1] >= h) {
+      const t = (a[1] - h) / (a[1] - b[1]);
+      out.push([a[0] + (b[0] - a[0]) * t, h, a[2] + (b[2] - a[2]) * t]);
     }
   }
   return out;
@@ -631,7 +631,7 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
       .flatMap((ex2) => [ex2.outer, ...ex2.holes])
       .map((path) => path.map(([a, c]) => planeToWorld(p.plane, a, c)))
       .filter((r) => r.length > 2);
-    let rings = clip ? world.map(aboveGround).filter((r) => r.length > 2) : world;
+    let rings = clip ? world.map((r) => aboveGround(r, v.baseHeight)).filter((r) => r.length > 2) : world;
     // plates wholly below the ground (embedded tabs) still get drawn, unclipped, so every plate shows
     const buried = !rings.length;
     if (buried) {
@@ -667,7 +667,7 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
       if (k < 1e-9) continue;
       const nn: V3 = [nr[0] / k, nr[1] / k, nr[2] / k];
       if (dot(nn, cam) <= 0) continue;
-      const ring = clip ? aboveGround(tri) : tri;
+      const ring = clip ? aboveGround(tri, v.baseHeight) : tri;
       if (ring.length < 3) continue;
       all.push(...ring.map(scr));
       // a few shades only, so neighbouring triangles merge into one path below
