@@ -21,7 +21,7 @@ import { objectMatrix, type CutObject } from '../core/objects';
 import type { CardSight } from '../core/shelfView';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import { Candle3D, SunStudy3D } from './SunStudy';
-import { showInsertMesh, type ViewportLayers } from './viewportLayers';
+import { showBaseMesh, showInsertMesh, showObject, type ViewportLayers } from './viewportLayers';
 
 export interface SceneOpts {
   selected: string | null;
@@ -172,7 +172,8 @@ function Insert({ model }: { model: Model }) {
 }
 
 /** Objects placed among the plates: postcards read as paper, the rest as see-through cutters. */
-function PlacedObjects({ model }: { model: Model }) {
+function PlacedObjects({ model, layers }: { model: Model; layers: ViewportLayers }) {
+  const hidden = useStore((s) => s.ui.hiddenObjects);
   const sel = useStore((s) => (s.ui.objectsMode ? s.ui.objectSel : null));
   const hl = useStore((s) => s.ui.highlight);
   const setUi = useStore((s) => s.setUi);
@@ -180,7 +181,7 @@ function PlacedObjects({ model }: { model: Model }) {
   return (
     <>
       {model.objects.map(({ object: o, geometry }) => {
-        if (o.look === 'hidden') return null;
+        if (o.look === 'hidden' || !showObject(layers, hidden, o.id)) return null;
         if (o.look) return <Candle key={o.id} o={o} geometry={geometry} picked={o.id === sel || hl === 'objects'} />;
         const shelf = o.seat !== undefined || o.id.startsWith('shelf');
         const lit = hl === 'notches' || (hl === 'cards' && shelf) || (hl === 'objects' && !shelf);
@@ -514,7 +515,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
           position={[0, gridY, 0]}
         />
       )}
-      {(model.sunkenFrame || v.baseOn) && (L.base || L.concrete) && <Base model={model} xray={opts.xray} />}
+      {(model.sunkenFrame || v.baseOn) && showBaseMesh(L) && <Base model={model} xray={opts.xray} />}
       <group position={[0, model.sunkenFrame?.plateLiftMm ?? 0, 0]}>
         {L.plates &&
           model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
@@ -533,7 +534,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
         {L.rods !== false && <Rods model={model} />}
         {L.rods !== false && <StackRods model={model} />}
         {showInsertMesh(L) && <Insert model={model} />}
-        <PlacedObjects model={model} />
+        <PlacedObjects model={model} layers={L} />
         {opts.showSource && model.source && v.stackSource === 'form' && (
           <mesh geometry={model.source.form.geometry}>
             <meshBasicMaterial color={cssVar('--info', '#2f5f9e')} wireframe transparent opacity={0.12} />

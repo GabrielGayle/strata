@@ -12,7 +12,7 @@ import { slice, type SliceResult } from './slicer';
 import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
 import { layoutShelfResult, type SolveResult } from './shelfSolve';
-import { reportShelfVisibility, shelfLayoutKey, shelfViewKey, type VisibilityReport } from './shelfView';
+import { reportShelfVisibility, shelfEye, shelfLayoutKey, shelfSight, shelfViewKey, type V3, type VisibilityReport } from './shelfView';
 import { nest, nestGroups, type NestResult } from './nest';
 import { materialKey, materialOf } from './appearance';
 import { tuningActive } from './tuning';
@@ -78,6 +78,8 @@ export interface Model {
   cardVisibility?: VisibilityReport;
   /** Unobstructed-view solver result (undefined when the flag is off). */
   shelfSolve?: SolveResult;
+  /** Direction to the shelf's Unobstructed view eye (world, unit), when there is a shelf. */
+  shelfEye?: V3;
   /** The world origin objects and the shelf are measured from. */
   origin: Frame;
   /** Shadow carving: the wall, carved plate grids and how well each frame comes out (null when off). */
@@ -285,11 +287,11 @@ export function createFrontPipeline() {
       return bare ? sitOnSurface(w, (x, z, r) => surfaceTop(bare.parts, x, z, r, topWithin)) : w;
     });
     const objects = stage('Objects', [others, placedCandles], () => buildObjects([...others, ...placedCandles]));
-    const cardVisibility = stage('Card visibility', [objects, shelfViewKey(project.shelf)], () => reportShelfVisibility(objects, project.shelf));
+    const sight = stage('Sight lines', [objects, shelfViewKey(project.shelf), project.shelf?.seat], () => shelfSight(objects, project.shelf));
     const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut }));
     const choke = chokeCircles(objects.map((o) => o.object));
     const holders = objects.flatMap(({ object: o }) => (o.holder ? [{ x: o.x, z: o.z, r: o.w / 2, bottom: o.y - o.h / 2, ry: o.ry, slack: o.clearance, holder: o.holder }] : []));
-    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, !!mapTop], () =>
+    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, sight, !!mapTop], () =>
       share(
         cache.get('Slice plates')?.value as SliceResult | undefined,
         slice({
@@ -303,6 +305,7 @@ export function createFrontPipeline() {
           moves: project.moves,
           materialFor,
           objects: cutters,
+          sight,
           candles: holders,
           choke,
           mapTerrain: !!mapTop,
@@ -310,6 +313,8 @@ export function createFrontPipeline() {
       ),
     );
     attachMapPartEtch(sliced, project.images.top?.map);
+    // checked against the cut plates, so a plate standing in front of a card counts as hiding it
+    const cardVisibility = stage('Card visibility', [objects, shelfViewKey(project.shelf), project.shelf?.seat, sliced], () => reportShelfVisibility(objects, project.shelf, sliced.parts));
     const carved = stage('Shadow carve', [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow], () => {
       if (!v.shadowOn || (!v.sunOn && !isCandle(v)) || v.sliceMode !== 'parallel') return null;
       const frames = (project.shadow?.frames ?? []).flatMap((f, i) => {
@@ -331,7 +336,7 @@ export function createFrontPipeline() {
           ? buildMapSunkenFrameLayout(finalSliced, { sunkenFrame: mapFrame }, v.thickness, baseTop(v), v.baseOn ? union([basePlan(v)]) : undefined)
           : null,
     );
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, shelfSolve: laid.solve ?? undefined, origin, shadow: carved?.report ?? null, unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, shelfSolve: laid.solve ?? undefined, shelfEye: project.shelf?.on ? shelfEye(project.shelf) : undefined, origin, shadow: carved?.report ?? null, unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
   };
 }
 
