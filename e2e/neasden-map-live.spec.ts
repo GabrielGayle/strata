@@ -68,7 +68,7 @@ test('neasden map uses live EA 1 m, OSM engrave, and map preview', async ({ page
   await expect(page.locator('.map-view')).not.toContainText(/falling back to terrarium/i);
 
   await expect(page.locator('#map-model-dtm')).toBeChecked();
-  await expect(page.locator('#map-water-bathy')).toBeChecked();
+  await expect(page.locator('#map-water-flat')).toBeChecked();
 
   await expect
     .poll(async () => Number(await page.locator('.map-view-layout').getAttribute('data-strata-map-engrave-count')), {

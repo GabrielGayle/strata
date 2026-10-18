@@ -26,7 +26,7 @@ test('capture live map UI screenshots', async ({ page }) => {
     await openWorkspaceTab(page, 'Map');
     await page.locator('.map-view-layout').waitFor({ state: 'visible' });
     await expect(page.locator('#map-model-dtm')).toBeChecked();
-    await expect(page.locator('#map-water-bathy')).toBeChecked();
+    await expect(page.locator('#map-water-flat')).toBeChecked();
     await page.waitForTimeout(2000);
     await page.locator('.map-view-layout').screenshot({ path: join(shotDir, `${prefix}-map-preview.png`) });
     await page.locator('.map-view fieldset', { hasText: 'Ground model' }).screenshot({
