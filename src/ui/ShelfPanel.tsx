@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, SHELF_SOLVE_KEYS, clearShelfOverride, commitShelfLock, type ShelfLayout, type ShelfSolveKey, type ShelfSpec } from '../core/shelf';
+import { DEFAULT_SHELF, LAYOUT_NAMES, SHELF_CHOKE_NAMES, type ShelfChoke, parseCards, SHELF_SOLVE_KEYS, clearShelfOverride, commitShelfLock, type ShelfLayout, type ShelfSolveKey, type ShelfSpec } from '../core/shelf';
 import { formatSolverDelta } from '../core/shelfSolve';
 import {
   DEFAULT_FLEX_MM,
@@ -17,7 +17,7 @@ import type { Model } from '../core/pipeline';
 import type { RawValue } from '../core/params';
 import { baseTop } from '../core/slicer';
 
-export type NumKey = 'radius' | 'gap' | 'rows' | 'rowStep' | 'rowRise' | 'seat' | 'lean' | 'lift' | 'shoulder' | 'thick' | 'clearance' | 'x' | 'z' | 'turn';
+export type NumKey = 'radius' | 'gap' | 'rows' | 'rowStep' | 'rowRise' | 'seat' | 'lean' | 'lift' | 'shoulder' | 'thick' | 'clearance' | 'x' | 'z' | 'turn' | 'pad';
 
 export interface Field {
   key: NumKey;
@@ -84,6 +84,13 @@ export const FIELDS: Field[] = [
     label: 'Shoulder',
     step: 1,
     hint: 'Plate kept either side of each notch, rising to the card (mm). The rest of the plate steps down.',
+  },
+  {
+    key: 'pad',
+    label: 'Pad',
+    step: 1,
+    hint: 'Choked plates: how far the plates reach past each card before they stop (mm).',
+    show: (s) => s.choke !== 'off',
   },
   {
     key: 'thick',
@@ -301,6 +308,18 @@ export default function ShelfPanel() {
           <label className="ob-num" {...help('Step the plate tops down to the cards. Off leaves the plates as they are, with just the notches cut.')}>
             <input type="checkbox" checked={s.trim} onChange={(e) => edit({ trim: e.target.checked })} /> <span>Step plates</span>
           </label>
+          <select
+            aria-label="Choke"
+            value={s.choke}
+            onChange={(e) => edit({ choke: e.target.value as ShelfChoke })}
+            {...help('Stop the plates at the cards instead of running the full length of the base. Round each card: every plate keeps just the length round the cards it crosses, plus Pad. Along the shelf: the plates follow the row of cards as one band, Pad wider than the cards each side. Plates that miss the cards are left out.')}
+          >
+            {(Object.keys(SHELF_CHOKE_NAMES) as ShelfChoke[]).map((k) => (
+              <option key={k} value={k}>
+                {SHELF_CHOKE_NAMES[k]}
+              </option>
+            ))}
+          </select>
           <button className="btn sm" onClick={fit} {...help('Make the plates flat-topped and tall enough to reach every card, the base big enough to stand them on, and take the insert out of the way. Undo puts it all back.')}>
             Fit plates
           </button>

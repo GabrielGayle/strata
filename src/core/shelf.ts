@@ -6,6 +6,14 @@ import type { CutObject } from './objects';
 
 export type ShelfLayout = 'fan' | 'bands' | 'arch' | 'spiral';
 
+export type ShelfChoke = 'off' | 'cards' | 'shelf';
+
+export const SHELF_CHOKE_NAMES: Record<ShelfChoke, string> = {
+  off: 'Full length plates',
+  cards: 'Choke round each card',
+  shelf: 'Choke along the shelf',
+};
+
 export const LAYOUT_NAMES: Record<ShelfLayout, string> = {
   fan: 'Fan (one curved row)',
   bands: 'Bands (rows rising behind)',
@@ -46,6 +54,10 @@ export interface ShelfSpec {
   lift: number;
   /** Trim the plate tops down to the cards' seats. */
   trim: boolean;
+  /** Choke the plates in to the cards: off, round each card, or along the shelf as one band. */
+  choke: ShelfChoke;
+  /** Plate kept beyond each card when choked (mm). */
+  pad: number;
   /**
    * When on, the layout solver nudges lean / gap / radius (and the other
    * placement numbers) so every card face is visible from the viewing angle.
@@ -90,6 +102,8 @@ export const DEFAULT_SHELF: ShelfSpec = {
   turn: 0,
   lift: 40,
   trim: true,
+  choke: 'off',
+  pad: 15,
 };
 
 /**
@@ -160,6 +174,8 @@ export function cleanShelf(raw: unknown): ShelfSpec | undefined {
     turn: num(r.turn, d.turn),
     lift: num(r.lift, d.lift, 0),
     trim: r.trim !== false,
+    choke: (Object.keys(SHELF_CHOKE_NAMES) as ShelfChoke[]).includes(r.choke as ShelfChoke) ? (r.choke as ShelfChoke) : d.choke,
+    pad: num(r.pad, d.pad, 0),
     ...cleanViewFields(r),
   };
 }
@@ -294,6 +310,7 @@ export function shelfCards(spec: ShelfSpec | undefined, baseTop: number): CutObj
       clearance: spec.clearance,
       on: true,
       ...(spec.trim ? { seat: spec.seat, shoulder: spec.shoulder } : {}),
+      ...(spec.choke !== 'off' ? { choke: { reach: spec.thick / 2 + spec.clearance + spec.pad, join: spec.choke === 'shelf', closed: false, group: 'shelf' } } : {}),
     });
   };
   const y0 = baseTop + spec.lift - spec.seat;
