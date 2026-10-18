@@ -102,6 +102,14 @@ export function prominentSummitCells(grid: Float32Grid): SummitCell[] {
   return kept;
 }
 
+/** The DEM-max cell only — extra peaks become Jenks pins, not restored needles. */
+export function highestSummitCells(peaks: SummitCell[]): SummitCell[] {
+  if (!peaks.length) return [];
+  let best = peaks[0]!;
+  for (const p of peaks) if (p.z > best.z) best = p;
+  return [best];
+}
+
 /** Distinct summit elevations (metres) for extra Jenks pins. */
 export function localMaximaElevations(grid: Float32Grid): number[] {
   const zs = prominentSummitCells(grid)

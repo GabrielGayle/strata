@@ -119,7 +119,10 @@ export function summitClassSplits(peaks: number[], breaks: number[]): number[] {
   const hi = sorted[sorted.length - 1]!;
   const lo = sorted[sorted.length - 2]!;
   const span = hi - lo;
-  const interior = uniqueSorted(peaks.filter((p) => p > lo + SUMMIT_PIN_EPS_M && p < hi - PINNED_BREAK_EPS_M));
+  const interior: number[] = [];
+  for (const p of uniqueSorted(peaks.filter((v) => v > lo + SUMMIT_PIN_EPS_M && v < hi - PINNED_BREAK_EPS_M))) {
+    if (!interior.length || p - interior[interior.length - 1]! >= SUMMIT_PIN_EPS_M) interior.push(p);
+  }
   if (interior.length) return interior;
   if (span < 20) return [];
   const step = Math.max(8, span / 5);

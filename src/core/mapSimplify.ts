@@ -1,6 +1,6 @@
 // Auto-simplify map elevation grids: drop tiny islands/holes, light smooth (ticket 11).
 import type { Float32Grid } from './mapGrid';
-import { prominentSummitCells, type SummitCell } from './mapSummits';
+import { highestSummitCells, prominentSummitCells, type SummitCell } from './mapSummits';
 
 export interface MapSimplifyOptions {
   /** Minimum feature area in square pixels (default ≈ 3×kerf² when kerf supplied). */
@@ -172,9 +172,9 @@ export function simplifyMetricGrid(grid: Float32Grid, opts: MapSimplifyOptions =
 }
 
 /**
- * After island-fill / box-blur, put the top-N summit cells back so the DEM
- * max and distinct peaks survive simplify. Pass peaks from the continuous
- * (pre-snap) grid so plateau rims are not restored.
+ * After island-fill / box-blur, put the DEM-max cell back so the true summit
+ * survives simplify. Pass peaks from the continuous (pre-snap) grid so
+ * plateau rims are not restored. Distinct peaks are Jenks pins.
  */
 export function restoreSummitCells(
   simplified: Float32Grid,
@@ -184,7 +184,7 @@ export function restoreSummitCells(
   if (simplified.w !== snapped.w || simplified.h !== snapped.h || simplified.data.length !== snapped.data.length) {
     return simplified;
   }
-  const cells = peaks ?? prominentSummitCells(snapped);
+  const cells = highestSummitCells(peaks ?? prominentSummitCells(snapped));
   if (!cells.length) return simplified;
   const data = new Float32Array(simplified.data);
   const src = snapped.data;

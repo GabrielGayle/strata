@@ -4,7 +4,7 @@ import type { Float32Grid, GridTransform } from './mapGrid';
 import { gridCellCentre, gridSampleBilinear } from './mapGrid';
 import type { MapModel, MapSpec } from './mapSpec';
 import { DEPTH_RESOLUTIONS } from './depth';
-import { prominentSummitCells } from './mapSummits';
+import { highestSummitCells, prominentSummitCells } from './mapSummits';
 
 proj4.defs(
   'EPSG:27700',
@@ -103,11 +103,11 @@ function sourceXYToDestCell(source: Float32Grid, dest: Float32Grid, x: number, y
 }
 
 /**
- * Bilinear resample averages away 1-pixel summits. Stamp the top-N prominent
- * source peaks (and the global max) onto the nearest output cell.
+ * Bilinear resample averages away 1-pixel summits. Stamp the DEM-max source
+ * cell onto the nearest output cell. Other peaks are Jenks pins, not needles.
  */
 export function stampSourceMaxima(dest: Float32Grid, source: Float32Grid): Float32Grid {
-  const peaks = prominentSummitCells(source);
+  const peaks = highestSummitCells(prominentSummitCells(source));
   if (!peaks.length) return dest;
   const out = new Float32Array(dest.data);
   for (const p of peaks) {
