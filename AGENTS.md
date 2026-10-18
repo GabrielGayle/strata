@@ -66,3 +66,12 @@ Vite dev and preview serve `/api/ea-proxy` and `/api/overpass` so browser map bu
 ### Playwright e2e port and CI
 
 `playwright.config.ts` and `playwright.live.config.ts` share `playwright.env.ts` for **`STRATA_E2E_PORT`** (default **4173**) on both `baseURL` and `webServer` (`vite preview --strictPort`). Fixture e2e: `reuseExistingServer` is **false when `CI` is set** (a leftover preview on 4173 is never reused). Live (`LIVE_MAP=1 npm run e2e:live`, and `LIVE_MAP=1` on the fixture config): **never** reuses an existing server, CI or not. Occupied default port: `CI=1 STRATA_E2E_PORT=4199 npm run e2e`.
+
+## 3D skills (all agents)
+
+`.claude/skills/` holds vendored three.js / React Three Fiber guidance (sources and pinned commits in `.claude/skills/README.md`). Claude Code loads them automatically. Cursor, Grok and other agents: before changing 3D code (`src/ui/Viewport*.tsx`, `ViewFromPoint.tsx`, anything using `three` or `@react-three/*`), read the matching `SKILL.md`:
+
+- Scene setup, render loop, ownership: `r3f-fundamentals`. Geometry, instancing: `r3f-geometry`. Materials: `r3f-materials`. Lights and shadows: `r3f-lighting`. Textures: `r3f-textures`. Loading: `r3f-loaders`. Pointer, drag, controls: `r3f-interaction`. Shaders: `r3f-shaders`. Animation: `r3f-animation`.
+- Performance and disposal checklists: `three-best-practices` (plain three, including `src/core` geometry) and `r3f-best-practices`.
+
+Strata's own invariants above win where they disagree with a skill.
