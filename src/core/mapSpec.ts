@@ -43,6 +43,11 @@ export interface MapSpec {
   cacheDir?: string;
   /** How elevation plateaus are chosen per plate (default jenks). */
   layerBudget?: LayerBudgetMode;
+  /**
+   * Snap upright map faces to the layer budget (the old terraced look).
+   * Flat stacks always snap; upright stacks keep continuous heights unless this is on.
+   */
+  terraced?: boolean;
   /** Resolved vertical exaggeration factor when auto was requested. */
   exaggerationFactor?: number;
   /** Human readout, e.g. "×21". */
@@ -93,7 +98,7 @@ export function defaultMapSpec(patch: Partial<MapSpec> & { bbox: MapSpec['bbox']
     model: patch.model ?? 'dtm',
     resM: patch.resM ?? 8,
     exaggeration: patch.exaggeration ?? 'auto',
-    water: patch.water ?? 'bathy',
+    water: patch.water ?? 'flat',
     title: patch.title,
     crs: patch.crs,
     fetchedAt: patch.fetchedAt,
@@ -164,7 +169,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
         : (RETIRED_SOURCES[o.source] ?? 'auto');
   const model = typeof o.model === 'string' && MODELS.has(o.model as MapModel) ? (o.model as MapModel) : 'dtm';
   const resM = num(o.resM);
-  const water = typeof o.water === 'string' && WATERS.has(o.water as MapWater) ? (o.water as MapWater) : 'bathy';
+  const water = typeof o.water === 'string' && WATERS.has(o.water as MapWater) ? (o.water as MapWater) : 'flat';
   let exaggeration: number | 'auto' = 'auto';
   if (o.exaggeration === 'auto') exaggeration = 'auto';
   else {
@@ -212,6 +217,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     attribution: attribution.length ? attribution : [...TERRARIUM_ATTRIBUTION],
     ...(cacheDir ? { cacheDir } : {}),
     ...(layerBudget ? { layerBudget } : {}),
+    ...(o.terraced === true ? { terraced: true } : {}),
     ...(exaggerationFactor != null && exaggerationFactor > 0 ? { exaggerationFactor } : {}),
     ...(exaggerationReadout ? { exaggerationReadout } : {}),
     ...(layerBreaksM?.length ? { layerBreaksM } : {}),

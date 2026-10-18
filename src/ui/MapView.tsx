@@ -164,7 +164,7 @@ export default function MapView() {
 
   const model = existing?.model ?? 'dtm';
   const source = existing?.source ?? 'auto';
-  const water = existing?.water ?? 'bathy';
+  const water = existing?.water ?? 'flat';
   const layerBudget = existing?.layerBudget ?? 'jenks';
   const exaggeration = existing?.exaggeration ?? 'auto';
   const engravePreset = (existing?.engrave?.preset ?? 'city') as MapEngravePresetId;
@@ -335,6 +335,17 @@ export default function MapView() {
             <option value="quantile">quantile</option>
             <option value="equal">equal</option>
           </select>
+        </label>
+        <label title="Snap the terrain to one level per plate, the stepped look. Flat stacks are always stepped.">
+          <input
+            type="checkbox"
+            id="map-terraced"
+            data-testid="map-terraced"
+            checked={geom.v.sliceMode === 'flat' || existing?.terraced === true}
+            disabled={!existing || geom.v.sliceMode === 'flat'}
+            onChange={(e) => commit({ terraced: e.target.checked })}
+          />
+          Terraced layers
         </label>
         <label>
           Ground resolution (m)

@@ -45,10 +45,11 @@ export function gridRow0IsNorth(g: Float32Grid): boolean {
   return g.transform.pixelH < 0;
 }
 
+/** Bilinear sample at world (x, y). The transform origin is the centre of cell (0, 0). */
 export function gridSampleBilinear(g: Float32Grid, x: number, y: number, clamp = false): number {
   const { w, h, data, transform: t } = g;
-  let col = (x - t.originX) / t.pixelW - 0.5;
-  let row = (y - t.originY) / t.pixelH - 0.5;
+  let col = (x - t.originX) / t.pixelW;
+  let row = (y - t.originY) / t.pixelH;
   if (clamp) {
     col = Math.min(w - 1, Math.max(0, col));
     row = Math.min(h - 1, Math.max(0, row));

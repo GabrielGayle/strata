@@ -43,6 +43,12 @@ The Map tab hillshade can look correct while 3D plates stay a ~32 mm band at `st
 
 Map world frame is **right-handed ENU**: **+X south** (S-01 / Front at −X = north), **+Y up**, **+Z west** (east = −Z). 3D Top with north up has **east on the right**. 3D Front (from the north looking south) and each plate DXF viewed face-on from the north have **east on the left** — the same view of the real landscape. OSM engrave uses that plate +x (art west → part maxX). Do not roll the camera to fake east–west; `sampleMapHeightGrid` shares this mapping and is not independent truth. Enforced by `test/map-orient.test.ts` (NE-corner ENU + Top projection + engrave vs profile).
 
+Only **flat stacks** snap terrain to the layer budget (Jenks/quantile/equal breaks). Upright stacks keep continuous heights unless the map's **Terraced layers** option (`MapSpec.terraced`) is on. `mapBuildKey` includes the plate stack (`mapStackFromProject`: plate count, thickness, base length/width, kerf, slicing), so changing any of them rebuilds terrain.
+
+One pixel convention: `GridTransform.originX/Y` is the **centre** of cell (0, 0) (GeoTIFF edge origins are shifted by half a pixel on read), and face u/v run 0..1 across the outer edges of the map, so cell i's centre is at (i + 0.5) / w, the same frame as the OSM engrave art. UTM zones are 6° wide.
+
+Map faces always stack **along the length**: `sliceAxis: 'width'` transposes the north-up frame (a mirror), so `mapFaceParams` evaluates map projects with `length` and the slicer adds a warning. Enforced by `test/map-correctness.test.ts` (corner hills read from plate planes, not `hf.at`).
+
 Tests: `test/map-plate-height.test.ts`, `test/map-orient.test.ts`, `e2e/neasden-map.spec.ts` (fixtures), `LIVE_MAP=1 npm run e2e:live`.
 
 ### Manual overrides must not be clobbered

@@ -124,9 +124,13 @@ export function mapDepthToGray(d: DepthData): Gray {
   return { w: d.w, h: d.h, data };
 }
 
+/**
+ * u, v run 0..1 across the outer edges of the map, the same frame as the OSM
+ * engrave art (pixel i spans [i, i + 1]), so cell i's centre sits at (i + 0.5) / w.
+ */
 function sampleMetres(metres: Float32Array, w: number, h: number, u: number, v: number): number {
-  const x = Math.min(w - 1, Math.max(0, u * (w - 1)));
-  const y = Math.min(h - 1, Math.max(0, v * (h - 1)));
+  const x = Math.min(w - 1, Math.max(0, u * w - 0.5));
+  const y = Math.min(h - 1, Math.max(0, v * h - 0.5));
   const x0 = Math.floor(x);
   const y0 = Math.floor(y);
   const x1 = Math.min(w - 1, x0 + 1);
@@ -206,9 +210,9 @@ export function buildMapHeightField(v: Values, depth: DepthData, opts: { capMm?:
 export function sampleMapHeightGrid(hf: HeightField, v: Values, w: number, h: number): Float32Array {
   const data = new Float32Array(w * h);
   for (let row = 0; row < h; row++) {
-    const sn = h <= 1 ? 0 : row / (h - 1);
+    const sn = (row + 0.5) / h;
     for (let col = 0; col < w; col++) {
-      const an = w <= 1 ? 0 : col / (w - 1);
+      const an = (col + 0.5) / w;
       const { x, z } = mapGridUvToWorld(v, an, sn);
       data[row * w + col] = hf.at(x, z);
     }
