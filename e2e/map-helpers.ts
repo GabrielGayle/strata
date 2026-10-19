@@ -92,12 +92,25 @@ export async function dismissTour(page: Page, opts?: { waitMs?: number }) {
   }
 }
 
-/** Fresh Playwright contexts have no tour-seen flag; the 1.5 s Composer tour steals clicks. */
-export async function openApp(page: Page) {
+/**
+ * Fresh Playwright contexts have no tour-seen flag; the 1.5 s Composer tour steals clicks.
+ * A new project opens as the plain A5 slab (no plates), so specs written against a plate
+ * stack start from `preset` (Vermilion 40 unless told otherwise); `preset: null` keeps the slab.
+ */
+export async function openApp(page: Page, opts: { preset?: string | null } = {}) {
   await page.addInitScript(seedAllTourSeenKeys);
   await page.goto('/');
   await page.waitForSelector('.app.window', { timeout: 60_000 });
   await dismissTour(page, { waitMs: 2_000 });
+  const preset = opts.preset === undefined ? 'Vermilion 40' : opts.preset;
+  if (preset) await loadPreset(page, preset);
+}
+
+/** Toolbar Presets ▾ → a named preset. */
+export async function loadPreset(page: Page, name: string) {
+  await page.getByRole('button', { name: 'Presets ▾' }).click();
+  await page.locator('.menu-pop').getByRole('button', { name: new RegExp(`^${name}\\b`) }).first().click();
+  await expect(page.locator('.topbar input').first()).toHaveValue(name);
 }
 
 export async function waitForMapReady(page: Page) {

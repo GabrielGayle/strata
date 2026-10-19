@@ -29,6 +29,7 @@ const DERIVED_MAP_KEYS = [
 
 /** Image / insert / slicer fields that hide the terrain. User param overrides still win. */
 export const QUICK_MAP_PARAM_PATCH: Record<string, RawValue> = {
+  platesOn: true,
   sliceMode: 'parallel',
   sliceAxis: 'length',
   spacingMode: 'fit',

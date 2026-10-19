@@ -111,7 +111,9 @@ async function screenshotHtmlPack(page: import('@playwright/test').Page, html: s
 
 test('build a design in the app then pack matches in-app plate count', async ({ page }) => {
   await page.goto('/');
-  await waitForModel(page);
+  // a new project is the plain slab with nothing to cut; the preset brings the plates
+  await page.waitForSelector('.app.window');
+  await dismissTour(page);
   await page.getByRole('button', { name: /Presets/ }).click();
   await page.getByRole('button', { name: /Stamped stack/ }).click();
   await expect(page.locator('.status-bar-field').filter({ hasText: /parts/ })).toContainText(/\d+\s+parts/, { timeout: 90_000 });
@@ -137,7 +139,9 @@ test('build a design in the app then pack matches in-app plate count', async ({ 
 
 test('browser export race: double Export ZIP yields one pack', async ({ page }) => {
   await page.goto('/');
-  await waitForModel(page);
+  // a new project is the plain slab with nothing to cut; the preset brings the plates
+  await page.waitForSelector('.app.window');
+  await dismissTour(page);
   await page.getByRole('button', { name: /Presets/ }).click();
   await page.getByRole('button', { name: /Stamped stack/ }).click();
   await expect(page.locator('.status-bar-field').filter({ hasText: /parts/ })).toContainText(/\d+\s+parts/, { timeout: 90_000 });

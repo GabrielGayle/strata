@@ -200,7 +200,7 @@ describe('DXF round trip', () => {
       expect(d.out, mp.id).toBeLessThan(tol);
       expect(d.back, mp.id).toBeLessThan(tol);
     }
-    const u = createPipeline()(applyPreset(newProject(), PRESETS[1]), assets).unfolded; // cone: developable
+    const u = createPipeline()(applyPreset(newProject(), PRESETS.find((x) => x.name === 'Radial bloom')!), assets).unfolded; // cone: developable
     expect(u.developable).toBe(true);
     const pieces = [...u.pieces, ...u.caps];
     const expected = pieces.flatMap((p) => offset([{ outer: p.outline, holes: [] }], v.kerf / 2).map((e) => e.outer));

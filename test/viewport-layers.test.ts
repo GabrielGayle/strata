@@ -91,6 +91,7 @@ describe('viewport layer toggles', () => {
     const model = createPipeline()(project, assets);
     const plates = model.sliced.plates.length;
     const sheets = model.bom.sheets;
+    useStore.getState().replaceProject(project);
     useStore.getState().toggleViewportLayer('plates');
     useStore.getState().toggleViewportLayer('grid');
     const model2 = createPipeline()(useStore.getState().project, assets);

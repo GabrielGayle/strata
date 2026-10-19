@@ -762,6 +762,7 @@ const slanted = (v: Model['v']) => v.sliceMode === 'waffle' && Math.abs(v.gridAn
 function modeText(m: Model, mains: PlateInfo[]): string {
   const v = m.v;
   const n = mains.length;
+  if (!m.sliced.plates.length) return v.baseOn ? 'Concrete base only: no plates' : 'No plates and no base';
   switch (v.sliceMode) {
     case 'radial':
       return `Radial: ${n} plates round a ${mm(v.radialHub)} hub`;
@@ -1221,7 +1222,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
     ['Overall size', `${n1(pb.maxX - pb.minX)} wide × ${n1(pb.maxY - pb.minY)} deep × ${n1(top)} high (mm)`],
     ['Plates', `${m.sliced.plates.length} plates · ${parts.length} laser-cut parts`],
     ['Weight', `about ${weight.toFixed(0)} kg${v.baseOn ? ` (steel ${m.bom.plateMass.toFixed(1)} kg, concrete ${m.bom.concreteMass.toFixed(0)} kg)` : ''}`],
-    ['Materials', `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
+    ['Materials', `${parts.length ? `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet` : 'No sheet metal'}${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
     ['Date', `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`],
   ];
   // the cloud's hero render, while it still shows this design

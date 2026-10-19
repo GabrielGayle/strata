@@ -67,7 +67,9 @@ describe('pipeline', () => {
       const t0 = performance.now();
       const m = compute(applyPreset(newProject(), shrinkPreset(preset)), assets);
       console.log(preset.name, (performance.now() - t0).toFixed(0), 'ms', m.sliced.parts.length, 'parts', m.issues.filter((i) => i.severity === 'error').length, 'errors', m.unfolded.message);
-      expect(m.sliced.parts.length).toBeGreaterThan(0);
+      // the plain starting slab has nothing to cut
+      if (preset.params.platesOn === false) expect(m.sliced.parts).toEqual([]);
+      else expect(m.sliced.parts.length).toBeGreaterThan(0);
     }
   });
 });

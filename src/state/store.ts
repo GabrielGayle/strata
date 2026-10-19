@@ -3,7 +3,7 @@ import { isLiteral } from '../core/expr';
 import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
 import type { SavedNest } from '../core/nest';
 import type { SavedHero } from '../core/heroSaved';
-import { applyPreset, applyVariant, deserialize, newProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
+import { applyPreset, applyVariant, deserialize, startingProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
 import type { EarthView, EarthWorldPose } from '../core/earthView';
 import type { MapSpec } from '../core/mapSpec';
 import type { Composition, Surface } from '../core/compose';
@@ -238,7 +238,7 @@ export const useStore = create<Store>((set, get) => {
     commit(r.project, key);
     if (r.message) get().toast(r.message);
   };
-  const initial = newProject();
+  const initial = startingProject();
   /** Park the active tab (project and history) and bring another one in. */
   const activate = (id: string, setups: SetupTab[]) => {
     const { project, past, future, activeSetup } = get();
@@ -276,7 +276,7 @@ export const useStore = create<Store>((set, get) => {
     newSetup: (mode) => {
       const { project, setups } = get();
       const id = `s${Date.now().toString(36)}`;
-      const fresh = mode === 'duplicate' ? { ...project, name: `${project.name} copy` } : newProject();
+      const fresh = mode === 'duplicate' ? { ...project, name: `${project.name} copy` } : startingProject();
       if (mode === 'blank') fresh.name = `Setup ${setups.length + 1}`;
       activate(id, [...setups, { id, project: fresh }]);
       get().toast(mode === 'duplicate' ? 'Duplicated this setup into a new tab' : 'Opened a blank setup');
@@ -404,7 +404,9 @@ export const useStore = create<Store>((set, get) => {
     },
     setTopMap: (map) => {
       const p = get().project;
-      const next = projectWithTopMapSpec(p, map);
+      let next = projectWithTopMapSpec(p, map);
+      // a map is terrain on the plate tops: from the plain starting slab, bring the plates back
+      if (next.params.platesOn === false) next = { ...next, params: { ...next.params, platesOn: true } };
       commit(next, `map:${performance.now()}`);
       set({
         mapTerrain: { phase: 'working', message: 'Queued terrain build…' },

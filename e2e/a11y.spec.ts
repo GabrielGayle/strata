@@ -49,3 +49,19 @@ test('workspace tabs work from the keyboard', async ({ page }) => {
   // only the selected tab is in the Tab order
   await expect(strip.locator('[role="tab"][tabindex="0"]')).toHaveCount(1);
 });
+
+// what a new visitor sees first: the plain A5 slab, with empty plate views
+test('the plain starting slab passes WCAG AA in Dusk', async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, { preset: null });
+  await setThemePreset(page, 'Dusk');
+  await waitForThemeMode(page, 'dark');
+  const found: string[] = [];
+  for (const t of TABS) {
+    await page.locator('.ws-tabs').getByRole('tab', { name: t.label, exact: true }).first().click();
+    await page.waitForTimeout(800);
+    for (const v of await violations(page)) found.push(`[${t.label}] ${v}`);
+  }
+  expect([...new Set(found)]).toEqual([]);
+});

@@ -427,7 +427,7 @@ export default function ImageView() {
               </button>
             </span>
           </div>
-          <div style={{ position: 'relative', height: 'min(56vh, 460px)', background: 'var(--viewport)', borderBottom: '1px solid var(--line)' }}>
+          <div className="on-viewport" style={{ position: 'relative', height: 'min(56vh, 460px)', background: 'var(--viewport)', borderBottom: '1px solid var(--line)' }}>
             <Suspense fallback={<Loading label="Loading preview…" />}>
               <ReliefPreview model={model} tilt={tilt} tint={tint} />
             </Suspense>
