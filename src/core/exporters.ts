@@ -27,7 +27,6 @@ import { deserializeMapEngraveArt } from './mapOsmEngrave';
 import { mapBackPlateEtchPaths } from './mapBackPlateEtch';
 import { mapEngravePathsForPart, type MapEngravePlateContext } from './mapEngravePlate';
 import type { UnfoldPiece } from './unfold';
-import { materialOf } from './appearance';
 import { currentHero, heroPngBytes } from './hero';
 import { packManifest } from './counts';
 import {
@@ -35,6 +34,7 @@ import {
   assertZipBuildPackIntegrity,
   buildPlateManifest,
   BuildPackIntegrityError,
+  partSheetKey,
 } from './buildPackIntegrity';
 
 let exportBusy = false;
@@ -357,10 +357,11 @@ const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, '_');
 /** Laser sheet DXFs by file name. With mixed metals each metal gets its own folder, numbered from 1. */
 export function sheetFiles(model: Model): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
-  const mixed = new Set(model.nested.sheets.map((s) => s.material ?? '')).size > 1;
+  const keyOf = (s: { material?: string; thickness?: number }) => `${s.material ?? ''}${s.thickness != null ? `-${s.thickness}mm` : ''}`;
+  const mixed = new Set(model.nested.sheets.map(keyOf)).size > 1;
   const counts: Record<string, number> = {};
   model.nested.sheets.forEach((s, i) => {
-    const dir = mixed && s.material ? `${safe(s.material)}/` : '';
+    const dir = mixed && (s.material || s.thickness != null) ? `${safe(keyOf(s) || 'sheet')}/` : '';
     counts[dir] = (counts[dir] ?? 0) + 1;
     const nn = String(counts[dir]).padStart(2, '0');
     files[`${dir}sheet-${nn}-cut.dxf`] = strToU8(sheetCutDxf(model, i));
@@ -418,13 +419,13 @@ export function packReadme(model: Model, project?: Project): string {
 /** One DXF per laser part. With mixed metals each metal gets its own folder. */
 export function partFiles(model: Model, project?: Project): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
-  const main = String(model.v.plateMaterial);
-  const metal = (key: string) => materialOf(project?.appearance, key, main);
-  const mixed = new Set(model.sliced.parts.map((p) => metal(p.plateKey))).size > 1;
+  // one folder per metal, and per thickness for a thicker steel base plate
+  const sheet = (p: Part) => partSheetKey(model, project, p);
+  const mixed = new Set(model.sliced.parts.map(sheet)).size > 1;
   for (const p of model.sliced.parts) {
     const engrave = mapEngraveForPart(p, project, model);
     const backEtch = mapBackEtchForPart(p, project, model);
-    const rel = `${mixed ? `${safe(metal(p.plateKey))}/` : ''}${safe(p.id)}.dxf`;
+    const rel = `${mixed ? `${safe(sheet(p))}/` : ''}${safe(p.id)}.dxf`;
     if (files[rel]) {
       throw new BuildPackIntegrityError(`Duplicate laser part path laser/parts/${rel} (part ${p.id})`);
     }

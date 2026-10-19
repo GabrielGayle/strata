@@ -25,6 +25,8 @@ export interface CutRow {
   mass: number; // kg
   /** Metal the part is cut from. */
   material: string;
+  /** Sheet thickness, when it isn't the plates' (the steel base plate). */
+  thickness?: number;
   /** Appearance bucket name, when the part is in one. */
   bucket?: string;
 }
@@ -32,6 +34,8 @@ export interface CutRow {
 /** Plates cut from one metal: a laser shop runs each as its own job. */
 export interface MaterialGroup {
   material: string;
+  /** Sheet thickness when it isn't the plates' own (a steel base plate is cut on its own sheet). */
+  thickness?: number;
   rows: CutRow[];
   partCount: number;
   plateMass: number; // kg
@@ -92,6 +96,7 @@ export function buildBom(
       pierces,
       mass: (p.area * p.thickness * 1e-9) * rho,
       material,
+      ...(Math.abs(p.thickness - v.thickness) > 1e-9 ? { thickness: p.thickness } : {}),
       ...(bucket ? { bucket: bucket.name } : {}),
     };
   });
@@ -133,15 +138,19 @@ export function buildBom(
 }
 
 export function groupByMaterial(rows: CutRow[], main: string): MaterialGroup[] {
+  // one group per metal and sheet thickness: each is its own laser job
   const groups = new Map<string, CutRow[]>([[main, []]]);
+  const keyOf = (r: CutRow) => (r.thickness != null ? `${r.material}@${r.thickness}` : r.material);
   for (const r of rows) {
-    if (!groups.has(r.material)) groups.set(r.material, []);
-    groups.get(r.material)!.push(r);
+    const k = keyOf(r);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(r);
   }
   return [...groups]
     .filter(([m, rs]) => rs.length || m === main)
-    .map(([material, rs]) => ({
-      material,
+    .map(([k, rs]) => ({
+      material: k.split('@')[0],
+      ...(rs[0]?.thickness != null ? { thickness: rs[0].thickness } : {}),
       rows: rs,
       partCount: rs.length,
       plateMass: rs.reduce((a, r) => a + r.mass, 0),
@@ -161,7 +170,7 @@ export function cutListCsv(v: Values, bom: Bom): string {
   const q = (s: string) => (/[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   const lines = ['part,width_mm,height_mm,area_mm2,cut_length_mm,pierces,mass_kg,material,thickness_mm,bucket'];
   for (const r of bom.rows)
-    lines.push([r.id, r.w.toFixed(2), r.h.toFixed(2), r.area.toFixed(1), r.cut.toFixed(1), r.pierces, r.mass.toFixed(3), MATERIAL_NAME[r.material] ?? r.material, v.thickness, q(r.bucket ?? '')].join(','));
+    lines.push([r.id, r.w.toFixed(2), r.h.toFixed(2), r.area.toFixed(1), r.cut.toFixed(1), r.pierces, r.mass.toFixed(3), MATERIAL_NAME[r.material] ?? r.material, r.thickness ?? v.thickness, q(r.bucket ?? '')].join(','));
   if (bom.supportRods?.length) {
     lines.push('', 'rod_id,diameter_mm,length_mm');
     for (const r of bom.supportRods) lines.push([r.id, r.diameter.toFixed(2), r.length.toFixed(2)].join(','));

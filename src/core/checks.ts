@@ -285,7 +285,7 @@ function moveChecks(v: Values, sliced: SliceResult): Issue[] {
   const moved = sliced.plates.filter((p) => p.def.home && p.parts.length);
   const loose = sliced.parts.filter((p) => p.home);
   if (!moved.length && !loose.length) return issues;
-  const all = sliced.parts.filter((p) => p.family !== 'S');
+  const all = sliced.parts.filter((p) => p.family !== 'S' && p.family !== 'B');
   const seen = new Set<string>();
   const clashes = (a: Part) => {
     for (const b of all) {
@@ -309,6 +309,13 @@ function moveChecks(v: Values, sliced: SliceResult): Issue[] {
   loose.forEach(clashes);
   for (const plate of moved) {
     plate.parts.forEach(clashes);
+    if (v.steelBaseOn && sliced.steelBase && plate.parts.some((p) => Math.abs(p.plane.normal[1]) < 0.5)) {
+      const keyed = sliced.steelBase.tabs.some((t) => t.plateKey === plate.def.key);
+      const low = Math.min(...plate.parts.flatMap((p) => p.shape[0].outer.map(([x, y]) => planeToWorld(p.plane, x, y)[1])));
+      const top = sliced.steelBase.spec.thickness;
+      if (!keyed || low > top - 0.5)
+        issues.push({ partId: plate.parts[0].id, plateKey: plate.def.key, type: 'unanchored', severity: 'error', message: `Moved plate ${plate.parts[0].id} no longer drops its tabs into the steel base${low > top - 0.5 ? ` (${(low - top).toFixed(1)} mm above it)` : ''}.` });
+    }
     if (v.baseOn) {
       const top = v.baseHeight;
       const low = Math.min(...plate.parts.flatMap((p) => p.shape[0].outer.map(([x, y]) => planeToWorld(p.plane, x, y)[1])));

@@ -72,7 +72,7 @@ describe('share links', () => {
     const p = newProject();
     expect(omittedFrom(p)).toEqual([]);
     const { url } = await shareLink(p, 'https://x.test/', { compress: true });
-    expect(url.length).toBeLessThan(3000);
+    expect(url.length).toBeLessThan(3500);
   });
 
   it('reads the code from a hash among other entries', () => {

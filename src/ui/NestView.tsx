@@ -118,7 +118,7 @@ export default function NestView() {
           <div className="window box" key={i}>
             <div className="title-bar box-head">
               <span>
-                Sheet {i + 1}{s.material ? ` · ${MATERIAL_NAME[s.material] ?? s.material}` : ''} · {s.placements.length} parts · {fmt((s.used / (nest.sheetW * nest.sheetH)) * 100, 0)}%
+                Sheet {i + 1}{s.material ? ` · ${MATERIAL_NAME[s.material] ?? s.material}` : ''}{s.thickness != null ? ` · ${s.thickness} mm base plate` : ''} · {s.placements.length} parts · {fmt((s.used / (nest.sheetW * nest.sheetH)) * 100, 0)}%
               </span>
               {which === 'metal' && (
                 <span className="seg">

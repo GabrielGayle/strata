@@ -392,7 +392,8 @@ export default function ParamPanel() {
       {GROUPS.map((g) => {
         const sw = GROUP_SWITCHES[g];
         const swShown = !!sw && (!PARAM_MAP[sw.id].show || PARAM_MAP[sw.id].show!(v));
-        const on = !swShown || !!v[sw!.id];
+        // a steel base turns the concrete off underneath, but the Base switch is still on
+        const on = !swShown || !!v[sw!.id] || (sw!.id === 'baseOn' && !!v.steelBaseOn);
         const defs = PARAMS.filter((p) => p.group === g && !SWITCH_IDS.has(p.id) && visible(p));
         // a group that does nothing here stays listed, greyed, with the reason in place of its settings
         const idle = on ? (GROUP_IDLE[g]?.(v) ?? null) : null;
