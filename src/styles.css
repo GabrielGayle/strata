@@ -2516,6 +2516,24 @@ canvas.thumb {
 .pm.lib.narrow {
   width: min(520px, 100%);
 }
+/* The window stays inside the screen and the saves list scrolls inside it */
+.pm.lib {
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+}
+.pm.lib > * {
+  flex: none;
+}
+.pm.lib > .lib-browser {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pm.lib > .lib-browser > .lib-body {
+  flex: 1 1 auto;
+  min-height: 160px;
+}
 .lib-bar {
   display: flex;
   align-items: center;
