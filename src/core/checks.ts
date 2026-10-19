@@ -124,7 +124,9 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     const w = bb.maxX - bb.minX;
     const h = bb.maxY - bb.minY;
     if (Math.min(w, h) < v.minPartSize) {
-      issues.push({ partId: part.id, type: 'small', severity: 'warn', message: `Part is only ${Math.min(w, h).toFixed(1)} mm across (min ${v.minPartSize}).`, at: [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2] });
+      // the whole part is too small, so no point marker: at the bbox centre it lands on the etched label and reads as a fault there
+      const span = v.sliceMode === 'flat' ? 'across' : h <= w ? 'tall' : 'wide';
+      issues.push({ partId: part.id, type: 'small', severity: 'warn', message: `Part is only ${Math.min(w, h).toFixed(1)} mm ${span} (Min part size ${v.minPartSize} mm, under Fabrication).` });
     }
     if (Math.max(w, h) > sheetMax || Math.min(w, h) > sheetMin) {
       issues.push({ partId: part.id, type: 'sheet', severity: 'error', message: `Part (${w.toFixed(0)} × ${h.toFixed(0)}) does not fit the sheet.` });
