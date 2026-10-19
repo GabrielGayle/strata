@@ -17,6 +17,7 @@ export const TABS: { id: Tab; label: string }[] = [
   { id: 'graph', label: 'Graph' },
   { id: 'nodes', label: 'Nodes' },
   { id: 'compare', label: 'Compare' },
+  { id: 'impress', label: 'Impress' },
 ];
 export const ALL_TABS: Tab[] = TABS.map((t) => t.id);
 
@@ -28,25 +29,25 @@ export const PRESETS: { id: string; name: string; hint: string; make: () => Layo
     id: 'image-3d',
     name: 'Image + 3D',
     hint: 'image editing beside the 3D view',
-    make: () => ({ root: split('row', pane(['image', 'map', 'shadow', 'graph', 'nodes']), pane(['3d', 'plates', 'nest', 'mould', 'unfold', 'compare']), 0.5), floats: [] }),
+    make: () => ({ root: split('row', pane(['image', 'impress', 'map', 'shadow', 'graph', 'nodes']), pane(['3d', 'plates', 'nest', 'mould', 'unfold', 'compare']), 0.5), floats: [] }),
   },
   {
     id: 'nodes-3d',
     name: 'Nodes + 3D',
     hint: 'the postcard shelf as nodes beside the 3D view, so hovering a node lights up what it makes',
-    make: () => ({ root: split('row', pane(['nodes', 'graph', 'image', 'map', 'shadow']), pane(['3d', 'plates', 'nest', 'mould', 'unfold', 'compare']), 0.5), floats: [] }),
+    make: () => ({ root: split('row', pane(['nodes', 'graph', 'image', 'impress', 'map', 'shadow']), pane(['3d', 'plates', 'nest', 'mould', 'unfold', 'compare']), 0.5), floats: [] }),
   },
   {
     id: 'plates-3d',
     name: 'Plates + 3D',
     hint: '3D with the plate list and nest beside it',
-    make: () => ({ root: split('row', pane(['3d', 'image', 'map', 'shadow', 'graph', 'nodes', 'compare']), split('col', pane(['plates', 'unfold']), pane(['nest', 'mould']), 0.55), 0.55), floats: [] }),
+    make: () => ({ root: split('row', pane(['3d', 'image', 'impress', 'map', 'shadow', 'graph', 'nodes', 'compare']), split('col', pane(['plates', 'unfold']), pane(['nest', 'mould']), 0.55), 0.55), floats: [] }),
   },
   {
     id: 'fabrication',
     name: 'Fabrication',
     hint: 'nest, mould and unfold together',
-    make: () => ({ root: split('row', pane(['nest', 'plates', '3d', 'image', 'map', 'shadow', 'graph', 'nodes', 'compare']), split('col', pane(['mould']), pane(['unfold']), 0.5), 0.55), floats: [] }),
+    make: () => ({ root: split('row', pane(['nest', 'plates', '3d', 'image', 'impress', 'map', 'shadow', 'graph', 'nodes', 'compare']), split('col', pane(['mould']), pane(['unfold']), 0.5), 0.55), floats: [] }),
   },
 ];
 

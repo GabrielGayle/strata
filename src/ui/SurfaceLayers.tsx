@@ -33,7 +33,8 @@ export function useLiveLayers(topAspect: number) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [images, composition, topAspect, decoded],
   );
-  const [draft, setDraftState] = useState<{ before: Composition; now: Composition } | null>(null);
+  // `patch`: settings that change along with the layers (Impress image depth), committed with them
+  const [draft, setDraftState] = useState<{ before: Composition; now: Composition; patch?: Record<string, RawValue> } | null>(null);
   const draftRef = useRef(draft);
   const setDraft = (d: typeof draft) => {
     draftRef.current = d;
@@ -46,9 +47,11 @@ export function useLiveLayers(topAspect: number) {
   baseRef.current = base;
 
   const commit = useCallback(
-    async (before: Composition, after: Composition) => {
+    async (before: Composition, after: Composition, extra?: Record<string, RawValue>) => {
       const { comp: next, changed, renamed } = settleComposition(before, after);
-      if (!changed.length && next.blocks.length === before.blocks.length && next.blocks.every((b, i) => b === before.blocks[i])) return;
+      const params = useStore.getState().project.params;
+      const moreParams = !!extra && Object.entries(extra).some(([k, x]) => params[k] !== x);
+      if (!moreParams && !changed.length && next.blocks.length === before.blocks.length && next.blocks.every((b, i) => b === before.blocks[i])) return;
       // every picture on a changed surface must be decoded before it is rendered
       await Promise.all(next.blocks.filter((b) => b.surface && changed.includes(b.surface) && b.source.kind === 'image').map((b) => loadImageGray((b.source as { dataUrl: string }).dataUrl)));
       const now = useStore.getState().project.images;
@@ -65,7 +68,7 @@ export function useLiveLayers(topAspect: number) {
           Object.assign(patch, SURFACE_INFO[s].off);
         }
       }
-      applyComposition(next, imgs, patch);
+      applyComposition(next, imgs, { ...patch, ...extra });
       setSel((id) => (id && renamed.get(id)) ?? id);
     },
     [applyComposition, sourceOf],
@@ -76,12 +79,26 @@ export function useLiveLayers(topAspect: number) {
   const begin = useCallback(() => {
     if (pressed.current && !draftRef.current) setDraft({ before: baseRef.current, now: baseRef.current });
   }, []);
-  /** Change now (one undo step), or the draft while a drag is on. */
+  /** Change now (one undo step), or the draft while a drag is on. `patch` changes settings along with it. */
   const change = useCallback(
-    (f: (c: Composition) => Composition) => {
+    (f: (c: Composition) => Composition, patch?: Record<string, RawValue>) => {
       const d = draftRef.current;
-      if (d) setDraft({ ...d, now: f(d.now) });
-      else commit(baseRef.current, f(baseRef.current));
+      if (d) setDraft({ ...d, now: f(d.now), patch: patch ? { ...d.patch, ...patch } : d.patch });
+      else commit(baseRef.current, f(baseRef.current), patch);
+    },
+    [commit],
+  );
+  /** Like change, for edits whose settings depend on the ones the drag has already changed. */
+  const changeWith = useCallback(
+    (f: (c: Composition, patch: Record<string, RawValue>) => { comp: Composition; patch: Record<string, RawValue> }) => {
+      const d = draftRef.current;
+      if (d) {
+        const r = f(d.now, d.patch ?? {});
+        setDraft({ ...d, now: r.comp, patch: { ...d.patch, ...r.patch } });
+      } else {
+        const r = f(baseRef.current, {});
+        commit(baseRef.current, r.comp, r.patch);
+      }
     },
     [commit],
   );
@@ -94,7 +111,7 @@ export function useLiveLayers(topAspect: number) {
       if (!d) return;
       // keep showing the drag's result until the store has it, so nothing jumps back
       draftRef.current = null;
-      commit(d.before, d.now).finally(() => setDraftState((x) => (x === d ? null : x)));
+      commit(d.before, d.now, d.patch).finally(() => setDraftState((x) => (x === d ? null : x)));
     };
     window.addEventListener('pointerdown', down, true);
     window.addEventListener('pointerup', up);
@@ -135,7 +152,7 @@ export function useLiveLayers(topAspect: number) {
     [commit, sourceOf],
   );
 
-  return { comp, sourceOf, dimsOf, sel, setSel, begin, change, setBlock, commit, addImages, dragging: !!draft };
+  return { comp, sourceOf, dimsOf, sel, setSel, begin, change, changeWith, setBlock, commit, addImages, dragging: !!draft, draftPatch: draft?.patch };
 }
 
 /** True when a surface is shown as layers on its card (more than its one ordinary picture). */

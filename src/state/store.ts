@@ -32,7 +32,7 @@ import { applyQuickMapToProject } from '../core/quickMap';
 import { wordsParamPatch } from '../core/chantWords';
 import { speechParamPatch } from '../core/speechTuning';
 
-export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'map' | 'shadow' | 'graph' | 'nodes' | 'compare';
+export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'map' | 'shadow' | 'graph' | 'nodes' | 'compare' | 'impress';
 
 export interface MapTerrainUi {
   phase: 'idle' | 'working' | 'ready' | 'error';

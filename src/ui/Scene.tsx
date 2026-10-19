@@ -41,6 +41,8 @@ export interface SceneOpts {
   moveMode?: boolean;
   /** Material picking: a click puts the plate in the active bucket (shift-click: the run since the last one). */
   onPaint?: (plateKey: string, shift: boolean) => void;
+  /** X-ray plates: see-through and outlined, so what is cut inside them shows (Impress image). */
+  ghost?: boolean;
 }
 
 export function cssVar(name: string, fallback: string): string {
@@ -546,7 +548,13 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
     for (const p of parts) c.set(p.family, Math.max(c.get(p.family) ?? 0, p.index + 1));
     return c;
   }, [parts]);
+  const ghostMat = useMemo(
+    () => (opts.ghost ? new THREE.MeshStandardMaterial({ color: looks[MAIN].color, metalness: 0.2, roughness: 0.7, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }) : null),
+    [opts.ghost, lookKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  useEffect(() => () => ghostMat?.dispose(), [ghostMat]);
   const matFor = (p: Part) => {
+    if (ghostMat) return ghostMat;
     const base = materials.get(appearance?.assign[p.plateKey] ?? MAIN) ?? material;
     if (tint === 'off') return base;
     if (tint === 'height') return tinted.get('height') ?? base;
@@ -594,7 +602,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
           position={[0, gridY, 0]}
         />
       )}
-      {(model.sunkenFrame || v.baseOn) && showBaseMesh(L) && <Base model={model} xray={opts.xray} />}
+      {(model.sunkenFrame || v.baseOn) && showBaseMesh(L) && <Base model={model} xray={opts.xray || !!opts.ghost} />}
       <group position={[0, model.sunkenFrame?.plateLiftMm ?? 0, 0]}>
         {L.plates &&
           model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
@@ -609,7 +617,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
             ))}
         </group>
         {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
-        {L.plates && aids?.outlines && <PlateOutlines parts={parts} offsets={offsets} color={outlineColor(tint, looks[MAIN].color)} />}
+        {L.plates && (aids?.outlines || opts.ghost) && <PlateOutlines parts={parts} offsets={offsets} color={outlineColor(tint, looks[MAIN].color)} />}
         <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} offsets={offsets} />
         {L.rods !== false && <Rods model={model} />}
         {L.rods !== false && <StackRods model={model} />}

@@ -297,6 +297,9 @@ export default function Viewport() {
           <button className={`btn sm ${ui.measureMode ? 'on' : ''}`} onClick={() => setUi({ measureMode: !ui.measureMode, moveMode: false, paintMode: false, objectsMode: false })} title="Measuring tape: point to point, edge to edge, point to edge or face (M; Esc leaves)">
             Measure
           </button>
+          <button className="btn sm" onClick={() => setUi({ tab: 'impress' })} title="Press a picture into the top surface or the front face, placed by hand with an x-ray of the cut">
+            Impress image
+          </button>
           <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
             X-ray concrete
           </button>

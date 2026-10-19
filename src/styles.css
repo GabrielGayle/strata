@@ -3883,3 +3883,102 @@ kbd {
   height: auto;
   border: 1px solid var(--border, #808080);
 }
+
+/* ---------- Impress image view ---------- */
+.impress-view {
+  position: absolute;
+  inset: 0;
+  background: var(--viewport);
+}
+.impress-panel {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  left: 8px;
+  width: 300px;
+  max-height: calc(100% - 16px);
+  overflow: auto;
+}
+.impress-panel fieldset.section {
+  margin: 6px 4px;
+}
+.impress-panel .btnrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.impress-panel .note {
+  margin: 4px 0 0;
+}
+.impress-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.impress-thumb {
+  min-width: 0;
+  width: 44px;
+  height: 44px;
+  padding: 2px;
+}
+.impress-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.impress-thumb.on {
+  outline: 2px solid var(--accent);
+}
+.impress-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.impress-list li {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 0;
+}
+.impress-list li.sel .impress-name {
+  font-weight: 700;
+}
+.impress-list .btn.sm {
+  min-width: 0;
+  padding: 0 6px;
+}
+.impress-name {
+  flex: 1 1 80px;
+  min-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.impress-depth {
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.impress-slider .field-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 62px;
+  gap: 6px;
+  align-items: center;
+}
+.impress-slider input[type='range'] {
+  width: 100%;
+}
+.impress-value {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: right;
+}
+.impress-check {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
