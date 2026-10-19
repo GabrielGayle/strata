@@ -90,6 +90,8 @@ export interface DepthData {
   /** Fields the user set manually; automatic rebuilds must not overwrite them. */
   settingsOverrides?: DepthSettingsOverrides;
   mapOrtho?: MapOrthoMeta;
+  /** The photo the depth was made from, as a small JPEG data URL. Older saves omit it. */
+  photo?: string;
 }
 
 /** 768 and 1024 only show for map grids that big (photo depth is 512 px). */

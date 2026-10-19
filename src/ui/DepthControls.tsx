@@ -1,6 +1,6 @@
 // Shaping controls for an image made by "Depth from photo": the real depth (metres)
 // is kept on the image, so these re-shape it live without asking the service again.
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { DEPTH_RESOLUTIONS, decodeDepthBuffers, depthToGray, type DepthData, type DepthSettings } from '../core/depth';
 import {
@@ -99,6 +99,7 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
   const mapFace = isMapDepthFace(depth);
   return (
     <div className="depth-ctl">
+      {depth.photo && <PhotoThumb src={depth.photo} />}
       <div className="note">
         {mapFace
           ? `Map elevation: ${depth.w}×${depth.h}, ${metres(lo)} to ${metres(hi)} (exaggerated metres). Near/far window the terrain; flatten, curve and perspective do not apply to plate heights.`
@@ -163,8 +164,82 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
           Reset to auto
         </button>
       </div>
+      {slot === 'side' && !mapFace && <SideCutControls />}
       <FlatPlateControls depth={depth} set={set} />
     </div>
+  );
+}
+
+/** The photo the depth came from: a small thumbnail, tap for a bigger look. */
+function PhotoThumb({ src }: { src: string }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [open]);
+  return (
+    <>
+      <button type="button" className="depth-photo" onClick={() => setOpen(true)} title="The photo this depth came from. Click to see it bigger." data-testid="depth-photo">
+        <img src={src} alt="Original photo" />
+        <span>Original photo</span>
+      </button>
+      {open && (
+        <div className="pm-back" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
+          <div className="window pm depth-photo-window" role="dialog" aria-modal="true" aria-label="Original photo">
+            <div className="title-bar">
+              <div className="title-bar-text">Original photo</div>
+              <div className="title-bar-controls">
+                <button type="button" aria-label="Close" onClick={() => setOpen(false)} />
+              </div>
+            </div>
+            <div className="window-body">
+              <img src={src} alt="Original photo, larger" />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Parameters › Image › No plate below / above, beside the depth they act on. */
+function SideCutControls() {
+  const params = useStore((st) => st.project.params);
+  const setParam = useStore((st) => st.setParam);
+  if (String(params.imgSideMode ?? 'off') !== 'heightmap') return null;
+  const num = (id: string, def: number) => {
+    const n = Number(params[id]);
+    return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : def;
+  };
+  const lo = num('imgCutLow', 0);
+  const hi = num('imgCutHigh', 100);
+  return (
+    <fieldset className="flat-plate-ctl" data-testid="side-cut">
+      <legend>No plates</legend>
+      <div className="note">Where the picture is darker or lighter than these, the plates are cut away and leave a gap. A few % below clears a black background.</div>
+      <Num
+        label="Below"
+        value={lo}
+        min={0}
+        max={50}
+        step={1}
+        show={lo > 0 ? `${lo}%` : 'off'}
+        onChange={(v) => setParam('imgCutLow', String(Math.min(v, hi - 1)))}
+        title="No plate where the picture is darker than this (Parameters › Image › No plate below)"
+      />
+      <Num
+        label="Above"
+        value={hi}
+        min={50}
+        max={100}
+        step={1}
+        show={hi < 100 ? `${hi}%` : 'off'}
+        onChange={(v) => setParam('imgCutHigh', String(Math.max(v, lo + 1)))}
+        title="No plate where the picture is lighter than this (Parameters › Image › No plate above)"
+      />
+    </fieldset>
   );
 }
 

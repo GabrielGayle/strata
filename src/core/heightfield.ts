@@ -16,6 +16,18 @@ export interface HeightField {
    * of the picture (its background left out) and how far the plates must rise to clear it.
    */
   floorClip?: { fraction: number; liftMm: number };
+  /**
+   * Image as height with a cut-off set: the side picture's brightness (0..1) at world (x, z),
+   * and the window it must sit inside for there to be any plate there.
+   */
+  sideCut?: { grey(x: number, z: number): number; lo: number; hi: number };
+}
+
+/** The side picture's cut-offs as 0..1 brightness, or null when both are off. */
+export function sideCutWindow(v: Values): { lo: number; hi: number } | null {
+  const lo = Math.min(1, Math.max(0, (Number(v.imgCutLow) || 0) / 100));
+  const hi = Math.min(1, Math.max(0, (v.imgCutHigh == null ? 100 : Number(v.imgCutHigh)) / 100));
+  return lo > 0 || hi < 1 ? { lo, hi } : null;
 }
 
 /** Plate tops never go lower than this above the base top; anything the field asks below it is cut flat. */
@@ -95,8 +107,18 @@ export function buildHeightField(v: Values, sideImg: Gray | null): HeightField {
       min = Math.min(min, h);
       max = Math.max(max, h);
     }
-  const floorClip = mix > 0 && mode === 'heightmap' && sideImg ? sideFloorClip(sideImg, (sn, an) => rawAt((sn - 0.5) * f.stackLen, (an - 0.5) * f.acrossLen), Math.min(0.45, Math.max(0, v.sideMargin) / Math.max(1, f.acrossLen))) : undefined;
-  return { at, min, max, ...(floorClip ? { floorClip } : {}) };
+  const cut = mix > 0 && mode === 'heightmap' && sideImg ? sideCutWindow(v) : null;
+  const floorClip = mix > 0 && mode === 'heightmap' && sideImg ? sideFloorClip(sideImg, (sn, an) => rawAt((sn - 0.5) * f.stackLen, (an - 0.5) * f.acrossLen), Math.min(0.45, Math.max(0, v.sideMargin) / Math.max(1, f.acrossLen)), cut) : undefined;
+  const sideCut = cut && sideImg
+    ? {
+        ...cut,
+        grey: (x: number, z: number) => {
+          const s = x * f.stack[0] + z * f.stack[1], a = x * f.across[0] + z * f.across[1];
+          return sample(sideImg, s / f.stackLen + 0.5, 1 - (a / f.acrossLen + 0.5));
+        },
+      }
+    : undefined;
+  return { at, min, max, ...(floorClip ? { floorClip } : {}), ...(sideCut ? { sideCut } : {}) };
 }
 
 /**
@@ -104,7 +126,7 @@ export function buildHeightField(v: Values, sideImg: Gray | null): HeightField {
  * (its darkest level, where a depth map leaves the backdrop) is meant to sit
  * low, so only the rest counts.
  */
-function sideFloorClip(img: Gray, rawAt: (sn: number, an: number) => number, margin: number): HeightField['floorClip'] {
+function sideFloorClip(img: Gray, rawAt: (sn: number, an: number) => number, margin: number, cut: { lo: number; hi: number } | null): HeightField['floorClip'] {
   let lo = Infinity;
   for (let i = 0; i < img.data.length; i++) lo = Math.min(lo, img.data[i]);
   const NS = 160, NA = 64;
@@ -113,7 +135,9 @@ function sideFloorClip(img: Gray, rawAt: (sn: number, an: number) => number, mar
     for (let j = 0; j <= NA; j++) {
       const sn = i / NS;
       const an = margin + (j / NA) * (1 - 2 * margin);
-      if (sample(img, sn, 1 - an) <= lo + 0.02) continue;
+      const g = sample(img, sn, 1 - an);
+      // the background, and anything past a cut-off (no plate there at all), can't be cut flat
+      if (g <= lo + 0.02 || (cut && (g < cut.lo || g > cut.hi))) continue;
       raws.push(rawAt(sn, an));
     }
   const clipped = raws.filter((r) => r < PLATE_FLOOR_MM).length;
