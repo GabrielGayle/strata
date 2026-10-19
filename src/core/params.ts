@@ -39,6 +39,7 @@ export const GROUPS = [
   'Edges',
   'Insert',
   'Source form',
+  'Candle master',
   'Image',
   'Margins',
   'Tuning',
@@ -106,6 +107,7 @@ const hasSupport = (v: Values) => v.baseOn && v.supportMode !== 'off';
 const isParallelish = (v: Values) => v.sliceMode !== 'radial';
 const isUpright = (v: Values) => v.sliceMode !== 'radial' && v.sliceMode !== 'flat';
 const isFlat = (v: Values) => v.sliceMode === 'flat';
+const isMaster = (v: Values) => !!v.cmOn && v.sliceMode === 'flat' && v.stackSource === 'form';
 const hasRods = (v: Values) => isUpright(v) && v.rodsOn;
 const hasStackRods = (v: Values) => isFlat(v) && v.stackRodsOn;
 const hasCross = (v: Values) => isUpright(v) && (v.spacerMode === 'cross' || v.spacerMode === 'both');
@@ -303,6 +305,14 @@ export const PARAMS: ParamDef[] = [
 
   // Source form
   ...formParams('src', 'Source form', (v) => v.stackSource === 'form', { shape: 'revolve', width: 260, height: 300, taper: 0.5, camber: 60, length: 600 }),
+
+  // Candle master: a flat stack of the source form glued into a positive for a silicone mould
+  { id: 'cmOn', label: 'Candle master', group: 'Candle master', kind: 'toggle', def: false, help: 'Glue the flat layers into a solid stratified copy of the candle, then cast a silicone mould around it. Each layer also gets a frame, and the frames stack into the mould box.' },
+  num('cmPin', 'Centre pin Ø', 'Candle master', 'max(4, thickness + 1)', 0, 12, { step: 0.5, noScale: true, show: isMaster, help: 'A rod through every layer lines the glue-up up (a hole wants to be wider than the sheet is thick). Left standing above the top, it casts the wick hole into the silicone. 0 for none.' }),
+  num('cmPinOut', 'Pin above the top', 'Candle master', 10, 0, 60, { noScale: true, show: (v) => isMaster(v) && v.cmPin > 0, help: 'How far the pin stands above the master: the wick channel through the top of the mould' }),
+  num('cmWall', 'Silicone wall', 'Candle master', 10, 3, 40, { noScale: true, show: isMaster, help: 'Silicone between the master and the box walls. 8 to 12 mm is typical.' }),
+  num('cmCover', 'Silicone over the top', 'Candle master', 'cmWall', 3, 40, { noScale: true, show: isMaster, help: 'Silicone above the top of the master; the frames rise this far above it' }),
+  num('cmFrame', 'Box wall', 'Candle master', 10, 0, 40, { noScale: true, show: isMaster, help: 'Width of the frame around each layer. Stacked, the frames make the box the silicone is poured into. 0 for no box.' }),
 
   // Image
   { id: 'imageOn', label: 'Image on', group: 'Image', kind: 'toggle', def: true, help: 'Off ignores every image (side, top, front and etching) without clearing them' },
@@ -653,6 +663,7 @@ export const GROUP_SWITCHES: Partial<Record<(typeof GROUPS)[number], GroupSwitch
   Mould: { id: 'mouldOn' },
   Sun: { id: 'sunOn' },
   Shadow: { id: 'shadowOn' },
+  'Candle master': { id: 'cmOn' },
 };
 const SLICE_NAME: Record<string, string> = { parallel: 'parallel', radial: 'radial', waffle: 'waffle', flat: 'flat stack' };
 
@@ -665,6 +676,7 @@ export const GROUP_IDLE: Partial<Record<(typeof GROUPS)[number], (v: Values) => 
   Bracing: (v) => (isUpright(v) ? null : `Not used with ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing: rods and spacers brace upright parallel or waffle plates.`),
   Strata: (v) => (strataSource(v) ? null : 'Not used while Slicer › Slice what is Source form: plate edges come from the form.'),
   'Source form': (v) => (v.stackSource === 'form' ? null : 'Used only when Slicer › Slice what is Source form.'),
+  'Candle master': (v) => (!v.cmOn || (v.sliceMode === 'flat' && v.stackSource === 'form') ? null : 'Needs Slicer › Slicing on Flat stack and Slice what on Source form: the master is the form cut into flat layers.'),
   Tuning: (v) =>
     !strataSource(v)
       ? 'Not used while Slicer › Slice what is Source form.'

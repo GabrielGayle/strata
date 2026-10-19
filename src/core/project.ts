@@ -184,6 +184,14 @@ export const PRESETS: Preset[] = [
     params: { stackSource: 'form', srcShape: 'revolve', srcWidth: '240', srcHeight: '320', srcTaper: '0.55', srcCamber: '70', plateCount: '30', pitch: '(srcWidth - 16) / (plateCount - 1)', insShape: 'none', baseWidth: '420', baseLength: '420', embedDepth: '30' },
   },
   {
+    name: 'Candle master',
+    note: 'A revolved candle cut into 3 mm layers: glue it up, cast a silicone mould round it, pour candles with the layer lines',
+    params: {
+      sliceMode: 'flat', stackSource: 'form', srcShape: 'revolve', srcWidth: '70', srcHeight: '120', srcTaper: '0.6', srcCamber: '12', srcX: '0', srcZ: '0', srcY: '0', srcRot: '0',
+      thickness: '3', plateCount: 'ceil((srcHeight + cmCover) / thickness)', baseOn: false, insShape: 'none', flatPins: '0', cmOn: true, plateMaterial: 'aluminium',
+    },
+  },
+  {
     name: 'Stamped stack',
     note: 'Plates laid flat face to face; a top image presses down through the layers',
     params: {

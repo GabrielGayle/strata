@@ -18,6 +18,7 @@ import { DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from './pri
 import type { Rod, RodPlan } from './brace';
 import { formatFragment } from './fragments';
 import { candleNote, candleShopping } from './candles';
+import { masterShopping } from './candleMaster';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -1108,6 +1109,8 @@ function cutListSection(m: Model, rates: PriceRates, project?: Project): string 
   }
   const bought: string[] = [];
   for (const r of bom.hardware) bought.push(`<tr><td class="id">${esc(r.item)}</td><td>${esc(r.spec)}</td><td class="n">${r.qty}</td><td>${esc(r.note ?? '')}</td></tr>`);
+  const master = m.sliced.candleMaster;
+  if (master) for (const r of masterShopping(master)) bought.push(`<tr data-candle-master="1"><td class="id">${esc(r.item)}</td><td>${esc(r.spec)}</td><td class="n">${esc(r.qty)}</td><td>${esc(r.note)}</td></tr>`);
   const candles = candleShopping(project?.candles);
   for (const c of candles) bought.push(`<tr data-candle-qty="${c.qty}"><td class="id">${esc(c.name)}</td><td>Ø${mm(c.d)} × ${mm(c.h)} ${c.tealight ? 'tealight' : 'candle'}</td><td class="n">${c.qty}</td><td>${esc(candleNote(c))}</td></tr>`);
   const conc = bom.concreteBase + bom.concreteInsert;
@@ -1119,6 +1122,7 @@ function cutListSection(m: Model, rates: PriceRates, project?: Project): string 
   if (v.sliceMode === 'flat') bought.push(`<tr><td class="id">Adhesive</td><td>epoxy or construction adhesive</td><td class="n">—</td><td>for ${plural(m.sliced.plates.filter((p) => p.parts.length).length, 'layer')}</td></tr>`);
   if (v.baseOn) bought.push(`<tr><td class="id">Release agent</td><td>for the mould</td><td class="n">—</td><td></td></tr>`);
   if (bought.length) out.push(`<h3>Bought in</h3><table><thead><tr><th>Item</th><th>Spec</th><th>Qty</th><th>Note</th></tr></thead><tbody>${bought.join('')}</tbody></table>`);
+  if (master) out.push(`<p class="note" data-candle-master-layers="${master.masterLayers}">Candle master: glue the ${plural(master.masterLayers, 'master layer')} in order on the centre pin, glue the ${plural(master.frameLayers, 'frame')} into a box round it on a flat board, seal the seams, then pour the silicone. The box inside is ${n1(master.inner.w)} × ${n1(master.inner.d)} × ${n1(master.inner.h)} mm. Step by step: candle-master.txt in the ZIP.</p>`);
   if (candles.length) {
     const n = candles.reduce((a, c) => a + c.qty, 0);
     out.push(`<p class="note" data-candle-total="${n}">${plural(n, 'candle')} to fill the candelabra (candles.csv in the ZIP). Measure a candle before you buy a box: it should drop into its hole with a little play.</p>`);
