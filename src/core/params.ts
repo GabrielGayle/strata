@@ -201,6 +201,7 @@ export const PARAMS: ParamDef[] = [
     { value: 'aluminium', label: 'Aluminium' },
     { value: 'corten', label: 'Corten' },
   ]),
+  { id: 'platesOn', label: 'Plates on', group: 'Plates', kind: 'toggle', def: true, help: 'Off leaves the concrete base on its own: no plates, nothing to cut' },
   num('thickness', 'Thickness', 'Plates', 3, 0.5, 12, { step: 0.5, help: 'Common: 1.5, 3, 6 mm' }),
   choice('spacingMode', 'Spacing', 'Plates', 'fit', [
     { value: 'fit', label: 'Spread count over base' },
@@ -655,6 +656,7 @@ export const GROUP_SWITCHES: Partial<Record<(typeof GROUPS)[number], GroupSwitch
   Base: { id: 'baseOn', keepOpen: true },
   Support: { id: 'supportOn', forces: { supportMode: 'off' } },
   Bracing: { id: 'bracingOn', forces: { rodsOn: false, spacerMode: 'off' } },
+  Plates: { id: 'platesOn' },
   Strata: { id: 'strataOn', forces: { erosionAmp: '0', banding: '0', crest: '0', slope: '0' } },
   Edges: { id: 'edgesOn', forces: { edgeFlow: '0', edgeRound: '0', edgeRoundIn: '0' } },
   Insert: { id: 'insertOn', forces: { insShape: 'none' } },
@@ -685,6 +687,13 @@ export const GROUP_IDLE: Partial<Record<(typeof GROUPS)[number], (v: Values) => 
         : `Not used with ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing: tuning works on parallel or radial plates.`,
   Shadow: (v) => (!v.shadowOn ? null : !v.sunOn && v.shadowLight !== 'candle' ? 'Needs Sun study on (or set Light to Candle): the pictures are carved for the real sun at its place and date.' : v.sliceMode !== 'parallel' ? `Works with parallel plates for now, not ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing.` : null),
 };
+
+// groups that only shape plates rest while Plates is off
+const NO_PLATES = 'Not used while Plates is off: the base stands on its own.';
+for (const g of ['Support', 'Bracing', 'Slicer', 'Strata', 'Edges', 'Tuning', 'Margins', 'Source form'] as const) {
+  const own = GROUP_IDLE[g];
+  GROUP_IDLE[g] = (v) => (v.platesOn ? (own ? own(v) : null) : NO_PLATES);
+}
 
 export const SWITCH_IDS = new Set(Object.values(GROUP_SWITCHES).map((s) => s!.id));
 

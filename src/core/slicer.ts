@@ -293,6 +293,7 @@ export function crossingAt(a: Plane, b: Plane, y: number): { ua: number; ub: num
 export function plateDefs(v: Values): PlateDef[] {
   const top = baseTop(v);
   const defs: PlateDef[] = [];
+  if (!v.platesOn) return defs;
   if (v.sliceMode === 'radial') {
     const n = v.radialCount;
     const ch = v.baseOn ? baseChamfers(v) : { corner: 0, edge: 0 };

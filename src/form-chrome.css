@@ -79,6 +79,15 @@ table.tbl,
   --err: #8f1a13;
 }
 
+/* A themed viewport set into a silver window (Image tab relief preview): its notes sit on
+   --viewport, so they take the theme's own --muted back. */
+:root {
+  --theme-muted: var(--muted);
+}
+.window.box .on-viewport {
+  --muted: var(--theme-muted);
+}
+
 /* Materials, Move plates and Objects windows over the 3D view are silver in every theme: dark ink, not the theme's pale --ink */
 .appearance.overlay {
   color: var(--chrome-fg);

@@ -132,6 +132,8 @@ export interface Preset {
   params: Record<string, RawValue>;
   /** Listed under "Small (under 10 cm)" in the Presets menu. */
   small?: boolean;
+  /** Replaces the pour bands; presets without one leave the project's pour as it is. */
+  pour?: PourLayer[];
 }
 
 /**
@@ -169,7 +171,27 @@ const SMALL: Record<string, RawValue> = {
   supportLand: '3',
 };
 
+/**
+ * What a new project opens as: an A5 slab of plain concrete with nothing on
+ * it. Plates, Strata and Insert are switched off rather than zeroed, and the
+ * sizes behind them are set for a piece this size, so switching any of them
+ * back on gives a sensible start.
+ */
+export const PLAIN_A5: Preset = {
+  name: 'Plain A5 base',
+  note: 'An A5 slab (210 × 148 mm) of plain concrete: no plates, no insert, one pour',
+  params: {
+    platesOn: false, strataOn: false, insertOn: false, pourView: 'plain',
+    baseLength: '210', baseWidth: '148', baseHeight: '30',
+    thickness: '1.5', plateCount: '16', endMargin: '15', sideMargin: '12', embedDepth: '15', anchorHoles: '1', anchorDia: '5',
+    stackHeight: '90', erosionAmp: '15', erosionScale: '60', crest: '12', slope: '0',
+    insLength: '130', insWidth: '14', insHeight: '110', insSweep: '20', insCamber: '5', insBend: '4',
+  },
+  pour: [{ id: 'p1', name: 'Concrete', height: 'baseHeight', color: '#a39e96' }],
+};
+
 export const PRESETS: Preset[] = [
+  PLAIN_A5,
   { name: 'Vermilion 40', note: '40 eroded corten plates, central fin, 3-band pour', params: { plateMaterial: 'corten' } },
   {
     name: 'Radial bloom',
@@ -247,7 +269,13 @@ export const PRESETS: Preset[] = [
 
 /** Images that come with a preset (e.g. a sound picture) replace those slots. */
 export function applyPreset(p: Project, preset: Preset, images: Project['images'] = {}): Project {
-  return { ...p, name: preset.name, params: { ...defaultRaw(), ...preset.params }, locks: {}, images: { ...p.images, ...images }, moves: undefined };
+  const pour = preset.pour ? preset.pour.map((l) => ({ ...l })) : p.pour;
+  return { ...p, name: preset.name, params: { ...defaultRaw(), ...preset.params }, locks: {}, pour, images: { ...p.images, ...images }, moves: undefined };
+}
+
+/** A fresh project for first load and new tabs. Files and saves still read against newProject(). */
+export function startingProject(): Project {
+  return applyPreset(newProject(), PLAIN_A5);
 }
 
 /** Stands in for a variant image (or set of shadow pictures) that is the same as the project's own, so files don't carry it twice. */
