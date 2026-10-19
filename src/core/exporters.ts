@@ -28,6 +28,7 @@ import { mapBackPlateEtchPaths } from './mapBackPlateEtch';
 import { mapEngravePathsForPart, type MapEngravePlateContext } from './mapEngravePlate';
 import type { UnfoldPiece } from './unfold';
 import { materialOf } from './appearance';
+import { currentHero, heroPngBytes } from './hero';
 import { packManifest } from './counts';
 import {
   assertHtmlBuildPackIntegrity,
@@ -403,6 +404,9 @@ export function packReadme(model: Model, project?: Project): string {
   if (candleShopping(project?.candles).length) {
     lines.push('', 'candles.csv', '  Candles to buy for the candelabra: one row per size with how many, what holds them and the hole each drops into, then the total.');
   }
+  if (project?.hero && currentHero(project, model)) {
+    lines.push('', 'hero.png', '  A photograph-style render of the finished piece (Blender Cycles), also on the build pack cover.');
+  }
   const dropped = (model.sliced.fragments ?? []).filter((e) => e.action === 'dropped' || e.action === 'merged');
   if (dropped.length) {
     lines.push('', 'Fragments handled:');
@@ -521,6 +525,8 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   const candles = candleShopping(project.candles);
   if (candles.length) files['candles.csv'] = strToU8(candlesCsv(candles));
   if (model.sliced.candleMaster) files['candle-master.txt'] = strToU8(masterText(model.sliced.candleMaster));
+  const hero = currentHero(project, model);
+  if (hero) files['hero.png'] = heroPngBytes(hero);
   files['README.txt'] = strToU8(packReadme(model, project));
   files['build-pack.html'] = strToU8(buildPackHtmlChecked(project, model, { rates, date }));
   files['manifest.json'] = strToU8(JSON.stringify({ ...packManifest(model), ...buildPlateManifest(model, project) }, null, 2) + '\n');

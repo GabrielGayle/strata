@@ -9,19 +9,26 @@
  *   node job.mjs --engine          prints the engine build this bundle was made from
  *   node job.mjs < request.json    runs a job (needs RENDER_CACHE_READ_WRITE_TOKEN or BLOB_READ_WRITE_TOKEN)
  *   node job.mjs --out f.json.gz   writes the result to a file instead of Blob (local testing)
- *   node job.mjs --input p.json    reads a pack or nest job's design from a file instead of Blob
+ *   node job.mjs --input p.json    reads a pack, nest or hero job's design from a file instead of Blob
+ *   node job.mjs --hero-dir d      a hero job: writes d/model.glb and d/settings.json for Blender
+ *                                  (worker/hero_render.py) instead of storing a result
+ *   node job.mjs --store KEY FILE  stores a finished hero render (FILE, a PNG) under KEY, stamped
+ *                                  with what it shows (read from model.glb beside it)
  *
- * Jobs: terrain (a map at up to 2048 px), pack (`cli export --zip` on an uploaded design)
- * and nest (the app's nester given 30 or 90 seconds). STRATA_ALLOW_FAULTS=1 lets a pack
+ * Jobs: terrain (a map at up to 2048 px), pack (`cli export --zip` on an uploaded design),
+ * nest (the app's nester given 30 or 90 seconds) and the model side of hero (model.glb
+ * from the design, which app.py hands to the strata-hero GPU app and then stores). STRATA_ALLOW_FAULTS=1 lets a pack
  * request drop a plate on purpose; it is never set on the deployed worker.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { ARTIFACT_FILES, artifactPath, geoJobKey, inputPartPath, validateGeoJobRequest, type JobInput } from '../api/_lib/geoJob.js';
+import { dirname, join } from 'node:path';
+import { ARTIFACT_FILES, artifactPath, GEO_KEY_RE, geoJobKey, HERO_SAMPLES, inputPartPath, validateGeoJobRequest, type JobInput } from '../api/_lib/geoJob.js';
 import { runTerrainJob } from '../src/core/cloudTerrain';
+import { stampHeroPng, type HeroStamp } from '../src/core/hero';
 import { ENGINE_BUILD } from '../src/core/resultCache';
-import { runNestJob, runPackJob } from '../src/cloudJobs';
+import { runHeroModel, runNestJob, runPackJob } from '../src/cloudJobs';
 
 /** Exit codes app.py understands. */
 const EXIT_BAD_REQUEST = 2;
@@ -63,7 +70,11 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(`${ENGINE_BUILD}\n`);
     return 0;
   }
+  const storeIdx = argv.indexOf('--store');
+  if (storeIdx >= 0) return storeHero(argv[storeIdx + 1], argv[storeIdx + 2]);
   const outIdx = argv.indexOf('--out');
+  const heroIdx = argv.indexOf('--hero-dir');
+  const heroDir = heroIdx >= 0 ? argv[heroIdx + 1] : undefined;
   const outFile = outIdx >= 0 ? argv[outIdx + 1] : undefined;
 
   let raw: unknown;
@@ -84,7 +95,7 @@ async function main(argv: string[]): Promise<number> {
     return EXIT_OUT_OF_DATE;
   }
   const token = blobToken();
-  const fromBlob = !outFile || (req.kind !== 'terrain' && !argv.includes('--input'));
+  const fromBlob = (!outFile && !heroDir) || (req.kind !== 'terrain' && !argv.includes('--input'));
   if (fromBlob && !token) {
     process.stderr.write('error: no Blob token (RENDER_CACHE_READ_WRITE_TOKEN) in the worker environment\n');
     return 1;
@@ -111,7 +122,21 @@ async function main(argv: string[]): Promise<number> {
       process.stderr.write('error: --input does not match the request sha\n');
       return EXIT_BAD_REQUEST;
     }
-    progress(0.15, req.kind === 'pack' ? 'building the pack' : 'nesting');
+    progress(0.15, req.kind === 'pack' ? 'building the pack' : req.kind === 'hero' ? 'building the model' : 'nesting');
+    if (req.kind === 'hero') {
+      if (!heroDir) {
+        process.stderr.write('error: a hero job needs --hero-dir\n');
+        return EXIT_BAD_REQUEST;
+      }
+      const r = await runHeroModel(req, text);
+      writeFileSync(join(heroDir, 'model.glb'), r.glb);
+      writeFileSync(join(heroDir, 'settings.json'), JSON.stringify({ light: r.light, width: r.width, height: r.height, samples: HERO_SAMPLES }));
+      const stamp: HeroStamp = { fingerprint: r.fingerprint, plates: r.meta.plates, parts: r.meta.parts };
+      writeFileSync(join(heroDir, 'stamp.json'), JSON.stringify(stamp));
+      const ms = Math.round(performance.now() - t0);
+      process.stdout.write(`${JSON.stringify({ key, ms, bytes: r.glb.length, meta: r.meta, fingerprint: r.fingerprint })}\n`);
+      return 0;
+    }
     if (req.kind === 'pack') {
       const r = await runPackJob(req, text, { allowFaults: process.env.STRATA_ALLOW_FAULTS === '1' });
       body = r.zip;
@@ -137,6 +162,31 @@ async function main(argv: string[]): Promise<number> {
     });
   }
   process.stdout.write(`${JSON.stringify({ key, ms, bytes: body.length, meta, ...('px' in meta ? { px: meta.px } : {}) })}\n`);
+  return 0;
+}
+
+/** Store a finished hero render (the PNG Blender wrote) under its job key. */
+async function storeHero(key: string | undefined, file: string | undefined): Promise<number> {
+  if (!key || !GEO_KEY_RE.test(key) || !file) {
+    process.stderr.write('error: --store needs a key and a file\n');
+    return EXIT_BAD_REQUEST;
+  }
+  let png: Uint8Array;
+  try {
+    const stamp = JSON.parse(readFileSync(join(dirname(file), 'stamp.json'), 'utf8')) as HeroStamp;
+    png = stampHeroPng(readFileSync(file), stamp);
+  } catch (e) {
+    process.stderr.write(`error: the render could not be stamped (${(e as Error).message})\n`);
+    return 1;
+  }
+  const token = blobToken();
+  if (!token) {
+    process.stderr.write('error: no Blob token (RENDER_CACHE_READ_WRITE_TOKEN) in the worker environment\n');
+    return 1;
+  }
+  const { put } = await import('@vercel/blob');
+  await put(artifactPath(key, ARTIFACT_FILES.hero), Buffer.from(png), { access: 'private', token, addRandomSuffix: false, allowOverwrite: true, contentType: 'image/png' });
+  process.stdout.write(`${JSON.stringify({ key, bytes: png.length })}\n`);
   return 0;
 }
 

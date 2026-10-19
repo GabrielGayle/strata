@@ -12,12 +12,16 @@ import {
   type GeoJobRequest,
   type GeoJobStatus,
   type GeoRestReason,
+  type HeroJobCamera,
+  type HeroJobRequest,
+  HERO_PX,
   type JobInput,
   type NestJobRequest,
   type PackJobRequest,
   type TerrainJobRequest,
 } from '../../api/_lib/geoJob.js';
 import { cleanSavedNest, nestFingerprint, nestMismatch, type SavedNest } from '../core/nest';
+import { heroFingerprintOf, heroScene, readHeroPng, type SavedHero } from '../core/hero';
 import { packMismatch } from '../core/packCheck';
 import { nestGroupsOf, type Model } from '../core/pipeline';
 import { materialOf } from '../core/appearance';
@@ -38,6 +42,9 @@ export interface CloudUsage {
   estimateUsd: number;
   workspaceUsd: number | null;
   grantUsd: number;
+  /** Hero renders started today (UTC) and the daily limit; missing on a worker from before hero renders. */
+  heroToday?: number;
+  heroLimit?: number;
 }
 
 interface CloudState {
@@ -106,6 +113,7 @@ const REST_WORDS: Record<GeoRestReason, string> = {
   failed: 'job failed',
   busy: 'busy',
   'needs-input': 'uploading',
+  limit: 'daily limit reached',
 };
 
 export function restWords(reason: string | undefined): string {
@@ -314,6 +322,11 @@ async function withCloud<T>(run: () => Promise<T>, jobErrorsKeepReady = true): P
       throw e;
     }
     // a pack or nest that ran and failed on its own terms (or came back not matching) says why; the cloud itself is fine
+    // so does the daily limit on hero renders
+    if (e instanceof CloudUnavailableError && e.reason === 'limit') {
+      useCloud.setState({ phase: 'ready', progress: 0 });
+      throw e;
+    }
     if (jobErrorsKeepReady && (e instanceof CloudPackMismatchError || (e instanceof CloudJobFailedError && e.detail && e.reason === 'failed'))) {
       useCloud.setState({ phase: 'ready', progress: 0 });
       throw e;
@@ -450,5 +463,49 @@ export async function cloudNest(project: Project, model: Pick<Model, 'sliced' | 
     const wrong = nestMismatch(groups, nest.result);
     if (wrong) throw new CloudJobFailedError('failed', wrong);
     return { nest, seconds: status.seconds, costUsd: status.costUsd, cached: status.cached };
+  });
+}
+
+/** A hero render that shows a different design from the one on screen: not saved. */
+export class CloudHeroMismatchError extends CloudPackMismatchError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CloudHeroMismatchError';
+  }
+}
+
+export interface CloudHeroResult {
+  hero: SavedHero;
+  seconds?: number;
+  costUsd?: number;
+  cached?: boolean;
+}
+
+function dataUrl(png: Uint8Array): string {
+  return `data:image/png;base64,${base64(png)}`;
+}
+
+/**
+ * A hero render of the design from `camera`, checked against the model on screen (the
+ * worker stamps every PNG with the plates, parts and fingerprint it rendered) before it
+ * can go into the project and the build pack.
+ */
+export async function cloudHero(project: Project, model: Model, camera: HeroJobCamera, light: HeroJobRequest['light'], signal?: AbortSignal): Promise<CloudHeroResult> {
+  return withCloud(async () => {
+    // the saved render is what this replaces: leave it out of the upload so the key doesn't depend on it
+    const { input, upload } = await designInput({ ...project, hero: undefined });
+    const status = await startAndWait({ kind: 'hero', engine: ENGINE_BUILD, input, camera, light, px: HERO_PX }, signal, upload);
+    useCloud.setState({ progress: 0.97 });
+    const png = new Uint8Array(await new Blob((await fetchArtifact(status.key, ARTIFACT_FILES.hero, signal)) as BlobPart[]).arrayBuffer());
+    const stamp = readHeroPng(png);
+    if (!stamp) throw new CloudJobFailedError('failed', 'the render came back without saying what it shows');
+    const plates = model.sliced.plates.length;
+    const parts = model.sliced.parts.length;
+    const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`;
+    if (stamp.plates !== plates) throw new CloudHeroMismatchError(`the render shows ${n(stamp.plates, 'plate')} and this design has ${plates}`);
+    if (stamp.parts !== parts) throw new CloudHeroMismatchError(`the render shows ${n(stamp.parts, 'part')} and this design has ${parts}`);
+    if (stamp.fingerprint !== heroFingerprintOf(heroScene(model, project))) throw new CloudHeroMismatchError('the render shows the design differently from this browser');
+    const hero: SavedHero = { kind: 'hero', fingerprint: stamp.fingerprint, png: dataUrl(png), w: stamp.w, h: stamp.h, light, date: today() };
+    return { hero, seconds: status.seconds, costUsd: status.costUsd, cached: status.cached };
   });
 }

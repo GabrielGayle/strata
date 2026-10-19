@@ -13,6 +13,7 @@ import { planeToWorld, type V3 } from './section';
 import type { Shape } from './geom2d';
 import { baseChamfers, basePlan } from './base';
 import { bucketOf, finishOf, lookOf, METAL_NAMES } from './appearance';
+import { currentHero } from './hero';
 import { isIdentity } from './moves';
 import { DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from './price';
 import type { Rod, RodPlan } from './brace';
@@ -1219,6 +1220,8 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
     ['Materials', `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
     ['Date', `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`],
   ];
+  // the cloud's hero render, while it still shows this design
+  const hero = currentHero(project, m);
   const cover = `<section class="cover">
 <p class="kicker">Strata build pack</p>
 <h1>${esc(project.name || 'Untitled')}</h1>
@@ -1226,6 +1229,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
 ${errors ? `<p class="warn">The design has ${plural(errors, 'check error')}: fix ${errors === 1 ? 'it' : 'them'} in Strata before cutting.</p>` : ''}
 <p class="plate-legend" data-plate-count="${m.sliced.plates.length}">This pack lists <b>${m.sliced.plates.length}</b> plates — the same count as the model and <span class="mono">manifest.json</span>.</p>
 ${(m.sliced.fragments ?? []).length ? `<p class="note">Fragments: ${m.sliced.fragments.map((e) => esc(formatFragment(e))).join(' ')}</p>` : ''}
+${hero ? `<figure class="full hero"><img src="${hero.png}" width="${hero.w}" height="${hero.h}" alt="The finished piece, rendered"><figcaption>The finished piece, rendered (${esc(hero.date)}). <span class="mono">hero.png</span> in the zip is the full picture.</figcaption></figure>` : ''}
 <figure class="full">${angledSvg(project, m, view, 'The finished piece from the front right', { maxH: 400 })}<figcaption>From the front right, in the plates' metals and finishes. Orthographic: parallel edges stay parallel, so nothing shrinks with distance.</figcaption></figure>
 <h2>Contents</h2>
 <ol class="toc">${sections.map((s) => `<li><a href="#${s.id}">${s.title}</a></li>`).join('')}</ol>
@@ -1255,6 +1259,7 @@ ${(m.sliced.fragments ?? []).length ? `<p class="note">Fragments: ${m.sliced.fra
     section + section { padding-top: 56px; }
   }
   figure { margin: 6px 0 10px; } figure.full { text-align: center; } figcaption { font-size: 12px; margin-top: 4px; }
+  figure.hero img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
   svg.drawing { display: block; max-width: 100%; height: auto; margin: 0 auto; font-family: inherit; }
   svg.angled { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   svg text { fill: #000; } .dim line { stroke: #000; stroke-width: 0.8; } .dim text { font-size: 11px; }

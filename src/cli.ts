@@ -6,6 +6,7 @@ import { unzipSync } from 'fflate';
 import { buildZip } from './core/exporters';
 import { applyFlatCliPatch, isMapDepthFace, parse01Flag, parseBoolFlag, parseFlatLevelFlag, type FlatCliPatch } from './core/depthFlat';
 import { createPipeline } from './core/pipeline';
+import { defaultHeroCamera, heroGlb, heroScene } from './core/hero';
 import { loadAssets, readRates } from './packNode';
 
 export { readRates };
@@ -84,7 +85,7 @@ const USAGE = `Usage:
                  [--map-source auto|ea-dtm|ea-dsm|terrarium]
                  [--map-res <metres>] [--exaggeration auto|<n>] [--layer-budget equal|quantile|jenks]
                  [--engrave on|off|roads,water,...]
-                 [--map-cache <dir>] [--map-preset <id>] [--render <out.png>]
+                 [--map-cache <dir>] [--map-preset <id>] [--render <out.png>] [--glb <model.glb>]
   npm run cli -- say <project.json> "<instruction>"
   npm run cli -- <project.json> say [--apply] "<instruction>"
   npm run cli -- params
@@ -94,7 +95,8 @@ Writes the fabrication bundle (part and sheet DXFs, moulds, model.stl, cutlist.c
 price-estimate.txt, price-estimate.json, build-pack.html, project.strata.json) into <dir>.
 --zip writes the same files as one zip (with or without --out). --date sets the date printed in
 the build pack and stamped on every file, so the zip is the same bytes on every run; the cloud
-pack job (Boost) makes its zip exactly this way.
+pack job (Boost) makes its zip exactly this way. --glb also writes model.glb, the file Blender renders
+for a hero render, with the 3D view's opening Iso camera (render it with worker/hero_render.py).
 A project may set "preset"; parameters in the file override the preset. --preset does the same.
 --size sets the base outline from a master size preset (${SIZE_HELP}); fixed sizes use real mm,
 ratio sizes keep the current long edge. Only the outline changes (thickness and plate count stay).
@@ -121,6 +123,7 @@ interface Args {
   project?: string;
   out?: string;
   zip?: string;
+  glb?: string;
   date?: string;
   preset?: string;
   images: Partial<Record<Slot, string>>;
@@ -226,6 +229,8 @@ function parseArgs(argv: string[]): Args {
     const a = argv[i];
     if (a === '--zip') args.zip = take(argv, ++i, a);
     else if (a.startsWith('--zip=')) args.zip = a.slice(6);
+    else if (a === '--glb') args.glb = take(argv, ++i, a);
+    else if (a.startsWith('--glb=')) args.glb = a.slice(6);
     else if (a === '--date') args.date = parseDate(take(argv, ++i, a));
     else if (a.startsWith('--date=')) args.date = parseDate(a.slice(7));
     else if (a === '--out') args.out = take(argv, ++i, a);
@@ -525,6 +530,10 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
     }
     const zip = buildZip(model, project, rates, { date: args.date ? new Date(`${args.date}T00:00:00Z`) : undefined });
     if (args.zip) writeFileSync(args.zip, zip);
+    if (args.glb) {
+      const scene = heroScene(model, project);
+      writeFileSync(args.glb, heroGlb(scene, defaultHeroCamera(scene)));
+    }
     const files = args.out ? writeBundle(args.out, zip) : unzipSync(zip);
     report(issues, io);
     const parts = Object.keys(files).filter((n) => n.startsWith('laser/parts/') && n.endsWith('.dxf')).length;

@@ -7,7 +7,7 @@
  *   POST jobs/:id/cancel
  *   POST inputs/:sha?part=n&parts=N   one part of a design for a pack or nest job ({data: base64})
  *   GET  artifacts/:key?part=n  a finished result, in parts under 4.5 MB
- *   GET  artifacts/:key/:file?part=n    the same for pack.zip and nest.json.gz
+ *   GET  artifacts/:key/:file?part=n    the same for pack.zip, nest.json.gz and hero.png
  *   GET  usage                  this month's jobs and cost
  *
  * Every route checks the owner passphrase first and makes no Modal or Blob call
@@ -151,6 +151,11 @@ async function callModal(cfg: ModalConfig, f: typeof fetch, method: 'GET' | 'POS
     throw new GeoError(502, 'The cloud worker did not answer', 'unreachable');
   }
   if (res.status === 401 || res.status === 403) throw new GeoError(502, 'The cloud worker refused the proxy token', 'not-configured');
+  if (res.status === 429) {
+    // the worker's daily limit on hero renders
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new GeoError(429, body.error || 'The daily limit is reached', 'limit');
+  }
   if (!res.ok) throw new GeoError(502, `The cloud worker answered ${res.status}`, 'unreachable');
   return res.json();
 }

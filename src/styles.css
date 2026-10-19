@@ -3730,3 +3730,24 @@ kbd {
   border-bottom: 0;
   padding: 0 0 6px;
 }
+
+/* hero render: the saved picture and a new one */
+.hero-window {
+  position: fixed;
+  right: 12px;
+  top: 64px;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 110px);
+  overflow: auto;
+  z-index: 102;
+}
+.hero-preview {
+  margin: 0 0 8px;
+}
+.hero-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border, #808080);
+}

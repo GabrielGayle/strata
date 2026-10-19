@@ -29,7 +29,7 @@ import {
 import ViewportLayersToolbar from './ViewportLayersToolbar';
 import ViewAidsToolbar from './ViewAidsToolbar';
 import { DEFAULT_VIEWPORT_LAYERS } from './viewportLayers';
-import { setLiveViewFromOffset } from './liveView';
+import { setLiveCamera, setLiveViewFromOffset } from './liveView';
 import ViewFromPointPanel, { ViewFromPointRig } from './ViewFromPoint';
 
 export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { dir: THREE.Vector3; up: THREE.Vector3 } {
@@ -113,18 +113,28 @@ export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; sn
 }
 
 function LiveViewTracker() {
-  const { camera, controls } = useThree() as { camera: THREE.Camera; controls?: { target: THREE.Vector3; addEventListener: (t: string, fn: () => void) => void; removeEventListener: (t: string, fn: () => void) => void } };
+  const { camera, controls, size } = useThree() as { camera: THREE.Camera; size: { width: number; height: number }; controls?: { target: THREE.Vector3; addEventListener: (t: string, fn: () => void) => void; removeEventListener: (t: string, fn: () => void) => void } };
   useEffect(() => {
     const sync = () => {
       if (!controls) return;
       const p = camera.position;
       const t = controls.target;
       setLiveViewFromOffset(p.x - t.x, p.y - t.y, p.z - t.z);
+      const persp = camera as THREE.PerspectiveCamera;
+      setLiveCamera({
+        position: [p.x, p.y, p.z],
+        target: [t.x, t.y, t.z],
+        up: [camera.up.x, camera.up.y, camera.up.z],
+        // an orthographic view is rendered with the 3D view's usual lens
+        fov: persp.isPerspectiveCamera ? persp.fov : 32,
+        aspect: size.width > 0 && size.height > 0 ? size.width / size.height : 1.5,
+        ortho: !persp.isPerspectiveCamera,
+      });
     };
     sync();
     controls?.addEventListener('change', sync);
     return () => controls?.removeEventListener('change', sync);
-  }, [camera, controls]);
+  }, [camera, controls, size]);
   return null;
 }
 
