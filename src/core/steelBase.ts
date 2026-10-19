@@ -18,8 +18,17 @@ export interface SteelBaseSpec {
   clearance: number;
   edge: number;
   stagger: boolean;
-  holes: number;
+  /** Fixing holes: none, four corners, a row along one edge, or rows along two opposite edges. */
+  holes: 'none' | 'corners' | 'edge' | 'rows';
+  holeStyle: 'round' | 'keyhole';
+  holeCount: number;
+  /** The edge rows run along, and that keyhole slots point at (the top when it hangs). */
+  holeSide: 'back' | 'front' | 'left' | 'right';
+  /** Edge of the base to a hole's middle (a keyhole's screw point). */
+  holeInset: number;
   holeDia: number;
+  keySlot: number;
+  keyLength: number;
 }
 
 export function steelBaseSpec(v: Values): SteelBaseSpec | null {
@@ -36,8 +45,14 @@ export function steelBaseSpec(v: Values): SteelBaseSpec | null {
     clearance: Math.max(0, Number(v.steelClearance) || 0),
     edge: Math.max(0, Number(v.steelEdge) || 0),
     stagger: v.steelStagger !== false,
-    holes: Number(v.steelHoles) || 0,
+    holes: v.steelHoles === '4' ? 'corners' : v.steelHoles === 'edge' || v.steelHoles === 'rows' ? v.steelHoles : 'none',
+    holeStyle: v.steelHoleStyle === 'keyhole' ? 'keyhole' : 'round',
+    holeCount: Math.max(1, Math.round(Number(v.steelHoleCount) || 2)),
+    holeSide: (['back', 'front', 'left', 'right'] as const).find((x) => x === v.steelHoleSide) ?? 'back',
+    holeInset: Math.max(0.5, Number(v.steelHoleInset) || 12),
     holeDia: Math.max(1, Number(v.steelHoleDia) || 6.5),
+    keySlot: Math.max(0.5, Number(v.steelKeySlot) || 4.5),
+    keyLength: Math.max(1, Number(v.steelKeyLength) || 10),
   };
 }
 
@@ -248,17 +263,66 @@ export function steelBaseShape(v: Values, s: SteelBaseSpec, tabs: WeldTab[], thi
       [x - dx * h + nx * hw, y - dy * h + ny * hw],
     ];
   });
-  const holes = fixingHoles(v, s).map(([x, y]) => circlePath(x, y, s.holeDia / 2));
+  const holes = fixingHoles(v, s).flatMap((h) => holePaths(h, s));
   const cut = [...slots, ...holes];
   return cut.length ? difference(outline, union(cut)) : outline;
 }
 
-/** Centres of the fixing holes, in from each corner. */
-export function fixingHoles(v: Values, s: SteelBaseSpec): [number, number][] {
-  if (s.holes < 4) return [];
+/** One fixing hole: where the screw sits, and for a keyhole the round end it drops in through. */
+export interface FixingHole {
+  at: [number, number];
+  /** Keyholes only: middle of the round end. */
+  head?: [number, number];
+}
+
+/** Plan direction (x, -z) towards an edge of the base. Front is −x; left and right are as seen from the front. */
+const SIDE: Record<SteelBaseSpec['holeSide'], [number, number]> = { back: [1, 0], front: [-1, 0], left: [0, 1], right: [0, -1] };
+
+/** Where the fixing holes go, in plan (x, -z). */
+export function fixingHoles(v: Values, s: SteelBaseSpec): FixingHole[] {
+  if (s.holes === 'none') return [];
   const corner = Math.max(0, Number(v.baseCornerChamfer) || 0);
-  const inset = Math.max(s.edge, s.holeDia) + s.holeDia / 2 + corner / 2;
-  const a = v.baseLength / 2 - inset, b = v.baseWidth / 2 - inset;
+  const a = v.baseLength / 2 - s.holeInset, b = v.baseWidth / 2 - s.holeInset;
   if (a <= 0 || b <= 0) return [];
-  return [[-a, -b], [a, -b], [a, b], [-a, b]];
+  // corner positions keep clear of a corner chamfer
+  const ca = a - corner / 2, cb = b - corner / 2;
+  let pts: [number, number][] = [];
+  if (s.holes === 'corners') pts = [[-ca, -cb], [ca, -cb], [ca, cb], [-ca, cb]];
+  else {
+    const row = (side: SteelBaseSpec['holeSide']) => {
+      const [dx, dy] = SIDE[side];
+      // along the edge from one corner position to the other
+      const half = dx !== 0 ? cb : ca;
+      const n = s.holeCount;
+      return Array.from({ length: n }, (_, i) => {
+        const t = n === 1 ? 0 : -half + (2 * half * i) / (n - 1);
+        return (dx !== 0 ? [dx * a, t] : [t, dy * b]) as [number, number];
+      });
+    };
+    const opposite = { back: 'front', front: 'back', left: 'right', right: 'left' } as const;
+    pts = s.holes === 'rows' ? [...row(s.holeSide), ...row(opposite[s.holeSide])] : row(s.holeSide);
+  }
+  if (s.holeStyle !== 'keyhole') return pts.map((at) => ({ at }));
+  // the round end sits below the screw point, away from the top edge
+  const [ux, uy] = SIDE[s.holeSide];
+  return pts.map((at) => ({ at, head: [at[0] - ux * s.keyLength, at[1] - uy * s.keyLength] as [number, number] }));
+}
+
+/** Outline of one fixing hole: a circle, or a keyhole (round end, slot, rounded top). */
+export function holePaths(h: FixingHole, s: SteelBaseSpec): Path[] {
+  if (!h.head) return [circlePath(h.at[0], h.at[1], s.holeDia / 2)];
+  const [x0, y0] = h.head, [x1, y1] = h.at;
+  const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+  const nx = (-(y1 - y0) / len) * (s.keySlot / 2), ny = ((x1 - x0) / len) * (s.keySlot / 2);
+  return [
+    circlePath(x0, y0, s.holeDia / 2),
+    [[x0 + nx, y0 + ny], [x1 + nx, y1 + ny], [x1 - nx, y1 - ny], [x0 - nx, y0 - ny]],
+    circlePath(x1, y1, s.keySlot / 2),
+  ];
+}
+
+/** Middle and reach of a hole, for clearance checks. */
+export function holeReach(h: FixingHole, s: SteelBaseSpec): { c: [number, number]; r: number } {
+  if (!h.head) return { c: h.at, r: s.holeDia / 2 };
+  return { c: [(h.at[0] + h.head[0]) / 2, (h.at[1] + h.head[1]) / 2], r: s.keyLength / 2 + s.holeDia / 2 };
 }

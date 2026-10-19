@@ -105,6 +105,7 @@ function formParams(prefix: 'ins' | 'src', group: string, show: (v: Values) => b
 }
 
 const hasSupport = (v: Values) => v.baseOn && v.supportMode !== 'off';
+const hasSteelHoles = (v: Values) => v.steelHoles !== '0';
 const isParallelish = (v: Values) => v.sliceMode !== 'radial';
 const isUpright = (v: Values) => v.sliceMode !== 'radial' && v.sliceMode !== 'flat';
 const isFlat = (v: Values) => v.sliceMode === 'flat';
@@ -162,8 +163,24 @@ export const PARAMS: ParamDef[] = [
   choice('steelHoles', 'Fixing holes', 'Steel base', '0', [
     { value: '0', label: 'None' },
     { value: '4', label: 'Four corners' },
-  ], { help: 'Holes to screw the base down to a plinth, shelf or wall' }),
-  num('steelHoleDia', 'Hole diameter', 'Steel base', 6.5, 2, 30, { step: 0.5, noScale: true, show: (v) => v.steelHoles !== '0' }),
+    { value: 'edge', label: 'A row along one edge' },
+    { value: 'rows', label: 'Rows along two opposite edges' },
+  ], { help: 'Holes to screw the base down to a plinth or shelf, or to hang it on a wall' }),
+  choice('steelHoleStyle', 'Hole style', 'Steel base', 'round', [
+    { value: 'round', label: 'Round (screw through)' },
+    { value: 'keyhole', label: 'Keyhole (hangs on a nail or screw)' },
+  ], { show: hasSteelHoles, help: 'Keyhole: the screw head goes through the round end, then the base slides down so the narrow slot sits on the screw. The slots point at the edge chosen below, which is the top when it hangs.' }),
+  num('steelHoleCount', 'Holes per row', 'Steel base', 2, 1, 40, { int: true, unit: '', show: (v) => v.steelHoles === 'edge' || v.steelHoles === 'rows', help: 'Spread evenly between the corner positions; one sits in the middle' }),
+  choice('steelHoleSide', 'Edge', 'Steel base', 'back', [
+    { value: 'back', label: 'Back end' },
+    { value: 'front', label: 'Front end' },
+    { value: 'left', label: 'Left side' },
+    { value: 'right', label: 'Right side' },
+  ], { show: (v) => hasSteelHoles(v) && (v.steelHoles === 'edge' || v.steelHoles === 'rows' || v.steelHoleStyle === 'keyhole'), help: 'Where the row goes (Rows: this edge and the one opposite). Keyholes point their slots at this edge: it is the top when the base hangs. Left and right are as seen from the front.' }),
+  num('steelHoleInset', 'Distance from edge', 'Steel base', 'max(steelEdge, 6) + steelHoleDia / 2', 1, 500, { show: hasSteelHoles, help: 'From the edge of the base to the middle of each hole (for a keyhole, to where the screw sits)' }),
+  num('steelHoleDia', 'Hole diameter', 'Steel base', 6.5, 2, 30, { step: 0.5, noScale: true, show: hasSteelHoles, help: 'Round holes: clearance for the screw. Keyholes: the round end, bigger than the screw head.' }),
+  num('steelKeySlot', 'Keyhole slot width', 'Steel base', 4.5, 1, 20, { step: 0.5, noScale: true, show: (v) => hasSteelHoles(v) && v.steelHoleStyle === 'keyhole', help: 'Narrow part the screw shank sits in: wider than the shank, narrower than the head' }),
+  num('steelKeyLength', 'Keyhole slot length', 'Steel base', 10, 2, 60, { step: 0.5, show: (v) => hasSteelHoles(v) && v.steelHoleStyle === 'keyhole', help: 'From the middle of the round end to where the screw sits' }),
 
   // Embedded support
   { id: 'supportOn', label: 'Embedded support on', group: 'Support', kind: 'toggle', def: true, show: (v) => v.baseOn },

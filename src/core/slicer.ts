@@ -36,8 +36,8 @@ import { sightCut, type SightCard } from './sightLine';
 import { boxBlur, distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
 import { MAX_TUNED, MIN_TUNED, tunePlates, tuningActive, type PlateTune } from './tuning';
-import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
-import { addWeldTabs, fixingHoles, steelBaseShape, steelBaseSpec, steelPlane, tabsOf, weldOrder, type SteelBaseSpec, type WeldTab } from './steelBase';
+import { addTenons, baseChamfers, planClearance, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
+import { addWeldTabs, fixingHoles, holeReach, steelBaseShape, steelBaseSpec, steelPlane, tabsOf, weldOrder, type SteelBaseSpec, type WeldTab } from './steelBase';
 import { buildSpacers, planRods, rodHardware, rodHoles, type BraceIssue, type HardwareRow, type RodPlan, type SpacerResult } from './brace';
 import { finishPlatePieces, type FragmentEvent } from './fragments';
 import { movePlane, type PartMoves } from './moves';
@@ -2007,9 +2007,12 @@ export function slice(input: SliceInput): SliceResult {
     const base = partLabel(v, 'B', 0, 1);
     const pieces = shape.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
     if (pieces.length > 1) warnings.push(`Steel base falls apart into ${pieces.length} pieces: the slots cut right across it. Raise the edge margin or space the plates out.`);
-    const holes = fixingHoles(v, steel);
-    if (holes.length && tabs.some((tb) => holes.some(([x, y]) => Math.hypot(x - tb.at[0], y - tb.at[1]) < steel.holeDia / 2 + tb.length / 2 + 2)))
-      warnings.push('Steel base: a fixing hole runs into a tab slot. Turn the holes off or shrink the plates in from the corners.');
+    const fixings = fixingHoles(v, steel);
+    const holes = fixings.map((h) => holeReach(h, steel));
+    if (holes.length && tabs.some((tb) => holes.some(({ c, r }) => Math.hypot(c[0] - tb.at[0], c[1] - tb.at[1]) < r + tb.length / 2 + 2)))
+      warnings.push('Steel base: a fixing hole runs into a tab slot. Move the holes (Distance from edge, Edge, Holes per row) or shrink the plates in from the edges.');
+    if (fixings.some((h) => [h.at, h.head].some((q) => q && planClearance(v, q[0], q[1]) < steel.holeDia / 2 + v.minFeature)))
+      warnings.push(`Steel base: a fixing hole is closer than ${v.minFeature} mm to the edge of the base. Raise Distance from edge.`);
     const web = v.sliceMode === 'parallel' ? v.pitch - t - 2 * steel.clearance : Infinity;
     if (web < v.minFeature && !steel.stagger) warnings.push(`Steel base: only ${web.toFixed(1)} mm of steel between neighbouring slots. Turn on Stagger tabs or space the plates out.`);
     const plane = steelPlane(steel);

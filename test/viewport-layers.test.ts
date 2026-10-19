@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { applyPreset, newProject, PRESETS } from '../src/core/project';
-import { DEFAULT_VIEWPORT_LAYERS, loadViewportLayers, saveViewportLayers, showBaseMesh, showInsertMesh, showObject, showRodsLayerToggle } from '../src/ui/viewportLayers';
+import { DEFAULT_VIEWPORT_LAYERS, loadViewportLayers, saveViewportLayers, showBaseMesh, showInsertMesh, showObject, showPart, showRodsLayerToggle } from '../src/ui/viewportLayers';
 import { tabOwns } from '../src/ui/ObjectsPanel';
 import { useStore } from '../src/state/store';
 
@@ -23,6 +23,16 @@ describe('viewport layer toggles', () => {
       },
     });
     Object.keys(mem).forEach((k) => delete mem[k]);
+  });
+
+  it('Base hides the steel base plate; Plates hides the plates but not the base plate', () => {
+    const base = { family: 'B' }, plate = { family: 'P' };
+    const noPlates = { ...DEFAULT_VIEWPORT_LAYERS, plates: false };
+    const noBase = { ...DEFAULT_VIEWPORT_LAYERS, base: false };
+    expect(showPart(noPlates, base)).toBe(true);
+    expect(showPart(noPlates, plate)).toBe(false);
+    expect(showPart(noBase, base)).toBe(false);
+    expect(showPart(noBase, plate)).toBe(true);
   });
 
   it('persists in sessionStorage', () => {

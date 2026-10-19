@@ -19,6 +19,7 @@ import { DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from './pri
 import type { Rod, RodPlan } from './brace';
 import { formatFragment } from './fragments';
 import { candleNote, candleShopping } from './candles';
+import { fixingHoles } from './steelBase';
 import { masterShopping } from './candleMaster';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -879,7 +880,15 @@ function assemblySteps(project: Project, m: Model, view: View, names: Map<string
       steps.push(`<b>Turn it back over</b> and dress the end tacks with a file or flap disc so they blend in.`);
       steps.push(`<b>Safety.</b> Auto-darkening helmet, leather gloves, long cotton sleeves and a clear floor. Grind with the guard on, sparks away from you, and weld somewhere airy.`);
     }
-    if (sb.spec.holes) steps.push(`<b>Fix it down</b> through the ${sb.spec.holes} corner holes (${mm(sb.spec.holeDia)}) to a plinth, shelf or wall.`);
+    const fixings = fixingHoles(v, sb.spec);
+    if (fixings.length) {
+      const sideName = { back: 'back end', front: 'front end', left: 'left side', right: 'right side' }[sb.spec.holeSide];
+      if (sb.spec.holeStyle === 'keyhole')
+        steps.push(
+          `<b>Hang it.</b> The ${plural(fixings.length, 'keyhole')} point their slots at the ${sideName}, which goes at the top. Mark the screw points (the top of each slot, ${mm(sb.spec.holeInset)} in from the edges) on the wall, drive the screws in leaving the heads ${mm(Math.max(1, sb.spec.thickness + 1))} proud, then put the heads through the round ends (${mm(sb.spec.holeDia)}) and let the base slide down onto them.`,
+        );
+      else steps.push(`<b>Fix it down</b> through the ${plural(fixings.length, 'hole')} (${mm(sb.spec.holeDia)}, ${mm(sb.spec.holeInset)} in from the edge) to a plinth, shelf or wall.`);
+    }
   } else {
     const ringStep = () => {
       const sup = m.sliced.support;

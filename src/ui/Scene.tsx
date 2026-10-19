@@ -23,7 +23,7 @@ import type { CardSight } from '../core/shelfView';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import CandleGizmo from './CandleGizmo';
 import { Candle3D, SunStudy3D } from './SunStudy';
-import { showBaseMesh, showInsertMesh, showObject, type ViewportLayers } from './viewportLayers';
+import { showBaseMesh, showInsertMesh, showObject, showPart, type ViewportLayers } from './viewportLayers';
 import { contourStep, makeHeightBandMaterial, outlineColor, outlineSegments, reliefRange, spreadOffsets, tintColor, type ViewAids } from './viewAids';
 
 export interface SceneOpts {
@@ -519,6 +519,10 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const aids = opts.viewAids;
   const tint = aids?.tint ?? 'off';
   const parts = model.sliced.parts;
+  // Plates shows and hides the plates; Base the steel base plate
+  const layers = opts.viewportLayers;
+  const shown = useMemo(() => parts.filter((p) => showPart(layers, p)), [parts, layers]);
+  const withBase = useMemo(() => (showBaseMesh(layers) ? parts : parts.filter((p) => p.family !== 'B')), [parts, layers]);
   // view aids: tinted copies of the plate materials, made once per look and colour
   const tinted = useMemo(() => {
     const out = new Map<string, THREE.Material>();
@@ -604,8 +608,9 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       )}
       {(model.sunkenFrame || v.baseOn) && showBaseMesh(L) && <Base model={model} xray={opts.xray || !!opts.ghost} />}
       <group position={[0, model.sunkenFrame?.plateLiftMm ?? 0, 0]}>
-        {L.plates &&
-          model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
+        {model.sliced.parts
+          .filter((p) => p.plateKey !== dragKey && showPart(L, p))
+          .map((p) => (
             <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} offset={offsets.get(p.id)} />
           ))}
         {/* the plate under the gizmo, carried rigidly while it is dragged */}
@@ -617,8 +622,8 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
             ))}
         </group>
         {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
-        {L.plates && (aids?.outlines || opts.ghost) && <PlateOutlines parts={parts} offsets={offsets} color={outlineColor(tint, looks[MAIN].color)} />}
-        <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} offsets={offsets} />
+        {(aids?.outlines || opts.ghost) && shown.length > 0 && <PlateOutlines parts={shown} offsets={offsets} color={outlineColor(tint, looks[MAIN].color)} />}
+        <Etches parts={withBase} engraving={showEngrave} labels={L.labels} offsets={offsets} />
         {L.rods !== false && <Rods model={model} />}
         {L.rods !== false && <StackRods model={model} />}
         {showInsertMesh(L) && <Insert model={model} />}
