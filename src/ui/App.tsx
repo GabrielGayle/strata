@@ -18,6 +18,7 @@ import HelpLayer, { HelpButton } from './Help';
 import DesignBox from './DesignBox';
 import { designShortcutFromKey } from './designShortcut';
 import { useMapTerrainBuild } from './useMapTerrainBuild';
+import { CloudField } from './CloudStatus';
 import { BusyLight, BusyWindows, useAppBusy } from './BusyWindow';
 import { isMapTerrainFailure, reportMapTerrainFailure, reportMapTerrainMessage, runFrontPipelineSafe } from './mapTerrainError';
 import { isMapDepth, mapMasterWidthMm, mapScaleMmPerM, mapTrueRangePlateMm } from '../core/mapPlateHeight';
@@ -320,6 +321,7 @@ export default function App() {
         data-strata-map-stack-capped={mapFace && model.v.sliceMode === 'flat' ? (stackCapped ? '1' : '0') : undefined}
         data-strata-map-z-max-m={mapFace && mapZMaxM != null ? String(mapZMaxM) : undefined}
         data-strata-plates-at-max={mapFace ? String(platesAtMax) : undefined}
+        data-strata-map-grid={mapFace && project.images.top?.depth ? `${project.images.top.depth.w}x${project.images.top.depth.h}` : undefined}
         data-strata-model-current={modelCurrent ? '1' : '0'}
         data-strata-model-cached={modelCurrent && cachedFrom ? cachedFrom : undefined}
         data-strata-model-ms={modelCurrent ? String(Math.round(model.totalMs)) : undefined}
@@ -370,6 +372,7 @@ export default function App() {
             </p>
           )}
           <BusyLight />
+          <CloudField />
           <p className="status-bar-field">mm</p>
           <HelpButton />
         </footer>

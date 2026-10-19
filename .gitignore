@@ -11,3 +11,6 @@ coverage
 .strata-projects
 docs/screenshots/viewport/**/_video/
 docs/screenshots/viewport/**/*.webm
+worker/dist/
+.venv-modal/
+__pycache__/

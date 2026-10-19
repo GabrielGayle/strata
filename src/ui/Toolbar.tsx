@@ -14,6 +14,7 @@ import { recordLibrarySave } from '../state/recordLibrary';
 import { isProjectZipName, projectFromZip } from '../core/projectZip';
 import { busyThen } from './busy';
 import { clearSavedResults, resultsStored, savedResultsUsage } from '../state/results';
+import { BoostSettings } from './CloudStatus';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -172,6 +173,8 @@ function SettingsMenu() {
           <div className="head">Saved results</div>
           <p className="note">Undo, Compare and reopening a design show finished results straight from this browser instead of building them again.</p>
           <SavedResults />
+          <div className="head">Boost</div>
+          <BoostSettings />
         </div>
       )}
     </Menu>

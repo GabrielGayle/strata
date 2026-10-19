@@ -69,11 +69,13 @@ export function metricBounds(bbox: MapSpec['bbox'], crs: string): { west: number
 }
 
 /** Long-edge sizes a map depth grid can take. */
-export const MAP_RESOLUTIONS = [128, 256, 384, 512, 768, 1024];
+export const MAP_RESOLUTIONS = [128, 256, 384, 512, 768, 1024, 1536, 2048];
 /** Long-edge cap for coarse sources (Terrarium, ~30 m) and the fallback when fine data is missing. */
 export const MAP_FALLBACK_MAX_PX = 512;
 /** Long-edge cap for fine sources built in the browser or the CLI. 2048 px belongs to cloud jobs. */
 export const MAP_LOCAL_MAX_PX = 1024;
+/** Long-edge cap for the cloud terrain job (Boost): fine sources only, at half the local cell. */
+export const MAP_CLOUD_MAX_PX = 2048;
 /** Model millimetres per grid cell a fine source is built at: a 500 mm model wants 1000 px, so 1024. */
 export const MAP_TARGET_MM_PER_PX = 0.5;
 
@@ -95,9 +97,15 @@ export const MAP_COARSE_RES_M = 8;
 /**
  * Grid size for a build. With Ground resolution on auto, fine sources (EA 1 m LiDAR) are cut at
  * 0.5 mm per cell on the model, up to 1024 px; coarse sources (Terrarium) keep 8 m and 512 px.
- * A typed Ground resolution is used as given, within the same caps.
+ * A typed Ground resolution is used as given, within the same caps. The cloud job passes
+ * `maxPx` 2048, which halves the auto cell (0.25 mm on the model) for fine sources only.
  */
-export function mapGridSize(spec: Pick<MapSpec, 'bbox' | 'resM'>, source: MapSource, masterWidthMm?: number): MapGridSize {
+export function mapGridSize(
+  spec: Pick<MapSpec, 'bbox' | 'resM'>,
+  source: MapSource,
+  masterWidthMm?: number,
+  maxPx: number = MAP_LOCAL_MAX_PX,
+): MapGridSize {
   const userM = Number.isFinite(spec.resM) && spec.resM > 0 ? spec.resM : null;
   const nativeM = fineSourceNativeM(source);
   if (nativeM == null) return { resM: userM ?? MAP_COARSE_RES_M, maxSide: MAP_FALLBACK_MAX_PX };
@@ -105,9 +113,9 @@ export function mapGridSize(spec: Pick<MapSpec, 'bbox' | 'resM'>, source: MapSou
   if (wantM == null) {
     const b = metricBounds(spec.bbox, pickMetricCrs(spec.bbox));
     const mm = masterWidthMm != null && masterWidthMm > 0 ? masterWidthMm : 520;
-    wantM = ((b.east - b.west) / mm) * MAP_TARGET_MM_PER_PX;
+    wantM = ((b.east - b.west) / mm) * MAP_TARGET_MM_PER_PX * (MAP_LOCAL_MAX_PX / maxPx);
   }
-  return { resM: Math.max(nativeM, wantM), maxSide: MAP_LOCAL_MAX_PX };
+  return { resM: Math.max(nativeM, wantM), maxSide: maxPx };
 }
 
 function pickOutputSize(widthM: number, heightM: number, resM: number, maxSide = MAP_FALLBACK_MAX_PX): { w: number; h: number } {

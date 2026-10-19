@@ -136,6 +136,7 @@ export function keepUserMapSettings(prev: MapSpec | undefined, next: MapSpec): M
     water: prev.water,
     layerBudget: prev.layerBudget ?? next.layerBudget,
     terraced: prev.terraced ?? next.terraced,
+    cloudRes: prev.cloudRes ?? next.cloudRes,
     engrave: { ...prev.engrave, features: [...prev.engrave.features] },
     commemorativeText: prev.commemorativeText,
     editionNumber: prev.editionNumber,

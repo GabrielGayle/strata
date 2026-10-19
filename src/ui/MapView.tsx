@@ -13,6 +13,7 @@ import { useStore } from '../state/store';
 import { useModel } from './model';
 import MapPreviewPane from './MapPreviewPane';
 import { trackBusy } from './busy';
+import { useCloud } from '../state/cloud';
 
 function sourceLabel(id: MapSource): string {
   if (id === 'auto') return 'auto (EA 1 m in England, else 30 m)';
@@ -82,6 +83,7 @@ export default function MapView() {
   const mapTerrain = useStore((s) => s.mapTerrain);
   const geom = useModel();
   const existing = project.images.top?.map;
+  const boost = useCloud((s) => s.boost);
   const frameApplies = sunkenFrameApplies(geom.v.sliceMode);
   const frameHint = frameApplies ? SUNKEN_FRAME_FLAT_HINT : SUNKEN_FRAME_FLAT_ONLY_HINT;
   const factor =
@@ -365,6 +367,24 @@ export default function MapView() {
             onChange={(e) => commit({ resM: e.target.value === '' ? MAP_RES_AUTO : Math.max(0, Number(e.target.value) || 0) })}
           />
         </label>
+        {boost && (
+          <label title="Build this map on the cloud at up to 2048 px (Environment Agency LiDAR only; Terrarium stays at 512 px). Saved projects keep a 1024 px copy. If the cloud is unavailable the map is built here at 1024 px.">
+            <input
+              type="checkbox"
+              data-testid="map-cloud-res"
+              checked={existing?.cloudRes === true}
+              disabled={!existing}
+              onChange={(e) => {
+                commit({ cloudRes: e.target.checked });
+                const cloud = useCloud.getState();
+                if (e.target.checked && (cloud.phase === 'resting' || cloud.phase === 'locked')) {
+                  useStore.getState().toast(`Cloud ${cloud.phase === 'locked' ? 'locked' : (cloud.reason ?? 'unavailable')}: building the map here at 1024 px instead`);
+                }
+              }}
+            />
+            High resolution (cloud)
+          </label>
+        )}
       </section>
 
       <section className="map-section">

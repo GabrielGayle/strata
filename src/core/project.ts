@@ -16,6 +16,7 @@ import { cleanShelf, type ShelfSpec } from './shelf';
 import { cleanCandles, type CandleSpec } from './candles';
 import { cleanOrigin, type WorldOrigin } from './origin';
 import { cleanEarthView, type EarthView } from './earthView';
+import { compactCloudAsset } from './mapTopAsset';
 
 export interface ImageAsset {
   name: string;
@@ -249,7 +250,13 @@ export function serialize(p: Project): string {
     return { ...v, images };
   }).map((v) => (v.shadow && p.shadow && JSON.stringify(v.shadow) === JSON.stringify(p.shadow) ? { ...v, shadow: SAME_IMAGE } : v));
   // compact: a 1024 px map depth plus engrave paths pretty-printed would pass 4 MB
-  return JSON.stringify({ ...p, variants });
+  return JSON.stringify({ ...p, images: compactCloudImages(p.images), variants });
+}
+
+/** Cloud-built map grids (up to 2048 px) are saved as their 1024 px copy. */
+function compactCloudImages(images: Project['images']): Project['images'] {
+  const top = compactCloudAsset(images.top);
+  return top === images.top ? images : { ...images, top };
 }
 
 function readVariants(raw: any): Variant[] {

@@ -137,7 +137,7 @@ describe('Vercel api handlers as Node ESM', () => {
     }
 
     const routes = listTs(apiRoot).filter(isApiRouteFile).map((p) => relative(apiRoot, p));
-    expect(routes).toEqual(['ea-proxy.ts', 'overpass.ts', 'projects.ts']);
+    expect(routes).toEqual(['ea-proxy.ts', 'geo.ts', 'overpass.ts', 'projects.ts']);
   });
 
   it('serves 403 for example.com and accepts environment.data.gov.uk', () => {
