@@ -107,6 +107,8 @@ const hasSupport = (v: Values) => v.baseOn && v.supportMode !== 'off';
 const isParallelish = (v: Values) => v.sliceMode !== 'radial';
 const isUpright = (v: Values) => v.sliceMode !== 'radial' && v.sliceMode !== 'flat';
 const isFlat = (v: Values) => v.sliceMode === 'flat';
+/** Waffle laid out as a closed grid: cell size drives pitch and both counts. */
+export const isGrid = (v: Values) => v.sliceMode === 'waffle' && v.waffleLayout === 'grid';
 const isMaster = (v: Values) => !!v.cmOn && v.sliceMode === 'flat' && v.stackSource === 'form';
 const hasRods = (v: Values) => isUpright(v) && v.rodsOn;
 const hasStackRods = (v: Values) => isFlat(v) && v.stackRodsOn;
@@ -250,6 +252,17 @@ export const PARAMS: ParamDef[] = [
   num('radialCount', 'Radial plates', 'Slicer', 24, 3, 180, { int: true, unit: '', show: (v) => v.sliceMode === 'radial', scaleCount: true }),
   num('radialHub', 'Hub radius', 'Slicer', 30, 0, 500, { show: (v) => v.sliceMode === 'radial' }),
   num('crossCount', 'Cross plates', 'Slicer', 'max(2, floor(plateWidth / 55))', 1, 200, { int: true, unit: '', show: (v) => v.sliceMode === 'waffle', scaleCount: true }),
+  choice('waffleLayout', 'Cross plate layout', 'Slicer', 'spread', [
+    { value: 'spread', label: 'Spread over the width' },
+    { value: 'grid', label: 'Closed grid' },
+  ], { show: (v) => v.sliceMode === 'waffle', help: 'Closed grid sets the plates out on a cell size and trims both sets to the outer plates, so they meet flush at the corners and frame one closed lattice of square, rectangular or diamond cells' }),
+  choice('gridCell', 'Cell shape', 'Slicer', 'square', [
+    { value: 'square', label: 'Equal sides' },
+    { value: 'rect', label: 'Two sizes' },
+  ], { show: isGrid, help: 'Equal sides gives squares (diamonds at other angles); two sizes gives rectangles (parallelograms)' }),
+  num('cellSize', 'Cell size', 'Slicer', 'max(4*thickness, round((acrossLength - 2*sideMargin) / 4))', 2, 1000, { step: 0.5, show: isGrid, help: 'Centre to centre of the plates; it sets the plate pitch and count' }),
+  num('cellCross', 'Cross cell size', 'Slicer', 'cellSize * 1.5', 2, 1000, { step: 0.5, show: (v) => isGrid(v) && v.gridCell === 'rect', help: 'Centre to centre of the cross plates, square to their faces' }),
+  num('gridAngle', 'Cross plate angle', 'Slicer', 90, 30, 150, { step: 1, unit: '°', noScale: true, show: (v) => v.sliceMode === 'waffle', help: 'Angle between the plates and the cross plates; the slots widen to clear a slanted plate. Spread: the slanted cross plates run corner to corner, cut off at the base. Closed grid: diamond or parallelogram cells inside a slanted frame' }),
   num('slotClearance', 'Slot allowance', 'Slicer', 0.2, 0, 3, { step: 0.05, show: (v) => v.sliceMode === 'waffle', help: 'Added to slot width (kerf allowance) for interlocking slots', noScale: true }),
   num('sampleStep', 'Profile resolution', 'Slicer', 2, 0.5, 20, { step: 0.5, noScale: true }),
   num('curveStep', 'Map profile step', 'Slicer', 0.4, 0.1, 4, { step: 0.05, noScale: true, help: 'Map faces only: how often each plate top samples the terrain' }),
@@ -812,6 +825,16 @@ export function fitOverrides(raw: Record<string, RawValue>): Record<string, stri
  */
 export function spacingOverrides(raw: Record<string, RawValue>): Record<string, string> {
   const mode = String(raw.spacingMode ?? 'fit');
+  if (String(raw.sliceMode ?? 'parallel') === 'waffle' && String(raw.waffleLayout ?? 'spread') === 'grid') {
+    // both sets on the cell size; the cross plates fill the width that stays inside the sheared frame
+    const cross = String(raw.gridCell ?? 'square') === 'rect' ? 'cellCross' : 'cellSize';
+    return {
+      pitch: 'cellSize',
+      // a slanted frame shears across the stack: its area peaks when the stack takes half the room
+      plateCount: `max(2, min(floor((stackLength - 2*endMargin) / cellSize) + 1, floor((plateWidth * sin(gridAngle) - thickness) / (2 * cellSize * abs(cos(gridAngle)) + 0.000001)) + 1))`,
+      crossCount: `max(2, floor((plateWidth * sin(gridAngle) - thickness - (plateCount - 1) * cellSize * abs(cos(gridAngle))) / ${cross}) + 1)`,
+    };
+  }
   if (mode === 'fit' || String(raw.sliceMode ?? 'parallel') === 'radial') return {};
   const out: Record<string, string> = { pitch: 'thickness + plateGap' };
   if (mode === 'gap') out.plateCount = 'floor((stackLength - 2*endMargin) / (thickness + plateGap)) + 1';
@@ -819,8 +842,10 @@ export function spacingOverrides(raw: Record<string, RawValue>): Record<string, 
 }
 
 /** Which setting drives each overridden parameter, for the panel's label. */
-export function overrideSource(id: string): 'spacing' | 'image' {
-  return id === 'pitch' || id === 'plateCount' ? 'spacing' : 'image';
+export function overrideSource(id: string, raw?: Record<string, RawValue>): 'spacing' | 'grid' | 'image' {
+  if (id === 'crossCount') return 'grid';
+  if (id === 'pitch' || id === 'plateCount') return raw && String(raw.sliceMode) === 'waffle' && String(raw.waffleLayout) === 'grid' ? 'grid' : 'spacing';
+  return 'image';
 }
 
 export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'imgAspect', 'frontAspect', 'sideAspect'];

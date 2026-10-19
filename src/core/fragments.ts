@@ -1,6 +1,6 @@
 // Sub-minimum and unsupported plate fragments: merge into a touching parent,
 // drop, or keep as their own laser parts.
-import { bboxOf, difference, intersection, offset, shapeArea, unionShapes, type ExPoly, type Shape } from './geom2d';
+import { bboxOf, difference, intersection, offset, shapeArea, shapePerimeter, unionShapes, type ExPoly, type Shape } from './geom2d';
 import type { Values } from './params';
 
 export type FragmentMode = 'auto' | 'merge' | 'drop' | 'keep';
@@ -35,11 +35,21 @@ export function morphClose(s: Shape, width: number, join: 'miter' | 'round' = 'm
   return offset(offset(s, width / 2, join), -width / 2, join);
 }
 
-/** Voids the kerf check reports: closing minus the original, ignoring Clipper dust. */
+/**
+ * Voids the kerf check reports: closing minus the original, ignoring Clipper dust. Dust along a
+ * long straight edge can pass the area test, so a void must also average a micron or more across
+ * (twice its area over its perimeter).
+ */
 export function kerfGapRegions(s: Shape, kerf: number): Shape {
   if (kerf <= 0 || !s.length) return [];
-  return difference(morphClose(s, kerf), s).filter((e) => shapeArea([e]) > kerf * kerf * 4);
+  return difference(morphClose(s, kerf), s).filter((e) => {
+    const a = shapeArea([e]);
+    return a > kerf * kerf * 4 && (2 * a) / shapePerimeter([e]) > GAP_DUST_WIDTH;
+  });
 }
+
+/** Mean width below which a closing-minus-original sliver is rounding, not a gap (mm). */
+const GAP_DUST_WIDTH = 0.005;
 
 /** Material the min-feature check reports: original minus opening, ignoring Clipper dust. */
 export function thinFeatureRegions(s: Shape, mf: number): Shape {

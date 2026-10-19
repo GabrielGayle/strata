@@ -338,6 +338,8 @@ export function plateDefs(v: Values): PlateDef[] {
       u1: w / 2,
     });
   }
+  if (v.sliceMode === 'waffle' && v.waffleLayout === 'grid') return gridDefs(v, defs, f, top);
+  if (v.sliceMode === 'waffle' && Math.abs(gridAngleRad(v) - Math.PI / 2) > 1e-6) return slantedSpreadDefs(v, defs, f, top);
   if (v.sliceMode === 'waffle') {
     const m = v.crossCount;
     const cp = w / m;
@@ -354,6 +356,113 @@ export function plateDefs(v: Values): PlateDef[] {
         u1: ext,
       });
     }
+  }
+  return defs;
+}
+
+/** Angle between a waffle's plates and its cross plates, in radians. */
+export const gridAngleRad = (v: Values) => (v.sliceMode === 'waffle' ? (Math.min(150, Math.max(30, Number(v.gridAngle) || 90)) * Math.PI) / 180 : Math.PI / 2);
+
+/**
+ * Width of an interlocking slot along a plate's face: the crossing plate's own thickness seen
+ * at the grid angle, plus how far it drifts across this plate's thickness, plus the allowance.
+ */
+export function waffleSlotWidth(v: Values): number {
+  const th = gridAngleRad(v);
+  const t = v.thickness;
+  return t / Math.sin(th) + t * Math.abs(Math.cos(th) / Math.sin(th)) + v.slotClearance;
+}
+
+/**
+ * Closed grid: the main plates sit on the cell size, the cross plates cross them at the grid
+ * angle on their own cell size, and every plate stops at the outer face of the outermost plate
+ * of the other set, so the outer plates frame the lattice and meet as half laps at the corners.
+ * Plan coordinates (s along the stack, a across); a cross plate is the line n·(s, a) = c.
+ */
+function gridDefs(v: Values, defs: PlateDef[], f: ReturnType<typeof stackFrame>, top: number): PlateDef[] {
+  const th = gridAngleRad(v);
+  const sin = Math.sin(th), cos = Math.cos(th);
+  const t = v.thickness;
+  const world = (s: number, a: number): V3 => [s * f.stack[0] + a * f.across[0], top, s * f.stack[1] + a * f.across[1]];
+  const n2: [number, number] = [-cos, sin];
+  const d2: [number, number] = [sin, cos];
+  const P = defs.filter((d) => d.family === 'P');
+  const ss = P.map((d) => d.plane.origin[0] * f.stack[0] + d.plane.origin[2] * f.stack[1]);
+  const sMin = Math.min(...ss), sMax = Math.max(...ss);
+  const m = Math.max(2, Math.round(v.crossCount));
+  const pc = v.gridCell === 'rect' ? v.cellCross : v.cellSize;
+  const cs = Array.from({ length: m }, (_, j) => (j - (m - 1) / 2) * pc);
+  const reach = t / 2 / sin;
+  // main plates: from the first cross plate to the last, out to its outer face
+  for (const d of P) {
+    const s = d.plane.origin[0] * f.stack[0] + d.plane.origin[2] * f.stack[1];
+    const sgn = d.plane.u[0] * f.across[0] + d.plane.u[2] * f.across[1] >= 0 ? 1 : -1;
+    const as = cs.map((c) => (c + s * cos) / sin);
+    const a0 = Math.min(...as) - reach, a1 = Math.max(...as) + reach;
+    d.u0 = sgn > 0 ? a0 : -a1;
+    d.u1 = sgn > 0 ? a1 : -a0;
+  }
+  cs.forEach((c, j) => {
+    const plane = makePlane(world(c * n2[0], c * n2[1]), [n2[0] * f.stack[0] + n2[1] * f.across[0], 0, n2[0] * f.stack[1] + n2[1] * f.across[1]]);
+    const dw: V3 = [d2[0] * f.stack[0] + d2[1] * f.across[0], 0, d2[0] * f.stack[1] + d2[1] * f.across[1]];
+    const sgn = plane.u[0] * dw[0] + plane.u[2] * dw[2] >= 0 ? 1 : -1;
+    // along the cross plate τ, its s is -c·cos + τ·sin
+    const t0 = (sMin + c * cos) / sin - reach, t1 = (sMax + c * cos) / sin + reach;
+    defs.push({ key: `X${j}`, family: 'X', index: j, count: m, plane, u0: sgn > 0 ? t0 : -t1, u1: sgn > 0 ? t1 : -t0 });
+  });
+  return defs;
+}
+
+/**
+ * Spread waffle with slanted cross plates: the plates keep their full width and the cross
+ * plates cross them at the grid angle, spread evenly and cut off where they meet the edge of
+ * the stack, so the two blocks of plates interpenetrate. Cross plates near the corners would be
+ * stubs, so they are spread only over the offsets where a cross plate is at least two plate
+ * pitches long.
+ */
+function slantedSpreadDefs(v: Values, defs: PlateDef[], f: ReturnType<typeof stackFrame>, top: number): PlateDef[] {
+  const th = gridAngleRad(v);
+  const sin = Math.sin(th), cos = Math.cos(th);
+  const n = v.plateCount, w = v.plateWidth;
+  const ext = Math.min(((n - 1) / 2) * v.pitch + v.pitch / 2, f.stackLen / 2 - Math.min(v.sideMargin, f.stackLen / 4));
+  const n2: [number, number] = [-cos, sin];
+  const d2: [number, number] = [sin, cos];
+  // the cross plate n·(s, a) = c, clipped to |s| ≤ ext, |a| ≤ w/2, as a range of τ along d
+  const clip = (c: number): [number, number] | null => {
+    let lo = -Infinity, hi = Infinity;
+    for (const [k, half, o] of [[0, ext, c * n2[0]], [1, w / 2, c * n2[1]]] as const) {
+      const dk = d2[k];
+      if (Math.abs(dk) < 1e-9) {
+        if (Math.abs(o) > half) return null;
+        continue;
+      }
+      const a = (-half - o) / dk, b = (half - o) / dk;
+      lo = Math.max(lo, Math.min(a, b));
+      hi = Math.min(hi, Math.max(a, b));
+    }
+    return hi > lo ? [lo, hi] : null;
+  };
+  const corner = Math.abs(ext * cos) + (w / 2) * sin;
+  const minLen = Math.min(2 * v.pitch, corner);
+  // longest cross plates are in the middle, so the usable offsets form one band |c| ≤ cMax
+  let a = 0, b = corner;
+  for (let k = 0; k < 40; k++) {
+    const mid = (a + b) / 2;
+    const r = clip(mid);
+    if (r && r[1] - r[0] >= minLen) a = mid;
+    else b = mid;
+  }
+  const m = Math.max(1, Math.round(v.crossCount));
+  const cp = (2 * a) / m;
+  const world = (s: number, aa: number): V3 => [s * f.stack[0] + aa * f.across[0], top, s * f.stack[1] + aa * f.across[1]];
+  for (let j = 0; j < m; j++) {
+    const c = -a + cp * (j + 0.5);
+    const r = clip(c);
+    if (!r) continue;
+    const plane = makePlane(world(c * n2[0], c * n2[1]), [n2[0] * f.stack[0] + n2[1] * f.across[0], 0, n2[0] * f.stack[1] + n2[1] * f.across[1]]);
+    const dw: V3 = [d2[0] * f.stack[0] + d2[1] * f.across[0], 0, d2[0] * f.stack[1] + d2[1] * f.across[1]];
+    const sgn = plane.u[0] * dw[0] + plane.u[2] * dw[2] >= 0 ? 1 : -1;
+    defs.push({ key: `X${j}`, family: 'X', index: j, count: m, plane, u0: sgn > 0 ? r[0] : -r[1], u1: sgn > 0 ? r[1] : -r[0] });
   }
   return defs;
 }
@@ -1309,7 +1418,10 @@ export function slice(input: SliceInput): SliceResult {
   if (input.mapTerrain) {
     for (const d of homeDefs) {
       if (d.family !== 'P') continue;
-      d.plane = orientMapPlatePlane(d.plane);
+      const plane = orientMapPlatePlane(d.plane);
+      // u turns round, so the span does too (a closed grid's spans aren't centred)
+      if (plane !== d.plane) [d.u0, d.u1] = [-d.u1, -d.u0];
+      d.plane = plane;
     }
   }
   const defs = placeDefs(homeDefs, input.moves);
@@ -1403,7 +1515,7 @@ export function slice(input: SliceInput): SliceResult {
   // 2. waffle slots (computed from the shared intersection line, so both halves agree)
   const slots: Shape[] = defs.map(() => []);
   if (v.sliceMode === 'waffle') {
-    const sw = t + v.slotClearance;
+    const sw = waffleSlotWidth(v);
     defs.forEach((p, pi) => {
       if (p.family !== 'P') return;
       defs.forEach((x, xi) => {
@@ -1431,6 +1543,14 @@ export function slice(input: SliceInput): SliceResult {
         slots[xi].push(...rect(xa, -BIG, xb, half));
       });
     });
+    if (v.waffleLayout === 'grid') {
+      const sin = Math.sin(gridAngleRad(v));
+      const side = Math.min(v.cellSize, v.gridCell === 'rect' ? v.cellCross : v.cellSize) / sin;
+      if (sw + v.minFeature > side) warnings.push(`Closed grid: the slots (${sw.toFixed(1)} mm wide at ${Math.round(v.gridAngle)}°) leave less than ${v.minFeature} mm of steel between crossings; open the angle or make the cells bigger.`);
+      const room = v.plateWidth * sin - t - (v.plateCount - 1) * v.cellSize * Math.abs(Math.cos(gridAngleRad(v)));
+      const pc = v.gridCell === 'rect' ? v.cellCross : v.cellSize;
+      if ((v.crossCount - 1) * pc > room + 1e-6) warnings.push(`Closed grid: ${v.crossCount} cross plates at ${pc} mm don't fit inside the plate width at ${Math.round(v.gridAngle)}°, so the grid runs past the side margins; make the cells smaller or the angle closer to 90°.`);
+    }
   }
 
   // threaded rods through the embedded tabs

@@ -234,7 +234,7 @@ function positionText(m: Model, view: View, p: Part): string {
     return `layer ${p.index + 1}: ${n1(y0)}–${mm(y0 + p.thickness)} up`;
   }
   if (p.family === 'P') return `${mm(b + view.stackLen / 2)} from front`;
-  if (p.family === 'X') return `${mm(x + view.acrossLen / 2)} from left`;
+  if (p.family === 'X') return `${mm(x + view.acrossLen / 2)} from left${slanted(m.v) ? `, at ${Math.round(m.v.gridAngle)}° to the plates` : ''}`;
   if (p.family === 'R') {
     const [ux, ub] = [p.plane.u[0] * view.right[0] + p.plane.u[2] * view.right[1], p.plane.u[0] * view.back[0] + p.plane.u[2] * view.back[1]];
     const deg = ((Math.atan2(-ux, -ub) * 180) / Math.PI + 360) % 360;
@@ -757,6 +757,8 @@ export function angledPlatePathCount(project: Project, m: Model, opts: { turn?: 
 
 // --- sections -----------------------------------------------------------------------
 
+const slanted = (v: Model['v']) => v.sliceMode === 'waffle' && Math.abs(v.gridAngle - 90) > 0.01;
+
 function modeText(m: Model, mains: PlateInfo[]): string {
   const v = m.v;
   const n = mains.length;
@@ -764,7 +766,9 @@ function modeText(m: Model, mains: PlateInfo[]): string {
     case 'radial':
       return `Radial: ${n} plates round a ${mm(v.radialHub)} hub`;
     case 'waffle':
-      return `Waffle: ${mains.filter((p) => p.def.family === 'P').length} plates interlocking with ${mains.filter((p) => p.def.family === 'X').length} cross plates`;
+      if (v.waffleLayout === 'grid')
+        return `Closed grid: ${mains.filter((p) => p.def.family === 'P').length} plates × ${mains.filter((p) => p.def.family === 'X').length} cross plates, ${n1(v.cellSize)} × ${mm(v.gridCell === 'rect' ? v.cellCross : v.cellSize)} cells at ${Math.round(v.gridAngle)}°`;
+      return `Waffle: ${mains.filter((p) => p.def.family === 'P').length} plates interlocking with ${mains.filter((p) => p.def.family === 'X').length} cross plates${slanted(v) ? ` at ${Math.round(v.gridAngle)}°` : ''}`;
     case 'flat':
       return `Flat stack: ${n} layers glued face to face`;
     default:
@@ -869,7 +873,7 @@ function assemblySteps(project: Project, m: Model, view: View, names: Map<string
     if (!slot) {
       if (v.sliceMode === 'waffle') {
         steps.push(
-          `<b>Assemble the grid off the base.</b> Stand the ${P.length} long plates (${nm(P[0])} … ${nm(P[P.length - 1])}) in order, then lower the ${X.length} cross plates (${X.length ? `${nm(X[0])} … ${nm(X[X.length - 1])}` : ''}) over them from above so each pair of slots meets half way. Check it square.`,
+          `<b>Assemble the grid off the base.</b> Stand the ${P.length} long plates (${nm(P[0])} … ${nm(P[P.length - 1])}) in order, then lower the ${X.length} cross plates (${X.length ? `${nm(X[0])} … ${nm(X[X.length - 1])}` : ''}) over them from above so each pair of slots meets half way. ${slanted(v) ? `Check the cross plates sit at ${Math.round(v.gridAngle)}° to the long plates (the slots are wider than the steel at a slant, so set the angle with a bevel gauge before the concrete).` : 'Check it square.'}`,
         );
         steps.push(`<b>Lower the grid into the mould</b> as one piece${into}${insert ? ', over the insert' : ''}. There is no jig board for a waffle: prop or clamp it level until the concrete takes it.`);
       } else if (v.sliceMode === 'radial') {
