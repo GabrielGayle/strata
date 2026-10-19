@@ -185,6 +185,25 @@ describe('candles on a map', () => {
       expect(bottom).toBeLessThan(Math.max(...tops));
     }
   });
+
+  it('slots target fins onto the terrain instead of clearing a hole for them down to the concrete', () => {
+    const { depth } = mapGridToDepth(syntheticConeGrid(48, 24, 18), { exaggeration: 5, bbox: NEASDEN_FAST_BBOX });
+    const p = newProject();
+    p.params = { ...p.params, baseLength: '600', baseWidth: '600', plateCount: '60', thickness: '3', stackHeight: '200' };
+    p.images.top = { name: 'Map', dataUrl: 'data:image/png;base64,xx', map: defaultMapSpec({ bbox: NEASDEN_FAST_BBOX, title: 'Cone' }), depth };
+    const a = { sideImg: null, frontImg: null, topImg: mapDepthToGray(depth), insMesh: null, srcMesh: null };
+    const bare = createPipeline()(p, a);
+    const m = createPipeline()({ ...p, candles: { ...DEFAULT_CANDLES, holder: 'target' } }, a);
+    const area = (mm: typeof m) => mm.sliced.parts.filter((q) => q.family === 'P').reduce((s, q) => s + q.area, 0);
+    // the plates keep their terrain, just cut for the cups and fin slots (a well per candlestick took 6% of it here)
+    expect(area(m)).toBeGreaterThan(area(bare) * 0.97);
+    expect(m.objects.some((o) => o.object.id.startsWith('well'))).toBe(false);
+    const sticks = m.objects.filter((o) => o.object.id.startsWith('candle') && o.object.holder).map((o) => o.object);
+    expect(sticks.length).toBe(5);
+    expect(sticks.every((o) => o.holder!.slotted)).toBe(true);
+    // the fins hang from the candle into the plates, they don't stand up from the concrete
+    for (const f of m.sliced.parts.filter((q) => q.family === 'K')) expect(f.bbox.minY).toBeGreaterThan(0);
+  });
 });
 
 import { candleSpots, localToSpot, spotToLocal } from '../src/core/candles';

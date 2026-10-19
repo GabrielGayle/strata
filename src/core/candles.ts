@@ -574,7 +574,10 @@ export function candleObjects(spec0: CandleSpec | undefined, baseTop: number, on
     const z = spec.z + bz;
     const crown = closed ? 0 : 1 - (2 * f - 1) ** 2;
     const yb = baseTop + spec.lift + spec.crown * crown + spec.ramp * f;
-    const holder: Holder = c.tealight ? c.holder ?? 'socket' : c.holder ?? spec.holder;
+    const chosen: Holder = c.tealight ? c.holder ?? 'socket' : c.holder ?? spec.holder;
+    // sitting into the plates, target fins can't stand in the concrete: their well would clear a hole
+    // through the terrain from the concrete up, so they slot onto the plates instead and the terrain stays whole
+    const holder: Holder = onSurface && chosen === 'target' ? 'slotted' : chosen;
     const grip = c.tealight ? Math.min(spec.cup, c.h - 1) : Math.min(spec.grip, c.h - 2);
     const id = `candle${i + 1}`;
     const sink = onSurface ? { sink: grip } : {};
