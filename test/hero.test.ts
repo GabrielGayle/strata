@@ -13,7 +13,7 @@ import { artifactPath, geoJobKey, heroPrice, inputPartPath, validateGeoJobReques
 import { main as cli } from '../src/cli';
 import { runHeroModel, runPackJob } from '../src/cloudJobs';
 import { buildZip } from '../src/core/exporters';
-import { currentHero, defaultHeroCamera, heroFingerprint, heroGlb, heroScene, readHeroPng, stampHeroPng, type SavedHero } from '../src/core/hero';
+import { currentHero, defaultHeroCamera, heroFingerprint, heroGlb, heroScene, readHeroPng, stampHeroPng, windOutward, type SavedHero } from '../src/core/hero';
 import { createPipeline } from '../src/core/pipeline';
 import { deserialize, serialize, type Project } from '../src/core/project';
 import { resultKey } from '../src/core/resultCache';
@@ -235,5 +235,16 @@ describe('/api/geo for hero renders', () => {
     const art = await handleGeoApi({ method: 'GET', path: `artifacts/${key}/hero.png`, query: { part: '0' }, authorization: auth }, { env, fetch, cache: cache(files) });
     expect(art.status).toBe(200);
     expect(readHeroPng(art.bytes!)).toMatchObject({ fingerprint: 'f' });
+  });
+});
+
+describe('windOutward', () => {
+  it('rewinds a clockwise triangle to face its normals and leaves a good one alone', () => {
+    const up = [0, 0, 1, 0, 0, 1, 0, 0, 1];
+    const ccw = [0, 0, 0, 1, 0, 0, 0, 1, 0];
+    const cw = [0, 0, 0, 0, 1, 0, 1, 0, 0];
+    const [p, n] = windOutward(new Float32Array([...ccw, ...cw]), new Float32Array([...up, ...up]));
+    expect(Array.from(p)).toEqual([...ccw, ...ccw]);
+    expect(Array.from(n)).toEqual([...up, ...up]);
   });
 });

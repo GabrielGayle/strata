@@ -116,7 +116,7 @@ def plate_material(ex: dict):
         rough = ramp(nt, nz.outputs["Fac"], [(0.3, (0.95,) * 3 + (1,)), (0.75, (0.7,) * 3 + (1,))])
         nt.links.new(rough.outputs["Color"], bsdf.inputs["Roughness"])
         bump(nt, bsdf, nz.outputs["Fac"], 0.25, 0.0004)
-    elif finish in ("brushed", "mill") and metal in ("steel", "aluminium"):
+    elif finish == "brushed" and metal in ("steel", "aluminium"):
         bsdf.inputs["Base Color"].default_value = (*look, 1)
         tc = nt.nodes.new("ShaderNodeTexCoord")
         mp = nt.nodes.new("ShaderNodeMapping")
@@ -129,6 +129,13 @@ def plate_material(ex: dict):
         bump(nt, bsdf, nz.outputs["Fac"], 0.08, 0.0002)
     else:
         bsdf.inputs["Base Color"].default_value = (*look, 1)
+        if metal == "steel" and finish in ("", "mill", "blackened"):
+            # bare mild steel has a dull mill scale: as glossy as the app's preview it mirrors the
+            # next plate along and a dense stack renders black
+            bsdf.inputs["Metallic"].default_value = min(base["metallic"], 0.6)
+            nz = noise(nt, 120.0, 6.0)
+            rough = ramp(nt, nz.outputs["Fac"], [(0.35, (0.5,) * 3 + (1,)), (0.7, (0.68,) * 3 + (1,))])
+            nt.links.new(rough.outputs["Color"], bsdf.inputs["Roughness"])
     return m
 
 
@@ -280,6 +287,8 @@ def main(argv: list[str]) -> None:
     cam.data.clip_start = span / 1000
     cam.data.clip_end = span * 200
     cam.data.sensor_fit = "VERTICAL"
+    # everything in focus: a model this small blurs to mush at the back with any depth of field
+    cam.data.dof.use_dof = False
 
     w, h = int(settings.get("width", 1600)), int(settings.get("height", 1067))
     sc.render.resolution_x, sc.render.resolution_y = w, h
@@ -287,7 +296,16 @@ def main(argv: list[str]) -> None:
     sc.cycles.samples = int(settings.get("samples", 256))
     sc.cycles.use_adaptive_sampling = True
     sc.cycles.adaptive_threshold = 0.02
+    # thin plate edges shimmer into moiré: a wider pixel filter and an edge-aware denoise keep
+    # them as fine lines rather than smearing or striping them
+    sc.cycles.filter_width = 2.0
     sc.cycles.use_denoising = True
+    try:
+        sc.cycles.denoiser = "OPENIMAGEDENOISE"
+        sc.cycles.denoising_input_passes = "RGB_ALBEDO_NORMAL"
+        sc.cycles.denoising_prefilter = "ACCURATE"
+    except (AttributeError, TypeError):
+        pass
     sc.cycles.max_bounces = 8
     sc.cycles.caustics_reflective = False
     sc.cycles.caustics_refractive = False
