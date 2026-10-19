@@ -25,6 +25,7 @@ const LOAD: Record<Tab, () => Promise<{ default: ComponentType }>> = {
   graph: () => import('./GraphView'),
   nodes: () => import('./NodesView'),
   compare: () => import('./CompareView'),
+  impress: () => import('./ImpressView'),
 };
 const VIEWS = Object.fromEntries(Object.entries(LOAD).map(([t, load]) => [t, lazy(load)])) as Record<Tab, LazyExoticComponent<ComponentType>>;
 /** Start fetching a view before it is opened (repeat calls are free). */

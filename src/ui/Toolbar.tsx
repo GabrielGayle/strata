@@ -362,6 +362,11 @@ export default function Toolbar() {
         </button>
       </div>
       <div className="group">
+        <button className="tb" data-testid="impress-open" onClick={() => setUi({ tab: 'impress' })} title="Press a picture into the top surface or the front face: click it into place, size, turn and set its depth in 3D, with an x-ray of the cut">
+          Impress image
+        </button>
+      </div>
+      <div className="group">
         <Menu label="Presets">
           {(close) => (
             <ul className="tree-view">

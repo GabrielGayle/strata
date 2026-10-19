@@ -172,6 +172,12 @@ export interface SliceResult {
   warnings: string[];
   front: FrontWindow | null;
   top: TopWindow | null;
+  /**
+   * Where an image could go, whether or not one is loaded: the whole top surface and
+   * front face (Impress image places pictures on these), and the lowest plate top on
+   * the top surface (flat impression floors are measured down from it).
+   */
+  areas?: { top: TopWindow | null; front: FrontWindow | null; topDatum: number | null };
   support: SupportSpec | null;
   /** Target note per plate (aligned with `plates`), when Tuning is on. */
   tuning: (PlateTune | null)[] | null;
@@ -615,13 +621,9 @@ interface FrontCtx {
 function frontContext(v: Values, img: Gray | null, defs: PlateDef[], hf: HeightField | null, lowestTop: number | null = null): FrontCtx | null {
   if (!img || v.sliceMode !== 'parallel') return null;
   if (v.imgFrontMode === 'off' && v.etchMode === 'off') return null;
-  const p = defs.find((d) => d.family === 'P');
-  if (!p) return null;
-  const m = v.frontMargin;
-  const u0 = p.u0 + m, u1 = p.u1 - m;
-  const topV = lowestTop ?? (hf ? hf.min : v.stackHeight);
-  const v0 = m, v1 = topV - m;
-  if (u1 - u0 < 5 || v1 - v0 < 5) return null;
+  const area = frontArea(v, defs, hf, lowestTop);
+  if (!area) return null;
+  const { u0, u1, v0, v1 } = area;
   const ar = img.w / img.h;
   const w = u1 - u0, h = v1 - v0;
   let win: FrontWindow;
@@ -633,6 +635,19 @@ function frontContext(v: Values, img: Gray | null, defs: PlateDef[], hf: HeightF
     win = { u0, u1, v0: (v0 + v1) / 2 - fh / 2, v1: (v0 + v1) / 2 + fh / 2 };
   }
   return { img, win };
+}
+
+/** The whole front face a front image can cover (inside the front frame), in the front plate's coords. */
+export function frontArea(v: Values, defs: PlateDef[], hf: HeightField | null, lowestTop: number | null = null): FrontWindow | null {
+  if (v.sliceMode !== 'parallel') return null;
+  const p = defs.find((d) => d.family === 'P');
+  if (!p) return null;
+  const m = v.frontMargin;
+  const u0 = p.u0 + m, u1 = p.u1 - m;
+  const topV = lowestTop ?? (hf ? hf.min : v.stackHeight);
+  const v0 = m, v1 = topV - m;
+  if (u1 - u0 < 5 || v1 - v0 < 5) return null;
+  return { u0, u1, v0, v1 };
 }
 
 /** Darkness 0..1 of the front image at plate coords. Looking at the stack from the front, image-right is -u. */
@@ -753,6 +768,28 @@ export interface TopWindow {
  * image right = right when standing at the front, image top = the far end.
  */
 export function topWindow(v: Values, img: Gray, defs: PlateDef[]): TopWindow | null {
+  const area = topArea(v, defs);
+  if (!area) return null;
+  const { right, stack } = area;
+  let { r0, r1, s0, s1 } = area;
+  const turns = ((Math.round(Number(v.topRotate) / 90) % 4) + 4) % 4;
+  const ar = turns % 2 ? img.h / img.w : img.w / img.h; // on-surface width runs along `right`, height along `stack`
+  let w = r1 - r0, h = s1 - s0;
+  if (w / h > ar) w = h * ar;
+  else h = w / ar;
+  w *= v.topScale;
+  h *= v.topScale;
+  const cr = (r0 + r1) / 2 + v.topX * right[0] + v.topZ * right[1];
+  const cs = (s0 + s1) / 2 + v.topX * stack[0] + v.topZ * stack[1];
+  return { right, stack, r0: cr - w / 2, r1: cr + w / 2, s0: cs - h / 2, s1: cs + h / 2, turns };
+}
+
+/**
+ * The whole top surface a top image can cover (inside the top margin), upright
+ * and unturned: what the window would be for an image of exactly its proportions
+ * at full size with no offset.
+ */
+export function topArea(v: Values, defs: PlateDef[]): TopWindow | null {
   if (!defs.length) return null;
   // flat layers: the window spans the footprint; upright plates: the ends of every plate
   const pts: V3[] =
@@ -780,16 +817,7 @@ export function topWindow(v: Values, img: Gray, defs: PlateDef[]): TopWindow | n
   s0 += m;
   s1 -= m;
   if (r1 - r0 < 2 || s1 - s0 < 2) return null;
-  const turns = ((Math.round(Number(v.topRotate) / 90) % 4) + 4) % 4;
-  const ar = turns % 2 ? img.h / img.w : img.w / img.h; // on-surface width runs along `right`, height along `stack`
-  let w = r1 - r0, h = s1 - s0;
-  if (w / h > ar) w = h * ar;
-  else h = w / ar;
-  w *= v.topScale;
-  h *= v.topScale;
-  const cr = (r0 + r1) / 2 + v.topX * right[0] + v.topZ * right[1];
-  const cs = (s0 + s1) / 2 + v.topX * stack[0] + v.topZ * stack[1];
-  return { right, stack, r0: cr - w / 2, r1: cr + w / 2, s0: cs - h / 2, s1: cs + h / 2, turns };
+  return { right, stack, r0, r1, s0, s1, turns: 0 };
 }
 
 /** Image coordinates (0..1, y down) of a world point, or null outside the image. */
@@ -1562,7 +1590,20 @@ export function slice(input: SliceInput): SliceResult {
   const rodMiss: number[] = rods ? rods.rods.map(() => 0) : [];
   let rodMissKey: string | undefined;
 
-  const front = frontContext(v, input.front, homeDefs, hf, tunes ? Math.min(...tunes.map((t) => t.cut)) : null);
+  const lowestTune = tunes ? Math.min(...tunes.map((t) => t.cut)) : null;
+  const front = frontContext(v, input.front, homeDefs, hf, lowestTune);
+  const areaTop = input.mapTerrain ? null : topArea(v, homeDefs);
+  let areaDatum = Infinity;
+  if (areaTop && !isFlat)
+    homeDefs.forEach((d, di) => {
+      for (let u = d.u0; u <= d.u1; u += 4) {
+        const p = planeToWorld(d.plane, u, 0);
+        if (!topUV(areaTop, p)) continue;
+        const t = topAt(outlines[di], u);
+        if (t !== null && t > 0) areaDatum = Math.min(areaDatum, t);
+      }
+    });
+  const areas = { top: areaTop, front: frontArea(v, homeDefs, hf, lowestTune), topDatum: Number.isFinite(areaDatum) ? areaDatum : null };
   // datum for flat impression floors: the lowest plate top inside the image window
   let topDatum = Infinity;
   if (topWin && !isFlat)
@@ -1987,5 +2028,5 @@ export function slice(input: SliceInput): SliceResult {
     const ring = v.cmFrame > 0 ? candleMaster.inner.w : Infinity;
     for (const p of allParts) if (p.index === top && p.bbox.maxX - p.bbox.minX < ring) p.labelPaths = [];
   }
-  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, support, tuning, brace, stackRods, roundSpots: spots, candleMaster };
+  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, areas, support, tuning, brace, stackRods, roundSpots: spots, candleMaster };
 }
