@@ -292,18 +292,18 @@ export function createFrontPipeline(options: FrontOptions = {}) {
       v.stackSource === 'form' || v.unfoldTarget === 'source' ? mkForm('src', assets.srcMesh) : null,
     );
     const opts = () => ({ contrast: v.imgContrast, smooth: v.imgSmooth, blur: blurSpec(v), invert: v.imgInvert, rotate: Number(v.imgRotate) });
-    const processFace = (img: Gray | null, isMap: boolean) => {
+    const processFace = (img: Gray | null, isMap: boolean, isDepth = false) => {
       if (!img) return null;
       if (isMap) return img;
-      return processImage(img, opts());
+      return processImage(img, { ...opts(), soft: isDepth });
     };
-    const sideImg = stage('Side image', [assets.sideImg, ...pick(v, IMG_KEYS), !!project.images.side?.map], () =>
-      processFace(assets.sideImg, !!project.images.side?.map),
+    const sideImg = stage('Side image', [assets.sideImg, ...pick(v, IMG_KEYS), !!project.images.side?.map, !!project.images.side?.depth], () =>
+      processFace(assets.sideImg, !!project.images.side?.map, !!project.images.side?.depth),
     );
-    const frontImg = stage('Front image', [assets.frontImg, ...pick(v, IMG_KEYS), !!project.images.front?.map], () =>
-      processFace(assets.frontImg, !!project.images.front?.map),
+    const frontImg = stage('Front image', [assets.frontImg, ...pick(v, IMG_KEYS), !!project.images.front?.map, !!project.images.front?.depth], () =>
+      processFace(assets.frontImg, !!project.images.front?.map, !!project.images.front?.depth),
     );
-    const topImg = stage('Top image', [assets.topImg ?? null, ...pick(v, IMG_KEYS), !!mapTop], () => processFace(assets.topImg ?? null, !!mapTop));
+    const topImg = stage('Top image', [assets.topImg ?? null, ...pick(v, IMG_KEYS), !!mapTop, !!project.images.top?.depth], () => processFace(assets.topImg ?? null, !!mapTop, !!project.images.top?.depth));
     const topMask = stage('Top silhouette', [assets.topImg ?? null, v.topOutline, v.topThreshold, v.imgRotate, !!mapTop], () =>
       !mapTop && assets.topImg && v.topOutline !== 'off' ? silhouetteMask(rotate(assets.topImg, Number(v.imgRotate)), String(v.topOutline), v.topThreshold) : null,
     );

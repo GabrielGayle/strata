@@ -19,6 +19,31 @@ export interface ImageOpts {
   blur?: BlurSpec;
   invert: boolean;
   rotate: number; // 0 | 90 | 180 | 270
+  /** Depth maps: contrast eases into black and white instead of clipping, so the highest and lowest forms stay round. */
+  soft?: boolean;
+}
+
+/**
+ * Contrast for a depth map: the straight stretch in the middle, and instead of
+ * clipping, a knee at each end that bends the stretched range onto exactly 0..1
+ * (rising all the way, level only at the very brightest and darkest point), so
+ * the highest and lowest forms keep their shape and the backdrop stays 0.
+ */
+export function softContrast(v: number, contrast: number): number {
+  const c = Math.max(1, contrast);
+  const x = (v - 0.5) * c + 0.5;
+  if (c === 1) return Math.min(1, Math.max(0, x));
+  const w = Math.min(0.5, Math.max(0.1, (c - 1) / 4)); // knee width in the output
+  const e = (c - 1) / 2 + w; // the stretched input the knee takes in
+  const knee = (d: number) => {
+    // cubic Hermite from (0, 0) with slope s to (e, w) with slope 0; s ≤ 3w/e keeps it rising
+    const t = Math.min(1, Math.max(0, d / e));
+    const m0 = Math.min(1, (3 * w) / e) * e;
+    return (t * t * t - 2 * t * t + t) * m0 + (-2 * t * t * t + 3 * t * t) * w;
+  };
+  if (x > 1 - w) return 1 - w + knee(x - (1 - w));
+  if (x < w) return w - knee(w - x);
+  return x;
 }
 
 /** Longest side capped at `maxSide`, at least 2×2. Same size the browser canvas is drawn at. */
@@ -141,6 +166,10 @@ export function processImage(g: Gray, o: ImageOpts): Gray {
   for (let i = 0; i < data.length; i++) {
     let v = r.data[i];
     if (o.invert) v = 1 - v;
+    if (o.soft && o.contrast > 1) {
+      data[i] = softContrast(v, o.contrast);
+      continue;
+    }
     v = (v - 0.5) * o.contrast + 0.5;
     data[i] = Math.min(1, Math.max(0, v));
   }
