@@ -139,12 +139,13 @@ test('Depth from photo swaps a picture for its depth relief and back, asking the
   await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.5);
 
   const toggle = page.getByTestId('impress-photo-depth');
-  await toggle.check();
+  // the switch turns on once the server has answered, so click rather than check
+  await toggle.click();
   await expect(toggle).toBeChecked({ timeout: 30_000 });
   expect(asked).toBe(1);
-  await toggle.uncheck();
+  await toggle.click();
   await expect(toggle).not.toBeChecked();
-  await toggle.check();
+  await toggle.click();
   await expect(toggle).toBeChecked();
   expect(asked).toBe(1);
   expect(errors).toEqual([]);
