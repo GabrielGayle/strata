@@ -40,7 +40,9 @@ import Scene, { cssVar, modelBounds } from './Scene';
 import { DEFAULT_VIEWPORT_LAYERS } from './viewportLayers';
 import { useLiveLayers, type LiveLayers } from './SurfaceLayers';
 import { loadImageGray, sourceGray } from './blockSources';
-import { readImages, topAspectGuess } from './surfaces';
+import { grayDataUrl, readImages, topAspectGuess } from './surfaces';
+import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, depthWaitEstimate, wakeDepth } from '../core/depth';
+import { beginBusy, depthStep } from './busy';
 
 const NAMES: Record<ImpressSurface, string> = { top: 'Top surface', front: 'Front face' };
 type Hover = { s: ImpressSurface; fx: number; fy: number } | null;
@@ -589,6 +591,35 @@ function ImpressPanel(props: {
   const widthMm = sel && F ? sel.scale * F.w : 0;
   const setDepth = (id: string, mm: number) => live.changeWith((c, patch) => setLayerDepth(c, s, id, mm, { ...v, ...patch } as Values));
   const frontOff = !frames.front;
+  const [depthBusy, setDepthBusy] = useState(false);
+  const [depthError, setDepthError] = useState<string | null>(null);
+  // the depth server takes ~45 s to boot cold: start it while a picture is placed
+  useEffect(() => {
+    if (DEPTH_URL && sel?.source.kind === 'image') wakeDepth(DEPTH_URL);
+  }, [sel?.source.kind]);
+  const toggleDepth = async (b: Block) => {
+    if (b.source.kind !== 'image') return;
+    setDepthError(null);
+    if (b.source.photo) {
+      const { photo, ...rest } = b.source;
+      return live.setBlock(b.id, { source: { ...rest, name: rest.name.replace(/^depth · /, ''), dataUrl: photo } });
+    }
+    setDepthBusy(true);
+    try {
+      const relief = await photoDepth(b.source.dataUrl);
+      if (!relief) return;
+      const photo = b.source.dataUrl;
+      // the layer may have been moved, renamed or removed while the server answered: change its latest state
+      live.change((c) => ({
+        ...c,
+        blocks: c.blocks.map((x) => (x.id === b.id && x.source.kind === 'image' && x.source.dataUrl === photo ? { ...x, source: { ...x.source, name: `depth · ${x.source.name}`, dataUrl: relief, photo } } : x)),
+      }));
+    } catch (e) {
+      setDepthError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDepthBusy(false);
+    }
+  };
   return (
     <div className="window box impress-panel" role="region" aria-label="Impress image">
       <div className="title-bar">
@@ -693,7 +724,14 @@ function ImpressPanel(props: {
                 <input type="checkbox" checked={sel.invert} onChange={(e) => live.setBlock(sel.id, { invert: e.target.checked })} />
                 <span>Invert (light cuts)</span>
               </label>
+              {DEPTH_URL && sel.source.kind === 'image' && (
+                <label className="impress-check" title="Send the photo to the depth server and press in its shape (near parts cut deepest; Invert makes them stand proud)">
+                  <input type="checkbox" checked={!!sel.source.photo} disabled={depthBusy} onChange={() => toggleDepth(sel)} data-testid="impress-photo-depth" />
+                  <span>{depthBusy ? 'Reading depth…' : 'Depth from photo'}</span>
+                </label>
+              )}
             </div>
+            {depthError && <p className="note err" role="alert">{depthError}</p>}
             <div className="btnrow">
               <button className="btn sm" onClick={() => live.setBlock(sel.id, { x: 0.5, y: 0.5 })}>
                 Centre
@@ -748,3 +786,29 @@ function Slider({ label, unit, min, max, step, value, onChange, onDown, note, te
   );
 }
 
+
+// one answer per photo per page: switching Depth from photo off and on again doesn't ask twice
+const depthAnswers = new Map<string, string>();
+
+/** The photo's depth relief as a grey picture (near = dark), or null when cancelled. */
+async function photoDepth(photo: string): Promise<string | null> {
+  const known = depthAnswers.get(photo);
+  if (known) return known;
+  const ctrl = new AbortController();
+  const est = depthWaitEstimate();
+  const started = Date.now();
+  const busy = beginBusy({ scene: 'depth', title: 'Depth from photo', detail: depthStep(0, est), expectMs: est.totalMs, cancel: () => ctrl.abort() });
+  const tick = setInterval(() => busy.update({ detail: depthStep(Date.now() - started, est) }), 500);
+  try {
+    const { png, depth } = await depthFromPhoto(photo, { signal: ctrl.signal });
+    const relief = depth ? grayDataUrl(depthToGray({ ...depth, settings: defaultDepthSettings(depth) })) : png;
+    depthAnswers.set(photo, relief);
+    return relief;
+  } catch (e) {
+    if (ctrl.signal.aborted) return null;
+    throw e;
+  } finally {
+    clearInterval(tick);
+    busy.end();
+  }
+}

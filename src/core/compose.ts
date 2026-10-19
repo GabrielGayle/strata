@@ -31,7 +31,8 @@ export interface DrawingSpec {
 }
 
 export type BlockSource =
-  | { kind: 'image'; name: string; dataUrl: string }
+  /** photo: the picture this one was made from by Depth from photo (dataUrl is then the depth relief). */
+  | { kind: 'image'; name: string; dataUrl: string; photo?: string }
   | { kind: 'pattern'; spec: PatternSpec }
   | { kind: 'drawing'; spec: DrawingSpec };
 
