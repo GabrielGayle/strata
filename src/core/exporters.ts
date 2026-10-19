@@ -15,6 +15,7 @@ import type { MouldPart } from './mould';
 import type { Values } from './params';
 import { extrudeOnPlane, extrudePlan, extrudeSunkenFrame, mergeGeometries } from './geometry3d';
 import { cutListCsv, hardwareCsv } from './bom';
+import { candlesCsv, candleShopping } from './candles';
 import { stackRodsCsv } from './stackRods';
 import { DEFAULT_RATES, estimateMix, priceText, withHardware, type PriceRates } from './price';
 import { baseGeometry } from './base';
@@ -377,7 +378,7 @@ export function sheetFiles(model: Model): Record<string, Uint8Array> {
   return files;
 }
 
-export function packReadme(model: Model): string {
+export function packReadme(model: Model, project?: Project): string {
   const v = model.v;
   const lines = [
     'Strata fabrication pack',
@@ -404,6 +405,9 @@ export function packReadme(model: Model): string {
   ];
   if (model.sliced.stackRods) {
     lines.push('', 'rods.csv', '  Cut list of support poles: rod id, diameter (mm), length (mm) from the base to the top of the highest layer each rod holds.');
+  }
+  if (candleShopping(project?.candles).length) {
+    lines.push('', 'candles.csv', '  Candles to buy for the candelabra: one row per size with how many, what holds them and the hole each drops into, then the total.');
   }
   const dropped = (model.sliced.fragments ?? []).filter((e) => e.action === 'dropped' || e.action === 'merged');
   if (dropped.length) {
@@ -514,7 +518,9 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
     files['price-estimate.json'] = strToU8(JSON.stringify(estimate, null, 2) + '\n');
   }
   if (model.shadow && project.shadow?.frames.length) files['shadow-install-card.html'] = strToU8(installCardHtml(project, v, model.shadow));
-  files['README.txt'] = strToU8(packReadme(model));
+  const candles = candleShopping(project.candles);
+  if (candles.length) files['candles.csv'] = strToU8(candlesCsv(candles));
+  files['README.txt'] = strToU8(packReadme(model, project));
   files['build-pack.html'] = strToU8(buildPackHtmlChecked(project, model, { rates }));
   files['manifest.json'] = strToU8(JSON.stringify({ ...packManifest(model), ...buildPlateManifest(model, project) }, null, 2) + '\n');
   const archetype = project.images.top?.map?.archetypeCard;
