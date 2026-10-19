@@ -85,3 +85,37 @@ test('picking a preset rebuilds the plates without errors', async ({ page }) => 
   expect(await page.locator('.tbl.interactive tbody tr').count()).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
+
+test('the candelabra picker adds candles, the Objects window drags and both pass an accessibility check', async ({ page }) => {
+  test.setTimeout(180_000);
+  const errors = watchErrors(page);
+  await openApp(page);
+  await tab(page, '3D').click();
+  await page.getByRole('button', { name: /^Objects/ }).click();
+  const win = page.locator('.objects');
+  await win.getByRole('button', { name: 'Candelabra', exact: true }).click();
+  await page.getByRole('button', { name: '+ Candelabra' }).click();
+  await expect(page.getByTestId('candle-row')).toHaveCount(2);
+  await page.getByTestId('candle-add-maxi').click();
+  await page.getByTestId('candle-add-taper').click();
+  await expect(page.getByTestId('candle-row')).toHaveCount(3);
+  await expect(page.getByTestId('candle-row').first().locator('output')).toHaveText('6');
+  await win.getByRole('button', { name: 'Remove Maxi tealight' }).click();
+  await expect(page.getByTestId('candle-row')).toHaveCount(2);
+
+  const r = await new AxeBuilder({ page }).include('.objects').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).disableRules(['target-size']).analyze();
+  expect(r.violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`))).toEqual([]);
+
+  const before = (await win.boundingBox())!;
+  const bar = (await win.locator('.title-bar').boundingBox())!;
+  await page.mouse.move(bar.x + 80, bar.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(bar.x + 180, bar.y + 68, { steps: 6 });
+  await page.mouse.up();
+  const after = (await win.boundingBox())!;
+  expect(Math.round(after.x - before.x)).toBe(100);
+  expect(Math.round(after.y - before.y)).toBe(60);
+  await win.locator('.title-bar').dblclick({ position: { x: 80, y: 8 } });
+  await expect.poll(async () => Math.round((await win.boundingBox())!.x)).toBe(Math.round(before.x));
+  expect(errors).toEqual([]);
+});
