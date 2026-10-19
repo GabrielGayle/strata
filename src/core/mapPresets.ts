@@ -3,6 +3,9 @@ import { defaultMapSpec, type MapSpec } from './mapSpec';
 /** Acceptance bbox for Neasden / Brent (WGS84 west, south, east, north). */
 export const NEASDEN_MAP_BBOX: MapSpec['bbox'] = [-0.28, 51.543, -0.233, 51.575];
 
+/** Shooters Hill to Thames — Gabriel’s Woolwich wall-relief test map. */
+export const WOOLWICH_MAP_BBOX: MapSpec['bbox'] = [-0.03, 51.465, 0.124, 51.505];
+
 /** Welsh Harp (Brent Reservoir) open water — used to expand Neasden pieces (ticket T18). */
 export const WELSH_HARP_WATER_BBOX: MapSpec['bbox'] = [-0.275, 51.552, -0.245, 51.572];
 

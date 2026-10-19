@@ -52,6 +52,33 @@ describe('MapSpec schema', () => {
     expect(m?.engrave.features.length).toBeGreaterThan(0);
   });
 
+  it('round-trips a fractional exaggeration through save and load', () => {
+    const p = newProject();
+    const map = defaultMapSpec({
+      bbox: [-0.03, 51.465, 0.124, 51.505],
+      source: 'ea-dtm',
+      title: 'Woolwich',
+      exaggeration: 1.5,
+    });
+    p.images.top = { name: 'Woolwich', dataUrl: 'data:image/png;base64,AAAA', map };
+    const back = deserialize(serialize(p));
+    expect(back.images.top?.map?.exaggeration).toBe(1.5);
+    expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], exaggeration: 1.25 })?.exaggeration).toBe(1.25);
+  });
+
+  it('loads integer exaggeration from older projects unchanged', () => {
+    const p = newProject();
+    p.images.top = {
+      name: 'Neasden',
+      dataUrl: 'data:image/png;base64,AAAA',
+      map: defaultMapSpec({ bbox: [-0.28, 51.543, -0.233, 51.575], exaggeration: 21 }),
+    };
+    const back = deserialize(serialize(p));
+    expect(back.images.top?.map?.exaggeration).toBe(21);
+    expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], exaggeration: 4 })?.exaggeration).toBe(4);
+    expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], exaggeration: 11 })?.exaggeration).toBe(11);
+  });
+
   it('loads saves with the removed cop30 source as terrarium (what they always built from)', () => {
     expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], source: 'cop30' })?.source).toBe('terrarium');
     expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], source: 'nonsense' })?.source).toBe('auto');

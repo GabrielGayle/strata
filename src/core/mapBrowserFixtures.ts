@@ -5,6 +5,7 @@ import type { RegionalGridLoader } from './mapRegionalLidar';
 import { cropRegionalGridToBbox } from './mapRegionalLidar';
 import type { OverpassFetcher } from './mapOverpass';
 import { metricBounds } from './mapProject';
+import { WOOLWICH_MAP_BBOX } from './mapPresets';
 
 function gridOverlapsBbox(grid: Float32Grid, bbox: MapSpec['bbox']): boolean {
   if (grid.crs !== 'EPSG:27700') return true;
@@ -57,8 +58,16 @@ async function fetchJsonGrid(path: string): Promise<Float32Grid | null> {
   return { ...raw, data: new Float32Array(raw.data) };
 }
 
+function bboxMatches(a: MapSpec['bbox'], b: MapSpec['bbox'], eps = 1e-5): boolean {
+  return a.every((n, i) => Math.abs(n - b[i]) < eps);
+}
+
 export function browserEaGridLoader(): EaGridLoader {
   return async (_source, spec) => {
+    if (bboxMatches(spec.bbox, WOOLWICH_MAP_BBOX)) {
+      const woolwich = await fetchJsonGrid('/map-fixtures/regional/woolwich-ea-dtm.json');
+      if (woolwich) return coverBbox(woolwich, spec.bbox);
+    }
     const g = await fetchJsonGrid('/map-fixtures/regional/neasden-ea-dtm.json');
     return g ? coverBbox(g, spec.bbox) : null;
   };
