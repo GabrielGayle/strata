@@ -2722,25 +2722,43 @@ canvas.thumb {
 .lib-menu {
   position: fixed;
   z-index: 80;
-  min-width: 160px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  box-shadow: 2px 2px 0 var(--line-soft);
+  min-width: 180px;
+  max-height: calc(100vh - 8px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 2px;
 }
-.lib-menu button {
-  border: 0;
-  background: transparent;
-  text-align: left;
-  padding: 4px 10px;
-  cursor: pointer;
-  color: inherit;
+.lib-folders .lib-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
-.lib-menu button:hover {
+.lib-folders .lib-folder small {
+  opacity: 0.7;
+}
+.lib-folders.dragging .lib-folder {
+  outline: 1px dashed var(--accent);
+  outline-offset: 1px;
+}
+.lib-folders .lib-folder.drop {
   background: var(--accent);
   color: var(--accent-fg, #fff);
+  text-shadow: none;
+}
+.lib-folder-hint {
+  align-self: center;
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.lib-card[draggable='true'],
+.lib-line[draggable='true'] {
+  cursor: grab;
+}
+.lib-card.dragged,
+.lib-line.dragged {
+  opacity: 0.45;
 }
 .lib-browser.compact .lib-grid {
   grid-template-columns: 1fr;

@@ -283,3 +283,13 @@ table.tbl tbody tr.highlighted td {
 .status-bar-field {
   color: var(--chrome-fg);
 }
+
+/* Projects window: the saves cards and the section headings are themed panels inside the
+   silver window, so their notes take the theme's own --muted, not the silver one. */
+.pm.lib .lib-head,
+.pm.lib .lib-card,
+.pm.lib .lib-line,
+.saves-panel .lib-card,
+.saves-panel .lib-line {
+  --muted: var(--theme-muted);
+}

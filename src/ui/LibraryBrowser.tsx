@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 import { deserialize } from '../core/project';
 import { buildZip, download, exportFailureMessage, FitCheckExportError } from '../core/exporters';
 import { createPipeline } from '../core/pipeline';
 import { decodeProjectAssets } from '../state/assets';
-import { filterLibrary, foldersOf, sortLibrary, sourceLabel, type LibrarySort } from '../state/libraryDescribe';
+import { filterLibrary, folderCounts, foldersOf, sortLibrary, sourceLabel, type LibrarySort } from '../state/libraryDescribe';
 import { updatedAtOf, type LibraryMeta, type LibraryStore } from '../state/library';
 import { Loading } from './BusyWindow';
 
 const VIEW_KEY = 'strata.library.view';
 const SORT_KEY = 'strata.library.sort';
+const DRAG_TYPE = 'application/x-strata-save';
 
 function ago(t: number): string {
   const s = (Date.now() - t) / 1000;
@@ -67,6 +68,16 @@ export function LibraryBrowser({
   const [view, setView] = useState<'grid' | 'list'>(() => readPref(VIEW_KEY, compact ? 'list' : 'grid', ['grid', 'list']));
   const [sort, setSort] = useState<LibrarySort>(() => readPref(SORT_KEY, 'updated', ['updated', 'name', 'plates', 'kind']));
   const [menu, setMenu] = useState<{ m: LibraryMeta; x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Keep the actions menu on screen near the bottom and right edges.
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el || !menu) return;
+    const r = el.getBoundingClientRect();
+    el.style.left = `${Math.max(4, Math.min(menu.x, window.innerWidth - r.width - 4))}px`;
+    el.style.top = `${Math.max(4, Math.min(menu.y, window.innerHeight - r.height - 4))}px`;
+  }, [menu]);
 
   useEffect(() => {
     try {
@@ -80,15 +91,28 @@ export function LibraryBrowser({
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
+    // Escape closes just the menu, not the Projects window behind it.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      close();
+    };
     window.addEventListener('click', close);
     window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey, true);
     return () => {
       window.removeEventListener('click', close);
       window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey, true);
     };
   }, [menu]);
 
-  const folders = useMemo(() => (list ? foldersOf(list) : []), [list]);
+  // A folder made with New folder… lives here until something is put in it.
+  const [madeFolders, setMadeFolders] = useState<string[]>([]);
+  const [dragging, setDragging] = useState<LibraryMeta | null>(null);
+  const [dropOn, setDropOn] = useState<string | null>(null);
+  const folders = useMemo(() => (list ? foldersOf(list, madeFolders) : []), [list, madeFolders]);
+  const counts = useMemo(() => folderCounts(list ?? []), [list]);
   const shown = useMemo(() => (list ? sortLibrary(filterLibrary(list, q, folder), sort) : []), [list, q, folder, sort]);
 
   const onMenu = (e: MouseEvent, m: LibraryMeta) => {
@@ -122,11 +146,48 @@ export function LibraryBrowser({
     onPatch(m, { tags: tags.length ? tags : undefined });
   };
 
-  const doFolder = (m: LibraryMeta) => {
-    const next = window.prompt('Folder (blank to clear)', m.folder ?? '');
-    if (next == null) return;
-    onPatch(m, { folder: next.trim() || undefined });
+  const moveTo = (m: LibraryMeta, f: string | undefined) => {
+    if ((m.folder ?? undefined) === f) return;
+    onPatch(m, { folder: f });
   };
+
+  const newFolder = (m?: LibraryMeta) => {
+    const name = window.prompt(m ? `New folder for "${m.name}"` : 'New folder name')?.trim();
+    if (!name) return;
+    if (!folders.includes(name)) setMadeFolders((xs) => [...xs, name]);
+    if (m) moveTo(m, name);
+  };
+
+  // Drag a save onto a folder button to put it in that folder.
+  const dragProps = (m: LibraryMeta) => ({
+    draggable: !busy,
+    onDragStart: (e: DragEvent) => {
+      e.dataTransfer.setData(DRAG_TYPE, m.id);
+      e.dataTransfer.effectAllowed = 'move';
+      setDragging(m);
+    },
+    onDragEnd: () => {
+      setDragging(null);
+      setDropOn(null);
+    },
+  });
+  const dropProps = (key: string, f: string | undefined) => ({
+    onDragOver: (e: DragEvent) => {
+      if (!dragging) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setDropOn(key);
+    },
+    onDragLeave: () => setDropOn((k) => (k === key ? null : k)),
+    onDrop: (e: DragEvent) => {
+      e.preventDefault();
+      const id = e.dataTransfer.getData(DRAG_TYPE);
+      const m = list?.find((x) => x.id === id) ?? dragging;
+      setDragging(null);
+      setDropOn(null);
+      if (m) moveTo(m, f);
+    },
+  });
 
   return (
     <div className={`lib-browser ${compact ? 'compact' : ''} ${view}`} data-testid="saves-browser">
@@ -155,18 +216,33 @@ export function LibraryBrowser({
           </button>
         </span>
       </div>
-      {folders.length > 0 && (
-        <div className="lib-folders" data-testid="saves-folders">
-          <button className={`btn sm ${!folder ? 'on' : ''}`} onClick={() => setFolder(null)}>
-            All
+      <div className={`lib-folders ${dragging ? 'dragging' : ''}`} data-testid="saves-folders" role="toolbar" aria-label="Folders">
+        <button className={`btn sm ${!folder ? 'on' : ''}`} onClick={() => setFolder(null)}>
+          All
+        </button>
+        {folders.map((f) => (
+          <button
+            key={f}
+            className={`btn sm lib-folder ${folder === f ? 'on' : ''} ${dropOn === f ? 'drop' : ''}`}
+            onClick={() => setFolder(f)}
+            title={`Show "${f}". Drag a project here to put it in this folder.`}
+            data-testid={`saves-folder-${f}`}
+            {...dropProps(f, f)}
+          >
+            📁 {f}
+            <small>{counts.get(f) ?? 0}</small>
           </button>
-          {folders.map((f) => (
-            <button key={f} className={`btn sm ${folder === f ? 'on' : ''}`} onClick={() => setFolder(f)}>
-              {f}
-            </button>
-          ))}
-        </div>
-      )}
+        ))}
+        {dragging?.folder && (
+          <button className={`btn sm lib-folder ${dropOn === '\0none' ? 'drop' : ''}`} data-testid="saves-folder-none" {...dropProps('\0none', undefined)}>
+            Take out of folder
+          </button>
+        )}
+        <button className="btn sm" disabled={busy} onClick={() => newFolder()} data-testid="saves-new-folder">
+          New folder…
+        </button>
+        <small className="lib-folder-hint">{dragging ? `Drop "${dragging.name}" on a folder` : folders.length ? 'Drag a project onto a folder to move it' : 'Make a folder, then drag projects onto it'}</small>
+      </div>
       <div className="lib-body">
         {!list ? (
           <Loading label="Loading your projects…" />
@@ -177,7 +253,8 @@ export function LibraryBrowser({
             {shown.map((m) => (
               <div
                 key={m.id}
-                className={`lib-line ${currentId === m.id ? 'on' : ''}`}
+                className={`lib-line ${currentId === m.id ? 'on' : ''} ${dragging?.id === m.id ? 'dragged' : ''}`}
+                {...dragProps(m)}
                 data-testid={`saves-row-${m.id}`}
                 data-source={m.source ?? ''}
                 onContextMenu={(e) => onMenu(e, m)}
@@ -199,7 +276,8 @@ export function LibraryBrowser({
             {shown.map((m) => (
               <div
                 key={m.id}
-                className={`lib-card ${currentId === m.id ? 'on' : ''}`}
+                className={`lib-card ${currentId === m.id ? 'on' : ''} ${dragging?.id === m.id ? 'dragged' : ''}`}
+                {...dragProps(m)}
                 data-testid={`saves-card-${m.id}`}
                 data-source={m.source ?? ''}
                 onContextMenu={(e) => onMenu(e, m)}
@@ -228,7 +306,7 @@ export function LibraryBrowser({
         )}
       </div>
       {menu && (
-        <div className="lib-menu" style={{ left: menu.x, top: menu.y }} role="menu" data-testid="saves-menu" onClick={(e) => e.stopPropagation()}>
+        <div ref={menuRef} className="lib-menu" style={{ left: menu.x, top: menu.y }} role="menu" data-testid="saves-menu" onClick={(e) => e.stopPropagation()}>
           <button role="menuitem" onClick={() => (setMenu(null), onOpen(menu.m))}>
             Open
           </button>
@@ -241,9 +319,23 @@ export function LibraryBrowser({
           <button role="menuitem" onClick={() => (setMenu(null), doTags(menu.m))}>
             Tags…
           </button>
-          <button role="menuitem" onClick={() => (setMenu(null), doFolder(menu.m))}>
-            Folder…
+          <div className="lib-menu-head" role="presentation">
+            Move to folder
+          </div>
+          {folders.map((f) => (
+            <button key={f} role="menuitemradio" aria-checked={menu.m.folder === f} onClick={() => (setMenu(null), moveTo(menu.m, f))}>
+              <span className="lib-menu-mark">{menu.m.folder === f ? '✓' : ''}</span>📁 {f}
+            </button>
+          ))}
+          <button role="menuitem" onClick={() => (setMenu(null), newFolder(menu.m))}>
+            New folder…
           </button>
+          {menu.m.folder && (
+            <button role="menuitem" onClick={() => (setMenu(null), moveTo(menu.m, undefined))}>
+              Take out of folder
+            </button>
+          )}
+          <hr className="lib-menu-sep" />
           <button
             role="menuitem"
             onClick={() => {
