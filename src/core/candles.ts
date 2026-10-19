@@ -81,6 +81,10 @@ export interface CandleSize {
   /** Holder named on the line ("socket" / "target"), else the candelabra's own choice. */
   holder?: Holder;
   name: string;
+  /** The preset it came from ("taper", "tealight"…), when the line named one. */
+  preset?: string;
+  /** Words typed after a size ("24 x 300 stick" keeps "stick"), so the line can be written back. */
+  word?: string;
 }
 
 export type Choke = 'off' | 'candles' | 'path';
@@ -215,9 +219,15 @@ export function parseCandles(text: string): { lines: { size: CandleSize; count: 
       holder = w === 'socket' || w === 'cup' ? 'socket' : w.startsWith('slot') ? 'slotted' : 'target';
       return '';
     }).trim();
-    const dims = s.match(/^(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:x|×|\*|by)\s*(\d+(?:\.\d+)?)\s*(?:mm)?\s*(.*)$/);
     let count = 1;
     let size: CandleSize | null = null;
+    // "3 of 24 x 300 stick": a count in front of a size
+    const of = s.match(/^(\d+)\s+of\s+(.*)$/);
+    if (of) {
+      count = Math.min(60, Math.max(1, parseInt(of[1], 10)));
+      s = of[2].trim();
+    }
+    const dims = s.match(/^(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:x|×|\*|by)\s*(\d+(?:\.\d+)?)\s*(?:mm)?\s*(.*)$/);
     if (dims) {
       const d = parseFloat(dims[1]);
       const h = parseFloat(dims[2]);
@@ -225,7 +235,7 @@ export function parseCandles(text: string): { lines: { size: CandleSize; count: 
       if (d >= 5 && h >= 5 && d <= 400 && h <= 1000) {
         const word = rest.replace(/s$/, '');
         const tealight = /tea|cup|votive|mini|maxi|jumbo/.test(word) ? true : /stick|taper|pillar|candle|dinner/.test(word) ? false : h < 2 * d;
-        size = { d, h, tealight, name: rest || `${d} × ${h}` };
+        size = { d, h, tealight, name: rest || `${d} × ${h}`, word: rest };
       }
     } else {
       const m = s.match(/^(\d+)\s*(?:×|x|\*)?\s*([a-z].*)$/);
@@ -236,7 +246,7 @@ export function parseCandles(text: string): { lines: { size: CandleSize; count: 
       const key = ALIASES[s] ?? ALIASES[s.replace(/s$/, '')] ?? ALIASES[s.replace(/es$/, '')];
       if (key) {
         const p = PRESETS[key];
-        size = { d: p.d, h: p.h, tealight: p.tealight, name: p.label };
+        size = { d: p.d, h: p.h, tealight: p.tealight, name: p.label, preset: key };
       }
     }
     if (!size) {
@@ -247,6 +257,38 @@ export function parseCandles(text: string): { lines: { size: CandleSize; count: 
     lines.push({ size, count });
   }
   return { lines, bad };
+}
+
+/** One line of the candle list as the picker shows it: what it is and how many. */
+export interface CandleRow {
+  size: CandleSize;
+  count: number;
+}
+
+const HOLDER_WORD: Record<Holder, string> = { socket: 'cup', target: 'target', slotted: 'slotted' };
+
+/** A candle line written back as text that parseCandles reads the same way. */
+export function candleLine({ size, count }: CandleRow): string {
+  const holder = size.holder ? ` ${HOLDER_WORD[size.holder]}` : '';
+  if (size.preset) return `${count} ${size.preset}${holder}`;
+  let word = (size.word ?? '').replace(/[\n;,]+/g, ' ').trim();
+  const kind = /tea|cup|votive|mini|maxi|jumbo/.test(word) ? true : /stick|taper|pillar|candle|dinner/.test(word) ? false : size.h < 2 * size.d;
+  if (kind !== size.tealight) word = `${word} ${size.tealight ? 'tealight' : 'candle'}`.trim();
+  return `${count > 1 ? `${count} of ` : ''}${+size.d.toFixed(1)} x ${+size.h.toFixed(1)}${word ? ` ${word}` : ''}${holder}`;
+}
+
+/** The whole list written back as text, keeping any lines that couldn't be read so nothing typed is lost. */
+export function writeCandles(rows: CandleRow[], bad: string[] = []): string {
+  return [...rows.map(candleLine), ...bad].join('\n');
+}
+
+/** Add one candle of a preset (or a size of your own): one more on a matching line, else a new line at the end. */
+export function addCandle(text: string, size: CandleSize): string {
+  const { lines, bad } = parseCandles(text);
+  const same = lines.find((l) => l.count < 60 && !l.size.holder && (size.preset ? l.size.preset === size.preset : !l.size.preset && l.size.d === size.d && l.size.h === size.h && l.size.tealight === size.tealight));
+  if (same) same.count++;
+  else lines.push({ size, count: 1 });
+  return writeCandles(lines, bad);
 }
 
 /** The candles in the order they go along the path. */

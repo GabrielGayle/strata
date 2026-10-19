@@ -37,7 +37,6 @@ table.tbl,
 .nv-body,
 .cm-body,
 .pm-body,
-.appearance.overlay,
 .nd-node,
 .sf-row {
   color: var(--ink);
@@ -70,6 +69,7 @@ table.tbl,
 .statusbar,
 .window.box,
 .svgwrap > .overlay,
+.appearance.overlay,
 menu[role='tablist'] > li,
 table.tbl,
 .list.sunken-panel {
@@ -77,6 +77,11 @@ table.tbl,
   --ok: #16521f;
   --warn: #644004;
   --err: #8f1a13;
+}
+
+/* Materials, Move plates and Objects windows over the 3D view are silver in every theme: dark ink, not the theme's pale --ink */
+.appearance.overlay {
+  color: var(--chrome-fg);
 }
 
 /* Parameters + Inspector side panels: Win98 silver, never themed --ink/--muted on labels */

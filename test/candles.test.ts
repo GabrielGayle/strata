@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { newProject, deserialize, serialize } from '../src/core/project';
-import { candleList, candleObjects, DEFAULT_CANDLES, parseCandles, pathPolyline, spreadAlong, type CandlePath } from '../src/core/candles';
+import { addCandle, candleList, candleObjects, DEFAULT_CANDLES, parseCandles, pathPolyline, spreadAlong, writeCandles, type CandlePath } from '../src/core/candles';
 import { projectFromShare, shareState } from '../src/core/share';
 
 const assets: Assets = { sideImg: null, frontImg: null, insMesh: null, srcMesh: null };
@@ -277,5 +277,29 @@ describe('candle shopping list', () => {
     expect(html).toContain('data-candle-total="9"');
     const plain = { ...newProject() };
     expect(unzipSync(buildZip(createPipeline()(plain, assets), plain))['candles.csv']).toBeUndefined();
+  });
+});
+
+describe('candle picker', () => {
+  const strip = (t: string) => parseCandles(t).lines.map((l) => ({ count: l.count, d: l.size.d, h: l.size.h, tealight: l.size.tealight, holder: l.size.holder }));
+
+  it('writes every kind of line back so it reads the same', () => {
+    const text = '5 tapers\ntealight\n40 x 18 tealight\n24 x 300 socket\nmaxi; 3× votive\n2 taper cup\n24 x 300 slotted\n60 x 40\n30 x 200 my tea candle';
+    const { lines, bad } = parseCandles(text);
+    expect(bad).toEqual([]);
+    expect(strip(writeCandles(lines))).toEqual(strip(text));
+  });
+
+  it('keeps a count on a size of your own', () => {
+    const out = writeCandles([{ size: { d: 24, h: 300, tealight: false, name: '' }, count: 3 }]);
+    expect(out).toBe('3 of 24 x 300');
+    expect(strip(out)).toEqual([{ count: 3, d: 24, h: 300, tealight: false, holder: undefined }]);
+  });
+
+  it('adds one more to a matching line, or a new line', () => {
+    expect(addCandle('5 taper\n4 tealight', { d: 38, h: 16, tealight: true, name: 'Tealight', preset: 'tealight' })).toBe('5 taper\n5 tealight');
+    expect(addCandle('2 taper target', { d: 22, h: 250, tealight: false, name: 'Dinner candle (taper)', preset: 'taper' })).toBe('2 taper target\n1 taper');
+    expect(addCandle('', { d: 58, h: 24, tealight: true, name: 'Maxi tealight', preset: 'maxi' })).toBe('1 maxi');
+    expect(addCandle('oops', { d: 30, h: 12, tealight: true, name: 'Mini', preset: 'mini' })).toBe('1 mini\noops');
   });
 });

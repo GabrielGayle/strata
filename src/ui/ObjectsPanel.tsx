@@ -3,6 +3,7 @@ import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import ShelfPanel from './ShelfPanel';
 import CandlePanel from './CandlePanel';
+import { useDragWindow } from './dragWindow';
 import { KIND_NAMES, newObject, type CutObject, type ObjectKind } from '../core/objects';
 
 type NumKey = 'w' | 'h' | 'd' | 'x' | 'y' | 'z' | 'rx' | 'ry' | 'rz' | 'clearance';
@@ -40,8 +41,16 @@ export default function ObjectsPanel() {
     const p = useStore.getState().project;
     return p.candles ? 'candles' : p.shelf ? 'shelf' : 'objects';
   });
+  const setUi = useStore((s) => s.setUi);
+  const drag = useDragWindow('objects');
   return (
-    <div className="overlay movepanel appearance objects">
+    <section className="overlay movepanel appearance objects" ref={(el) => void (drag.ref.current = el)} style={drag.style} aria-label="Objects">
+      <header {...drag.bind} title="Drag to move this window. Double-click to put it back.">
+        <div className="title-bar-text">Objects</div>
+        <div className="title-bar-controls">
+          <button aria-label="Close" onClick={() => setUi({ objectsMode: false })} title="Close (the objects stay; Objects on the right opens this again)"></button>
+        </div>
+      </header>
       <div className="mp-row">
         <button className={`btn sm ${view === 'objects' ? 'on' : ''}`} onClick={() => setView('objects')} title="Single objects you place one by one">
           Objects
@@ -55,7 +64,7 @@ export default function ObjectsPanel() {
       </div>
       <ShowRow view={view} />
       {view === 'shelf' ? <ShelfPanel /> : view === 'candles' ? <CandlePanel /> : <ObjectList />}
-    </div>
+    </section>
   );
 }
 

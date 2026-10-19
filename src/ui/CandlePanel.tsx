@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { candleList, candlesCsv, candleShopping, CHOKE_NAMES, DEFAULT_CANDLES, SIT_NAMES, SNAP_NAMES, type Choke, type Sit, type Snap, HOLDER_NAMES, parseCandles, PATH_NAMES, PRESETS, type CandlePath, type CandleSpec, type Holder } from '../core/candles';
+import { addCandle, candleList, candlesCsv, candleShopping, CHOKE_NAMES, DEFAULT_CANDLES, SIT_NAMES, SNAP_NAMES, type Choke, type Sit, type Snap, HOLDER_NAMES, parseCandles, PATH_NAMES, PRESETS, writeCandles, type CandlePath, type CandleRow, type CandleSize, type CandleSpec, type Holder } from '../core/candles';
 import type { Model } from '../core/pipeline';
 import type { RawValue } from '../core/params';
 import { baseTop } from '../core/slicer';
@@ -60,7 +60,7 @@ const FIELDS: Field[] = [
 ];
 
 const DEFAULT_HINT =
-  'Click any candle in the 3D view and drag it to place it freely. Type one candle per line: a name like "5 taper", "tealight", "maxi", or diameter × height in mm like "24 x 300 stick". Add "cup", "slotted" or "target" to a line to pick its holder. Hover any value to see what it does.';
+  'Click any candle in the 3D view and drag it to place it freely. Typed, it is one candle per line: a name like "5 taper", "tealight", "maxi", or diameter × height in mm like "24 x 300 stick". Add "cup", "slotted" or "target" to a line to pick its holder. Hover any value to see what it does.';
 
 /** Settings that make the plates flat-topped and tall enough to meet every candle, on a base big enough to hold them (null with no candles). */
 export function fitCandles(model: Model, s: CandleSpec): Record<string, RawValue> | null {
@@ -117,7 +117,6 @@ export default function CandlePanel() {
     onMouseLeave: () => setHint(null),
     title: h,
   });
-  const addLine = (word: string) => edit({ candles: `${s.candles.replace(/\s+$/, '')}\n${word}`.replace(/^\n/, '') }, 'candles:list');
 
   const fit = () => {
     const patch = fitCandles(model, s);
@@ -134,11 +133,11 @@ export default function CandlePanel() {
 
   return (
     <>
+      <CandlePicker s={s} edit={edit} help={help} setHint={setHint} />
       <div className="mp-row ap-edit ob-edit shelf-edit">
         <label className="ob-num" {...help('Off keeps the list but takes the candles and their holders away.')}>
           <input type="checkbox" checked={s.on} onChange={(e) => edit({ on: e.target.checked })} /> <span>Candles</span>
         </label>
-        <textarea aria-label="Candles" rows={4} value={s.candles} onChange={(e) => edit({ candles: e.target.value }, 'candles:list')} onMouseEnter={() => setHint(DEFAULT_HINT)} onMouseLeave={() => setHint(null)} placeholder={'5 taper\n4 tealight\n58 x 24 maxi'} />
         <div className="shelf-side">
           <select aria-label="Path" value={s.path} onChange={(e) => edit({ path: e.target.value as CandlePath })} {...help('The line the candles follow. They are spread evenly along it; round shapes share the gap back to the start too.')}>
             {(Object.keys(PATH_NAMES) as CandlePath[]).map((k) => (
@@ -189,13 +188,6 @@ export default function CandlePanel() {
           </button>
         </div>
       </div>
-      <div className="mp-row ap-edit">
-        {Object.entries(PRESETS).map(([k, p]) => (
-          <button key={k} className="btn sm" onClick={() => addLine(k)} {...help(`Add a ${p.label.toLowerCase()}: about ${p.d} mm across and ${p.h} mm tall. Sizes vary by maker, so type your own as "${p.d} x ${p.h}" if yours differ.`)}>
-            + {p.label}
-          </button>
-        ))}
-      </div>
       {s.path === 'free' && (
         <div className="mp-row ap-edit">
           <span className="ap-label">Click a candle in the 3D view and drag its arrows to move it. Every candle keeps its own spot.</span>
@@ -243,6 +235,159 @@ export default function CandlePanel() {
           </button>
         </div>
       )}
+    </>
+  );
+}
+
+type Help = (h: string) => { onMouseEnter: () => void; onMouseLeave: () => void; title: string };
+
+const HOLDER_OPTIONS: [Holder | '', string][] = [
+  ['', 'Holder: as set below'],
+  ['target', 'Target fins'],
+  ['slotted', 'Slotted fins'],
+  ['socket', 'Cup in the plates'],
+];
+
+const sizeText = (c: { d: number; h: number }) => `Ø${fmt(c.d, 0)} × ${fmt(c.h, 0)} mm`;
+
+/** A candle drawn to scale in a small box: a tealight in its foil cup, or a candlestick with its wick and flame. */
+export function CandleIcon({ d, h, tealight, box = 40 }: { d: number; h: number; tealight: boolean; box?: number }) {
+  // fit the tallest candle (and the widest tealight) to the box, so sizes compare at a glance
+  const k = Math.min((box - 12) / Math.max(h, 60), (box - 4) / Math.max(d, 70));
+  const w = Math.max(3, d * k);
+  const hh = Math.max(3, h * k);
+  const x = (box - w) / 2;
+  const y = box - 1 - hh;
+  const fy = y - 1;
+  return (
+    <svg className="candle-icon" width={box} height={box} viewBox={`0 0 ${box} ${box}`} aria-hidden="true">
+      {tealight ? (
+        <>
+          <rect x={x} y={y} width={w} height={hh} fill="#f6efd9" stroke="#555" strokeWidth="1" />
+          <rect x={x} y={y + hh * 0.35} width={w} height={hh * 0.65} fill="#b9bec4" stroke="#555" strokeWidth="1" />
+        </>
+      ) : (
+        <rect x={x} y={y} width={w} height={hh} fill="#f6efd9" stroke="#555" strokeWidth="1" />
+      )}
+      <line x1={box / 2} y1={y} x2={box / 2} y2={fy - 1} stroke="#333" strokeWidth="1" />
+      <path d={`M${box / 2} ${fy - 8} q3 4 0 7 q-3 -3 0 -7z`} fill="#f0a020" stroke="#b05a00" strokeWidth="0.75" />
+    </svg>
+  );
+}
+
+/** Pick candles from the catalogue, then set how many of each and in what order. The typed list is still there for power users. */
+function CandlePicker({ s, edit, help, setHint }: { s: CandleSpec; edit: (patch: Partial<CandleSpec>, key?: string) => void; help: Help; setHint: (h: string | null) => void }) {
+  const [typed, setTyped] = useState(false);
+  const [own, setOwn] = useState({ d: 24, h: 300, tealight: false });
+  const { lines: rows, bad } = parseCandles(s.candles);
+  const write = (next: CandleRow[]) => edit({ candles: writeCandles(next, bad) });
+  const add = (size: CandleSize) => edit({ candles: addCandle(s.candles, size) });
+  const change = (i: number, row: CandleRow | null) => write(rows.flatMap((r, j) => (j === i ? (row ? [row] : []) : [r])));
+  const swap = (i: number, j: number) => {
+    const next = rows.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    write(next);
+  };
+  const total = rows.reduce((a, r) => a + r.count, 0);
+
+  return (
+    <>
+      <div className="mp-row candle-pick" role="group" aria-label="Add a candle">
+        <span className="cp-head">Add a candle</span>
+        <div className="cp-cards">
+          {Object.entries(PRESETS).map(([key, p]) => (
+            <button
+              key={key}
+              className="cp-card"
+              data-testid={`candle-add-${key}`}
+              onClick={() => add({ d: p.d, h: p.h, tealight: p.tealight, name: p.label, preset: key })}
+              {...help(`Add a ${p.label.toLowerCase()}: about ${p.d} mm across and ${p.h} mm tall. Sizes vary by maker, so add your own size below if yours differ.`)}
+            >
+              <CandleIcon d={p.d} h={p.h} tealight={p.tealight} box={34} />
+              <span className="cp-name">{p.label.replace(/ \(taper\)$/, '')}</span>
+              <span className="cp-size">{sizeText(p)}</span>
+              <span className="cp-add">+ Add</span>
+            </button>
+          ))}
+          <div className="cp-card cp-own" {...help('A candle of your own size: measure across and the height in mm. Tealight sits in a cup; candlestick is held by fins or a socket.')}>
+            <CandleIcon d={own.d} h={own.h} tealight={own.tealight} box={34} />
+            <span className="cp-name">Your own</span>
+            <span className="cp-dims">
+              <input type="number" min={5} max={400} step={1} aria-label="Your own candle: across (mm)" value={own.d} onChange={(e) => setOwn({ ...own, d: Number(e.target.value) || own.d })} />
+              ×
+              <input type="number" min={5} max={1000} step={1} aria-label="Your own candle: height (mm)" value={own.h} onChange={(e) => setOwn({ ...own, h: Number(e.target.value) || own.h })} />
+            </span>
+            <select aria-label="Your own candle: kind" value={own.tealight ? 'tea' : 'stick'} onChange={(e) => setOwn({ ...own, tealight: e.target.value === 'tea' })}>
+              <option value="stick">Candlestick</option>
+              <option value="tea">Tealight</option>
+            </select>
+            <button className="btn sm" data-testid="candle-add-own" onClick={() => add({ d: Math.min(400, Math.max(5, own.d)), h: Math.min(1000, Math.max(5, own.h)), tealight: own.tealight, name: '' })}>
+              + Add
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="mp-row candle-list" role="group" aria-label="Candles on the candelabra">
+        <span className="cp-head">
+          On the candelabra <small>{total ? `${total} candle${total === 1 ? '' : 's'}, laid along the path in this order${s.alternate ? ' (Mix spreads them through each other)' : ''}` : ''}</small>
+        </span>
+        {!rows.length && <p className="cp-empty">No candles yet. Add one above.</p>}
+        {rows.length > 0 && (
+          <ol className="cp-rows sunken-panel" data-testid="candle-rows">
+            {rows.map((r, i) => {
+              const name = r.size.preset ? PRESETS[r.size.preset].label : r.size.word || `${r.size.tealight ? 'Tealight' : 'Candlestick'}`;
+              return (
+                <li key={i} className="cp-row" data-testid="candle-row">
+                  <CandleIcon d={r.size.d} h={r.size.h} tealight={r.size.tealight} box={28} />
+                  <span className="cp-row-name">
+                    {name}
+                    <small>{sizeText(r.size)}</small>
+                  </span>
+                  <span className="cp-count">
+                    <button className="btn sm" aria-label={`One fewer ${name}`} onClick={() => change(i, r.count > 1 ? { ...r, count: r.count - 1 } : null)} title={r.count > 1 ? 'One fewer' : 'Take this candle out'}>
+                      −
+                    </button>
+                    <output aria-label={`How many ${name}`}>{r.count}</output>
+                    <button className="btn sm" aria-label={`One more ${name}`} disabled={r.count >= 60} onClick={() => change(i, { ...r, count: r.count + 1 })} title="One more">
+                      +
+                    </button>
+                  </span>
+                  <select
+                    aria-label={`Holder for ${name}`}
+                    value={r.size.holder ?? ''}
+                    onChange={(e) => change(i, { ...r, size: { ...r.size, holder: (e.target.value || undefined) as Holder | undefined } })}
+                    {...help(r.size.tealight ? 'Tealights sit in a cup cut in the plates. Pick fins to stand this one in a ring of fins instead.' : 'How these candlesticks are held. "As set below" follows the Holder choice for the whole candelabra.')}
+                  >
+                    {HOLDER_OPTIONS.map(([v, label]) => (
+                      <option key={v} value={v}>
+                        {v === '' && r.size.tealight ? 'Holder: cup' : label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="cp-move">
+                    <button className="btn sm" aria-label={`Move ${name} earlier`} disabled={i === 0} onClick={() => swap(i, i - 1)} title="Earlier along the path">
+                      ▲
+                    </button>
+                    <button className="btn sm" aria-label={`Move ${name} later`} disabled={i === rows.length - 1} onClick={() => swap(i, i + 1)} title="Later along the path">
+                      ▼
+                    </button>
+                    <button className="btn sm" aria-label={`Remove ${name}`} onClick={() => change(i, null)} title="Take these candles out">
+                      ✕
+                    </button>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+        {bad.length > 0 && <p className="cp-bad">Couldn't read: {bad.join(', ')}. Fix it in the typed list.</p>}
+        <button className={`btn sm ${typed ? 'on' : ''}`} aria-expanded={typed} onClick={() => setTyped(!typed)} {...help('Type the list instead, one candle per line, e.g. "5 taper", "4 tealight", "24 x 300 stick target". The picker and the typed list are the same list.')}>
+          {typed ? 'Hide typed list' : 'Type the list…'}
+        </button>
+        {typed && (
+          <textarea aria-label="Candles, typed" rows={4} value={s.candles} onChange={(e) => edit({ candles: e.target.value }, 'candles:list')} onMouseEnter={() => setHint(DEFAULT_HINT)} onMouseLeave={() => setHint(null)} placeholder={'5 taper\n4 tealight\n58 x 24 maxi'} />
+        )}
+      </div>
     </>
   );
 }
