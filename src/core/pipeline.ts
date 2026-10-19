@@ -230,7 +230,7 @@ export interface FrontOptions {
 /**
  * The front stages. Fast enough to run on every edit.
  * A `preview` pipeline is the coarse one used while dragging: plate profiles
- * sampled every PREVIEW_SAMPLE_STEP mm at most, and no shadow carve.
+ * sampled every PREVIEW_SAMPLE_STEP mm at most, no minimum corner radius and no shadow carve.
  */
 export function createFrontPipeline(options: FrontOptions = {}) {
   const preview = !!options.preview;
@@ -260,8 +260,14 @@ export function createFrontPipeline(options: FrontOptions = {}) {
     const ev = stage('Parameters', [mapParams.raw, imgAspect, frontAspect, sideAspect], () => evaluateParams(mapParams.raw, { imgAspect, frontAspect, sideAspect }));
     const v = preview
       ? stage('Preview values', [ev], () =>
-          ev.values.sampleStep < PREVIEW_SAMPLE_STEP || ev.values.curveStep < PREVIEW_SAMPLE_STEP
-            ? { ...ev.values, sampleStep: Math.max(PREVIEW_SAMPLE_STEP, ev.values.sampleStep), curveStep: Math.max(PREVIEW_SAMPLE_STEP, ev.values.curveStep) }
+          ev.values.sampleStep < PREVIEW_SAMPLE_STEP || ev.values.curveStep < PREVIEW_SAMPLE_STEP || ev.values.minRadius > 0
+            ? {
+                ...ev.values,
+                sampleStep: Math.max(PREVIEW_SAMPLE_STEP, ev.values.sampleStep),
+                curveStep: Math.max(PREVIEW_SAMPLE_STEP, ev.values.curveStep),
+                // sub-millimetre corner rounding can't be seen mid-drag; the full pass adds it
+                minRadius: 0,
+              }
             : ev.values,
         )
       : ev.values;
