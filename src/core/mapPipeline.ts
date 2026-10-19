@@ -75,6 +75,10 @@ export interface BuildMapImageOptions {
   allowOverpassNetwork?: boolean;
   /** Cancels tile fetches and stops the build between stages (a newer build superseded it). */
   signal?: AbortSignal;
+  /** Long-edge cap of the grid: MAP_LOCAL_MAX_PX here and in the CLI, MAP_CLOUD_MAX_PX in the cloud job. */
+  maxPx?: number;
+  /** Called as each stage finishes, with the share of the build done (0..1). */
+  onStage?: (done: number, stage: string) => void;
 }
 
 /**
@@ -123,7 +127,7 @@ async function fetchElevationGrid(
 
   if (isEaLidarSource(effective)) {
     let reason = '';
-    const sized = { ...spec, ...mapGridSize(spec, effective, opts.stack?.masterWidthMm) };
+    const sized = { ...spec, ...mapGridSize(spec, effective, opts.stack?.masterWidthMm, opts.maxPx) };
     const grid = await fetchEaLidarGrid(effective, sized, { loader: opts.eaLoader, onError: (m) => (reason = m) });
     if (grid) return ok(grid, effective);
     const why = reason ? ` (${reason})` : '';
@@ -159,16 +163,18 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   const fetchSource = resolveElevationSourceForModel(resolved.effective, spec.model);
   const elevHit = await fetchElevationGrid(spec, fetchSource, notices, opts);
   const elev = elevHit.grid;
+  opts.onStage?.(0.35, 'elevation');
   await nextStage(opts.signal);
   /** Actual raster after fallback — auto exaggeration and the readout source must use this, not the pick. */
   const usedSource = elevHit.used;
   // grid size follows the raster actually fetched: a fallback to Terrarium keeps the 512 px grid
   const resampleSpec = {
     ...spec,
-    ...mapGridSize(spec, usedSource, opts.stack?.masterWidthMm),
+    ...mapGridSize(spec, usedSource, opts.stack?.masterWidthMm, opts.maxPx),
     model: spec.model === 'dtm+buildings' ? 'dtm' : spec.model,
   };
   let metric = reprojectResample(elev, resampleSpec);
+  opts.onStage?.(0.5, 'resample');
   await nextStage(opts.signal);
   let dtmMetric = metric;
   if (spec.model === 'dsm' && fetchSource !== resolved.effective) {
@@ -225,6 +231,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       notices.push(mapWarn(`Water flatten skipped: ${(e as Error).message}`));
     }
   }
+  opts.onStage?.(0.6, 'water');
   await nextStage(opts.signal);
   const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
   const { factor } = resolveExaggerationFactor(
@@ -258,6 +265,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     ortho?.widthM ?? 1,
     stack.masterWidthMm,
   );
+  opts.onStage?.(0.85, 'depth');
   await nextStage(opts.signal);
   let engraveArt: MapSpec['engraveArt'];
   if (spec.engrave?.enabled) {
@@ -291,6 +299,8 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       hasEngraveArt ? ['Map features © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), ODbL'] : [],
     ),
   };
+  // a fresh build is local until the cloud job marks it
+  delete stored.cloudBuilt;
   if (engraveArt && hasEngraveArt) stored.engraveArt = engraveArt;
   else delete stored.engraveArt;
   if (!filteredNotices.length) delete stored.sourceWarnings;
@@ -300,6 +310,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     map: stored,
     depth,
   };
+  opts.onStage?.(1, 'done');
   return { asset, elevation: elev, metric, depth };
 }
 

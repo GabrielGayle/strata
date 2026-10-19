@@ -24,6 +24,7 @@ const DERIVED_MAP_KEYS = [
   'resolvedSource',
   'sourceWarnings',
   'engraveArt',
+  'cloudBuilt',
 ] as const;
 
 /** Image / insert / slicer fields that hide the terrain. User param overrides still win. */

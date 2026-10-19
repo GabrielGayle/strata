@@ -90,6 +90,16 @@ export interface MapSpec {
   giftSizeId?: string;
   /** Matches `mapBuildKey` when depth grid was last built in the browser/CLI. */
   buildKey?: string;
+  /**
+   * Build this map on the cloud at up to 2048 px when Boost is on ("High resolution (cloud)").
+   * With Boost off, or when the cloud is unavailable, the local 1024 px build is used.
+   */
+  cloudRes?: boolean;
+  /**
+   * Set when the depth came from the cloud terrain job: the result's key in the cloud cache and
+   * its long edge. Saved projects keep a 1024 px copy; the full grid is fetched again by key.
+   */
+  cloudBuilt?: { key: string; px: number };
 }
 
 export const TERRARIUM_ATTRIBUTION = [
@@ -217,6 +227,7 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   const smoothMm = num(o.smoothMm);
   const sunkenFrame = cleanSunkenFrame(o.sunkenFrame);
   const giftSizeId = typeof o.giftSizeId === 'string' && o.giftSizeId.trim() ? o.giftSizeId.trim() : undefined;
+  const cloudBuilt = cleanCloudBuilt(o.cloudBuilt);
   return {
     kind: 'map',
     bbox,
@@ -247,7 +258,16 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(buildingClampM != null && buildingClampM > 0 ? { buildingClampM } : {}),
     ...(sunkenFrame ? { sunkenFrame } : {}),
     ...(giftSizeId ? { giftSizeId } : {}),
+    ...(o.cloudRes === true ? { cloudRes: true } : {}),
+    ...(cloudBuilt ? { cloudBuilt } : {}),
   };
+}
+
+function cleanCloudBuilt(raw: unknown): MapSpec['cloudBuilt'] | undefined {
+  const o = (raw ?? null) as Record<string, unknown> | null;
+  if (!o || typeof o.key !== 'string' || !/^[0-9a-f]{32,64}$/.test(o.key)) return undefined;
+  const px = num(o.px);
+  return px != null && px > 0 ? { key: o.key, px: Math.round(px) } : undefined;
 }
 
 function cleanSunkenFrame(raw: unknown): MapSpec['sunkenFrame'] | undefined {

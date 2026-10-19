@@ -1,12 +1,13 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { createHash } from 'node:crypto';
-import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handleEaProxyHttp } from './src/server/eaProxyHttp';
 import { handleOverpassProxyHttp } from './src/server/overpassProxyHttp';
 import { handleProjectsHttp } from './src/server/projectsHttp';
+import { handleGeoHttp } from './src/server/geoHttp';
+import { engineHash } from './scripts/engine-hash';
 
 // Strata's own geometry code (and the mesh loaders it uses) needs only three's
 // core: maths, geometry, shapes. Point those imports straight at three.core.js,
@@ -29,6 +30,14 @@ function attachApiMiddleware(server: { middlewares: { use: Function } }) {
       void handleOverpassProxyHttp(req, res).catch((e) => {
         res.statusCode = 500;
         res.end((e as Error).message);
+      });
+      return;
+    }
+    if (url.startsWith('/api/geo/')) {
+      void handleGeoHttp(req, res).catch(() => {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Cloud request failed' }));
       });
       return;
     }
@@ -124,25 +133,12 @@ function threeCore(): Plugin {
   };
 }
 
-// Libraries in their own files, so an app update doesn't make phones fetch them again.
-// The engine's version for the result cache: a hash of the geometry code and the
-// locked dependencies, so a deploy that changes neither keeps everyone's cached
-// results, and any change to the engine starts afresh.
+// The engine's version for the result cache and the cloud worker (scripts/engine-hash.ts).
 function engineBuild(): string {
-  const root = fileURLToPath(new URL('.', import.meta.url));
-  const h = createHash('sha256');
-  const walk = (dir: string) => {
-    for (const name of readdirSync(dir).sort()) {
-      const path = join(dir, name);
-      if (statSync(path).isDirectory()) walk(path);
-      else (h.update(path.slice(root.length)), h.update(readFileSync(path)));
-    }
-  };
-  walk(join(root, 'src/core'));
-  if (existsSync(join(root, 'package-lock.json'))) h.update(readFileSync(join(root, 'package-lock.json')));
-  return h.digest('hex').slice(0, 16);
+  return engineHash(fileURLToPath(new URL('.', import.meta.url)));
 }
 
+// Libraries in their own files, so an app update doesn't make phones fetch them again.
 function vendorChunk(id: string): string | undefined {
   if (!id.includes('node_modules')) return;
   if (/[\\/]three[\\/]build[\\/]three\.core\.js$/.test(id)) return 'three-core';
