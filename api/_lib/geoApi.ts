@@ -78,17 +78,24 @@ export function modalConfig(env: NodeJS.ProcessEnv = process.env): ModalConfig |
   return { url, key, secret };
 }
 
-export function renderCacheToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  return env.RENDER_CACHE_READ_WRITE_TOKEN?.trim() || env.BLOB_READ_WRITE_TOKEN?.trim() || undefined;
+/** How the site reaches the Blob store: Vercel OIDC with the connected store's id, else a read-write token. */
+export type RenderCacheAuth = { storeId: string } | { token: string };
+
+export function renderCacheAuth(env: NodeJS.ProcessEnv = process.env): RenderCacheAuth | undefined {
+  // A store connected the token-less way only sets RENDER_CACHE_STORE_ID; the function's OIDC token does the rest.
+  const storeId = env.RENDER_CACHE_STORE_ID?.trim();
+  if (storeId) return { storeId };
+  const token = env.RENDER_CACHE_READ_WRITE_TOKEN?.trim() || env.BLOB_READ_WRITE_TOKEN?.trim();
+  return token ? { token } : undefined;
 }
 
 /** Private Blob store holding results (`strata-render-cache`, or the projects store as a fallback). */
-export function blobRenderCache(token: string): RenderCache {
+export function blobRenderCache(auth: RenderCacheAuth): RenderCache {
   return {
     async has(pathname) {
       const { head, BlobNotFoundError } = await import('@vercel/blob');
       try {
-        await head(pathname, { token });
+        await head(pathname, { ...auth });
         return true;
       } catch (e) {
         if (e instanceof BlobNotFoundError) return false;
@@ -97,7 +104,7 @@ export function blobRenderCache(token: string): RenderCache {
     },
     async get(pathname) {
       const { get } = await import('@vercel/blob');
-      const r = await get(pathname, { access: 'private', token, useCache: true });
+      const r = await get(pathname, { access: 'private', ...auth, useCache: true });
       if (!r || r.statusCode !== 200) return undefined;
       return new Uint8Array(await new Response(r.stream).arrayBuffer());
     },
@@ -105,7 +112,7 @@ export function blobRenderCache(token: string): RenderCache {
       const { put } = await import('@vercel/blob');
       await put(pathname, Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), {
         access: 'private',
-        token,
+        ...auth,
         addRandomSuffix: false,
         allowOverwrite: true,
         contentType: 'application/octet-stream',
@@ -168,9 +175,9 @@ function requireModal(env: NodeJS.ProcessEnv): ModalConfig {
 
 function requireCache(deps: GeoApiDeps, env: NodeJS.ProcessEnv): RenderCache {
   if (deps.cache) return deps.cache;
-  const token = renderCacheToken(env);
-  if (!token) throw new GeoError(503, 'The result store is not configured (RENDER_CACHE_READ_WRITE_TOKEN)', 'not-configured');
-  return blobRenderCache(token);
+  const auth = renderCacheAuth(env);
+  if (!auth) throw new GeoError(503, 'The result store is not configured (RENDER_CACHE_STORE_ID or RENDER_CACHE_READ_WRITE_TOKEN)', 'not-configured');
+  return blobRenderCache(auth);
 }
 
 const CACHE_ID_PREFIX = 'cache-';
