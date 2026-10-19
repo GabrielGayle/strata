@@ -5,7 +5,9 @@
  *   POST jobs                   start a job (or answer at once from the cloud cache)
  *   GET  jobs/:id               running n% / done / failed / cancelled
  *   POST jobs/:id/cancel
- *   GET  artifacts/:key?part=n  a finished result, gzip JSON, in parts under 4.5 MB
+ *   POST inputs/:sha?part=n&parts=N   one part of a design for a pack or nest job ({data: base64})
+ *   GET  artifacts/:key?part=n  a finished result, in parts under 4.5 MB
+ *   GET  artifacts/:key/:file?part=n    the same for pack.zip and nest.json.gz
  *   GET  usage                  this month's jobs and cost
  *
  * Every route checks the owner passphrase first and makes no Modal or Blob call
@@ -14,11 +16,17 @@
  */
 import { assertOwner, OwnerAuthError } from './ownerAuth.js';
 import {
+  ARTIFACT_FILES,
   ARTIFACT_PART_BYTES,
   artifactPath,
   GEO_JOB_MAX_BODY_BYTES,
   GEO_KEY_RE,
   geoJobKey,
+  INPUT_MAX_BODY_BYTES,
+  INPUT_PART_BYTES,
+  inputPartPath,
+  MAX_INPUT_PARTS,
+  SHA_RE,
   validateGeoJobRequest,
   type GeoJobStatus,
 } from './geoJob.js';
@@ -44,6 +52,7 @@ export interface GeoApiResponse {
 export interface RenderCache {
   has(pathname: string): Promise<boolean>;
   get(pathname: string): Promise<Uint8Array | undefined>;
+  put(pathname: string, bytes: Uint8Array): Promise<void>;
 }
 
 export interface GeoApiDeps {
@@ -92,6 +101,16 @@ export function blobRenderCache(token: string): RenderCache {
       if (!r || r.statusCode !== 200) return undefined;
       return new Uint8Array(await new Response(r.stream).arrayBuffer());
     },
+    async put(pathname, bytes) {
+      const { put } = await import('@vercel/blob');
+      await put(pathname, Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), {
+        access: 'private',
+        token,
+        addRandomSuffix: false,
+        allowOverwrite: true,
+        contentType: 'application/octet-stream',
+      });
+    },
   };
 }
 
@@ -105,17 +124,17 @@ class GeoError extends Error {
   }
 }
 
-function jsonBody(body: unknown): unknown {
+function jsonBody(body: unknown, max = GEO_JOB_MAX_BODY_BYTES): unknown {
   if (body == null || body === '') return {};
   if (typeof body === 'string') {
-    if (body.length > GEO_JOB_MAX_BODY_BYTES) throw new GeoError(413, 'Request too large');
+    if (body.length > max) throw new GeoError(413, 'Request too large');
     try {
       return JSON.parse(body);
     } catch {
       throw new GeoError(400, 'Request is not JSON');
     }
   }
-  if (JSON.stringify(body).length > GEO_JOB_MAX_BODY_BYTES) throw new GeoError(413, 'Request too large');
+  if (JSON.stringify(body).length > max) throw new GeoError(413, 'Request too large');
   return body;
 }
 
@@ -182,9 +201,16 @@ export async function handleGeoApi(req: GeoApiRequest, deps: GeoApiDeps = {}): P
       const cfg = requireModal(env);
       const cache = requireCache(deps, env);
       const key = await geoJobKey(checked.value);
-      if (await cache.has(artifactPath(key))) {
+      if (await cache.has(artifactPath(key, ARTIFACT_FILES[checked.value.kind]))) {
         const done: GeoJobStatus = { id: `${CACHE_ID_PREFIX}${key}`, status: 'done', key, cached: true };
         return { status: 200, json: done };
+      }
+      if (checked.value.kind !== 'terrain') {
+        // the worker reads the design from the store: every part must be there first
+        const input = checked.value.input;
+        const missing: number[] = [];
+        for (let i = 0; i < input.parts; i++) if (!(await cache.has(inputPartPath(input, i)))) missing.push(i);
+        if (missing.length) return { status: 409, json: { error: 'Upload the design first', reason: 'needs-input', missing } };
       }
       const started = await callModal(cfg, f, 'POST', '/jobs', checked.value);
       if (typeof started?.id !== 'string') throw new GeoError(502, 'The cloud worker did not start the job', 'unreachable');
@@ -210,13 +236,32 @@ export async function handleGeoApi(req: GeoApiRequest, deps: GeoApiDeps = {}): P
       }
     }
 
-    if (method === 'GET' && parts.length === 2 && parts[0] === 'artifacts') {
+    if (method === 'POST' && parts.length === 2 && parts[0] === 'inputs') {
+      const sha = parts[1];
+      const part = Number(req.query?.part);
+      const count = Number(req.query?.parts);
+      if (!SHA_RE.test(sha)) return { status: 400, json: { error: 'Invalid input' } };
+      if (!Number.isInteger(count) || count < 1 || count > MAX_INPUT_PARTS || !Number.isInteger(part) || part < 0 || part >= count) {
+        return { status: 400, json: { error: 'Invalid part' } };
+      }
+      const body = jsonBody(req.body, INPUT_MAX_BODY_BYTES) as { data?: unknown };
+      if (typeof body.data !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.data)) return { status: 400, json: { error: 'data must be base64' } };
+      const bytes = Uint8Array.from(Buffer.from(body.data, 'base64'));
+      if (bytes.length === 0 || bytes.length > INPUT_PART_BYTES) return { status: 413, json: { error: 'Part too large' } };
+      const cache = requireCache(deps, env);
+      await cache.put(inputPartPath({ sha, parts: count }, part), bytes);
+      return { status: 200, json: { ok: true, part, bytes: bytes.length } };
+    }
+
+    if (method === 'GET' && (parts.length === 2 || parts.length === 3) && parts[0] === 'artifacts') {
       const key = parts[1];
+      const file = parts[2] ?? ARTIFACT_FILES.terrain;
       if (!GEO_KEY_RE.test(key)) return { status: 400, json: { error: 'Invalid result key' } };
+      if (!Object.values(ARTIFACT_FILES).includes(file)) return { status: 400, json: { error: 'Invalid result file' } };
       const part = Number(req.query?.part ?? 0);
       if (!Number.isInteger(part) || part < 0) return { status: 400, json: { error: 'Invalid part' } };
       const cache = requireCache(deps, env);
-      const all = await cache.get(artifactPath(key));
+      const all = await cache.get(artifactPath(key, file));
       if (!all) return { status: 404, json: { error: 'Result not found' } };
       const total = Math.max(1, Math.ceil(all.length / ARTIFACT_PART_BYTES));
       if (part >= total) return { status: 404, json: { error: 'No such part' } };

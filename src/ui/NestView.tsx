@@ -4,7 +4,8 @@ import { useFullModel, useModel, fmt } from './model';
 import { download, fitShape, mouldPartDxf, sheetDxf, sheetEtchDxf, sheetFiles } from '../core/exporters';
 import { shapeD, pathD, segsD } from './svg';
 import type { Shape, Path } from '../core/geom2d';
-import type { NestResult } from '../core/nest';
+import { placeTransform, type NestResult } from '../core/nest';
+import { CloudNestBar } from './CloudStatus';
 import { MATERIAL_NAME } from '../core/bom';
 import { zipSync, strToU8 } from 'fflate';
 
@@ -28,11 +29,12 @@ function SheetSvg({ nest, index, items, selected, onSelect, color }: { nest: Nes
       {s.placements.map((pl) => {
         const it = items.get(pl.id);
         if (!it) return null;
-        const h = it.bb.maxY - it.bb.minY;
-        // part-local → sheet: translate bbox min to placement, optional 90° CCW rotation
-        const tf = pl.rot
-          ? `translate(${pl.x + h} ${-pl.y}) rotate(-90) translate(${-it.bb.minX} ${it.bb.minY})`
-          : `translate(${pl.x - it.bb.minX} ${-pl.y + it.bb.minY})`;
+        // part-local → sheet as placeTransform does it (y flipped for SVG): a matrix
+        const f = placeTransform(it.bb, pl);
+        const [ox, oy] = f([0, 0]);
+        const [ax, ay] = f([1, 0]);
+        const [bx, by] = f([0, 1]);
+        const tf = `matrix(${ax - ox} ${-(ay - oy)} ${bx - ox} ${-(by - oy)} ${ox} ${-oy})`;
         const sel = selected === pl.id;
         return (
           <g key={pl.id} transform={tf} onClick={() => onSelect(pl.id)} style={{ cursor: 'pointer' }}>
@@ -52,6 +54,8 @@ export default function NestView() {
   const fullModel = useFullModel();
   const ui = useStore((s) => s.ui);
   const setUi = useStore((s) => s.setUi);
+  const project = useStore((s) => s.project);
+  const setNest = useStore((s) => s.setNest);
   const [which, setWhich] = useState<'metal' | 'ply'>('metal');
   const v = model.v;
   // draw what the sheet DXF actually contains, so the preview can't drift from the file
@@ -107,6 +111,7 @@ export default function NestView() {
           </button>
         )}
       </div>
+      {which === 'metal' && <CloudNestBar project={project} model={fullModel} nested={model.nested} setNest={setNest} />}
       {nest.unplaced.length > 0 && <div className="note err">Too big for the sheet: {nest.unplaced.join(', ')}</div>}
       <div className="pad" style={{ display: 'grid', gap: 12 }}>
         {nest.sheets.map((s, i) => (

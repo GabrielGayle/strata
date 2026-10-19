@@ -14,7 +14,7 @@ import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
 import { layoutShelfResult, type SolveResult } from './shelfSolve';
 import { reportShelfVisibility, shelfEye, shelfLayoutKey, shelfSight, shelfViewKey, type V3, type VisibilityReport } from './shelfView';
-import { nest, nestGroups, type NestResult } from './nest';
+import { nest, nestFingerprint, nestGroups, nestMismatch, type NestGroup, type NestOptions, type NestResult, type SavedNest } from './nest';
 import { materialKey, materialOf } from './appearance';
 import { tuningActive } from './tuning';
 import { modesOfOutline } from './beam';
@@ -175,6 +175,8 @@ export interface DeferredInput {
   insert: { mesh: IndexedMesh; minY: number; maxY: number; volume: number } | null;
   pourRows: PourPlanRow[];
   appearance: Project['appearance'];
+  /** The cloud's tight nest, used while the parts still match it. */
+  savedNest?: SavedNest;
 }
 
 export interface DeferredModel {
@@ -203,6 +205,7 @@ export const deferredInput = (f: FrontModel, project: Project): DeferredInput =>
   insert: f.insert ? plainInsert(f.insert) : null,
   pourRows: f.pour.rows,
   appearance: project.appearance,
+  ...(project.nest ? { savedNest: project.nest } : {}),
 });
 
 /** Profile resolution used while a slider or gizmo is held down (mm; finer settings are coarsened to it). */
@@ -418,8 +421,36 @@ export function createFrontPipeline(options: FrontOptions = {}) {
  * plain data, so the app runs them in a Web Worker (see deferred.worker.ts).
  * Mode 'fast' reuses the last result of any stage whose inputs changed.
  */
-export function createDeferredPipeline() {
+/**
+ * The metal parts to nest, one group per metal (a laser shop cuts each metal from its
+ * own sheet), each with its outline so the nester can fit wavy edges together.
+ */
+export function nestGroupsOf(sliced: SliceResult, defaultMaterial: string, materialFor: (plateKey: string) => string): NestGroup[] {
+  const groups = new Map<string, NestGroup>([[defaultMaterial, { material: defaultMaterial, items: [] }]]);
+  for (const p of sliced.parts) {
+    const m = materialFor(p.plateKey);
+    if (!groups.has(m)) groups.set(m, { material: m, items: [] });
+    groups.get(m)!.items.push({
+      id: p.id,
+      w: p.bbox.maxX - p.bbox.minX,
+      h: p.bbox.maxY - p.bbox.minY,
+      area: p.area,
+      outline: p.shape.map((e) => e.outer),
+      minX: p.bbox.minX,
+      minY: p.bbox.minY,
+    });
+  }
+  return [...groups.values()].filter((g, i) => i === 0 || g.items.length);
+}
+
+export interface DeferredOptions {
+  /** Time and seed for the metal nest; the cloud's tight nest passes 30 or 90 seconds. */
+  nest?: NestOptions;
+}
+
+export function createDeferredPipeline(opts: DeferredOptions = {}) {
   const cache: Cache = new Map();
+  const nestOpts = opts.nest ?? {};
   return function computeDeferred(input: DeferredInput, mode: 'fast' | 'full' = 'full'): DeferredModel {
     const t0 = performance.now();
     const st = stager(cache, mode);
@@ -428,15 +459,11 @@ export function createDeferredPipeline() {
     const mats = materialKey(appearance, String(v.plateMaterial));
     const materialFor = (key: string) => materialOf(appearance, key, String(v.plateMaterial));
     const issues = stage('Fit checks', [sliced, ...pick(v, CHECK_KEYS)], () => runChecks(v, sliced), true);
-    const nested = stage('Nest sheets', [sliced, v.sheetW, v.sheetH, v.partSpacing, mats], () => {
-      // a laser shop cuts each metal from its own sheet
-      const groups = new Map<string, { material: string; items: { id: string; w: number; h: number; area: number }[] }>([[String(v.plateMaterial), { material: String(v.plateMaterial), items: [] }]]);
-      for (const p of sliced.parts) {
-        const m = materialFor(p.plateKey);
-        if (!groups.has(m)) groups.set(m, { material: m, items: [] });
-        groups.get(m)!.items.push({ id: p.id, w: p.bbox.maxX - p.bbox.minX, h: p.bbox.maxY - p.bbox.minY, area: p.area });
-      }
-      return nestGroups([...groups.values()].filter((g, i) => i === 0 || g.items.length), v.sheetW, v.sheetH, v.partSpacing);
+    const nested = stage('Nest sheets', [sliced, v.sheetW, v.sheetH, v.partSpacing, mats, input.savedNest], () => {
+      const groups = nestGroupsOf(sliced, String(v.plateMaterial), materialFor);
+      const saved = input.savedNest;
+      if (saved && saved.fingerprint === nestFingerprint(groups, v.sheetW, v.sheetH, v.partSpacing) && !nestMismatch(groups, saved.result)) return { ...saved.result, source: 'saved' as const };
+      return nestGroups(groups, v.sheetW, v.sheetH, v.partSpacing, nestOpts);
     }, true);
     const moulds = stage('Moulds', [sliced, insert, ...pick(v, MOULD_KEYS)], () =>
       buildMoulds(v, sliced, insert?.mesh ?? null, insert ? { minY: insert.minY, maxY: insert.maxY } : null),
@@ -498,9 +525,9 @@ export function assemble(f: FrontModel, d: Omit<DeferredModel, 'totalMs'> & { to
   };
 }
 
-export function createPipeline() {
+export function createPipeline(opts: DeferredOptions = {}) {
   const front = createFrontPipeline();
-  const deferred = createDeferredPipeline();
+  const deferred = createDeferredPipeline(opts);
   /**
    * mode 'fast' recomputes what the 3D view needs (forms, strata, plates) and
    * reuses the last result of the deferred stages; 'full' brings everything up to date.

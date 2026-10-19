@@ -2,7 +2,18 @@
 // results come from the cache when they exist, and secrets never reach a response.
 import { describe, expect, it, vi } from 'vitest';
 import { handleGeoApi, type RenderCache } from '../api/_lib/geoApi';
-import { ARTIFACT_PART_BYTES, artifactPath, geoJobKey, type TerrainJobRequest } from '../api/_lib/geoJob';
+import {
+  ARTIFACT_FILES,
+  ARTIFACT_PART_BYTES,
+  artifactPath,
+  geoJobKey,
+  INPUT_MAX_BODY_BYTES,
+  inputPartPath,
+  validateGeoJobRequest,
+  type NestJobRequest,
+  type PackJobRequest,
+  type TerrainJobRequest,
+} from '../api/_lib/geoJob';
 import { NEASDEN_BBOX } from './map-fixtures';
 
 const env = {
@@ -28,6 +39,9 @@ function memoryCache(init: Record<string, Uint8Array> = {}): RenderCache & { fil
     files,
     has: async (p) => p in files,
     get: async (p) => files[p],
+    put: async (p, b) => {
+      files[p] = b;
+    },
   };
 }
 
@@ -42,6 +56,8 @@ const ROUTES: [string, string, unknown?][] = [
   ['GET', 'jobs/fc-abc'],
   ['POST', 'jobs/fc-abc/cancel'],
   ['GET', `artifacts/${'a'.repeat(32)}`],
+  ['GET', `artifacts/${'a'.repeat(32)}/pack.zip`],
+  ['POST', `inputs/${'b'.repeat(64)}?part=0&parts=1`, { data: 'AAAA' }],
 ];
 
 describe('/api/geo', () => {
@@ -169,5 +185,72 @@ describe('/api/geo', () => {
         for (const s of secrets) expect(text).not.toContain(s);
       }
     }
+  });
+
+  describe('pack and nest jobs', () => {
+    const sha = 'c'.repeat(64);
+    const pack: PackJobRequest = { kind: 'pack', engine: 'abc123', input: { sha, parts: 2 }, date: '2026-10-19' };
+    const nestReq: NestJobRequest = { kind: 'nest', engine: 'abc123', input: { sha, parts: 1 }, budget: 'tight' };
+
+    it('checks pack and nest requests', () => {
+      expect(validateGeoJobRequest(pack).ok).toBe(true);
+      expect(validateGeoJobRequest(nestReq).ok).toBe(true);
+      expect(validateGeoJobRequest({ ...pack, date: '19/10/2026' }).ok).toBe(false);
+      expect(validateGeoJobRequest({ ...pack, input: { sha: 'nope', parts: 1 } }).ok).toBe(false);
+      expect(validateGeoJobRequest({ ...pack, input: { sha, parts: 99 } }).ok).toBe(false);
+      expect(validateGeoJobRequest({ ...pack, fault: 'melt' }).ok).toBe(false);
+      expect(validateGeoJobRequest({ ...nestReq, budget: 'forever' }).ok).toBe(false);
+    });
+
+    it('asks for the design before starting a job, then starts it once every part is stored', async () => {
+      const cache = memoryCache();
+      const fetch = modal(() => ({ id: 'fc-pack1' }));
+      const first = await handleGeoApi({ method: 'POST', path: 'jobs', authorization: auth, body: pack }, { env, fetch, cache });
+      expect(first.status).toBe(409);
+      expect(first.json).toMatchObject({ reason: 'needs-input', missing: [0, 1] });
+      expect(fetch).not.toHaveBeenCalled();
+      for (const part of [0, 1]) {
+        const up = await handleGeoApi(
+          { method: 'POST', path: `inputs/${sha}`, query: { part: String(part), parts: '2' }, authorization: auth, body: JSON.stringify({ data: Buffer.from(`part ${part}`).toString('base64') }) },
+          { env, fetch, cache },
+        );
+        expect(up.status).toBe(200);
+      }
+      expect(Buffer.from(cache.files[inputPartPath(pack.input, 1)]).toString()).toBe('part 1');
+      const second = await handleGeoApi({ method: 'POST', path: 'jobs', authorization: auth, body: pack }, { env, fetch, cache });
+      expect(second.status).toBe(202);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses bad uploads', async () => {
+      const cache = memoryCache();
+      const bad = [
+        { path: 'inputs/short', query: { part: '0', parts: '1' }, body: { data: 'AAAA' } },
+        { path: `inputs/${sha}`, query: { part: '2', parts: '2' }, body: { data: 'AAAA' } },
+        { path: `inputs/${sha}`, query: { part: '0', parts: '1' }, body: { data: 'not base64!' } },
+        { path: `inputs/${sha}`, query: { part: '0', parts: '1' }, body: 'x'.repeat(INPUT_MAX_BODY_BYTES + 10) },
+      ];
+      for (const b of bad) {
+        const out = await handleGeoApi({ method: 'POST', authorization: auth, ...b }, { env, fetch: modal(), cache });
+        expect(out.status, b.path).toBeGreaterThanOrEqual(400);
+      }
+      expect(Object.keys(cache.files)).toEqual([]);
+    });
+
+    it('answers a nest from the cache and serves the pack zip by file name', async () => {
+      const key = await geoJobKey(nestReq);
+      const cache = memoryCache({ [artifactPath(key, ARTIFACT_FILES.nest)]: new Uint8Array([1, 2, 3]) });
+      const fetch = modal();
+      const out = await handleGeoApi({ method: 'POST', path: 'jobs', authorization: auth, body: nestReq }, { env, fetch, cache });
+      expect(out).toMatchObject({ status: 200, json: { status: 'done', key, cached: true } });
+      expect(fetch).not.toHaveBeenCalled();
+      const got = await handleGeoApi({ method: 'GET', path: `artifacts/${key}/nest.json.gz`, authorization: auth }, { env, fetch, cache });
+      expect(Array.from(got.bytes!)).toEqual([1, 2, 3]);
+      const wrong = await handleGeoApi({ method: 'GET', path: `artifacts/${key}/secrets.txt`, authorization: auth }, { env, fetch, cache });
+      expect(wrong.status).toBe(400);
+      // a terrain result and a pack with the same key are different files
+      const none = await handleGeoApi({ method: 'GET', path: `artifacts/${key}/pack.zip`, authorization: auth }, { env, fetch, cache });
+      expect(none.status).toBe(404);
+    });
   });
 });

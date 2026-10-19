@@ -1,20 +1,20 @@
 // Headless export: the same fabrication files as the app, from a project JSON.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, extname, resolve, sep } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { unzipSync } from 'fflate';
 import { buildZip } from './core/exporters';
-import { decodeImage, setNodeImageDecoder } from './core/image';
-import { decodeImageNode } from './core/imageNode';
-import { depthToGray } from './core/depth';
 import { applyFlatCliPatch, isMapDepthFace, parse01Flag, parseBoolFlag, parseFlatLevelFlag, type FlatCliPatch } from './core/depthFlat';
-import { createPipeline, type Assets } from './core/pipeline';
+import { createPipeline } from './core/pipeline';
+import { loadAssets, readRates } from './packNode';
+
+export { readRates };
 import { defaultRaw, PARAMS, PARAM_MAP, type EvalResult, type ParamKind, type RawValue } from './core/params';
-import { DEFAULT_RATES, type PriceRates } from './core/price';
+import { DEFAULT_RATES } from './core/price';
 import { MASTER_SIZE_CLI_CANONICAL } from './core/masterPresets';
 import { applyAutoDimensionPatch, previewAutoDimension, type DepthFace } from './core/autoDimension';
 import { applyProjectPatch, formatPatchDiff, masterSizePatch, parseDesign } from './core/design';
-import { serialize, deserialize, PRESETS, type ImageAsset, type MeshAsset, type Project } from './core/project';
+import { serialize, deserialize, PRESETS, type Project } from './core/project';
 import { buildMapBundle, MapSourceNotImplementedError, mapSpecFromCli } from './core/mapPipeline';
 import { mapPresetSpec, parseMapPresetId } from './core/mapPresets';
 import { renderVenueMockup } from './core/mapRender';
@@ -31,7 +31,6 @@ export interface CliIo {
   stderr: (s: string) => void;
 }
 
-setNodeImageDecoder(decodeImageNode);
 
 const defaultIo: CliIo = {
   stdout: (s) => process.stdout.write(s),
@@ -77,7 +76,7 @@ export function presetCatalog(): PresetInfo[] {
 const SIZE_HELP = MASTER_SIZE_CLI_CANONICAL.join(', ');
 
 const USAGE = `Usage:
-  npm run cli -- <project.json> --out <dir> [--preset <name>] [--size <id>] [--orientation portrait|landscape]
+  npm run cli -- <project.json> --out <dir> | --zip <file.zip> [--date YYYY-MM-DD] [--preset <name>] [--size <id>] [--orientation portrait|landscape]
                  [--image side=path.jpg] [--auto-dimension side=top,front] [--relief-exaggeration <n>]
                  [--flat-level off|auto|plateau|percentile|<metres>] [--edge-ease <0..1>] [--step-limit <0..1>]
                  [--flat-negative] [--rates rates.json]
@@ -93,6 +92,9 @@ const USAGE = `Usage:
 
 Writes the fabrication bundle (part and sheet DXFs, moulds, model.stl, cutlist.csv,
 price-estimate.txt, price-estimate.json, build-pack.html, project.strata.json) into <dir>.
+--zip writes the same files as one zip (with or without --out). --date sets the date printed in
+the build pack and stamped on every file, so the zip is the same bytes on every run; the cloud
+pack job (Boost) makes its zip exactly this way.
 A project may set "preset"; parameters in the file override the preset. --preset does the same.
 --size sets the base outline from a master size preset (${SIZE_HELP}); fixed sizes use real mm,
 ratio sizes keep the current long edge. Only the outline changes (thickness and plate count stay).
@@ -118,6 +120,8 @@ interface Args {
   cmd: 'export' | 'params' | 'presets' | 'help' | 'say';
   project?: string;
   out?: string;
+  zip?: string;
+  date?: string;
   preset?: string;
   images: Partial<Record<Slot, string>>;
   rates?: string;
@@ -204,6 +208,11 @@ function parseImage(spec: string, images: Args['images']) {
   images[slot] = path;
 }
 
+function parseDate(s: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || Number.isNaN(Date.parse(`${s}T00:00:00Z`))) throw new Error(`--date expects YYYY-MM-DD, got '${s}'`);
+  return s;
+}
+
 function parseArgs(argv: string[]): Args {
   if (argv.length === 0) throw new Error(`missing project file\n\n${USAGE}`);
   if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') return idleArgs('help');
@@ -215,7 +224,11 @@ function parseArgs(argv: string[]): Args {
   const args: Args = newExportArgs(argv[0]);
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--out') args.out = take(argv, ++i, a);
+    if (a === '--zip') args.zip = take(argv, ++i, a);
+    else if (a.startsWith('--zip=')) args.zip = a.slice(6);
+    else if (a === '--date') args.date = parseDate(take(argv, ++i, a));
+    else if (a.startsWith('--date=')) args.date = parseDate(a.slice(7));
+    else if (a === '--out') args.out = take(argv, ++i, a);
     else if (a.startsWith('--out=')) args.out = a.slice(6);
     else if (a === '--preset') args.preset = take(argv, ++i, a);
     else if (a.startsWith('--preset=')) args.preset = a.slice(9);
@@ -271,7 +284,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--help' || a === '-h') return idleArgs('help');
     else throw new Error(`unknown argument '${a}'`);
   }
-  if (!args.out) throw new Error(`missing --out <dir>\n\n${USAGE}`);
+  if (!args.out && !args.zip) throw new Error(`missing --out <dir> or --zip <file>\n\n${USAGE}`);
   if (args.mapPreset) parseMapPresetId(args.mapPreset);
   if (args.map?.bbox == null && args.map?.title && !args.mapPreset) throw new Error('--map requires --bbox west,south,east,north');
   if ((args.map?.bbox != null || args.mapPreset) && args.map && !args.map.title && !args.mapPreset) args.map.title = 'Map terrain';
@@ -380,94 +393,6 @@ function evalIssues(ev: EvalResult): CliIssue[] {
     issues.push({ level: 'warning', message: `${id} was clamped to ${ev.values[id]} (range ${d.min}..${d.max})` });
   }
   return issues;
-}
-
-const RATE_KEYS = ['perKg', 'waste', 'machinePerHour', 'setup', 'perPart', 'minimum', 'vat', 'hardware'] as const;
-
-function numField(v: unknown, name: string): number {
-  if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`Rate ${name} must be a finite number`);
-  return v;
-}
-
-export function readRates(text: string): PriceRates {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch (e) {
-    throw new Error(`Invalid rates JSON: ${(e as Error).message}`);
-  }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Rates file must be a JSON object');
-  const obj = raw as Record<string, unknown>;
-  for (const k of Object.keys(obj)) {
-    if (!(RATE_KEYS as readonly string[]).includes(k)) throw new Error(`unknown rate '${k}'`);
-  }
-  const rates: PriceRates = {
-    ...DEFAULT_RATES,
-    perKg: { ...DEFAULT_RATES.perKg },
-    hardware: { ...DEFAULT_RATES.hardware },
-  };
-  for (const k of ['waste', 'machinePerHour', 'setup', 'perPart', 'minimum', 'vat'] as const) {
-    if (k in obj) rates[k] = numField(obj[k], k);
-  }
-  if (obj.perKg != null) {
-    if (typeof obj.perKg !== 'object' || Array.isArray(obj.perKg)) throw new Error('Rate perKg must be an object');
-    for (const [metal, v] of Object.entries(obj.perKg as Record<string, unknown>)) rates.perKg[metal] = numField(v, `perKg.${metal}`);
-  }
-  if (obj.hardware != null) {
-    if (typeof obj.hardware !== 'object' || Array.isArray(obj.hardware)) throw new Error('Rate hardware must be an object');
-    const hw = obj.hardware as Record<string, unknown>;
-    for (const k of Object.keys(hw)) {
-      if (k !== 'rodPerM' && k !== 'nut' && k !== 'washer') throw new Error(`unknown rate 'hardware.${k}'`);
-    }
-    for (const k of ['rodPerM', 'nut', 'washer'] as const) if (k in hw) rates.hardware[k] = numField(hw[k], `hardware.${k}`);
-  }
-  return rates;
-}
-
-function mimeOf(file: string, buf: Uint8Array): string {
-  if (buf[0] === 0x89 && buf[1] === 0x50) return 'image/png';
-  if (buf[0] === 0xff && buf[1] === 0xd8) return 'image/jpeg';
-  const ext = extname(file).toLowerCase();
-  if (ext === '.png') return 'image/png';
-  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
-  return 'application/octet-stream';
-}
-
-function fileToDataUrl(file: string): string {
-  const buf = readFileSync(file);
-  return `data:${mimeOf(file, buf)};base64,${buf.toString('base64')}`;
-}
-
-async function imageOf(slot: Slot, asset: ImageAsset | undefined, override?: string) {
-  try {
-    if (override) return await decodeImage(fileToDataUrl(override));
-    if (asset?.depth) return depthToGray(asset.depth);
-    if (asset?.dataUrl) return await decodeImage(asset.dataUrl);
-    return null;
-  } catch (e) {
-    throw new Error(`${slot} image: ${(e as Error).message}`);
-  }
-}
-
-async function meshOf(asset: MeshAsset | undefined) {
-  if (!asset) return null;
-  const { parseMesh } = await import('./state/assets');
-  return parseMesh(asset);
-}
-
-async function loadAssets(project: Project, images: Partial<Record<Slot, string>>): Promise<Assets> {
-  const assets: Assets = {
-    sideImg: await imageOf('side', project.images.side, images.side),
-    frontImg: await imageOf('front', project.images.front, images.front),
-    topImg: await imageOf('top', project.images.top, images.top),
-    insMesh: await meshOf(project.meshes.ins),
-    srcMesh: await meshOf(project.meshes.src),
-  };
-  const frames = project.shadow?.frames;
-  if (frames?.length) {
-    assets.shadowFrames = await Promise.all(frames.map((f) => decodeImage(f.dataUrl)));
-  }
-  return assets;
 }
 
 function writeBundle(dir: string, zip: Uint8Array): Record<string, Uint8Array> {
@@ -598,13 +523,15 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
       report(issues, io);
       return 1;
     }
-    const files = writeBundle(args.out!, buildZip(model, project, rates));
+    const zip = buildZip(model, project, rates, { date: args.date ? new Date(`${args.date}T00:00:00Z`) : undefined });
+    if (args.zip) writeFileSync(args.zip, zip);
+    const files = args.out ? writeBundle(args.out, zip) : unzipSync(zip);
     report(issues, io);
     const parts = Object.keys(files).filter((n) => n.startsWith('laser/parts/') && n.endsWith('.dxf')).length;
     const sheets = Object.keys(files).filter((n) => n.startsWith('laser/sheets/') && n.endsWith('.dxf')).length;
     const moulds = Object.keys(files).filter((n) => n.startsWith('mould/dxf/') && n.endsWith('.dxf')).length;
     const n = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
-    io.stdout(`wrote ${n(parts, 'part')}, ${n(sheets, 'sheet')}, ${n(moulds, 'mould part')} to ${args.out}\n`);
+    io.stdout(`wrote ${n(parts, 'part')}, ${n(sheets, 'sheet')}, ${n(moulds, 'mould part')} to ${[args.out, args.zip].filter(Boolean).join(' and ')}\n`);
     return 0;
   } catch (e) {
     io.stderr(`error: ${(e as Error).message}\n`);
@@ -613,7 +540,8 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
 }
 
 const entry = process.argv[1];
-if (entry && import.meta.url === pathToFileURL(entry).href) {
+// only when run as the CLI itself, not when bundled into another entry (the cloud worker imports main)
+if (entry && /(^|[\\/])cli\.(ts|js|mjs)$/.test(entry) && import.meta.url === pathToFileURL(entry).href) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (e) => {

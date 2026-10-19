@@ -29,7 +29,7 @@ export default async function handler(req: VercelReq, res: VercelRes) {
   const out = await handleGeoApi({
     method: req.method ?? 'GET',
     path: one(q.path) ?? '',
-    query: { part: one(q.part) },
+    query: { part: one(q.part), parts: one(q.parts) },
     authorization: req.headers?.authorization ?? req.headers?.Authorization,
     body: req.body,
   });

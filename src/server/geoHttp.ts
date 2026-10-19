@@ -1,13 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handleGeoApi } from '../../api/_lib/geoApi.js';
-import { GEO_JOB_MAX_BODY_BYTES } from '../../api/_lib/geoJob.js';
+import { INPUT_MAX_BODY_BYTES } from '../../api/_lib/geoJob.js';
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > GEO_JOB_MAX_BODY_BYTES) break;
+    // the largest body is an upload part; handleGeoApi checks each route's own limit
+    if (size > INPUT_MAX_BODY_BYTES) break;
     chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks).toString('utf8');
@@ -21,7 +22,7 @@ export async function handleGeoHttp(req: IncomingMessage, res: ServerResponse): 
   const out = await handleGeoApi({
     method,
     path: url.pathname.replace(/^\/api\/geo\/?/, ''),
-    query: { part: url.searchParams.get('part') ?? undefined },
+    query: { part: url.searchParams.get('part') ?? undefined, parts: url.searchParams.get('parts') ?? undefined },
     authorization: Array.isArray(auth) ? auth[0] : auth,
     body: method === 'POST' ? await readBody(req) : undefined,
   });

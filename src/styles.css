@@ -3717,3 +3717,16 @@ kbd {
   font-size: 11px;
   height: 20px;
 }
+
+/* the last cloud pack: a download link, or why it was refused */
+.cloud-notice {
+  position: fixed;
+  right: 12px;
+  bottom: 36px;
+  max-width: 360px;
+  z-index: 101;
+}
+.cloud-notice .note {
+  border-bottom: 0;
+  padding: 0 0 6px;
+}

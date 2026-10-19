@@ -14,7 +14,7 @@ import { recordLibrarySave } from '../state/recordLibrary';
 import { isProjectZipName, projectFromZip } from '../core/projectZip';
 import { busyThen } from './busy';
 import { clearSavedResults, resultsStored, savedResultsUsage } from '../state/results';
-import { BoostSettings } from './CloudStatus';
+import { BoostSettings, CloudPackButton } from './CloudStatus';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -564,6 +564,7 @@ export default function Toolbar() {
       <button className="tb" onClick={buildPack} title="One printable page for the workshop wall: numbered plate layout, assembly order, rods and spacers, glue-up and pour plan">
         Build pack
       </button>
+      <CloudPackButton project={() => useStore.getState().project} model={fullModel} rates={loadRates} />
       <button className="tb default" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">
         Export ZIP
       </button>

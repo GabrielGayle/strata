@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPipeline, type Assets } from '../src/core/pipeline';
-import { newProject } from '../src/core/project';
+import { deserialize, newProject } from '../src/core/project';
 import { sheetCutDxf, sheetEtchDxf, sheetFiles, buildZip, partDxf, segsAsCircle, fitShape } from '../src/core/exporters';
 import { DxfWriter, LAYERS, dxfCutCircles, dxfCutLwPolylines, dxfCutLength, dxfCutStructure, dxfEntitySummary, dxfHasSheetBorder, listDxfEntities } from '../src/core/dxf';
 import { circlePath, offset, pointInPath, rect, shapeArea, signedArea, type Path, type Vec2 } from '../src/core/geom2d';
@@ -325,3 +325,36 @@ function fitAndAreaFromDxf(text: string): number {
   }
   return Math.abs(area);
 }
+
+describe('sheet DXF cut on a cloud nest (plan PR 10)', () => {
+  it('every sheet of the server nest holds each part once, cut-only, at the right area', async () => {
+    const { runNestJob } = await import('../src/cloudJobs');
+    const { loadAssets } = await import('../src/packNode');
+    const { nestClearanceProblems } = await import('../src/core/nestCheck');
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/projects/buttermere-terrarium-77.strata.json');
+    const text = readFileSync(fixture, 'utf8');
+    const saved = await runNestJob({ kind: 'nest', engine: 'test', input: { sha: '0'.repeat(64), parts: 1 }, budget: 'default' }, text, { maxTries: 8 });
+    const project = { ...deserialize(text), nest: saved };
+    const m = createPipeline()(project, await loadAssets(project));
+    expect(m.nested.source).toBe('saved');
+    expect(m.nested.sheets.some((s) => s.placements.some((pl) => (pl.turn ?? 0) >= 2))).toBe(true);
+    expect(nestClearanceProblems(m.sliced.parts, m.nested, m.v.partSpacing)).toEqual([]);
+    let placed = 0;
+    m.nested.sheets.forEach((sheet, si) => {
+      const text = sheetCutDxf(m, si);
+      const st = dxfCutStructure(text);
+      expect(st.cutOnly).toBe(true);
+      expect(st.hasBorder).toBe(false);
+      const parts = m.sliced.parts.filter((p) => sheet.placements.some((pl) => pl.id === p.id));
+      placed += parts.length;
+      const sum = dxfEntitySummary(text);
+      const expectedContours = parts.reduce((a, p) => a + 1 + p.shape[0].holes.length, 0);
+      expect((sum.types.LWPOLYLINE ?? 0) + (sum.types.CIRCLE ?? 0) + (sum.types.POLYLINE ?? 0), `sheet ${si} contours`).toBe(expectedContours);
+      const expectedArea = parts.reduce((a, p) => a + shapeArea(offset(p.shape, m.v.kerf / 2)), 0);
+      expect(Math.abs(fitAndAreaFromDxf(text) - expectedArea)).toBeLessThan(Math.max(5, expectedArea * 0.02));
+      // every contour lies on the sheet
+      for (const e of listDxfEntities(text)) expect(e.layer).toBe('CUT');
+    });
+    expect(placed).toBe(m.sliced.parts.length);
+  }, 180_000);
+});

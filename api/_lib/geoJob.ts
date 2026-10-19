@@ -43,17 +43,60 @@ export interface TerrainJobRequest {
   maxPx: TerrainJobSize;
 }
 
-export type GeoJobRequest = TerrainJobRequest;
+/** A design uploaded for a pack or nest job: SHA-256 of the project file, sent gzipped in parts. */
+export interface JobInput {
+  sha: string;
+  parts: number;
+}
+
+/** The fabrication zip, exactly as `cli export --zip` makes it. */
+export interface PackJobRequest {
+  kind: 'pack';
+  engine: string;
+  input: JobInput;
+  /** Date on the build pack and the zip's files, YYYY-MM-DD. */
+  date: string;
+  /** The price rates the app uses (Settings), so the estimate in the pack matches. */
+  rates?: Record<string, unknown>;
+  /** Development only: the worker drops a plate from the zip when STRATA_ALLOW_FAULTS=1, to prove the app refuses it. */
+  fault?: 'drop-plate';
+}
+
+/** A tight nest of the metal parts, for 30 s ('default') or 90 s ('tight'). */
+export interface NestJobRequest {
+  kind: 'nest';
+  engine: string;
+  input: JobInput;
+  budget: 'default' | 'tight';
+  seed?: number;
+}
+
+export type GeoJobRequest = TerrainJobRequest | PackJobRequest | NestJobRequest;
+export type GeoJobKind = GeoJobRequest['kind'];
+
+export const NEST_BUDGET_MS: Record<NestJobRequest['budget'], number> = { default: 30_000, tight: 90_000 };
+
+/** Uploads go in parts under Vercel's 4.5 MB request limit (base64 in JSON adds a third). */
+export const INPUT_PART_BYTES = 2.5 * 1024 * 1024;
+/** 40 MB of gzipped project is far beyond any design so far (Buttermere at 8 m is 2.8 MB before gzip). */
+export const MAX_INPUT_PARTS = 16;
+/** Largest upload request body. */
+export const INPUT_MAX_BODY_BYTES = Math.ceil((INPUT_PART_BYTES * 4) / 3) + 1024;
+
+export const SHA_RE = /^[0-9a-f]{64}$/;
+
+/** What each kind of job leaves in the result store. */
+export const ARTIFACT_FILES: Record<GeoJobKind, string> = { terrain: 'asset.json.gz', pack: 'pack.zip', nest: 'nest.json.gz' };
 
 /** Status of a job as /api/geo/jobs/:id reports it. */
 export type GeoJobStatus =
   | { id: string; status: 'running'; progress: number; stage?: string }
-  | { id: string; status: 'done'; key: string; px?: number; ms?: number; cached?: boolean }
+  | { id: string; status: 'done'; key: string; px?: number; ms?: number; cached?: boolean; seconds?: number; costUsd?: number; meta?: Record<string, number> }
   | { id: string; status: 'failed'; error: string; reason?: GeoRestReason }
   | { id: string; status: 'cancelled' };
 
 /** Why the cloud is resting: shown in the status bar as "resting: …". */
-export type GeoRestReason = 'not-configured' | 'unreachable' | 'out-of-date' | 'failed' | 'busy';
+export type GeoRestReason = 'not-configured' | 'unreachable' | 'out-of-date' | 'failed' | 'busy' | 'needs-input';
 
 /** Build outputs and local-only fields that never go to the cloud or into the key. */
 const SPEC_OUTPUT_FIELDS = new Set([
@@ -85,12 +128,42 @@ function finite(v: unknown): v is number {
 
 export type Validated<T> = { ok: true; value: T } | { ok: false; error: string };
 
+function validateInput(raw: unknown): JobInput | null {
+  const i = raw as Record<string, unknown> | null;
+  if (!i || typeof i !== 'object' || typeof i.sha !== 'string' || !SHA_RE.test(i.sha)) return null;
+  if (!Number.isInteger(i.parts) || (i.parts as number) < 1 || (i.parts as number) > MAX_INPUT_PARTS) return null;
+  return { sha: i.sha, parts: i.parts as number };
+}
+
 /** Check a request body before anything is spent on it. */
 export function validateGeoJobRequest(raw: unknown): Validated<GeoJobRequest> {
   const o = (raw ?? null) as Record<string, unknown> | null;
   if (!o || typeof o !== 'object') return { ok: false, error: 'Request must be a JSON object' };
-  if (o.kind !== 'terrain') return { ok: false, error: 'Unknown job kind' };
+  if (o.kind !== 'terrain' && o.kind !== 'pack' && o.kind !== 'nest') return { ok: false, error: 'Unknown job kind' };
   if (typeof o.engine !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(o.engine)) return { ok: false, error: 'Missing engine build' };
+  if (o.kind === 'pack' || o.kind === 'nest') {
+    const input = validateInput(o.input);
+    if (!input) return { ok: false, error: `input must be {sha, parts} with 1 to ${MAX_INPUT_PARTS} parts` };
+    if (o.kind === 'nest') {
+      if (o.budget !== 'default' && o.budget !== 'tight') return { ok: false, error: "budget must be 'default' or 'tight'" };
+      if (o.seed != null && !(Number.isInteger(o.seed) && (o.seed as number) >= 0 && (o.seed as number) < 2 ** 31)) return { ok: false, error: 'seed out of range' };
+      return { ok: true, value: { kind: 'nest', engine: o.engine, input, budget: o.budget, ...(o.seed != null ? { seed: o.seed as number } : {}) } };
+    }
+    if (typeof o.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(o.date) || Number.isNaN(Date.parse(`${o.date}T00:00:00Z`))) return { ok: false, error: 'date must be YYYY-MM-DD' };
+    if (o.rates != null && (typeof o.rates !== 'object' || Array.isArray(o.rates))) return { ok: false, error: 'rates must be an object' };
+    if (o.fault != null && o.fault !== 'drop-plate') return { ok: false, error: 'Unknown fault' };
+    return {
+      ok: true,
+      value: {
+        kind: 'pack',
+        engine: o.engine,
+        input,
+        date: o.date,
+        ...(o.rates ? { rates: o.rates as Record<string, unknown> } : {}),
+        ...(o.fault ? { fault: o.fault as 'drop-plate' } : {}),
+      },
+    };
+  }
   if (!TERRAIN_JOB_SIZES.includes(o.maxPx as TerrainJobSize)) return { ok: false, error: `maxPx must be one of ${TERRAIN_JOB_SIZES.join(', ')}` };
   const spec = o.spec as Record<string, unknown> | null;
   if (!spec || typeof spec !== 'object' || spec.kind !== 'map') return { ok: false, error: 'spec must be a map spec' };
@@ -135,8 +208,16 @@ export async function geoJobKey(req: GeoJobRequest): Promise<string> {
 
 export const GEO_KEY_RE = /^[0-9a-f]{32}$/;
 
-/** Blob path of a finished job's result (gzip JSON of the asset). */
-export function artifactPath(key: string): string {
+/** Blob path of a finished job's result: the terrain asset (gzip JSON) unless another file is named. */
+export function artifactPath(key: string, file = ARTIFACT_FILES.terrain): string {
   if (!GEO_KEY_RE.test(key)) throw new Error('Invalid result key');
-  return `${RENDER_CACHE_PREFIX}${key}/asset.json.gz`;
+  if (!Object.values(ARTIFACT_FILES).includes(file)) throw new Error('Invalid result file');
+  return `${RENDER_CACHE_PREFIX}${key}/${file}`;
+}
+
+/** Blob path of one part of an uploaded design. */
+export function inputPartPath(input: JobInput, part: number): string {
+  if (!SHA_RE.test(input.sha)) throw new Error('Invalid input');
+  if (!Number.isInteger(part) || part < 0 || part >= input.parts || input.parts > MAX_INPUT_PARTS) throw new Error('Invalid input part');
+  return `${RENDER_CACHE_PREFIX}inputs/${input.sha}/${part}-of-${input.parts}`;
 }
