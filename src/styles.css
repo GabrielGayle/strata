@@ -3895,7 +3895,7 @@ kbd {
   z-index: 3;
   top: 8px;
   left: 8px;
-  width: 268px;
+  width: 300px;
   max-height: calc(100% - 16px);
   overflow: auto;
 }
@@ -3951,8 +3951,8 @@ kbd {
   padding: 0 6px;
 }
 .impress-name {
-  flex: 1 1 96px;
-  min-width: 96px;
+  flex: 1 1 80px;
+  min-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
