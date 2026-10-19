@@ -71,7 +71,27 @@ export interface NestJobRequest {
   seed?: number;
 }
 
-export type GeoJobRequest = TerrainJobRequest | PackJobRequest | NestJobRequest;
+/** A camera in the 3D view's world (millimetres, y up), as src/core/hero.ts takes it. */
+export interface HeroJobCamera {
+  position: [number, number, number];
+  target: [number, number, number];
+  up: [number, number, number];
+  fov: number;
+  aspect: number;
+}
+
+/** A photograph of the finished piece: Blender Cycles on the design's model.glb (Modal app strata-hero, an L4). */
+export interface HeroJobRequest {
+  kind: 'hero';
+  engine: string;
+  input: JobInput;
+  camera: HeroJobCamera;
+  light: 'studio' | 'daylight' | 'candle';
+  /** Long edge of the picture in pixels. */
+  px: number;
+}
+
+export type GeoJobRequest = TerrainJobRequest | PackJobRequest | NestJobRequest | HeroJobRequest;
 export type GeoJobKind = GeoJobRequest['kind'];
 
 export const NEST_BUDGET_MS: Record<NestJobRequest['budget'], number> = { default: 30_000, tight: 90_000 };
@@ -86,17 +106,34 @@ export const INPUT_MAX_BODY_BYTES = Math.ceil((INPUT_PART_BYTES * 4) / 3) + 1024
 export const SHA_RE = /^[0-9a-f]{64}$/;
 
 /** What each kind of job leaves in the result store. */
-export const ARTIFACT_FILES: Record<GeoJobKind, string> = { terrain: 'asset.json.gz', pack: 'pack.zip', nest: 'nest.json.gz' };
+export const ARTIFACT_FILES: Record<GeoJobKind, string> = { terrain: 'asset.json.gz', pack: 'pack.zip', nest: 'nest.json.gz', hero: 'hero.png' };
+
+/** Hero renders a day (UTC), counted by the worker; a render answered from the cloud cache is free. */
+export const HERO_DAILY_LIMIT = 10;
+/** Long edge of a hero render. */
+export const HERO_PX = 1600;
+export const HERO_SAMPLES = 256;
+/** Modal's 17 Oct 2026 rates: an L4 ($0.000222/s) with 4 cores and 16 GB, per second. worker/hero.py matches. */
+export const HERO_RATE_PER_SECOND = 0.00031;
+/** The render function's time limit, so the most one render can cost. */
+export const HERO_MAX_SECONDS = 300;
+/** A render with its start-up, as planned: a cold start of the Blender image, the scene, about a minute of Cycles. */
+export const HERO_TYPICAL_SECONDS = 150;
+
+/** What a hero render costs before it runs: the usual, and the most (its time limit). */
+export function heroPrice(): { typicalUsd: number; maxUsd: number } {
+  return { typicalUsd: HERO_TYPICAL_SECONDS * HERO_RATE_PER_SECOND, maxUsd: HERO_MAX_SECONDS * HERO_RATE_PER_SECOND };
+}
 
 /** Status of a job as /api/geo/jobs/:id reports it. */
 export type GeoJobStatus =
   | { id: string; status: 'running'; progress: number; stage?: string }
-  | { id: string; status: 'done'; key: string; px?: number; ms?: number; cached?: boolean; seconds?: number; costUsd?: number; meta?: Record<string, number> }
+  | { id: string; status: 'done'; key: string; px?: number; ms?: number; cached?: boolean; seconds?: number; costUsd?: number; meta?: Record<string, number>; fingerprint?: string }
   | { id: string; status: 'failed'; error: string; reason?: GeoRestReason }
   | { id: string; status: 'cancelled' };
 
 /** Why the cloud is resting: shown in the status bar as "resting: …". */
-export type GeoRestReason = 'not-configured' | 'unreachable' | 'out-of-date' | 'failed' | 'busy' | 'needs-input';
+export type GeoRestReason = 'not-configured' | 'unreachable' | 'out-of-date' | 'failed' | 'busy' | 'needs-input' | 'limit';
 
 /** Build outputs and local-only fields that never go to the cloud or into the key. */
 const SPEC_OUTPUT_FIELDS = new Set([
@@ -126,6 +163,20 @@ function finite(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
+const vec3 = (v: unknown): v is [number, number, number] => Array.isArray(v) && v.length === 3 && v.every(finite) && v.every((x) => Math.abs(x) < 1e7);
+
+function validateCamera(raw: unknown): HeroJobCamera | null {
+  const c = raw as Record<string, unknown> | null;
+  if (!c || typeof c !== 'object' || !vec3(c.position) || !vec3(c.target) || !vec3(c.up)) return null;
+  if (!finite(c.fov) || c.fov < 5 || c.fov > 120 || !finite(c.aspect) || c.aspect < 0.25 || c.aspect > 4) return null;
+  const [px, py, pz] = c.position;
+  const [tx, ty, tz] = c.target;
+  if (Math.hypot(px - tx, py - ty, pz - tz) < 1e-3 || Math.hypot(...c.up) < 1e-6) return null;
+  // rounded so a camera nudged by a rounding error still finds the cached render
+  const r = (v: [number, number, number]) => v.map((x) => Math.round(x * 100) / 100) as [number, number, number];
+  return { position: r(c.position), target: r(c.target), up: r(c.up), fov: Math.round(c.fov * 100) / 100, aspect: Math.round(c.aspect * 1000) / 1000 };
+}
+
 export type Validated<T> = { ok: true; value: T } | { ok: false; error: string };
 
 function validateInput(raw: unknown): JobInput | null {
@@ -139,11 +190,18 @@ function validateInput(raw: unknown): JobInput | null {
 export function validateGeoJobRequest(raw: unknown): Validated<GeoJobRequest> {
   const o = (raw ?? null) as Record<string, unknown> | null;
   if (!o || typeof o !== 'object') return { ok: false, error: 'Request must be a JSON object' };
-  if (o.kind !== 'terrain' && o.kind !== 'pack' && o.kind !== 'nest') return { ok: false, error: 'Unknown job kind' };
+  if (o.kind !== 'terrain' && o.kind !== 'pack' && o.kind !== 'nest' && o.kind !== 'hero') return { ok: false, error: 'Unknown job kind' };
   if (typeof o.engine !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(o.engine)) return { ok: false, error: 'Missing engine build' };
-  if (o.kind === 'pack' || o.kind === 'nest') {
+  if (o.kind === 'pack' || o.kind === 'nest' || o.kind === 'hero') {
     const input = validateInput(o.input);
     if (!input) return { ok: false, error: `input must be {sha, parts} with 1 to ${MAX_INPUT_PARTS} parts` };
+    if (o.kind === 'hero') {
+      const camera = validateCamera(o.camera);
+      if (!camera) return { ok: false, error: 'camera must be {position, target, up, fov, aspect}' };
+      if (o.light !== 'studio' && o.light !== 'daylight' && o.light !== 'candle') return { ok: false, error: "light must be 'studio', 'daylight' or 'candle'" };
+      if (!Number.isInteger(o.px) || (o.px as number) < 256 || (o.px as number) > 2400) return { ok: false, error: 'px must be 256 to 2400' };
+      return { ok: true, value: { kind: 'hero', engine: o.engine, input, camera, light: o.light, px: o.px as number } };
+    }
     if (o.kind === 'nest') {
       if (o.budget !== 'default' && o.budget !== 'tight') return { ok: false, error: "budget must be 'default' or 'tight'" };
       if (o.seed != null && !(Number.isInteger(o.seed) && (o.seed as number) >= 0 && (o.seed as number) < 2 ** 31)) return { ok: false, error: 'seed out of range' };

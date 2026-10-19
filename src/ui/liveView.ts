@@ -11,3 +11,23 @@ export function setLiveViewFromOffset(x: number, y: number, z: number) {
 export function getLiveView() {
   return live;
 }
+
+/** The 3D view's camera as it is now (world mm, y up), for a hero render of what's on screen. */
+export interface LiveCamera {
+  position: [number, number, number];
+  target: [number, number, number];
+  up: [number, number, number];
+  fov: number;
+  aspect: number;
+  ortho: boolean;
+}
+
+let liveCamera: LiveCamera | null = null;
+
+export function setLiveCamera(c: LiveCamera) {
+  liveCamera = c;
+}
+
+export function getLiveCamera(): LiveCamera | null {
+  return liveCamera;
+}

@@ -235,3 +235,98 @@ test('a cloud pack missing a plate is a red error with no download (dev fault sw
   await expect(page.getByTestId('cloud-pack-link')).toHaveCount(0);
   expect(cloud.posted()).toMatchObject({ fault: 'drop-plate' });
 });
+
+/** A cloud that renders hero pictures: the real model side (runHeroModel), a tiny PNG standing in for Blender's. */
+async function heroCloud(page: Page, opts: { wrongPlates?: boolean; limit?: boolean } = {}) {
+  const key = 'e'.repeat(32);
+  let posted: Record<string, unknown> | null = null;
+  const parts: Buffer[] = [];
+  let png: Buffer | null = null;
+  await page.route('**/api/geo/**', async (route: Route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const path = url.pathname.replace('/api/geo/', '');
+    const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (path === 'health') return json({ ok: true, engine: null });
+    if (path === 'usage') return json({ month: '2026-10', jobs: 3, estimateUsd: 0.05, workspaceUsd: null, grantUsd: 30, heroToday: opts.limit ? 10 : 3, heroLimit: 10 });
+    if (path === 'jobs' && req.method() === 'POST') {
+      posted = req.postDataJSON();
+      if (opts.limit) return json({ error: '10 hero renders a day: the next one can start tomorrow (UTC)', reason: 'limit' }, 429);
+      const input = posted!.input as { parts: number };
+      if (parts.filter(Boolean).length < input.parts) return json({ error: 'Upload the design first', reason: 'needs-input', missing: [0] }, 409);
+      return json({ id: 'fc-hero', status: 'running', progress: 0, key }, 202);
+    }
+    if (path.startsWith('inputs/') && req.method() === 'POST') {
+      parts[Number(url.searchParams.get('part'))] = Buffer.from(req.postDataJSON().data, 'base64');
+      return json({ ok: true });
+    }
+    if (path === 'jobs/fc-hero') {
+      if (!png) {
+        const dir = mkdtempSync(join(tmpdir(), 'strata-e2e-hero-'));
+        writeFileSync(join(dir, 'design.json'), gunzipSync(Buffer.concat(parts)));
+        writeFileSync(join(dir, 'req.json'), JSON.stringify(posted));
+        const code = `
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { runHeroModel } from './src/cloudJobs';
+          import { stampHeroPng } from './src/core/hero';
+          const r = await runHeroModel(JSON.parse(readFileSync(${JSON.stringify(join(dir, 'req.json'))}, 'utf8')), readFileSync(${JSON.stringify(join(dir, 'design.json'))}, 'utf8'));
+          const tiny = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAEElEQVR4nGP4z8DAwMDAAAAPAAH/2EZXKgAAAABJRU5ErkJggg==', 'base64');
+          writeFileSync(${JSON.stringify(join(dir, 'hero.png'))}, stampHeroPng(tiny, { fingerprint: r.fingerprint, plates: r.meta.plates + ${opts.wrongPlates ? 1 : 0}, parts: r.meta.parts }));
+        `;
+        execFileSync('npx', ['tsx', '--input-type=module', '-e', code], { encoding: 'utf8' });
+        png = readFileSync(join(dir, 'hero.png'));
+      }
+      return json({ id: 'fc-hero', status: 'done', key, seconds: 96.2, costUsd: 0.029 });
+    }
+    if (path === `artifacts/${key}/hero.png`) {
+      return route.fulfill({ status: 200, headers: { 'X-Strata-Parts': '1', 'Content-Type': 'application/octet-stream' }, body: png! });
+    }
+    return json({ error: 'not found' }, 404);
+  });
+  return { posted: () => posted };
+}
+
+test('Hero render shows its price first, renders the 3D view and lands in the project', async ({ page }) => {
+  const cloud = await heroCloud(page);
+  await boostOn(page);
+  await openApp(page);
+  await expect(page.getByTestId('cloud-status')).toHaveText('Cloud: ready');
+  await page.getByTestId('hero-open').click();
+  await expect(page.getByTestId('hero-price')).toContainText(/About \$0\.0\d+ a render, never more than \$0\.0\d+.*7 of 10 left today/);
+  await page.getByTestId('hero-render').click();
+  await expect(page.getByTestId('hero-state')).toContainText('In the build pack', { timeout: 120_000 });
+  await expect(page.getByTestId('hero-msg')).toContainText(/Rendered 2 × 1 px \(96\.2 s, about \$0\.0290\)/);
+  const sent = cloud.posted() as { kind: string; camera: { position: number[]; aspect: number }; light: string; px: number };
+  expect(sent).toMatchObject({ kind: 'hero', light: 'studio', px: 1600 });
+  expect(sent.camera.position).toHaveLength(3);
+  expect(sent.camera.aspect).toBeGreaterThan(0.25);
+});
+
+test('a hero render of a different design is refused and nothing is saved', async ({ page }) => {
+  await heroCloud(page, { wrongPlates: true });
+  await boostOn(page);
+  await openApp(page);
+  await expect(page.getByTestId('cloud-status')).toHaveText('Cloud: ready');
+  await page.getByTestId('hero-open').click();
+  await page.getByTestId('hero-render').click();
+  await expect(page.getByTestId('hero-msg')).toContainText(/Render refused: the render shows \d+ plates and this design has \d+/, { timeout: 120_000 });
+  await expect(page.getByTestId('hero-state')).toHaveCount(0);
+  await expect(page.getByTestId('cloud-status')).toHaveText('Cloud: ready');
+});
+
+test('after ten hero renders in a day the button waits for tomorrow', async ({ page }) => {
+  const cloud = await heroCloud(page, { limit: true });
+  await boostOn(page);
+  await openApp(page);
+  await expect(page.getByTestId('cloud-status')).toHaveText('Cloud: ready');
+  await page.getByTestId('hero-open').click();
+  await expect(page.getByTestId('hero-price')).toContainText('0 of 10 left today');
+  await expect(page.getByTestId('hero-render')).toBeDisabled();
+  expect(cloud.posted()).toBeNull();
+});
+
+test('with Boost off there is no Hero render button', async ({ page }) => {
+  await openApp(page);
+  await expect(page.getByTestId('cloud-status')).toHaveText('Cloud: off');
+  await expect(page.getByTestId('hero-open')).toHaveCount(0);
+});

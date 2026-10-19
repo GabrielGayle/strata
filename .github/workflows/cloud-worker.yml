@@ -1,4 +1,4 @@
-# Redeploys the Boost cloud worker (worker/app.py on Modal) when the engine changes on
+# Redeploys the Boost cloud worker (worker/app.py on Modal, and the hero renderer worker/hero.py) when the engine changes on
 # claude/strata-app, so the worker always runs the same engine build as the app Vercel serves.
 # Needs repository secrets MODAL_TOKEN_ID and MODAL_TOKEN_SECRET; without them it does nothing.
 name: Cloud worker
@@ -44,4 +44,5 @@ jobs:
           npm ci
           npx tsx worker/build.ts
           pip install modal==1.6.2
+          modal deploy worker/hero.py
           modal deploy worker/app.py

@@ -15,6 +15,7 @@ import { cleanObjects, type CutObject } from './objects';
 import { cleanShelf, type ShelfSpec } from './shelf';
 import { cleanCandles, type CandleSpec } from './candles';
 import { cleanSavedNest, type SavedNest } from './nest';
+import { cleanSavedHero, type SavedHero } from './heroSaved';
 import { cleanOrigin, type WorldOrigin } from './origin';
 import { cleanEarthView, type EarthView } from './earthView';
 import { compactCloudAsset } from './mapTopAsset';
@@ -101,6 +102,8 @@ export interface Project {
   savedView?: EarthView;
   /** The cloud's tight nest of the metal parts; used while the parts still match its fingerprint. */
   nest?: SavedNest;
+  /** The cloud's hero render of the finished piece; in the build pack while the design still matches its fingerprint. */
+  hero?: SavedHero;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -358,5 +361,6 @@ export function deserialize(text: string): Project {
     userParamOverrides: cleanUserParamOverrides(raw.userParamOverrides),
     savedView: cleanEarthView(raw.savedView),
     nest: cleanSavedNest(raw.nest),
+    hero: cleanSavedHero(raw.hero),
   };
 }

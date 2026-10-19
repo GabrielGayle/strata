@@ -1,16 +1,18 @@
 // The pack and nest jobs Boost runs on the cloud worker (worker/job.ts), with the same
 // engine as the app. The pack job is `cli export --zip` itself, run on the uploaded
-// design; the nest job is the app's own nester given 30 or 90 seconds.
+// design; the nest job is the app's own nester given 30 or 90 seconds; the hero job's
+// model side is the design's model.glb, which Blender renders on the strata-hero GPU app.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { strFromU8, unzipSync, zipSync } from 'fflate';
-import { NEST_BUDGET_MS, type NestJobRequest, type PackJobRequest } from '../api/_lib/geoJob.js';
+import { NEST_BUDGET_MS, type HeroJobRequest, type NestJobRequest, type PackJobRequest } from '../api/_lib/geoJob.js';
 import { main as cliMain, loadProject } from './cli';
 import { materialOf } from './core/appearance';
 import { nestFingerprint, nestGroups, nestMismatch, nestSheetArea, type SavedNest } from './core/nest';
 import { nestClearanceProblems } from './core/nestCheck';
-import { createFrontPipeline, nestGroupsOf } from './core/pipeline';
+import { heroFingerprintOf, heroGlb, heroScene } from './core/hero';
+import { createFrontPipeline, createPipeline, nestGroupsOf } from './core/pipeline';
 import { loadAssets } from './packNode';
 
 export interface PackJobResult {
@@ -103,5 +105,39 @@ export async function runNestJob(req: NestJobRequest, projectText: string, opts:
     budget: req.budget,
     localArea: nestSheetArea(local),
     localSheets: local.sheets.length,
+  };
+}
+
+export interface HeroModelResult {
+  glb: Uint8Array;
+  fingerprint: string;
+  light: HeroJobRequest['light'];
+  width: number;
+  height: number;
+  /** Plates and parts in the model, which the app checks against its own slice. */
+  meta: { plates: number; parts: number; meshes: number; flames: number };
+}
+
+/** The design's model.glb with the request's camera, and the picture size Blender should render. */
+export async function runHeroModel(req: HeroJobRequest, projectText: string): Promise<HeroModelResult> {
+  const { project, issues } = loadProject(projectText);
+  const bad = issues.find((i) => i.level === 'error');
+  if (bad) throw new Error(bad.message);
+  delete project.hero;
+  const assets = await loadAssets(project);
+  const model = createPipeline()(project, assets);
+  const scene = heroScene(model, project);
+  if (!scene.meshes.length) throw new Error('the design has nothing solid to render');
+  const aspect = req.camera.aspect;
+  const width = aspect >= 1 ? req.px : Math.round(req.px * aspect);
+  const height = aspect >= 1 ? Math.round(req.px / aspect) : req.px;
+  return {
+    glb: heroGlb(scene, req.camera),
+    fingerprint: heroFingerprintOf(scene),
+    // candlelight needs candles; without them Blender lights it as the studio
+    light: req.light === 'candle' && !scene.flames.length ? 'studio' : req.light,
+    width,
+    height,
+    meta: { plates: scene.plates, parts: scene.parts, meshes: scene.meshes.length, flames: scene.flames.length },
   };
 }
