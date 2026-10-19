@@ -63,6 +63,11 @@ export function showBaseMesh(layers: ViewportLayers): boolean {
   return layers.base && layers.concrete !== false;
 }
 
+/** A laser-cut part: the steel base plate goes with the Base button, every other part with Plates. */
+export function showPart(layers: ViewportLayers, part: { family: string }): boolean {
+  return part.family === 'B' ? showBaseMesh(layers) : layers.plates;
+}
+
 /** A placed object (postcard, box, candle…) in the 3D view: the Objects layer and its own eye. View only. */
 export function showObject(layers: ViewportLayers, hidden: readonly string[] | undefined, id: string): boolean {
   return layers.objects !== false && !hidden?.includes(id);

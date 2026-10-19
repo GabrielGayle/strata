@@ -8,7 +8,7 @@ import { estimateMix } from '../src/core/price';
 import { evaluateParams } from '../src/core/params';
 import { planeToWorld } from '../src/core/section';
 import { pointInShape } from '../src/core/geom2d';
-import { tabLayout, weldOrder, steelBaseSpec } from '../src/core/steelBase';
+import { fixingHoles, tabLayout, weldOrder, steelBaseSpec } from '../src/core/steelBase';
 
 const assets: Assets = { sideImg: null, frontImg: null, insMesh: null, srcMesh: null };
 
@@ -138,6 +138,43 @@ describe('steel base', () => {
     const { m } = run({ ...steel, steelHoles: '4' });
     const base = m.sliced.parts.find((q) => q.family === 'B')!;
     expect(base.shape[0].holes).toHaveLength(m.sliced.steelBase!.tabs.length + 4);
+  });
+
+  it('puts a row of holes along the chosen edge at the chosen distance', () => {
+    const { m } = run({ ...steel, steelHoles: 'edge', steelHoleCount: '3', steelHoleSide: 'left', steelHoleInset: '20' });
+    const holes = fixingHoles(m.v, m.sliced.steelBase!.spec);
+    expect(holes).toHaveLength(3);
+    // left side is plan +y (the base is 300 wide)
+    for (const h of holes) expect(h.at[1]).toBeCloseTo(150 - 20, 6);
+    expect(holes.map((h) => h.at[0])).toEqual([expect.closeTo(-380, 6), expect.closeTo(0, 6), expect.closeTo(380, 6)]);
+    const base = m.sliced.parts.find((q) => q.family === 'B')!;
+    expect(base.shape[0].holes).toHaveLength(m.sliced.steelBase!.tabs.length + 3);
+    const rows = run({ ...steel, steelHoles: 'rows', steelHoleCount: '2', steelHoleSide: 'back' }).m;
+    expect(fixingHoles(rows.v, rows.sliced.steelBase!.spec)).toHaveLength(4);
+  });
+
+  it('cuts keyholes with the slot pointing at the top edge', () => {
+    const { p, m } = run({ ...steel, steelHoles: 'edge', steelHoleCount: '2', steelHoleSide: 'back', steelHoleStyle: 'keyhole', steelHoleDia: '9', steelKeySlot: '4.5', steelKeyLength: '10' });
+    const sb = m.sliced.steelBase!;
+    const holes = fixingHoles(m.v, sb.spec);
+    expect(holes).toHaveLength(2);
+    for (const h of holes) {
+      // back is +x: the round end sits 10 mm below the screw point, towards the front
+      expect(h.head![0]).toBeCloseTo(h.at[0] - 10, 6);
+      expect(h.head![1]).toBeCloseTo(h.at[1], 6);
+    }
+    const base = m.sliced.parts.find((q) => q.family === 'B')!;
+    const key = base.shape[0].holes.find((ring) => ring.some(([x]) => x > 380))!;
+    const xs = key.map((q) => q[0]);
+    // round end Ø9 plus 10 mm of slot plus the slot's rounded top
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(4.5 + 10 + 2.25, 0);
+    expect(m.sliced.warnings).toEqual([]);
+    expect(buildPackHtmlChecked(p, m)).toContain('<b>Hang it.</b>');
+  });
+
+  it('warns when a hole sits too close to the edge', () => {
+    const { m } = run({ ...steel, steelHoles: '4', steelHoleInset: '2' });
+    expect(m.sliced.warnings.join(' ')).toMatch(/closer than .* to the edge/);
   });
 
   it('writes the base plate DXF, a weld map and welding steps', () => {
