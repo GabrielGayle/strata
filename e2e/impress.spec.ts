@@ -114,3 +114,38 @@ test('a picture is clicked onto the top surface and moved, sized, turned and dee
   await expect(page.locator('.impress-list li')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('Depth from photo swaps a picture for its depth relief and back, asking the server once', async ({ page }) => {
+  test.setTimeout(300_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const errors = watchErrors(page);
+  // the depth server, answering with a grey relief (an older-style answer: picture only)
+  let asked = 0;
+  const relief = `data:image/png;base64,${discPng().toString('base64')}`;
+  await page.route(/strata-depth|\/strata$/, (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ status: 405, body: '' });
+    asked++;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ png: relief, width: 120, height: 80 }) });
+  });
+  await openApp(page);
+  await expect(page.locator('.app.window')).toHaveAttribute('data-strata-model-current', '1', { timeout: 120_000 });
+  await page.getByTestId('impress-open').click();
+  await expect(page.getByTestId('impress-view')).toBeVisible({ timeout: 30_000 });
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByTestId('impress-pick').click();
+  await (await chooser).setFiles({ name: 'photo.png', mimeType: 'image/png', buffer: discPng() });
+  await expect(page.getByTestId('impress-hint')).toContainText('Click the top surface', { timeout: 30_000 });
+  const box = (await page.locator('.impress-view canvas').boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.5);
+
+  const toggle = page.getByTestId('impress-photo-depth');
+  await toggle.check();
+  await expect(toggle).toBeChecked({ timeout: 30_000 });
+  expect(asked).toBe(1);
+  await toggle.uncheck();
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect(toggle).toBeChecked();
+  expect(asked).toBe(1);
+  expect(errors).toEqual([]);
+});
