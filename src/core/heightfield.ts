@@ -11,7 +11,15 @@ export interface HeightField {
   max: number;
   /** Uniform scale so map tops fit a user-set Plate height (never clip). */
   heightCapScale?: number;
+  /**
+   * Where the side picture sinks below the floor and is cut flat there: the share
+   * of the picture (its background left out) and how far the plates must rise to clear it.
+   */
+  floorClip?: { fraction: number; liftMm: number };
 }
+
+/** Plate tops never go lower than this above the base top; anything the field asks below it is cut flat. */
+export const PLATE_FLOOR_MM = 4;
 
 export interface StackFrame {
   /** Unit vector along the stack (plate normal for parallel stacks), in XZ. */
@@ -50,9 +58,8 @@ export function buildHeightField(v: Values, sideImg: Gray | null): HeightField {
     return t * t * (3 - 2 * t);
   };
 
-  const at = (x: number, z: number) => {
-    const s = x * f.stack[0] + z * f.stack[1];
-    const a = x * f.across[0] + z * f.across[1];
+  // the field before the floor, s along the stack and a across it (mm from the centre)
+  const rawAt = (s: number, a: number) => {
     const sn = s / f.stackLen + 0.5; // 0..1 along the base
     const an = a / f.acrossLen + 0.5;
     let e = amp * fbm(a / scale, s / alongScale + 0.37, seed, v.octaves, v.roughness);
@@ -74,8 +81,9 @@ export function buildHeightField(v: Values, sideImg: Gray | null): HeightField {
       }
     }
     const base = v.stackHeight + v.crest * Math.sin(Math.PI * Math.min(1, Math.max(0, sn))) + v.slope * (sn - 0.5);
-    return Math.max(4, base + e * (1 - mix) + img * mix);
+    return base + e * (1 - mix) + img * mix;
   };
+  const at = (x: number, z: number) => Math.max(PLATE_FLOOR_MM, rawAt(x * f.stack[0] + z * f.stack[1], x * f.across[0] + z * f.across[1]));
 
   // estimate range for previews
   let min = Infinity, max = -Infinity;
@@ -87,5 +95,30 @@ export function buildHeightField(v: Values, sideImg: Gray | null): HeightField {
       min = Math.min(min, h);
       max = Math.max(max, h);
     }
-  return { at, min, max };
+  const floorClip = mix > 0 && mode === 'heightmap' && sideImg ? sideFloorClip(sideImg, (sn, an) => rawAt((sn - 0.5) * f.stackLen, (an - 0.5) * f.acrossLen), Math.min(0.45, Math.max(0, v.sideMargin) / Math.max(1, f.acrossLen))) : undefined;
+  return { at, min, max, ...(floorClip ? { floorClip } : {}) };
+}
+
+/**
+ * How much of the side picture the floor cuts flat. The picture's background
+ * (its darkest level, where a depth map leaves the backdrop) is meant to sit
+ * low, so only the rest counts.
+ */
+function sideFloorClip(img: Gray, rawAt: (sn: number, an: number) => number, margin: number): HeightField['floorClip'] {
+  let lo = Infinity;
+  for (let i = 0; i < img.data.length; i++) lo = Math.min(lo, img.data[i]);
+  const NS = 160, NA = 64;
+  const raws: number[] = [];
+  for (let i = 0; i <= NS; i++)
+    for (let j = 0; j <= NA; j++) {
+      const sn = i / NS;
+      const an = margin + (j / NA) * (1 - 2 * margin);
+      if (sample(img, sn, 1 - an) <= lo + 0.02) continue;
+      raws.push(rawAt(sn, an));
+    }
+  const clipped = raws.filter((r) => r < PLATE_FLOOR_MM).length;
+  if (!raws.length || clipped / raws.length < 0.01) return undefined;
+  // the lowest 1% is the soft rim where the picture fades into its backdrop: letting that touch the floor is fine
+  raws.sort((a, b) => a - b);
+  return { fraction: clipped / raws.length, liftMm: PLATE_FLOOR_MM - raws[Math.floor(raws.length * 0.01)] };
 }
