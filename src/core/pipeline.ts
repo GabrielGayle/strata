@@ -2,11 +2,11 @@
 // re-runs when one of them changes, so editing a value regenerates exactly
 // the stages downstream of it.
 import type * as THREE from 'three';
-import { evaluateParams, PARAMS, type EvalResult, type Values } from './params';
+import { evaluateParams, PARAMS, scaleFactorFor, type EvalResult, type Values } from './params';
 import { buildForm, formSpec, meshVolume, toIndexedMesh, type Form, type IndexedMesh } from './forms';
 import { blurSpec } from './blur';
 import { processImage, rotate, silhouetteMask, type Gray } from './image';
-import { buildHeightField, type HeightField } from './heightfield';
+import { buildHeightField, PLATE_FLOOR_MM, type HeightField } from './heightfield';
 import { buildMapHeightField, isMapDepth } from './mapPlateHeight';
 import { mapFaceParams } from './mapStack';
 import { plateDefs, slice, type SliceResult } from './slicer';
@@ -80,6 +80,8 @@ export interface Model {
   objects: ObjectBuild[];
   /** Postcard-shelf faces hidden from the viewing angle (undefined when there is no shelf). */
   cardVisibility?: VisibilityReport;
+  /** Warnings about the strata field itself (the side picture cut flat by the floor). */
+  fieldIssues?: Issue[];
   /** Unobstructed-view solver result (undefined when the flag is off). */
   shelfSolve?: SolveResult;
   /** Direction to the shelf's Unobstructed view eye (world, unit), when there is a shelf. */
@@ -412,7 +414,8 @@ export function createFrontPipeline(options: FrontOptions = {}) {
           ? buildMapSunkenFrameLayout(finalSliced, { sunkenFrame: mapFrame }, v.thickness, baseTop(v), v.baseOn ? union([basePlan(v)]) : undefined)
           : null,
     );
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, shelfSolve: laid.solve ?? undefined, shelfEye: project.shelf?.on ? shelfEye(project.shelf) : undefined, origin, shadow: carved?.report ?? null, ...(shadowPending ? { shadowPending } : {}), unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
+    const fieldIssues = hf?.floorClip ? [floorClipIssue(hf.floorClip, v, project)] : undefined;
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, ...(fieldIssues ? { fieldIssues } : {}), shelfSolve: laid.solve ?? undefined, shelfEye: project.shelf?.on ? shelfEye(project.shelf) : undefined, origin, shadow: carved?.report ?? null, ...(shadowPending ? { shadowPending } : {}), unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
   };
 }
 
@@ -512,9 +515,21 @@ export function createDeferredPipeline(opts: DeferredOptions = {}) {
   };
 }
 
+/** The side picture dips below the plate floor: say how much is cut flat and what Plate height clears it. */
+function floorClipIssue(clip: NonNullable<HeightField['floorClip']>, v: Values, project: Project): Issue {
+  const k = scaleFactorFor('stackHeight', project.params) || 1;
+  const need = Math.ceil((v.stackHeight + clip.liftMm) / k);
+  return {
+    partId: null,
+    type: 'general',
+    severity: 'warn',
+    message: `The side picture sinks below the ${PLATE_FLOOR_MM} mm floor on ${Math.round(clip.fraction * 100)}% of it, so those parts are cut flat. Raise Plates › Plate height to ${need} mm, or lower Image › Image height range.`,
+  };
+}
+
 /** Joins a front pass with a deferred result into the model the UI reads. */
 export function assemble(f: FrontModel, d: Omit<DeferredModel, 'totalMs'> & { totalMs?: number }, stale = d.stale): Model {
-  const extra = f.cardVisibility?.issues;
+  const extra = [...(f.fieldIssues ?? []), ...(f.cardVisibility?.issues ?? [])];
   return {
     ...f,
     issues: extra?.length ? [...d.issues, ...extra] : d.issues,
