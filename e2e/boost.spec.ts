@@ -3,7 +3,10 @@
 // back to the local build with a toast.
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { gzipSync } from 'node:zlib';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { e2eOwnerToken } from '../playwright.env';
 import { dismissTour, openApp, openWorkspaceTab, pickNeasdenPreset, waitForMapReady } from './map-helpers';
 
@@ -155,4 +158,80 @@ test('a cloud job that fails falls back to the local build with a toast', async 
   await expect(page.getByTestId('cloud-status')).toHaveText('Cloud: resting: worker out of date');
   await waitForMapReady(page);
   await expect(page.locator('.app.window')).toHaveAttribute('data-strata-map-grid', local!);
+});
+
+/**
+ * A cloud stand-in for the pack job: asks for the design, keeps the uploaded parts, and
+ * answers with the real `runPackJob` zip of that design (with the fault, when asked).
+ */
+async function packCloud(page: Page, opts: { fault: boolean }) {
+  const parts: Buffer[] = [];
+  const key = 'e'.repeat(32);
+  let zip: Buffer | null = null;
+  let posted: Record<string, unknown> | null = null;
+  await page.route('**/api/geo/**', async (route: Route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const path = url.pathname.replace('/api/geo/', '');
+    const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (path === 'health') return json({ ok: true, engine: null });
+    if (path === 'usage') return json({ month: '2026-10', jobs: 0, estimateUsd: 0, workspaceUsd: null, grantUsd: 30 });
+    if (path === 'jobs' && req.method() === 'POST') {
+      posted = req.postDataJSON();
+      const input = posted!.input as { parts: number };
+      if (parts.filter(Boolean).length < input.parts) return json({ error: 'Upload the design first', reason: 'needs-input', missing: [0] }, 409);
+      return json({ id: 'fc-pack', status: 'running', progress: 0, key }, 202);
+    }
+    if (path.startsWith('inputs/') && req.method() === 'POST') {
+      parts[Number(url.searchParams.get('part'))] = Buffer.from(req.postDataJSON().data, 'base64');
+      return json({ ok: true });
+    }
+    if (path === 'jobs/fc-pack') {
+      if (!zip) {
+        const dir = mkdtempSync(join(tmpdir(), 'strata-e2e-pack-'));
+        writeFileSync(join(dir, 'design.json'), gunzipSync(Buffer.concat(parts)));
+        writeFileSync(join(dir, 'req.json'), JSON.stringify(posted));
+        const code = `
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { runPackJob } from './src/cloudJobs';
+          const r = await runPackJob(JSON.parse(readFileSync(${JSON.stringify(join(dir, 'req.json'))}, 'utf8')), readFileSync(${JSON.stringify(join(dir, 'design.json'))}, 'utf8'), { allowFaults: true });
+          writeFileSync(${JSON.stringify(join(dir, 'pack.zip'))}, r.zip);
+        `;
+        execFileSync('npx', ['tsx', '--input-type=module', '-e', code], { encoding: 'utf8' });
+        zip = readFileSync(join(dir, 'pack.zip'));
+      }
+      return json({ id: 'fc-pack', status: 'done', key, seconds: 6.6, costUsd: 0.00023 });
+    }
+    if (path === `artifacts/${key}/pack.zip`) {
+      return route.fulfill({ status: 200, headers: { 'X-Strata-Parts': '1', 'Content-Type': 'application/octet-stream' }, body: zip! });
+    }
+    return json({ error: 'not found' }, 404);
+  });
+  await page.addInitScript((fault) => {
+    if (fault) localStorage.setItem('strata.cloudFault', 'drop-plate');
+  }, opts.fault);
+  return { posted: () => posted };
+}
+
+test('Export (cloud) uploads the design and shows a download link once the pack matches it', async ({ page }) => {
+  const cloud = await packCloud(page, { fault: false });
+  await boostOn(page);
+  await openApp(page);
+  await expect(page.getByTestId('cloud-status')).toHaveText('Cloud: ready');
+  await page.getByTestId('cloud-pack').click();
+  await expect(page.getByTestId('cloud-pack-link')).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId('cloud-notice')).toContainText(/matching this design/);
+  expect(cloud.posted()).toMatchObject({ kind: 'pack', input: { parts: 1 }, date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+  expect(cloud.posted()).not.toHaveProperty('fault');
+});
+
+test('a cloud pack missing a plate is a red error with no download (dev fault switch)', async ({ page }) => {
+  const cloud = await packCloud(page, { fault: true });
+  await boostOn(page);
+  await openApp(page);
+  await expect(page.getByTestId('cloud-status')).toHaveText('Cloud: ready');
+  await page.getByTestId('cloud-pack').click();
+  await expect(page.getByTestId('cloud-notice')).toContainText(/Cloud pack refused: the cloud pack has \d+ plates and this design has \d+/, { timeout: 120_000 });
+  await expect(page.getByTestId('cloud-pack-link')).toHaveCount(0);
+  expect(cloud.posted()).toMatchObject({ fault: 'drop-plate' });
 });

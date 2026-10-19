@@ -18,7 +18,7 @@ import HelpLayer, { HelpButton } from './Help';
 import DesignBox from './DesignBox';
 import { designShortcutFromKey } from './designShortcut';
 import { useMapTerrainBuild } from './useMapTerrainBuild';
-import { CloudField } from './CloudStatus';
+import { CloudField, CloudNoticeWindow } from './CloudStatus';
 import { BusyLight, BusyWindows, useAppBusy } from './BusyWindow';
 import { isMapTerrainFailure, reportMapTerrainFailure, reportMapTerrainMessage, runFrontPipelineSafe } from './mapTerrainError';
 import { isMapDepth, mapMasterWidthMm, mapScaleMmPerM, mapTrueRangePlateMm } from '../core/mapPlateHeight';
@@ -385,6 +385,7 @@ export default function App() {
             <div className="window-body">{ui.toast}</div>
           </div>
         )}
+        <CloudNoticeWindow />
         <DropOverlay />
         <HelpLayer />
         {designOpen && <DesignBox onClose={() => setDesignOpen(false)} />}

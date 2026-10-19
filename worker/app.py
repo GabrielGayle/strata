@@ -1,6 +1,6 @@
 """Strata cloud jobs (Boost) on Modal.
 
-One CPU function, `run_job`, runs a job with the same TypeScript engine as the app
+One CPU function, `run_job`, runs a job (terrain, pack or nest) with the same TypeScript engine as the app
 (worker/dist/job.mjs, bundled from src/ by `npx tsx worker/build.ts`), plus a small
 web API the Vercel routes in api/geo.ts call with a Modal proxy auth token:
 
@@ -167,7 +167,18 @@ def api():
             return {"id": call_id, "status": "failed", "reason": "failed", "error": str(e)[:300] or type(e).__name__}
         if not result.get("ok"):
             return {"id": call_id, "status": "failed", "reason": result.get("reason", "failed"), "error": result.get("error", "")}
-        return {"id": call_id, "status": "done", "key": result["key"], "px": result.get("px"), "ms": result.get("ms")}
+        seconds = float(result.get("seconds") or 0)
+        return {
+            "id": call_id,
+            "status": "done",
+            "key": result["key"],
+            "px": result.get("px"),
+            "ms": result.get("ms"),
+            "meta": result.get("meta") or {},
+            # what this one job cost, at the same rate as /usage
+            "seconds": seconds,
+            "costUsd": round(seconds * RATE_PER_SECOND, 5),
+        }
 
     @web.post("/jobs/{call_id}/cancel")
     def cancel(call_id: str) -> dict:

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { isLiteral } from '../core/expr';
 import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
+import type { SavedNest } from '../core/nest';
 import { applyPreset, applyVariant, deserialize, newProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
 import type { EarthView, EarthWorldPose } from '../core/earthView';
 import type { MapSpec } from '../core/mapSpec';
@@ -120,6 +121,8 @@ interface Store {
   applyDesignPatch: (patch: ProjectPatch, label?: string) => void;
   toggleLock: (id: string) => void;
   setPour: (pour: PourLayer[]) => void;
+  /** Keep the cloud's tight nest in the project (or drop it, for the local nest). */
+  setNest: (nest: SavedNest | undefined) => void;
   /** Shadow pictures and their times; `key` merges rapid edits (a time being typed) into one undo step. */
   setShadow: (shadow: ShadowSpec | undefined, key?: string) => void;
   /** Place one plate by hand (null puts it back where it was designed). */
@@ -366,6 +369,7 @@ export const useStore = create<Store>((set, get) => {
       commit({ ...p, locks: { ...p.locks, [id]: !p.locks[id] } }, `lock:${id}:${performance.now()}`);
     },
     setPour: (pour) => commit({ ...get().project, pour }, 'pour'),
+    setNest: (nest) => commit({ ...get().project, nest }, `nest:${performance.now()}`),
     setShadow: (shadow, key = 'shadow') => commit({ ...get().project, shadow: shadow?.frames.length ? shadow : undefined }, key),
     movePart: (key, move) => {
       const p = get().project;
