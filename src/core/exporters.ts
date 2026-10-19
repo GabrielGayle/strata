@@ -16,6 +16,7 @@ import type { Values } from './params';
 import { extrudeOnPlane, extrudePlan, extrudeSunkenFrame, mergeGeometries } from './geometry3d';
 import { cutListCsv, hardwareCsv } from './bom';
 import { candlesCsv, candleShopping } from './candles';
+import { masterText } from './candleMaster';
 import { stackRodsCsv } from './stackRods';
 import { DEFAULT_RATES, estimateMix, priceText, withHardware, type PriceRates } from './price';
 import { baseGeometry } from './base';
@@ -406,6 +407,9 @@ export function packReadme(model: Model, project?: Project): string {
   if (model.sliced.stackRods) {
     lines.push('', 'rods.csv', '  Cut list of support poles: rod id, diameter (mm), length (mm) from the base to the top of the highest layer each rod holds.');
   }
+  if (model.sliced.candleMaster) {
+    lines.push('', 'candle-master.txt', '  The candle master: what to buy (silicone, wax per candle, the centre pin) and how to glue up the master, cast the mould and pour.');
+  }
   if (candleShopping(project?.candles).length) {
     lines.push('', 'candles.csv', '  Candles to buy for the candelabra: one row per size with how many, what holds them and the hole each drops into, then the total.');
   }
@@ -520,6 +524,7 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   if (model.shadow && project.shadow?.frames.length) files['shadow-install-card.html'] = strToU8(installCardHtml(project, v, model.shadow));
   const candles = candleShopping(project.candles);
   if (candles.length) files['candles.csv'] = strToU8(candlesCsv(candles));
+  if (model.sliced.candleMaster) files['candle-master.txt'] = strToU8(masterText(model.sliced.candleMaster));
   files['README.txt'] = strToU8(packReadme(model, project));
   files['build-pack.html'] = strToU8(buildPackHtmlChecked(project, model, { rates }));
   files['manifest.json'] = strToU8(JSON.stringify({ ...packManifest(model), ...buildPlateManifest(model, project) }, null, 2) + '\n');

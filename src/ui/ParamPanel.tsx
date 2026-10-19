@@ -5,6 +5,7 @@ import { isLiteral } from '../core/expr';
 import { useStore } from '../state/store';
 import { useModel } from './model';
 import PourEditor from './PourEditor';
+import CandleMasterInfo from './CandleMasterInfo';
 import { changedByGroup, resetGroupPatch } from '../core/paramDiff';
 import RoundPreview, { ROUND_PREVIEW_IDS } from './RoundPreview';
 import {
@@ -456,6 +457,7 @@ export default function ParamPanel() {
                 )}
                 {g === 'Concrete' && !changedOnly && <PourEditor compact />}
                 {g === 'Tuning' && !changedOnly && <TuningTable />}
+                {g === 'Candle master' && !changedOnly && <CandleMasterInfo />}
               </div>
             )}
           </fieldset>

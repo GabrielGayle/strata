@@ -29,6 +29,7 @@ import {
 } from './geom2d';
 import { offsetPlane, planeToWorld, sectionShape, type Plane, type V3 } from './section';
 import { stackFrame, type HeightField } from './heightfield';
+import { isCandleMaster, masterFrame, masterLayers, type MasterSummary } from './candleMaster';
 import { flatFootprint, flatGrid, flatOutline, flatPinPoints, flatStampCut, outlinePaths, pinFits, type FlatGrid } from './flatstack';
 import type { IndexedMesh } from './forms';
 import { sightCut, type SightCard } from './sightLine';
@@ -179,6 +180,8 @@ export interface SliceResult {
   stackRods: StackRodPlan | null;
   /** The plates where Round all corners moved an edge the furthest, most first (empty when it is off). */
   roundSpots?: RoundSpot[];
+  /** Candle master: the stratified master, its box and the silicone it needs (null unless Candle master is on). */
+  candleMaster?: MasterSummary | null;
 }
 
 export interface BraceResult {
@@ -1361,6 +1364,18 @@ export function slice(input: SliceInput): SliceResult {
     return input.mapTerrain ? mapOutline(d, hf, v) : strataOutline(d, hf, v);
   });
 
+  // candle master: pin hole through each layer, and the frames that stack into the silicone box
+  let candleMaster: MasterSummary | null = null;
+  if (isFlat && useForm && input.source && isCandleMaster(v)) {
+    const frame = masterFrame(input.source, baseTop(v));
+    if (frame) {
+      const m = masterLayers(outlines, frame, v);
+      m.outlines.forEach((o, i) => (outlines[i] = o));
+      candleMaster = m.summary;
+      if (homeDefs.length < m.summary.layersNeeded) warnings.push(`Candle master: ${homeDefs.length} layers × ${t} mm stop short of the box top; raise Plate count to ${m.summary.layersNeeded} for ${v.cmCover} mm of silicone over the master.`);
+    }
+  }
+
   // 1a. trim every plate to the top image's silhouette
   if (topWin && input.topMask && v.topOutline !== 'off') {
     const foot = silhouetteFootprint(input.topMask, topWin, Number(v.topChoke) || 0);
@@ -1845,5 +1860,11 @@ export function slice(input: SliceInput): SliceResult {
   const spots = round.spots.sort((a, b) => b.move - a.move).slice(0, 6);
   if (spots.length && spots[0].move > Math.max(2, rMax * 3)) warnings.push(`Round all corners flattens detail: the edge of ${spots[0].label} moves ${spots[0].move.toFixed(1)} mm. Lower the radius, or set Inside corners lower.`);
   if (roundSplits.length) warnings.push(`Round all corners cuts through a narrow neck and splits ${roundSplits.slice(0, 4).join(', ')}${roundSplits.length > 4 ? ` and ${roundSplits.length - 4} more` : ''} into pieces.`);
-  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, support, tuning, brace, stackRods, roundSpots: spots };
+  // the master's top face is the top of every candle cast from it: no part number etched there
+  if (candleMaster && candleMaster.masterLayers) {
+    const top = Math.round(candleMaster.height / t) - 1;
+    const ring = v.cmFrame > 0 ? candleMaster.inner.w : Infinity;
+    for (const p of allParts) if (p.index === top && p.bbox.maxX - p.bbox.minX < ring) p.labelPaths = [];
+  }
+  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, support, tuning, brace, stackRods, roundSpots: spots, candleMaster };
 }
