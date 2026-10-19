@@ -214,6 +214,25 @@ describe('shadow worker', () => {
     expect(summary(done.model)).toBe(summary(createPipeline()(p, assets)));
   });
 
+  it('carves the plates after an edit that slices them again', async () => {
+    // the slice is shared with the one before it, which must not split the parts from their plates
+    const frames = [shadowFrameGray(1)];
+    const p = smallProject({ shadowOn: true, shadowLight: 'candle', stackHeight: '90', insertOn: false, candleD: '150', shadowW: '200', shadowH: '130' });
+    p.shadow = { frames: [{ id: 'f0', name: 'F0', dataUrl: 'data:x0', time: 12, hold: 0 }] };
+    const assets = { ...none, shadowFrames: frames };
+    const { client, carved } = wire();
+    const e = engine({ shadow: client });
+    e.run({ ...p, params: { ...p.params, shadowOn: false, stackHeight: '97' } }, assets, 'full');
+    const waiting = carved();
+    expect(e.run(p, assets, 'full').reply).toMatchObject({ carving: true });
+    await waiting;
+    const done = e.again().model;
+    const inline = createPipeline()(p, assets);
+    // the carve cut something, and the engine's plates have it
+    expect(inline.sliced.parts).not.toEqual(createPipeline()({ ...p, params: { ...p.params, shadowOn: false } }, assets).sliced.parts);
+    expect(summary(done)).toBe(summary(inline));
+  });
+
   it('a Sun edit shows the plates at once without slicing again', async () => {
     const { p, assets } = shadowProject();
     const { client, carved } = wire();
