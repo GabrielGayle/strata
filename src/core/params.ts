@@ -835,13 +835,18 @@ export function fitOverrides(raw: Record<string, RawValue>): Record<string, stri
 export function spacingOverrides(raw: Record<string, RawValue>): Record<string, string> {
   const mode = String(raw.spacingMode ?? 'fit');
   if (String(raw.sliceMode ?? 'parallel') === 'waffle' && String(raw.waffleLayout ?? 'spread') === 'grid') {
-    // both sets on the cell size; the cross plates fill the width that stays inside the sheared frame
+    // both sets on the cell size; a slanted frame shears, so the counts leave room for it
     const cross = String(raw.gridCell ?? 'square') === 'rect' ? 'cellCross' : 'cellSize';
+    const run = '(stackLength - 2*endMargin)';
+    const slant = 'abs(gridAngle - 90) > 0.01';
+    // leaning along the stack (see gridSlantsAlong): the cross plates fill the width, the plates what the shear leaves of the run
+    const along = `(${slant} ? (stackLength >= acrossLength) : 0)`;
+    const crossFill = `floor((plateWidth - thickness) / ${cross})`;
     return {
       pitch: 'cellSize',
-      // a slanted frame shears across the stack: its area peaks when the stack takes half the room
-      plateCount: `max(2, min(floor((stackLength - 2*endMargin) / cellSize) + 1, floor((plateWidth * sin(gridAngle) - thickness) / (2 * cellSize * abs(cos(gridAngle)) + 0.000001)) + 1))`,
-      crossCount: `max(2, floor((plateWidth * sin(gridAngle) - thickness - (plateCount - 1) * cellSize * abs(cos(gridAngle))) / ${cross}) + 1)`,
+      // leaning across: the frame's area peaks when the stack takes half the room
+      plateCount: `max(2, ${along} ? floor((${run} - ${crossFill} * ${cross} * abs(cos(gridAngle) / sin(gridAngle))) * sin(gridAngle) / cellSize) + 1 : min(floor(${run} / cellSize) + 1, floor((plateWidth * sin(gridAngle) - thickness) / (2 * cellSize * abs(cos(gridAngle)) + 0.000001)) + 1))`,
+      crossCount: `max(2, ${along} ? ${crossFill} + 1 : floor((plateWidth * sin(gridAngle) - thickness - (plateCount - 1) * cellSize * abs(cos(gridAngle))) / ${cross}) + 1)`,
     };
   }
   if (mode === 'fit' || String(raw.sliceMode ?? 'parallel') === 'radial') return {};

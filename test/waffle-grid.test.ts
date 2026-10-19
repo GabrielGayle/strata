@@ -194,6 +194,25 @@ describe('waffle closed grid', { timeout: 120_000 }, () => {
     expect(kerfGapRegions(slit, 0.15).length).toBe(1);
   });
 
+  it('a slanted closed grid on a long base leans along it and fills it', () => {
+    const { p, m } = grid({ baseLength: '800', baseWidth: '300', cellSize: '40', gridAngle: '60' });
+    const ext = (axis: 0 | 2) => {
+      const xs = m.sliced.plates.flatMap((pl) => [pl.def.u0, pl.def.u1].map((u) => planeToWorld(pl.def.plane, u, 0)[axis]));
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    // the lattice spans most of the 800 mm run and the 300 mm width, not a diamond patch
+    expect(ext(0)).toBeGreaterThan(0.8 * (m.v.stackLength - 2 * m.v.endMargin));
+    expect(ext(2)).toBeGreaterThan(0.8 * m.v.plateWidth);
+    expect(ext(0)).toBeLessThanOrEqual(m.v.baseLength);
+    expect(ext(2)).toBeLessThanOrEqual(m.v.baseWidth);
+    // the cross plates run straight along the stack, the plates slant at 60° to them
+    const X0 = m.sliced.plates.find((pl) => pl.def.family === 'X')!.def.plane;
+    expect(Math.abs(X0.u[0])).toBeCloseTo(1, 9);
+    expect(m.sliced.warnings.filter((w) => /Closed grid/.test(w))).toEqual([]);
+    expectClosedLattice(m);
+    expectExportable(m, p);
+  });
+
   it('warns when a shallow angle leaves no steel between slots', () => {
     const { m } = grid({ cellSize: '12', gridAngle: '30', thickness: '6' });
     expect(m.sliced.warnings.some((w) => /Closed grid: the slots/.test(w))).toBe(true);

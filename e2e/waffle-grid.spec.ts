@@ -43,7 +43,7 @@ test('Neasden map: closed square grid, then the two blocks slanted at 60°', asy
   await assertZeroFitErrors(page);
   await snapViewportDir(page, 'iso', false);
   await shot(page, 'map-square-iso');
-  // the closed frame slants too: on this long base it only fits a diamond patch
+  // the closed frame slants too, leaning along the long base so the diamonds fill it
   await setNum(page, 'Cross plate angle', '60');
   await assertZeroFitErrors(page);
   await snapViewportDir(page, 'iso', false);
