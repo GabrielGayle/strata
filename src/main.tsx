@@ -13,25 +13,40 @@ import { visibleTabs } from './core/workspace';
 import { preloadView } from './ui/Workspace';
 import { installE2eMapTileFixtures } from './core/mapBrowserTiles';
 import { preloadModel } from './state/results';
+import { choseDesktop, isViewerPath, looksLikePhone, phoneRedirect } from './ui/mobile/route';
 
 installE2eMapTileFixtures();
 
 // apply the saved window appearance before the first paint
 applyTheme(loadTheme());
 
-// start fetching the views on the first screen while the session loads
-for (const t of new Set([...visibleTabs(activeLayout(useWorkspaces.getState())), useStore.getState().ui.tab])) preloadView(t);
+const goTo = phoneRedirect(location, looksLikePhone(), choseDesktop());
+if (goTo) history.replaceState(null, '', goTo);
 
-// read the last session back from browser storage before the first render
-hydrate()
-  .catch((e) => console.warn('Could not read the last session', e))
-  // and the model it last showed, from the result cache, so the first frame needn't slice the plates here
-  .then(() => preloadModel(useStore.getState().project))
-  .catch(() => {})
-  .finally(() =>
+if (isViewerPath(location.pathname)) {
+  // the phone viewer: it only reads saved projects, so the last session is never read back (or written)
+  void import('./ui/mobile/MobileApp').then(({ default: MobileApp }) =>
     createRoot(document.getElementById('root')!).render(
       <StrictMode>
-        <App />
+        <MobileApp />
       </StrictMode>,
     ),
   );
+} else {
+  // start fetching the views on the first screen while the session loads
+  for (const t of new Set([...visibleTabs(activeLayout(useWorkspaces.getState())), useStore.getState().ui.tab])) preloadView(t);
+
+  // read the last session back from browser storage before the first render
+  hydrate()
+    .catch((e) => console.warn('Could not read the last session', e))
+    // and the model it last showed, from the result cache, so the first frame needn't slice the plates here
+    .then(() => preloadModel(useStore.getState().project))
+    .catch(() => {})
+    .finally(() =>
+      createRoot(document.getElementById('root')!).render(
+        <StrictMode>
+          <App />
+        </StrictMode>,
+      ),
+    );
+}
