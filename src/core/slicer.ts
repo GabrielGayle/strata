@@ -381,42 +381,52 @@ export function waffleSlotWidth(v: Values): number {
 }
 
 /**
+ * A slanted closed grid leans along the stack when the stack is the longer run: the cross
+ * plates then run straight along it and the plates slant, so the frame's shear eats into the
+ * long side and the lattice fills the base, instead of a diamond patch on a long thin one.
+ */
+export const gridSlantsAlong = (v: Values) =>
+  v.sliceMode === 'waffle' && v.waffleLayout === 'grid' && Math.abs((Number(v.gridAngle) || 90) - 90) > 0.01 && v.stackLength >= v.acrossLength;
+
+/**
  * Closed grid: the main plates sit on the cell size, the cross plates cross them at the grid
  * angle on their own cell size, and every plate stops at the outer face of the outermost plate
  * of the other set, so the outer plates frame the lattice and meet as half laps at the corners.
- * Plan coordinates (s along the stack, a across); a cross plate is the line n·(s, a) = c.
+ * Plan coordinates (s along the stack, a across); each plate is a line n·(s, a) = o. Normally
+ * the plates stand square to the stack and the cross plates slant; see `gridSlantsAlong`.
  */
 function gridDefs(v: Values, defs: PlateDef[], f: ReturnType<typeof stackFrame>, top: number): PlateDef[] {
   const th = gridAngleRad(v);
   const sin = Math.sin(th), cos = Math.cos(th);
   const t = v.thickness;
-  const world = (s: number, a: number): V3 => [s * f.stack[0] + a * f.across[0], top, s * f.stack[1] + a * f.across[1]];
-  const n2: [number, number] = [-cos, sin];
-  const d2: [number, number] = [sin, cos];
+  const along = gridSlantsAlong(v);
+  const toWorld = (p: [number, number]): V3 => [p[0] * f.stack[0] + p[1] * f.across[0], 0, p[0] * f.stack[1] + p[1] * f.across[1]];
+  const nP: [number, number] = along ? [sin, -cos] : [1, 0];
+  const nX: [number, number] = along ? [0, 1] : [-cos, sin];
+  const dir = (n: [number, number]): [number, number] => [n[1], -n[0]];
   const P = defs.filter((d) => d.family === 'P');
-  const ss = P.map((d) => d.plane.origin[0] * f.stack[0] + d.plane.origin[2] * f.stack[1]);
-  const sMin = Math.min(...ss), sMax = Math.max(...ss);
+  const n = P.length;
   const m = Math.max(2, Math.round(v.crossCount));
   const pc = v.gridCell === 'rect' ? v.cellCross : v.cellSize;
+  const ps = P.map((_, i) => (i - (n - 1) / 2) * v.pitch);
   const cs = Array.from({ length: m }, (_, j) => (j - (m - 1) / 2) * pc);
   const reach = t / 2 / sin;
-  // main plates: from the first cross plate to the last, out to its outer face
-  for (const d of P) {
-    const s = d.plane.origin[0] * f.stack[0] + d.plane.origin[2] * f.stack[1];
-    const sgn = d.plane.u[0] * f.across[0] + d.plane.u[2] * f.across[1] >= 0 ? 1 : -1;
-    const as = cs.map((c) => (c + s * cos) / sin);
-    const a0 = Math.min(...as) - reach, a1 = Math.max(...as) + reach;
-    d.u0 = sgn > 0 ? a0 : -a1;
-    d.u1 = sgn > 0 ? a1 : -a0;
-  }
-  cs.forEach((c, j) => {
-    const plane = makePlane(world(c * n2[0], c * n2[1]), [n2[0] * f.stack[0] + n2[1] * f.across[0], 0, n2[0] * f.stack[1] + n2[1] * f.across[1]]);
-    const dw: V3 = [d2[0] * f.stack[0] + d2[1] * f.across[0], 0, d2[0] * f.stack[1] + d2[1] * f.across[1]];
+  // τ along line (n1, o1) where it meets line (n2, o2)
+  const meet = (n1: [number, number], o1: number, n2: [number, number], o2: number) => {
+    const d1 = dir(n1);
+    return (o2 - o1 * (n1[0] * n2[0] + n1[1] * n2[1])) / (d1[0] * n2[0] + d1[1] * n2[1]);
+  };
+  const place = (nrm: [number, number], o: number, others: number[], nOther: [number, number]) => {
+    const plane = makePlane([o * nrm[0] * f.stack[0] + o * nrm[1] * f.across[0], top, o * nrm[0] * f.stack[1] + o * nrm[1] * f.across[1]], toWorld(nrm));
+    const dw = toWorld(dir(nrm));
     const sgn = plane.u[0] * dw[0] + plane.u[2] * dw[2] >= 0 ? 1 : -1;
-    // along the cross plate τ, its s is -c·cos + τ·sin
-    const t0 = (sMin + c * cos) / sin - reach, t1 = (sMax + c * cos) / sin + reach;
-    defs.push({ key: `X${j}`, family: 'X', index: j, count: m, plane, u0: sgn > 0 ? t0 : -t1, u1: sgn > 0 ? t1 : -t0 });
-  });
+    const ts = others.map((q) => meet(nrm, o, nOther, q));
+    const t0 = Math.min(...ts) - reach, t1 = Math.max(...ts) + reach;
+    return { plane, u0: sgn > 0 ? t0 : -t1, u1: sgn > 0 ? t1 : -t0 };
+  };
+  // main plates: from the first cross plate to the last, out to its outer face
+  P.forEach((d, i) => Object.assign(d, place(nP, ps[i], cs, nX)));
+  cs.forEach((c, j) => defs.push({ key: `X${j}`, family: 'X', index: j, count: m, ...place(nX, c, ps, nP) }));
   return defs;
 }
 
@@ -1576,9 +1586,14 @@ export function slice(input: SliceInput): SliceResult {
       const sin = Math.sin(gridAngleRad(v));
       const side = Math.min(v.cellSize, v.gridCell === 'rect' ? v.cellCross : v.cellSize) / sin;
       if (sw + v.minFeature > side) warnings.push(`Closed grid: the slots (${sw.toFixed(1)} mm wide at ${Math.round(v.gridAngle)}°) leave less than ${v.minFeature} mm of steel between crossings; open the angle or make the cells bigger.`);
-      const room = v.plateWidth * sin - t - (v.plateCount - 1) * v.cellSize * Math.abs(Math.cos(gridAngleRad(v)));
-      const pc = v.gridCell === 'rect' ? v.cellCross : v.cellSize;
-      if ((v.crossCount - 1) * pc > room + 1e-6) warnings.push(`Closed grid: ${v.crossCount} cross plates at ${pc} mm don't fit inside the plate width at ${Math.round(v.gridAngle)}°, so the grid runs past the side margins; make the cells smaller or the angle closer to 90°.`);
+      const f = stackFrame(v);
+      const out = homeDefs.some((d) =>
+        [d.u0, d.u1].some((u) => {
+          const w = planeToWorld(d.plane, u, 0);
+          return Math.abs(w[0] * f.stack[0] + w[2] * f.stack[1]) > f.stackLen / 2 + 1e-6 || Math.abs(w[0] * f.across[0] + w[2] * f.across[1]) > f.acrossLen / 2 + 1e-6;
+        }),
+      );
+      if (out) warnings.push(`Closed grid: at ${Math.round(v.gridAngle)}° these cells don't fit on the base, so the grid runs past its edge; make the cells smaller or the angle closer to 90°.`);
     }
   }
 

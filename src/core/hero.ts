@@ -74,6 +74,31 @@ function plain(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return out;
 }
 
+/**
+ * Copies of a triangle soup's positions and normals with every triangle wound to face its
+ * normals. Some plate meshes come out wound clockwise; three draws them double-sided, but
+ * Cycles reads the winding as the outside and renders them black.
+ */
+export function windOutward(pos: Float32Array, nor: Float32Array): [Float32Array, Float32Array] {
+  const p = new Float32Array(pos);
+  const n = new Float32Array(nor);
+  for (let t = 0; t + 9 <= p.length; t += 9) {
+    const ux = p[t + 3] - p[t], uy = p[t + 4] - p[t + 1], uz = p[t + 5] - p[t + 2];
+    const vx = p[t + 6] - p[t], vy = p[t + 7] - p[t + 1], vz = p[t + 8] - p[t + 2];
+    const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+    const dot = cx * (n[t] + n[t + 3] + n[t + 6]) + cy * (n[t + 1] + n[t + 4] + n[t + 7]) + cz * (n[t + 2] + n[t + 5] + n[t + 8]);
+    if (dot >= 0) continue;
+    for (const a of [p, n]) {
+      for (let k = 0; k < 3; k++) {
+        const b = a[t + 3 + k];
+        a[t + 3 + k] = a[t + 6 + k];
+        a[t + 6 + k] = b;
+      }
+    }
+  }
+  return [p, n];
+}
+
 /** The solid parts of the model, grouped by look. Same design, same meshes. */
 export function heroScene(model: Model, project: Project): HeroScene {
   const v = model.v;
@@ -253,8 +278,9 @@ export function heroGlb(scene: HeroScene, camera?: HeroCamera): Uint8Array {
         hi[k] = Math.max(hi[k], pos[i + k]);
       }
     }
-    const pa = accessors.push({ bufferView: push(new Float32Array(pos), 34962), componentType: 5126, count, type: 'VEC3', min: lo, max: hi }) - 1;
-    const na = accessors.push({ bufferView: push(new Float32Array(nor), 34962), componentType: 5126, count, type: 'VEC3' }) - 1;
+    const [p, n] = windOutward(pos, nor);
+    const pa = accessors.push({ bufferView: push(p, 34962), componentType: 5126, count, type: 'VEC3', min: lo, max: hi }) - 1;
+    const na = accessors.push({ bufferView: push(n, 34962), componentType: 5126, count, type: 'VEC3' }) - 1;
     const mat =
       materials.push({
         name: `strata:${m.kind}`,
