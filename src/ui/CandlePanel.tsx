@@ -27,11 +27,13 @@ const BEND_HINT: Partial<Record<CandlePath, string>> = {
 const hasStick = (s: CandleSpec) => candleList(s).some((c) => !c.tealight);
 const holderOf = (s: CandleSpec, c: ReturnType<typeof candleList>[number]) => (c.tealight ? c.holder ?? 'socket' : c.holder ?? s.holder);
 const hasTarget = (s: CandleSpec) => candleList(s).some((c) => holderOf(s, c) !== 'socket');
-const hasSlotted = (s: CandleSpec) => candleList(s).some((c) => holderOf(s, c) === 'slotted');
 
 // set while the panel renders: whether "auto" means sitting into a map
 let mapDesign = false;
 const sitsIn = (s: CandleSpec) => s.sit === 'surface' || (s.sit === 'auto' && mapDesign);
+// sitting into the plates, target fins slot onto them like slotted fins (see candleObjects)
+const slotsIn = (s: CandleSpec, c: ReturnType<typeof candleList>[number]) => holderOf(s, c) === 'slotted' || (sitsIn(s) && holderOf(s, c) === 'target');
+const hasSlotted = (s: CandleSpec) => candleList(s).some((c) => slotsIn(s, c));
 
 const FIELDS: Field[] = [
   { key: 'cols', label: 'Columns', step: 1, hint: 'Grid: how many candles in each row (across the plates). The rows fill up from the front as you add candles.', show: (s) => s.path === 'grid' },
@@ -128,7 +130,7 @@ export default function CandlePanel() {
   const loose = cups.filter((b) => !gripping(b)).length;
   const wobbly = cups.filter((b) => b.object.look === 'candle' && gripping(b) === 1).length;
   const sticks = list.filter((c) => !c.tealight).length;
-  const summary = `${list.length} candle${list.length === 1 ? '' : 's'}: ${sticks} candlestick${sticks === 1 ? '' : 's'}, ${list.length - sticks} tealight${list.length - sticks === 1 ? '' : 's'}.${loose ? ` ${loose} stand${loose === 1 ? 's' : ''} between plates with nothing holding ${loose === 1 ? 'it' : 'them'}: give ${loose === 1 ? 'it' : 'them'} fins or nudge the path.` : ''}${wobbly ? ` ${wobbly} candlestick${wobbly === 1 ? ' is' : 's are'} gripped by only one plate and may wobble: closer plates, a deeper Grip or fins will steady ${wobbly === 1 ? 'it' : 'them'}.` : ''}${bad.length ? ` Couldn't read: ${bad.join(', ')}.` : ''}`;
+  const summary = `${list.length} candle${list.length === 1 ? '' : 's'}: ${sticks} candlestick${sticks === 1 ? '' : 's'}, ${list.length - sticks} tealight${list.length - sticks === 1 ? '' : 's'}.${loose ? ` ${loose} stand${loose === 1 ? 's' : ''} between plates with nothing holding ${loose === 1 ? 'it' : 'them'}: give ${loose === 1 ? 'it' : 'them'} fins or nudge the path.` : ''}${sitsIn(s) && list.some((c) => holderOf(s, c) === 'target') ? ' Sitting into the plates, target fins slot onto them instead of standing in the concrete, so the plates stay whole round each candle.' : ''}${wobbly ? ` ${wobbly} candlestick${wobbly === 1 ? ' is' : 's are'} gripped by only one plate and may wobble: closer plates, a deeper Grip or fins will steady ${wobbly === 1 ? 'it' : 'them'}.` : ''}${bad.length ? ` Couldn't read: ${bad.join(', ')}.` : ''}`;
 
   return (
     <>
@@ -145,7 +147,7 @@ export default function CandlePanel() {
               </option>
             ))}
           </select>
-          <select aria-label="Holder" value={s.holder} onChange={(e) => edit({ holder: e.target.value as Holder })} {...help('How candlesticks are held. Target fins: fins stand round each one like crosshairs, set in the concrete, and the plates step up to meet them. Slotted fins: the same fins, but slotted onto the plates so the plates line them up. Cup: no fins; the plates it stands in are cut to grip it, like a tealight. Add "cup", "slotted" or "target" to a line to pick it for just that line.')}>
+          <select aria-label="Holder" value={s.holder} onChange={(e) => edit({ holder: e.target.value as Holder })} {...help('How candlesticks are held. Target fins: fins stand round each one like crosshairs, set in the concrete, and the plates step up to meet them (candles sitting into the plates, as on a map, get them slotted onto the plates instead). Slotted fins: the same fins, but slotted onto the plates so the plates line them up. Cup: no fins; the plates it stands in are cut to grip it, like a tealight. Add "cup", "slotted" or "target" to a line to pick it for just that line.')}>
             {(Object.keys(HOLDER_NAMES) as Holder[]).map((k) => (
               <option key={k} value={k}>
                 {HOLDER_NAMES[k]}
