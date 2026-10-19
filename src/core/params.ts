@@ -31,6 +31,7 @@ export interface ParamDef {
 export const GROUPS = [
   'Master',
   'Base',
+  'Steel base',
   'Support',
   'Bracing',
   'Plates',
@@ -133,12 +134,36 @@ export const PARAMS: ParamDef[] = [
   { id: 'masterThickness', label: 'Scale plate thickness', group: 'Master', kind: 'toggle', def: true },
 
   // Base
-  { id: 'baseOn', label: 'Concrete base', group: 'Base', kind: 'toggle', def: true },
+  { id: 'baseOn', label: 'Base', group: 'Base', kind: 'toggle', def: true },
+  choice('baseMaterial', 'Base is', 'Base', 'concrete', [
+    { value: 'concrete', label: 'Cast concrete' },
+    { value: 'steel', label: 'Steel plate, plates welded on' },
+  ], { help: 'Steel plate: a laser-cut base with a slot under every tab on the plates. The plates drop in square, and you weld them from underneath where the tabs come through. See the Steel base group.' }),
   num('baseLength', 'Length', 'Base', 800, 20, 3000),
   num('baseWidth', 'Width', 'Base', 300, 20, 1500),
-  num('baseHeight', 'Height', 'Base', 120, 5, 600),
-  num('baseCornerChamfer', 'Corner chamfer', 'Base', 0, 0, 300, { show: (v) => v.baseOn, help: 'Cuts the four vertical corners of the base at 45° (leg length)' }),
+  num('baseHeight', 'Height', 'Base', 120, 5, 600, { show: (v) => !v.steelBaseOn }),
+  num('baseCornerChamfer', 'Corner chamfer', 'Base', 0, 0, 300, { show: (v) => v.baseOn || v.steelBaseOn, help: 'Cuts the four vertical corners of the base at 45° (leg length)' }),
   num('baseEdgeChamfer', 'Top edge chamfer', 'Base', 0, 0, 100, { show: (v) => v.baseOn, help: 'Bevels the top edge of the base at 45°. Formed by a chamfer strip fixed inside the top of the mould.' }),
+
+  // Steel base: a laser-cut base plate; every plate drops tabs through slots in it and is welded from underneath
+  { id: 'steelBaseOn', label: 'Steel base', group: 'Steel base', kind: 'toggle', def: false, show: () => false },
+  num('steelThickness', 'Base plate thickness', 'Steel base', 'max(3, thickness)', 1, 25, { step: 0.5, noScale: true, help: 'At least 3 mm, and no thinner than the plates: it stays flat when you weld it and gives the weld something to bite. A different thickness from the plates is cut on its own sheet.' }),
+  choice('steelFixing', 'Fixing', 'Steel base', 'weld', [
+    { value: 'weld', label: 'Weld from underneath, ground flush' },
+    { value: 'twist', label: 'Twist tabs (no welding)' },
+  ], { help: 'Weld: each tab stops just short of the underside, you fill the slot with weld and grind it flat, so the back stays flush. Twist: the tabs poke through and you twist each a quarter turn with a spanner; no welder needed, but the back is not flat.' }),
+  num('steelTabLength', 'Tab length', 'Steel base', 15, 4, 200, { help: 'Length of each tab along the bottom of a plate' }),
+  num('steelTabPitch', 'Tab spacing', 'Steel base', 80, 10, 1000, { help: 'Roughly how far apart the tabs on one plate are. Every plate gets at least two where it can.' }),
+  num('steelRecess', 'Weld recess', 'Steel base', 0.5, 0, 10, { step: 0.1, noScale: true, show: (v) => v.steelFixing !== 'twist', help: 'How far each tab stops short of the underside: a little pocket the weld fills before you grind it flush' }),
+  num('steelTwist', 'Twist tail', 'Steel base', 8, 3, 40, { step: 0.5, noScale: true, show: (v) => v.steelFixing === 'twist', help: 'How far each tab pokes out under the base to grip and twist' }),
+  num('steelClearance', 'Slot clearance', 'Steel base', 0.15, 0, 2, { step: 0.05, noScale: true, help: 'Added round each tab in its slot. Small keeps the plates square on their own; 0.1 to 0.2 mm suits a laser cut.' }),
+  num('steelEdge', 'Edge margin', 'Steel base', 8, 0, 200, { help: 'Least steel kept between a slot and the edge of the base' }),
+  { id: 'steelStagger', label: 'Stagger tabs', group: 'Steel base', kind: 'toggle', def: true, help: 'Neighbouring plates take their tabs at alternate spots, so slots never line up into a weak line and the heat is spread' },
+  choice('steelHoles', 'Fixing holes', 'Steel base', '0', [
+    { value: '0', label: 'None' },
+    { value: '4', label: 'Four corners' },
+  ], { help: 'Holes to screw the base down to a plinth, shelf or wall' }),
+  num('steelHoleDia', 'Hole diameter', 'Steel base', 6.5, 2, 30, { step: 0.5, noScale: true, show: (v) => v.steelHoles !== '0' }),
 
   // Embedded support
   { id: 'supportOn', label: 'Embedded support on', group: 'Support', kind: 'toggle', def: true, show: (v) => v.baseOn },
@@ -687,7 +712,10 @@ const SLICE_NAME: Record<string, string> = { parallel: 'parallel', radial: 'radi
  * in their place (null while the group is in use). Their settings are kept.
  */
 export const GROUP_IDLE: Partial<Record<(typeof GROUPS)[number], (v: Values) => string | null>> = {
-  Support: (v) => (v.baseOn ? null : 'Not used while Base is off: the ring is cast into the concrete.'),
+  Concrete: (v) => (v.steelBaseOn ? 'Not used with a steel base: there is no concrete to pour.' : null),
+  Mould: (v) => (v.steelBaseOn && (v.insShape === 'none' || v.insMaterial !== 'concrete') ? 'Not used with a steel base: there is nothing to cast.' : null),
+  'Steel base': (v) => (v.steelBaseOn ? null : 'Set Base › Base is to "Steel plate" to weld the plates to a laser-cut base plate.'),
+  Support: (v) => (v.baseOn ? null : v.steelBaseOn ? 'Not used with a steel base: the ring is cast into concrete.' : 'Not used while Base is off: the ring is cast into the concrete.'),
   Bracing: (v) => (isUpright(v) ? null : `Not used with ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing: rods and spacers brace upright parallel or waffle plates.`),
   Strata: (v) => (strataSource(v) ? null : 'Not used while Slicer › Slice what is Source form: plate edges come from the form.'),
   'Source form': (v) => (v.stackSource === 'form' ? null : 'Used only when Slicer › Slice what is Source form.'),
@@ -712,7 +740,9 @@ export const SWITCH_IDS = new Set(Object.values(GROUP_SWITCHES).map((s) => s!.id
 
 /** The raw values with every switched-off group's forced values laid over them. */
 export function applySwitches(raw: Record<string, RawValue>): Record<string, RawValue> {
-  let out = raw;
+  // a steel base stands in for the concrete: everything cast (ring, pours, moulds) sees no concrete base
+  const steel = isOn(raw, 'baseOn') && String(raw.baseMaterial ?? 'concrete') === 'steel';
+  let out = steel || raw.steelBaseOn ? { ...raw, steelBaseOn: steel, ...(steel ? { baseOn: false } : {}) } : raw;
   for (const sw of Object.values(GROUP_SWITCHES)) {
     if (!sw!.forces || isOn(raw, sw!.id)) continue;
     if (out === raw) out = { ...raw };

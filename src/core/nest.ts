@@ -60,6 +60,8 @@ export interface NestSheet {
   used: number; // part area placed
   /** Metal on this sheet, when the plates mix metals (each is cut on its own sheets). */
   material?: string;
+  /** Sheet thickness, when it isn't the plates' (the steel base plate's own sheet). */
+  thickness?: number;
 }
 
 export interface NestResult {
@@ -639,7 +641,7 @@ export function nest(items: NestItem[], sheetW: number, sheetH: number, spacing:
 }
 
 /** Nest each group onto its own sheets (one metal per sheet), numbered in group order. */
-export function nestGroups(groups: { material: string; items: NestItem[] }[], sheetW: number, sheetH: number, spacing: number, opts: NestOptions = {}): NestResult {
+export function nestGroups(groups: { material: string; thickness?: number; items: NestItem[] }[], sheetW: number, sheetH: number, spacing: number, opts: NestOptions = {}): NestResult {
   if (groups.length <= 1) return nest(groups[0]?.items ?? [], sheetW, sheetH, spacing, opts);
   const sheets: NestSheet[] = [];
   const unplaced: string[] = [];
@@ -647,7 +649,7 @@ export function nestGroups(groups: { material: string; items: NestItem[] }[], sh
     // the budget is shared out by part count
     const share = opts.budgetMs ? (opts.budgetMs * g.items.length) / Math.max(1, groups.reduce((a, x) => a + x.items.length, 0)) : 0;
     const r = nest(g.items, sheetW, sheetH, spacing, { ...opts, budgetMs: share });
-    for (const s of r.sheets) sheets.push({ ...s, index: sheets.length, material: g.material });
+    for (const s of r.sheets) sheets.push({ ...s, index: sheets.length, material: g.material, ...(g.thickness != null ? { thickness: g.thickness } : {}) });
     unplaced.push(...r.unplaced);
   }
   const used = sheets.reduce((a, s) => a + s.used, 0);
@@ -656,6 +658,8 @@ export function nestGroups(groups: { material: string; items: NestItem[] }[], sh
 
 export interface NestGroup {
   material: string;
+  /** Sheet thickness, when it isn't the plates' own. */
+  thickness?: number;
   items: NestItem[];
 }
 
@@ -685,6 +689,7 @@ export function nestFingerprint(groups: NestGroup[], sheetW: number, sheetH: num
     sheet: [sheetW, sheetH, spacing],
     groups: groups.map((g) => ({
       m: g.material,
+      t: g.thickness,
       items: g.items.map((it) => ({
         id: it.id,
         box: [r3(it.w), r3(it.h), r3(it.minX ?? 0), r3(it.minY ?? 0)],

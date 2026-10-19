@@ -37,6 +37,7 @@ import { boxBlur, distanceInside, marchingSquares, sample, type Gray } from './i
 import { strokeTextCentered, textWidth } from './strokefont';
 import { MAX_TUNED, MIN_TUNED, tunePlates, tuningActive, type PlateTune } from './tuning';
 import { addTenons, baseChamfers, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
+import { addWeldTabs, fixingHoles, steelBaseShape, steelBaseSpec, steelPlane, tabsOf, weldOrder, type SteelBaseSpec, type WeldTab } from './steelBase';
 import { buildSpacers, planRods, rodHardware, rodHoles, type BraceIssue, type HardwareRow, type RodPlan, type SpacerResult } from './brace';
 import { finishPlatePieces, type FragmentEvent } from './fragments';
 import { movePlane, type PartMoves } from './moves';
@@ -57,7 +58,7 @@ import { orientMapPlatePlane } from './mapPlateHeight';
 import { MAP_WIDTH_AXIS_NOTE } from './mapStack';
 import { chokeSpans, finSlots, targetFins } from './candles';
 
-export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T' | 'K';
+export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T' | 'K' | 'B';
 
 export interface PlateDef {
   key: string;
@@ -188,6 +189,20 @@ export interface SliceResult {
   roundSpots?: RoundSpot[];
   /** Candle master: the stratified master, its box and the silicone it needs (null unless Candle master is on). */
   candleMaster?: MasterSummary | null;
+  /** The steel base plate and its weld tabs, when Base is a steel plate. */
+  steelBase?: SteelBaseResult | null;
+}
+
+/** The steel base plate and the tabs welded through it (null unless Base is a steel plate). */
+export interface SteelBaseResult {
+  spec: SteelBaseSpec;
+  /** Every tab through the base, in weld order. */
+  tabs: WeldTab[];
+  /** Plate keys in the order to tack them (middle of the base outwards, alternating sides). */
+  tackOrder: string[];
+  partId: string;
+  /** Upright plates left with no tab in the base. */
+  bare: string[];
 }
 
 export interface BraceResult {
@@ -231,7 +246,7 @@ function makePlane(origin: V3, normal: V3): Plane {
   return { origin, normal, u: crossUp(normal), v: UP };
 }
 
-export const baseTop = (v: Values) => (v.baseOn ? v.baseHeight : 0);
+export const baseTop = (v: Values) => (v.baseOn ? v.baseHeight : v.steelBaseOn ? Math.max(0.5, Number(v.steelThickness) || 3) : 0);
 // flat layers sit on the base (held by registration pins) rather than sinking into it
 export const embedOf = (v: Values) => (v.baseOn && v.sliceMode !== 'flat' ? v.embedDepth : 0);
 
@@ -271,7 +286,7 @@ function rodsThrough(plan: RodPlan, p: Plane): RodPlan {
 export function placeLooseParts(parts: Part[], moves: PartMoves | undefined, plateKeys: Set<string>): void {
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i];
-    if (p.family === 'S' || plateKeys.has(p.plateKey)) continue;
+    if (p.family === 'S' || p.family === 'B' || plateKeys.has(p.plateKey)) continue;
     const pivot = planeToWorld(p.plane, (p.bbox.minX + p.bbox.maxX) / 2, p.bbox.minY);
     const plane = movePlane(p.plane, moves?.[p.plateKey], pivot);
     parts[i] = plane === p.plane ? { ...p, pivot } : { ...p, pivot, plane, home: p.plane };
@@ -1597,6 +1612,30 @@ export function slice(input: SliceInput): SliceResult {
     }
   }
 
+  // 2b. steel base: tabs along every upright plate's bottom edge, clear of the waffle crossings
+  const steel = isFlat ? null : steelBaseSpec(v);
+  if (steel) {
+    defs.forEach((d, di) => {
+      if (!outlines[di].length || Math.abs(d.plane.normal[1]) > 0.5) return;
+      const cutAway = slots[di];
+      const free = cutAway.length ? difference(outlines[di], cutAway) : outlines[di];
+      // long plates keep tabs well clear of a crossing; cross plates only need to miss the slot itself
+      const land = d.family === 'X' ? 0.5 : Math.max(6, 2 * t);
+      const avoid = cutAway.map((ex) => {
+        const bb = shapeBBox([ex]);
+        return [bb.minX - land, bb.maxX + land] as [number, number];
+      });
+      const r = addWeldTabs(outlines[di], free, d.plane, steel, v, { avoid, shift: steel.stagger && d.index % 2 === 1 });
+      outlines[di] = r.outline;
+      if (!r.tabs.length)
+        warnings.push(
+          d.family === 'X'
+            ? `Steel base: cross plate ${partLabel(v, d.family, d.index, d.count)} has no room for a tab, so it hangs in the long plates' slots and is not welded to the base.`
+            : `Steel base: ${partLabel(v, d.family, d.index, d.count)} has no room for a tab over the base, so it can't be welded on. Move it onto the base or shorten the edge margin.`,
+        );
+    });
+  }
+
   // threaded rods through the embedded tabs
   const rods = planRods(v, homeDefs, baseTop(v), e);
   const braceIssues: BraceIssue[] = rods ? [...rods.issues] : [];
@@ -1958,6 +1997,51 @@ export function slice(input: SliceInput): SliceResult {
     });
   }
 
+  // 8b. the steel base plate, with a slot under every tab the finished plates still have
+  let steelBase: SteelBaseResult | null = null;
+  if (steel) {
+    const standing = allParts.filter((p) => p.family !== 'B' && p.family !== 'S' && p.family !== 'C' && p.family !== 'T');
+    const { tabs, plates: tackOrder } = weldOrder(tabsOf(standing));
+    const thick = new Map(standing.map((p) => [p.plateKey, p.thickness]));
+    const shape = steelBaseShape(v, steel, tabs, (k) => thick.get(k) ?? t);
+    const base = partLabel(v, 'B', 0, 1);
+    const pieces = shape.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
+    if (pieces.length > 1) warnings.push(`Steel base falls apart into ${pieces.length} pieces: the slots cut right across it. Raise the edge margin or space the plates out.`);
+    const holes = fixingHoles(v, steel);
+    if (holes.length && tabs.some((tb) => holes.some(([x, y]) => Math.hypot(x - tb.at[0], y - tb.at[1]) < steel.holeDia / 2 + tb.length / 2 + 2)))
+      warnings.push('Steel base: a fixing hole runs into a tab slot. Turn the holes off or shrink the plates in from the corners.');
+    const web = v.sliceMode === 'parallel' ? v.pitch - t - 2 * steel.clearance : Infinity;
+    if (web < v.minFeature && !steel.stagger) warnings.push(`Steel base: only ${web.toFixed(1)} mm of steel between neighbouring slots. Turn on Stagger tabs or space the plates out.`);
+    const plane = steelPlane(steel);
+    pieces.forEach((ex, pi) => {
+      const id = pieces.length > 1 ? `${base}${String.fromCharCode(97 + (pi % 26))}` : base;
+      const bb = bboxOf([ex.outer]);
+      const lab = placeLabel(id, ex, [bb.minX + 20, bb.minY + 10], v.labelHeight);
+      allParts.push({
+        id,
+        plateKey: 'B0',
+        family: 'B',
+        index: 0,
+        piece: pi,
+        plane,
+        thickness: steel.thickness,
+        shape: [ex],
+        etch: [],
+        labelPaths: lab?.paths ?? [],
+        labelAt: lab?.at ?? null,
+        area: shapeArea([ex]),
+        perimeter: shapePerimeter([ex]),
+        bbox: bb,
+        anchored: true,
+        plateId: base,
+        kind: 'plate',
+      });
+    });
+    const keyed = new Set(tabs.map((tb) => tb.plateKey));
+    const bare = plates.filter((pl) => pl.parts.length && Math.abs(pl.def.plane.normal[1]) < 0.5 && !keyed.has(pl.def.key));
+    steelBase = { spec: steel, tabs, tackOrder, partId: base, bare: bare.map((pl) => pl.def.key) };
+  }
+
   // 9. laser-cut spacers: cross pieces cast in under the plates and the lift-off spacing template
   rodMiss.forEach((miss, i) => {
     if (!miss) return;
@@ -2043,5 +2127,5 @@ export function slice(input: SliceInput): SliceResult {
     const ring = v.cmFrame > 0 ? candleMaster.inner.w : Infinity;
     for (const p of allParts) if (p.index === top && p.bbox.maxX - p.bbox.minX < ring) p.labelPaths = [];
   }
-  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, areas, support, tuning, brace, stackRods, roundSpots: spots, candleMaster };
+  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, areas, support, tuning, brace, stackRods, roundSpots: spots, candleMaster, steelBase };
 }

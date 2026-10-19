@@ -324,7 +324,9 @@ export default function Viewport() {
       </div>
       <div className="overlay bl info">
         <span>
-          base {fmt(v.baseLength, 0)} × {fmt(v.baseWidth, 0)} × {fmt(v.baseHeight, 0)} mm
+          {model.sliced.steelBase
+            ? `steel base ${fmt(v.baseLength, 0)} × ${fmt(v.baseWidth, 0)} × ${fmt(model.sliced.steelBase.spec.thickness, 1)} mm · ${model.sliced.steelBase.tabs.length} ${model.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welds'}`
+            : `base ${fmt(v.baseLength, 0)} × ${fmt(v.baseWidth, 0)} × ${fmt(v.baseHeight, 0)} mm`}
         </span>
         <span>
           {!model.sliced.plates.length ? (

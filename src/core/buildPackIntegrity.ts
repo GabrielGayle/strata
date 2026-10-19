@@ -61,17 +61,20 @@ export interface BuildPackManifest {
   plates: PlateManifestEntry[];
 }
 
-function mixedMetals(model: Model, project?: Project): boolean {
-  const main = String(model.v.plateMaterial);
-  return new Set(model.sliced.parts.map((p) => materialOf(project?.appearance, p.plateKey, main))).size > 1;
+/** The laser job a part belongs to: its metal, plus the sheet thickness when it isn't the plates' (the steel base plate). */
+export function partSheetKey(model: Model, project: Project | undefined, part: Part): string {
+  const metal = materialOf(project?.appearance, part.plateKey, String(model.v.plateMaterial));
+  return Math.abs(part.thickness - model.v.thickness) > 1e-9 ? `${metal}-${part.thickness}mm` : metal;
 }
 
-/** Relative zip path for a laser-cut part DXF. */
+function mixedMetals(model: Model, project?: Project): boolean {
+  return new Set(model.sliced.parts.map((p) => partSheetKey(model, project, p))).size > 1;
+}
+
+/** Relative zip path for a laser-cut part DXF. With mixed metals or thicknesses each job gets its own folder. */
 export function laserPartPath(model: Model, project: Project | undefined, part: Part): string {
-  const main = String(model.v.plateMaterial);
-  const metal = materialOf(project?.appearance, part.plateKey, main);
   const mixed = mixedMetals(model, project);
-  return `laser/parts/${mixed ? `${safeZipName(metal)}/` : ''}${safeZipName(part.id)}.dxf`;
+  return `laser/parts/${mixed ? `${safeZipName(partSheetKey(model, project, part))}/` : ''}${safeZipName(part.id)}.dxf`;
 }
 
 function plateBBox(parts: Part[]): BBox {

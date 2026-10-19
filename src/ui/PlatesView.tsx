@@ -41,7 +41,7 @@ function Detail({ part }: { part: Part }) {
   const fb = fitBox(bb.minX, bb.minY, bb.maxX, bb.maxY, 0.12);
   const sw = Math.max(fb.w, fb.h) / 700;
   // the support ring is drawn in plan, so it has no concrete line
-  const e = part.family === 'S' ? 0 : embedOf(v);
+  const e = part.family === 'S' || part.family === 'B' ? 0 : embedOf(v);
   return (
     <>
       <div className="svgwrap">

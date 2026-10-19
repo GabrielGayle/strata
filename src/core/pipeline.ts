@@ -427,10 +427,14 @@ export function createFrontPipeline(options: FrontOptions = {}) {
  */
 export function nestGroupsOf(sliced: SliceResult, defaultMaterial: string, materialFor: (plateKey: string) => string): NestGroup[] {
   const groups = new Map<string, NestGroup>([[defaultMaterial, { material: defaultMaterial, items: [] }]]);
+  // plates share one thickness; a part cut thicker (the steel base plate) goes on its own sheet
+  const main = sliced.parts.find((p) => p.family !== 'B')?.thickness;
   for (const p of sliced.parts) {
     const m = materialFor(p.plateKey);
-    if (!groups.has(m)) groups.set(m, { material: m, items: [] });
-    groups.get(m)!.items.push({
+    const thick = main != null && Math.abs(p.thickness - main) > 1e-9 ? p.thickness : undefined;
+    const k = thick != null ? `${m}@${thick}` : m;
+    if (!groups.has(k)) groups.set(k, { material: m, items: [], ...(thick != null ? { thickness: thick } : {}) });
+    groups.get(k)!.items.push({
       id: p.id,
       w: p.bbox.maxX - p.bbox.minX,
       h: p.bbox.maxY - p.bbox.minY,

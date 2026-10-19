@@ -263,6 +263,8 @@ function planSvg(m: Model, view: View, names: Map<string, string>): string {
   const out: string[] = [];
   if (basePts.length) out.push(`<path d="${pathD(basePts, f.X, f.Y)}" fill="#efefef" stroke="#000" stroke-width="1.4"/>`);
   if (ins.length > 2) out.push(`<path d="${pathD(hull(ins), f.X, f.Y)}" fill="#fff" stroke="#000" stroke-dasharray="5 3" stroke-width="1"/>`);
+  // the steel base plate: filled like the concrete, its slots showing through
+  for (const p of parts.filter((q) => q.family === 'B')) out.push(`<path class="steel-base" d="${foot.get(p)!.map((pl) => pathD(pl, f.X, f.Y)).join('')}" fill="#e2e4e6" stroke="#000" stroke-width="1.4" fill-rule="evenodd"/>`);
   // support ring and flat layers: outlines; plates: solid
   for (const p of parts.filter((q) => q.family === 'S')) out.push(`<path d="${foot.get(p)!.map((pl) => pathD(pl, f.X, f.Y)).join('')}" fill="none" stroke="#555" stroke-dasharray="4 3" fill-rule="evenodd"/>`);
   if (flat) {
@@ -377,7 +379,8 @@ function elevationSvg(m: Model, right: P2, title: string, opts: { labels?: boole
   if (ins.length > 2) out.push(`<path d="${pathD(hull(ins), f.X, f.Y)}" fill="none" stroke="#000" stroke-dasharray="5 3"/>`);
   // many plates lined up one behind another: outlines only, or the stack prints solid black
   const dense = parts.filter((p) => upright(p)).length > 12 && Math.abs(right[0] * stackFrame(v).stack[0] + right[1] * stackFrame(v).stack[1]) < 0.5;
-  const order = [...parts].sort((a, c) => (a.family === 'S' ? -1 : 0) - (c.family === 'S' ? -1 : 0));
+  const under = (p: Part) => (p.family === 'S' || p.family === 'B' ? -1 : 0);
+  const order = [...parts].sort((a, c) => under(a) - under(c));
   for (const p of order) {
     const kind = isMain(p) ? 'plate' : p.family === 'C' || p.family === 'T' ? 'spacer' : '';
     const spacer = p.family === 'C' || p.family === 'T';
@@ -847,6 +850,36 @@ function assemblySteps(project: Project, m: Model, view: View, names: Map<string
       );
     }
     steps.push('<b>Leave the adhesive to cure fully</b> before moving the piece.');
+  } else if (m.sliced.steelBase) {
+    const sb = m.sliced.steelBase;
+    const twist = sb.spec.fixing === 'twist';
+    const baseId = `<b>${esc(sb.partId)}</b>`;
+    const tmplNote = tmpl.length ? ` Drop the spacing template${tmpl.length > 1 ? 's' : ''} ${ids(tmpl)} over the plate tops: ${tmpl.length > 1 ? 'they hold' : 'it holds'} every plate upright at its pitch while you work.` : ' (Bracing › Spacing template in Strata cuts a comb that holds them all upright for you.)';
+    steps.push(
+      `<b>Dry-fit on the base plate.</b> Lay ${baseId} on a flat bench, top face up, and drop every plate's tabs into its slots (${plural(sb.tabs.length, 'tab')} in all). Each should go in by hand and stand on its own. If one is tight, run a flat file through the slot; never hammer a plate in, it bends the base.`,
+    );
+    if (v.sliceMode === 'waffle')
+      steps.push(`<b>Build the grid on the base.</b> Stand the ${P.length} long plates in their slots first, then lower the ${X.length} cross plates over them from above so each pair of halving slots meets and the cross plates' tabs find their own slots.`);
+    else if (v.sliceMode === 'radial' && R.length) steps.push(`<b>Stand the ${R.length} radial plates</b> in number order round the hub.`);
+    else if (P.length) steps.push(`<b>Stand the plates back to front:</b> ${nm(back)} first, ${nm(front)} last. The layout drawing numbers every slot.`);
+    steps.push(`<b>Square them up.</b> The slots leave a little play (about ${slotPlay(sb).toFixed(1)}°), so set each plate upright against a small square at both ends.${tmplNote}`);
+    if (twist) {
+      steps.push(`<b>Lift the base</b> onto two blocks under its ends so the tails underneath (${mm(sb.spec.tabDepth - sb.spec.thickness)} long) hang clear of the bench.`);
+      steps.push(`<b>Twist every tail a quarter turn</b> with an adjustable spanner or pliers, in the order on the twist-tab map: it pulls the plate down tight onto the base. Twist once, firmly; bending a tail back and forth snaps it.`);
+      steps.push(`<b>Put feet under it.</b> The twisted tails stand proud underneath, so stick felt or rubber feet at the corners (taller than ${mm(sb.spec.tabDepth - sb.spec.thickness)}).`);
+    } else {
+      steps.push(
+        `<b>Tack every plate at both ends, from above.</b> The ends of the plates are open, so nothing is in the way: a short tack where each end meets the base, plates in the order in the weld map's table (middle outwards). These hold the plates when you turn it over. Let each cool before tacking its neighbour.`,
+      );
+      steps.push(`<b>Turn it over</b> onto a folded blanket or foam on the bench, packing under the tallest plates until the base sits level and steady. The base's underside is now on top: you weld flat, the easiest way.`);
+      steps.push(
+        `<b>Weld the slots from the back,</b> in the order on the weld map. Each tab stops ${mm(sb.spec.thickness - sb.spec.tabDepth)} short of the surface, so fill each slot with a short bead or a few overlapping tacks (MIG with 0.6 mm wire on low power suits ${mm(v.thickness)} plate). Wait until a weld is cool enough to touch before welding next to it, and keep the base clamped or weighted down so it doesn't bow.`,
+      );
+      steps.push(`<b>Grind it flush.</b> Take the welds down with a 120-grit flap disc held nearly flat, then check with a straight edge. The back is one flat sheet again.`);
+      steps.push(`<b>Turn it back over</b> and dress the end tacks with a file or flap disc so they blend in.`);
+      steps.push(`<b>Safety.</b> Auto-darkening helmet, leather gloves, long cotton sleeves and a clear floor. Grind with the guard on, sparks away from you, and weld somewhere airy.`);
+    }
+    if (sb.spec.holes) steps.push(`<b>Fix it down</b> through the ${sb.spec.holes} corner holes (${mm(sb.spec.holeDia)}) to a plinth, shelf or wall.`);
   } else {
     const ringStep = () => {
       const sup = m.sliced.support;
@@ -1103,7 +1136,7 @@ function cutListSection(m: Model, rates: PriceRates, project?: Project): string 
   const out: string[] = [];
   out.push(`<h3>Laser-cut steel</h3><table><thead><tr><th>Metal</th><th>Thickness</th><th>Parts</th><th>Weight</th><th>Cut length</th><th>Pierces</th></tr></thead><tbody>${bom.byMaterial
     .filter((g) => g.partCount)
-    .map((g) => `<tr><td class="id">${esc(METAL_NAMES[g.material] ?? g.material)}</td><td>${mm(v.thickness)}</td><td>${g.partCount}</td><td>${g.plateMass.toFixed(1)} kg</td><td>${g.cutLength.toFixed(1)} m</td><td>${g.pierces}</td></tr>`)
+    .map((g) => `<tr><td class="id">${esc(METAL_NAMES[g.material] ?? g.material)}${g.thickness != null ? ' (base plate)' : ''}</td><td>${mm(g.thickness ?? v.thickness)}</td><td>${g.partCount}</td><td>${g.plateMass.toFixed(1)} kg</td><td>${g.cutLength.toFixed(1)} m</td><td>${g.pierces}</td></tr>`)
     .join('')}</tbody></table><p class="note">${plural(bom.sheets, 'sheet')} of ${n1(v.sheetW)} × ${n1(v.sheetH)} mm, ${Math.round(bom.utilisation * 100)}% used. Part files: laser/parts and laser/sheets in the ZIP; the full cut list is cutlist.csv.</p>`);
   const poles = m.sliced.stackRods?.rods ?? [];
   if (poles.length) {
@@ -1138,6 +1171,58 @@ function cutListSection(m: Model, rates: PriceRates, project?: Project): string 
     out.push(`<p class="note">Laser cutting${bom.hardware.length ? ' and rod hardware' : ''}: about £${est.total.toFixed(0)} including VAT (an estimate, not a quote; see price-estimate.txt).</p>`);
   }
   return out.join('\n');
+}
+
+// --- steel base: weld map ----------------------------------------------------------
+
+/** How far a plate can lean in its slots before it is tacked (degrees). */
+function slotPlay(sb: NonNullable<Model['sliced']['steelBase']>): number {
+  const depth = Math.min(sb.spec.tabDepth, sb.spec.thickness);
+  return depth > 0 ? (Math.atan((2 * sb.spec.clearance) / depth) * 180) / Math.PI : 0;
+}
+
+/** The base plate from underneath with every slot numbered in weld order, and the order as a table. */
+function weldSection(m: Model, names: Map<string, string>): string {
+  const sb = m.sliced.steelBase!;
+  const view = viewOf(m);
+  const twist = sb.spec.fixing === 'twist';
+  const base = m.sliced.parts.filter((p) => p.family === 'B');
+  // seen from below, left and right swap
+  const under = (w: V3): P2 => {
+    const [x, b] = view.plan(w);
+    return [-x, b];
+  };
+  const paths = base.flatMap((p) => p.shape.flatMap((ex) => [ex.outer, ...ex.holes]).map((path) => path.map(([a, b]) => under(planeToWorld(p.plane, a, b)))));
+  if (!paths.length) return '';
+  const bx = boxOf(paths.flat());
+  const f = fitBox(bx, 690, 900, [30, 30, 30, 30]);
+  const out: string[] = [];
+  out.push(`<path d="${paths.map((pl) => pathD(pl, f.X, f.Y)).join('')}" fill="#e2e4e6" stroke="#000" stroke-width="1.2" fill-rule="evenodd"/>`);
+  const r = Math.max(5, Math.min(11, f.s * 7));
+  const font = Math.max(5, Math.min(10, r * 1.1));
+  const dots: string[] = [];
+  for (const t of sb.tabs) {
+    const [x, y] = under([t.at[0], 0, -t.at[1]]);
+    const cx = f.X(x), cy = f.Y(y);
+    const first = t.pass === 1;
+    dots.push(`<g class="weld" data-order="${t.order}"><circle cx="${px(cx)}" cy="${px(cy)}" r="${px(r)}" fill="${first ? '#b3471d' : '#fff'}" stroke="#b3471d" stroke-width="1"/><text x="${px(cx)}" y="${px(cy + font * 0.35)}" text-anchor="middle" font-size="${px(font)}" fill="${first ? '#fff' : '#b3471d'}">${t.order}</text></g>`);
+  }
+  // the front of the piece, so the map can be lined up with the base turned over
+  const frontY = f.Y(bx.minY) + 22;
+  const svg = `<svg class="drawing" viewBox="0 0 ${px(f.w)} ${px(f.h + 30)}" width="${px(f.w)}" height="${px(f.h + 30)}" role="img" aria-label="Weld map: the base plate seen from underneath">${out.join('')}${dots.join('')}<text x="${px(f.w / 2)}" y="${px(frontY)}" text-anchor="middle" font-size="11">FRONT</text></svg>`;
+
+  const byPlate = new Map<string, number[]>();
+  for (const t of sb.tabs) byPlate.set(t.plateKey, [...(byPlate.get(t.plateKey) ?? []), t.order]);
+  const rows = sb.tackOrder
+    .map((k, i) => `<tr><td class="n">${i + 1}</td><td class="id">${esc(names.get(k) ?? k)}</td><td class="n">${byPlate.get(k)?.length ?? 0}</td><td>${(byPlate.get(k) ?? []).sort((a, b) => a - b).join(', ')}</td></tr>`)
+    .join('');
+  const play = slotPlay(sb);
+  const what = twist ? 'twist' : 'weld';
+  return `<p class="note">The base plate <b>${esc(sb.partId)}</b> seen from <b>underneath</b>,, as it lies when you turn the piece over, so left and right are swapped. ${plural(sb.tabs.length, 'tab')} come through it. ${twist ? 'Twist' : 'Weld'} them in number order: the filled circles are the first two rounds (one end of every plate, then the other end), the open ones fill in between. Going from the middle outwards and swapping sides keeps the heat spread, so the base stays flat.</p>
+<figure class="full">${svg}</figure>
+<h3>Plates in ${what} order</h3>
+<table class="sched"><thead><tr><th>#</th><th>Plate</th><th>Tabs</th><th>${twist ? 'Twist' : 'Weld'} numbers</th></tr></thead><tbody>${rows}</tbody></table>
+<p class="note">Slots are ${mm(m.v.thickness + 2 * sb.spec.clearance)} wide for ${mm(m.v.thickness)} plate, so a plate can lean about ${play.toFixed(1)}° in its slots until it is ${twist ? 'twisted' : 'tacked'}: check each one with a square first.${sb.bare.length ? ` No tab: ${sb.bare.map((k) => `<b>${esc(names.get(k) ?? k)}</b>`).join(', ')}.` : ''}</p>`;
 }
 
 // --- the page ---------------------------------------------------------------------------
@@ -1186,7 +1271,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
   sections.push({
     id: 'elevations',
     title: 'Elevations',
-    body: `<h3>Front elevation</h3><p class="note">Looking at the front. The grey block is the concrete; plates are drawn through it.</p><figure>${front}</figure>${side ? `<h3>Side elevation</h3><p class="note">From the right-hand side: front on the left, back on the right.${!flat ? ' Plate numbers along the top.' : ''}</p><figure>${side}</figure>` : ''}`,
+    body: `<h3>Front elevation</h3><p class="note">Looking at the front. ${v.baseOn ? 'The grey block is the concrete; plates are drawn through it.' : m.sliced.steelBase ? 'The plates stand on the steel base plate, their tabs drawn through it.' : 'The plates stand on their bottom edges.'}</p><figure>${front}</figure>${side ? `<h3>Side elevation</h3><p class="note">From the right-hand side: front on the left, back on the right.${!flat ? ' Plate numbers along the top.' : ''}</p><figure>${side}</figure>` : ''}`,
   });
   sections.push({
     id: 'views',
@@ -1207,6 +1292,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
   if (rods || spacers) sections.push({ id: 'rods', title: rods ? 'Rods and spacers' : 'Spacers', body: `${rods ? rodsSection(m, names, rods, view) : ''}${spacersTable(m, view, names)}` });
   if (flat && plates.length) sections.push({ id: 'glue', title: 'Glue-up order', body: `<p class="note">Bottom to top. Glue each layer onto the one before it${v.flatGuides ? ', lined up on the outline etched into that layer' : ''}.</p>${glueUpSection(m)}` });
   if (v.baseOn) sections.push({ id: 'pour', title: 'Pour plan', body: pourSection(m) });
+  if (m.sliced.steelBase?.tabs.length) sections.push({ id: 'weld', title: m.sliced.steelBase.spec.fixing === 'twist' ? 'Twist-tab map' : 'Weld map', body: weldSection(m, names) });
   const mapAttr = project.images.top?.map?.attribution ?? [];
   if (mapAttr.length) {
     sections.push({
@@ -1222,7 +1308,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
     ['Overall size', `${n1(pb.maxX - pb.minX)} wide × ${n1(pb.maxY - pb.minY)} deep × ${n1(top)} high (mm)`],
     ['Plates', `${m.sliced.plates.length} plates · ${parts.length} laser-cut parts`],
     ['Weight', `about ${weight.toFixed(0)} kg${v.baseOn ? ` (steel ${m.bom.plateMass.toFixed(1)} kg, concrete ${m.bom.concreteMass.toFixed(0)} kg)` : ''}`],
-    ['Materials', `${parts.length ? `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet` : 'No sheet metal'}${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
+    ['Materials', `${parts.length ? `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet` : 'No sheet metal'}${m.sliced.steelBase ? `; steel base plate ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(m.sliced.steelBase.spec.thickness)}, ${m.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welded from underneath'}` : ''}${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
     ['Date', `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`],
   ];
   // the cloud's hero render, while it still shows this design

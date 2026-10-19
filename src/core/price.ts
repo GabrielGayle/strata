@@ -5,7 +5,7 @@
 // PriceRates whose sheet, laser, setup or handling figures differ from
 // DEFAULT_RATES. The headless CLI's --rates file (which may land separately)
 // builds that object; this module does not depend on the CLI.
-import type { Bom, CutRow } from './bom';
+import type { Bom, CutRow, MaterialGroup } from './bom';
 import type { HardwareRow } from './brace';
 import { CHOPCHOP_CALIBRATED, CHOPCHOP_MINIMUM, chopRates, chopUnit, orderSizeFactor, type ChopRate } from './chopchopRates';
 
@@ -270,14 +270,15 @@ export function estimateMix(bom: Bom, thickness: number, rates: PriceRates = DEF
   const mapFactor = opts.mapGiftPriceFactor ?? 1;
   const groups = bom.byMaterial?.filter((g) => g.partCount) ?? [];
   const main = bom.byMaterial?.[0]?.material ?? 'steel';
-  if (groups.length <= 1) return applyMapGiftFactor(estimatePrice(bom, groups[0]?.material ?? main, thickness, rates, opts), mapFactor);
+  if (groups.length <= 1) return applyMapGiftFactor(estimatePrice(bom, groups[0]?.material ?? main, groups[0]?.thickness ?? thickness, rates, opts), mapFactor);
   const orderAreaMm2 = opts.orderAreaMm2 ?? groups.reduce((a, g) => a + g.rows.reduce((b, r) => b + r.area, 0), 0);
   const parts = groups.map((g) => {
     const sub = { ...bom, rows: g.rows, partCount: g.partCount, cutLength: g.cutLength, pierces: g.pierces };
-    return { g, est: estimatePrice(sub, g.material, thickness, { ...rates, minimum: 0 }, { ...opts, orderAreaMm2 }) };
+    return { g, est: estimatePrice(sub, g.material, g.thickness ?? thickness, { ...rates, minimum: 0 }, { ...opts, orderAreaMm2 }) };
   });
+  const groupName = (g: MaterialGroup) => `${metalName(g.material)}${g.thickness != null ? ` ${g.thickness} mm` : ''}`;
   const lines: PriceLine[] = parts.flatMap(({ g, est }) =>
-    est.lines.map((l) => ({ ...l, label: est.fitted ? `${metalName(g.material)} ${l.label}` : `${metalName(g.material)} ${l.label.toLowerCase()}` })),
+    est.lines.map((l) => ({ ...l, label: est.fitted ? `${groupName(g)} ${l.label}` : `${groupName(g)} ${l.label.toLowerCase()}` })),
   );
   const warnings = [...new Set(parts.flatMap((p) => p.est.warnings))];
   return applyMapGiftFactor(

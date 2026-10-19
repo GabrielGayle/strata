@@ -1,0 +1,186 @@
+import { describe, expect, it } from 'vitest';
+import { unzipSync, strFromU8 } from 'fflate';
+import { createPipeline, type Assets } from '../src/core/pipeline';
+import { newProject } from '../src/core/project';
+import { buildZip, buildPackHtmlChecked } from '../src/core/exporters';
+import { cutListCsv } from '../src/core/bom';
+import { estimateMix } from '../src/core/price';
+import { evaluateParams } from '../src/core/params';
+import { planeToWorld } from '../src/core/section';
+import { pointInShape } from '../src/core/geom2d';
+import { tabLayout, weldOrder, steelBaseSpec } from '../src/core/steelBase';
+
+const assets: Assets = { sideImg: null, frontImg: null, insMesh: null, srcMesh: null };
+
+function project(params: Record<string, string | boolean>) {
+  const p = newProject();
+  p.params = { ...p.params, insShape: 'none', ...params };
+  return p;
+}
+const run = (params: Record<string, string | boolean>) => {
+  const p = project(params);
+  return { p, m: createPipeline()(p, assets) };
+};
+const steel = { baseMaterial: 'steel' };
+const errors = (m: ReturnType<typeof run>['m']) => m.issues.filter((i) => i.severity === 'error').map((i) => i.message);
+
+describe('steel base', () => {
+  it('leaves the concrete base alone by default', () => {
+    const { m } = run({});
+    expect(m.v.baseOn).toBe(true);
+    expect(m.v.steelBaseOn).toBe(false);
+    expect(m.sliced.steelBase ?? null).toBeNull();
+    expect(m.sliced.parts.some((p) => p.family === 'B')).toBe(false);
+  });
+
+  it('stands in for the concrete: no pour, no mould, plates on a 3 mm base plate', () => {
+    const { m } = run(steel);
+    expect(m.v.baseOn).toBe(false);
+    expect(m.v.steelBaseOn).toBe(true);
+    expect(m.bom.concreteMass).toBe(0);
+    expect(m.moulds.parts).toHaveLength(0);
+    const base = m.sliced.parts.filter((p) => p.family === 'B');
+    expect(base).toHaveLength(1);
+    expect(base[0].thickness).toBe(3);
+    // plates stand on top of the base plate
+    const p0 = m.sliced.plates.find((pl) => pl.def.family === 'P')!;
+    expect(p0.def.plane.origin[1]).toBeCloseTo(3, 6);
+    expect(errors(m)).toEqual([]);
+  });
+
+  it('gives every plate tabs that drop through a slot and stop short of the underside', () => {
+    const { m } = run(steel);
+    const sb = m.sliced.steelBase!;
+    const base = m.sliced.parts.find((p) => p.family === 'B')!;
+    const plates = m.sliced.plates.filter((pl) => pl.def.family === 'P' && pl.parts.length);
+    for (const pl of plates) {
+      const n = sb.tabs.filter((t) => t.plateKey === pl.def.key).length;
+      expect(n, pl.def.key).toBeGreaterThanOrEqual(2);
+      // tabs reach 2.5 mm into the 3 mm base (0.5 mm weld recess)
+      expect(Math.min(...pl.parts.map((p) => p.bbox.minY))).toBeCloseTo(-2.5, 3);
+    }
+    expect(sb.bare).toEqual([]);
+    expect(base.shape[0].holes).toHaveLength(sb.tabs.length);
+    // each tab's middle lies in a slot (a hole), not on the base plate's steel
+    for (const t of sb.tabs) expect(pointInShape(t.at, base.shape), `${t.partId}`).toBe(false);
+    // slot = plate thickness + clearance either side
+    const hole = base.shape[0].holes[0];
+    const xs = hole.map((q) => q[0]), ys = hole.map((q) => q[1]);
+    const narrow = Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    expect(narrow).toBeCloseTo(m.v.thickness + 2 * 0.15, 2);
+  });
+
+  it('twist tabs poke out underneath', () => {
+    const { m } = run({ ...steel, steelFixing: 'twist', steelTwist: '8' });
+    const p = m.sliced.parts.find((q) => q.family === 'P')!;
+    expect(p.bbox.minY).toBeCloseTo(-11, 3);
+  });
+
+  it('keys the cross plates of a waffle grid too, clear of the crossings', () => {
+    const { m } = run({ ...steel, sliceMode: 'waffle' });
+    const sb = m.sliced.steelBase!;
+    expect(sb.bare).toEqual([]);
+    const keys = new Set(sb.tabs.map((t) => t.plateKey));
+    for (const pl of m.sliced.plates.filter((q) => q.parts.length)) expect(keys.has(pl.def.key), pl.def.key).toBe(true);
+    const base = m.sliced.parts.find((p) => p.family === 'B')!;
+    expect(base.shape).toHaveLength(1);
+  });
+
+  it('cuts the base plate with the plates when they share a thickness', () => {
+    const { m } = run(steel);
+    expect(m.v.thickness).toBe(3);
+    expect(m.nested.sheets.every((s) => s.thickness == null)).toBe(true);
+    expect(m.bom.byMaterial.filter((g) => g.partCount)).toHaveLength(1);
+  });
+
+  it('puts a thicker base plate on its own sheet and prices it at its own thickness', () => {
+    const { m } = run({ ...steel, thickness: '1.5' });
+    const sheets = m.nested.sheets.filter((s) => s.thickness === 3);
+    expect(sheets.length).toBeGreaterThan(0);
+    expect(sheets.flatMap((s) => s.placements.map((pl) => pl.id))).toEqual([m.sliced.steelBase!.partId]);
+    expect(m.nested.unplaced).toEqual([]);
+    const g = m.bom.byMaterial.find((x) => x.thickness === 3)!;
+    expect(g.partCount).toBe(1);
+    const est = estimateMix(m.bom, m.v.thickness);
+    expect(est.lines.some((l) => /3 mm/.test(l.label))).toBe(true);
+    const csv = cutListCsv(m.v, m.bom).split('\n');
+    expect(csv.find((l) => l.startsWith(m.sliced.steelBase!.partId))!.split(',')[8]).toBe('3');
+  });
+
+  it('weld order spreads out: the first round tacks one end of every plate, middle outwards', () => {
+    const { m } = run(steel);
+    const sb = m.sliced.steelBase!;
+    expect(sb.tabs.map((t) => t.order)).toEqual(sb.tabs.map((_, i) => i + 1));
+    const plates = new Set(sb.tabs.map((t) => t.plateKey));
+    const first = sb.tabs.slice(0, plates.size);
+    expect(new Set(first.map((t) => t.plateKey)).size).toBe(plates.size);
+    // starts near the middle of the base
+    const x = (k: string) => m.sliced.plates.find((pl) => pl.def.key === k)!.def.plane.origin[0];
+    const xs = [...plates].map(x);
+    const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
+    expect(Math.abs(x(sb.tackOrder[0]) - mid)).toBeLessThan(m.v.pitch * 1.01);
+  });
+
+  it('slots follow a plate moved by hand', () => {
+    const p = project(steel);
+    p.moves = { P3: { t: [0, 0, 12], q: [0, 0, 0, 1] } };
+    const m = createPipeline()(p, assets);
+    const base = m.sliced.parts.find((q) => q.family === 'B')!;
+    const plate = m.sliced.plates.find((pl) => pl.def.key === 'P3')!;
+    const part = plate.parts[0];
+    const tab = m.sliced.steelBase!.tabs.find((t) => t.plateKey === 'P3')!;
+    const w = planeToWorld(part.plane, (tab.u0 + tab.u1) / 2, -1);
+    expect(pointInShape([w[0], -w[2]], base.shape)).toBe(false);
+    expect(errors(m)).toEqual([]);
+  });
+
+  it('adds corner fixing holes', () => {
+    const { m } = run({ ...steel, steelHoles: '4' });
+    const base = m.sliced.parts.find((q) => q.family === 'B')!;
+    expect(base.shape[0].holes).toHaveLength(m.sliced.steelBase!.tabs.length + 4);
+  });
+
+  it('writes the base plate DXF, a weld map and welding steps', () => {
+    const { p, m } = run({ ...steel, thickness: '1.5' });
+    const files = unzipSync(buildZip(m, p));
+    const id = m.sliced.steelBase!.partId;
+    expect(Object.keys(files).some((n) => n.startsWith('laser/parts/') && n.endsWith(`/${id}.dxf`))).toBe(true);
+    expect(Object.keys(files).some((n) => /^laser\/sheets\/steel-3mm\/sheet-01-cut\.dxf$/.test(n))).toBe(true);
+    const html = buildPackHtmlChecked(p, m);
+    expect(html).toContain('id="weld"');
+    expect((html.match(/class="weld" data-order=/g) ?? []).length).toBe(m.sliced.steelBase!.tabs.length);
+    expect(html).toContain('Weld the slots from the back');
+    expect(html).not.toContain('Pour plan');
+    expect(strFromU8(files['manifest.json'])).toBeTruthy();
+  });
+
+  it('hides the concrete settings and shows the steel ones', () => {
+    const ev = evaluateParams({ ...newProject().params, baseMaterial: 'steel' });
+    expect(ev.values.baseOn).toBe(false);
+    expect(ev.values.steelBaseOn).toBe(true);
+    // turning the whole base off turns the steel base off too
+    expect(evaluateParams({ ...newProject().params, baseMaterial: 'steel', baseOn: false }).values.steelBaseOn).toBe(false);
+  });
+});
+
+describe('tab layout', () => {
+  const s = steelBaseSpec({ steelBaseOn: true, steelThickness: 3, steelFixing: 'weld', steelRecess: 0.5, steelTabLength: 15, steelTabPitch: 80, steelClearance: 0.15, steelEdge: 8, steelStagger: true, steelHoles: '0', steelHoleDia: 6.5 })!;
+  it('puts two tabs near the ends of a short plate', () => {
+    const t = tabLayout([[0, 60]], s, 4, false);
+    expect(t.map((x) => x.c)).toEqual([7.5, 52.5]);
+  });
+  it('about one per pitch along a long plate, half a pitch over on the next', () => {
+    const a = tabLayout([[0, 400]], s, 4, false).map((x) => x.c);
+    const b = tabLayout([[0, 400]], s, 4, true).map((x) => x.c);
+    expect(a.length).toBe(5);
+    expect(b.length).toBe(4);
+    for (const c of b) expect(Math.min(...a.map((x) => Math.abs(x - c)))).toBeGreaterThan(30);
+  });
+  it('orders every tab once', () => {
+    const tabs = [0, 1, 2].flatMap((k) => [0, 1, 2].map((i) => ({ partId: `P${k}`, plateKey: `P${k}`, u0: i * 50, u1: i * 50 + 15, at: [k * 20, i * 50] as [number, number], dir: [0, 1] as [number, number], length: 15 })));
+    const { tabs: out, plates } = weldOrder(tabs);
+    expect(out).toHaveLength(9);
+    expect(plates[0]).toBe('P1');
+    expect(out.slice(0, 3).map((t) => t.plateKey).sort()).toEqual(['P0', 'P1', 'P2']);
+  });
+});

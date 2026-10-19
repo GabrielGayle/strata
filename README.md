@@ -50,6 +50,13 @@ npm run cli -- examples/image-cliff.strata.json --out out/
   chamfer strip note for the top edge). An optional radial support ring cut from the same sheet is
   cast into the concrete at a set depth; each plate drops a tenon through a slot in it, so the
   stack keeps its spacing and angles.
+- **Steel base.** Base › Base is "Steel plate" swaps the concrete for a laser-cut base plate.
+  Every upright plate gets tabs along its bottom edge (staggered between neighbours, clear of
+  waffle crossings) that drop through matching slots, so the plates stand square on their own.
+  Weld mode stops each tab just short of the underside so the weld fills the slot and grinds
+  flush; twist mode lets the tabs poke through to be twisted. The build pack adds a weld map
+  (the base seen from underneath, every slot numbered middle-out) and the welding steps. A base
+  plate thicker than the plates is nested, priced and zipped as its own sheet.
 - **Unfold.** Unrolls cylinders, cones, straight lofts and fins into flat patterns; faceted
   versions get bend lines with K-factor bend allowance. Double-curved forms are detected by the
   stretch they would need.

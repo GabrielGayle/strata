@@ -7,7 +7,12 @@ const idleIn = (patch: Record<string, string | boolean>) => {
 };
 
 describe('panels that do nothing in the current setup', () => {
-  it('none by default', () => expect(idleIn({})).toEqual(['Source form']));
+  it('none by default', () => expect(idleIn({})).toEqual(['Steel base', 'Source form']));
+  it('steel base: no concrete, support or mould', () => {
+    const idle = idleIn({ baseMaterial: 'steel', insShape: 'none' });
+    expect(idle).toEqual(expect.arrayContaining(['Support', 'Concrete', 'Mould']));
+    expect(idle).not.toContain('Steel base');
+  });
   it('radial: no bracing', () => expect(idleIn({ sliceMode: 'radial' })).toContain('Bracing'));
   it('flat stack: no bracing or tuning', () => expect(idleIn({ sliceMode: 'flat' })).toEqual(expect.arrayContaining(['Bracing', 'Tuning'])));
   it('waffle: no tuning, bracing still used', () => {
