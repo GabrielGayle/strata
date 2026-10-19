@@ -1,7 +1,7 @@
 // /api/geo (plan PR 8): every route needs the owner passphrase before any Modal or Blob call,
 // results come from the cache when they exist, and secrets never reach a response.
 import { describe, expect, it, vi } from 'vitest';
-import { handleGeoApi, type RenderCache } from '../api/_lib/geoApi';
+import { handleGeoApi, renderCacheAuth, type RenderCache } from '../api/_lib/geoApi';
 import {
   ARTIFACT_FILES,
   ARTIFACT_PART_BYTES,
@@ -173,6 +173,13 @@ describe('/api/geo', () => {
     expect(missing.status).toBe(404);
     const traversal = await handleGeoApi({ method: 'GET', path: 'artifacts/..%2Fstrata-projects', authorization: auth }, { env, fetch: modal(), cache });
     expect(traversal.status).toBe(400);
+  });
+
+  it('reaches the result store by OIDC store id first, else by token', () => {
+    expect(renderCacheAuth({ RENDER_CACHE_STORE_ID: ' store_abc ', RENDER_CACHE_READ_WRITE_TOKEN: 'rw' } as NodeJS.ProcessEnv)).toEqual({ storeId: 'store_abc' });
+    expect(renderCacheAuth({ RENDER_CACHE_READ_WRITE_TOKEN: 'rw', BLOB_READ_WRITE_TOKEN: 'other' } as NodeJS.ProcessEnv)).toEqual({ token: 'rw' });
+    expect(renderCacheAuth({ BLOB_READ_WRITE_TOKEN: 'other' } as NodeJS.ProcessEnv)).toEqual({ token: 'other' });
+    expect(renderCacheAuth({} as NodeJS.ProcessEnv)).toBeUndefined();
   });
 
   it('never puts a secret in a response', async () => {
