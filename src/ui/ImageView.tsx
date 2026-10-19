@@ -5,7 +5,7 @@ import type { Gray } from '../core/image';
 import type { Snap } from '../state/store';
 import { sampleCliff } from './sample';
 import { PATTERN_PRESETS, type PatternSpec } from '../core/pattern';
-import { grayDataUrl, readImage, topAspectGuess } from './surfaces';
+import { grayDataUrl, readImage, shrinkToJpeg, topAspectGuess } from './surfaces';
 import { DEFAULT_SOUND, type SoundSpec } from '../core/sound';
 import type { Composition, Surface } from '../core/compose';
 import { moveBlock } from '../core/compose';
@@ -123,9 +123,12 @@ export default function ImageView() {
       if (depth) {
         // keep the real depth so near / far / curve can be changed here; side profile reads bright as high
         const exifFocal = exifFocalFromDataUrl(photo.dataUrl, depth.w);
+        // a small copy of the photo, so the depth panel can show what it came from
+        const thumb = await shrinkToJpeg(photo.dataUrl, 512);
         const d = {
           ...depth,
           ...(exifFocal ? { exifFocalLengthPx: exifFocal } : {}),
+          ...(thumb ? { photo: thumb } : {}),
           settings: defaultDepthSettings(depth, slot === 'side'),
         };
         setAsset('image', slot, { name, dataUrl: grayDataUrl(depthToGray(d)), depth: d });

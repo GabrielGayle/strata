@@ -379,6 +379,20 @@ export const PARAMS: ParamDef[] = [
   ], { show: strataSource }),
   num('imgMix', 'Strata ↔ image mix', 'Image', 0.6, 0, 1, { step: 0.01, unit: '', show: (v) => strataSource(v) && v.imgSideMode !== 'off', rand: true }),
   num('imgRange', 'Image height range', 'Image', 140, 0, 2000, { show: (v) => strataSource(v) && v.imgSideMode !== 'off' }),
+  num('imgCutLow', 'No plate below', 'Image', 0, 0, 100, {
+    step: 1,
+    unit: '%',
+    noScale: true,
+    show: (v) => strataSource(v) && v.imgSideMode === 'heightmap',
+    help: 'Image as height: where the side picture is darker than this, the plates are cut away and leave a gap. A depth map\'s black background gets no plates at 2 to 5%. 0 is off.',
+  }),
+  num('imgCutHigh', 'No plate above', 'Image', 100, 0, 100, {
+    step: 1,
+    unit: '%',
+    noScale: true,
+    show: (v) => strataSource(v) && v.imgSideMode === 'heightmap',
+    help: 'Image as height: where the side picture is lighter than this, the plates are cut away and leave a gap. 100 is off.',
+  }),
   num('imgContrast', 'Contrast', 'Image', 1.2, 0.1, 5, { step: 0.05, unit: '×' }),
   choice('imgBlurType', 'Blur type', 'Image', 'box', [
     { value: 'box', label: 'Soft (even blur)' },

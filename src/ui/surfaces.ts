@@ -92,6 +92,26 @@ export function readImageFile(f: File, maxSide = 640): Promise<{ name: string; d
   });
 }
 
+/** A picture shrunk to fit `maxSide` px, as a compact JPEG data URL (null if it won't load). */
+export function shrinkToJpeg(dataUrl: string, maxSide = 512): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(img.width * k));
+      cv.height = Math.max(1, Math.round(img.height * k));
+      const ctx = cv.getContext('2d')!;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      resolve(cv.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
 /** Start a top graphic at roughly the stack's footprint proportions (width across / length along). */
 export function topAspectGuess(v: Record<string, any>): number {
   const a = Number(v.plateWidth) / Number(v.stackLength);

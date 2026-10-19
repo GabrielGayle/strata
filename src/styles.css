@@ -1283,6 +1283,33 @@ canvas.thumb {
   min-width: 0;
   max-width: 100%;
 }
+.depth-photo {
+  max-width: 100%;
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 6px 2px 2px;
+  margin-bottom: 4px;
+  cursor: zoom-in;
+}
+.depth-photo img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  display: block;
+}
+.depth-photo-window {
+  width: auto;
+  max-width: min(640px, 100%);
+}
+.depth-photo-window .window-body img {
+  display: block;
+  max-width: 100%;
+  max-height: 75vh;
+  margin: 0 auto;
+}
 .depth-ctl .note {
   padding: 0 0 2px;
   border-bottom: 0;

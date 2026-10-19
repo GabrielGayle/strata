@@ -125,7 +125,7 @@ const NON_SLICE = new Set([
   'insTint', 'insMaterial', 'concreteTint', 'pourView', 'erodeAmount', 'slotGap',
 ]);
 const SLICE_KEYS = PARAMS.map((p) => p.id).filter((id) => !NON_SLICE.has(id));
-const STRATA_KEYS = ['baseLength', 'baseWidth', 'sliceMode', 'sliceAxis', 'pitch', 'stackHeight', 'erosionAmp', 'erosionScale', 'octaves', 'roughness', 'banding', 'bandHeight', 'coherence', 'crest', 'slope', 'seed', 'imgSideMode', 'imgMix', 'imgRange', 'stackSource'];
+const STRATA_KEYS = ['baseLength', 'baseWidth', 'sliceMode', 'sliceAxis', 'pitch', 'stackHeight', 'erosionAmp', 'erosionScale', 'octaves', 'roughness', 'banding', 'bandHeight', 'coherence', 'crest', 'slope', 'seed', 'imgSideMode', 'imgMix', 'imgRange', 'imgCutLow', 'imgCutHigh', 'stackSource'];
 const BLUR_KEYS = ['imgBlurType', 'imgBlurLength', 'imgBlurAngle', 'imgBlurSpin', 'imgBlurZoom', 'imgBlurX', 'imgBlurY', 'imgBlurFocus', 'imgBlurEdge'];
 const IMG_KEYS = ['imgContrast', 'imgSmooth', 'imgInvert', 'imgRotate', ...BLUR_KEYS];
 const BASE_KEYS = ['baseOn', 'baseLength', 'baseWidth', 'baseHeight', 'baseCornerChamfer', 'baseEdgeChamfer'];

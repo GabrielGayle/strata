@@ -1184,6 +1184,40 @@ export function cleanSpans(spans: [number, number][], minFeature: number, minPar
   return merged.filter(([a, b]) => b - a >= minW);
 }
 
+/**
+ * Spans of u along a plate where the side picture sits inside the cut-off window.
+ * Each edge is put where the brightness crosses the cut-off between two samples.
+ */
+export function sideCutSpans(def: PlateDef, cut: NonNullable<HeightField['sideCut']>, step: number): [number, number][] {
+  const { u0, u1, plane } = def;
+  const n = Math.max(2, Math.ceil((u1 - u0) / step));
+  const du = (u1 - u0) / n;
+  const g = new Float64Array(n + 1);
+  for (let k = 0; k <= n; k++) {
+    const p = planeToWorld(plane, u0 + du * k, 0);
+    g[k] = cut.grey(p[0], p[2]);
+  }
+  const inside = (x: number) => x >= cut.lo && x <= cut.hi;
+  // where the line from g[k] to g[k + 1] meets the edge it crosses
+  const cross = (k: number) => {
+    const a = g[k], b = g[k + 1];
+    const edge = inside(a) ? (b < cut.lo ? cut.lo : cut.hi) : a < cut.lo ? cut.lo : cut.hi;
+    const t = Math.abs(b - a) > 1e-9 ? Math.min(1, Math.max(0, (edge - a) / (b - a))) : 0.5;
+    return u0 + du * (k + t);
+  };
+  const spans: [number, number][] = [];
+  let start: number | null = inside(g[0]) ? u0 : null;
+  for (let k = 0; k < n; k++) {
+    const a = inside(g[k]), b = inside(g[k + 1]);
+    if (a && !b) {
+      spans.push([start ?? u0, cross(k)]);
+      start = null;
+    } else if (!a && b) start = cross(k);
+  }
+  if (start != null) spans.push([start, u1]);
+  return spans;
+}
+
 interface Cavity {
   cavity: Shape;
   swept: Shape;
@@ -1553,6 +1587,16 @@ export function slice(input: SliceInput): SliceResult {
     else homeDefs.forEach((d, di) => {
       if (!outlines[di].length) return;
       const spans = cleanSpans(footprintSpans(d.plane, foot), v.minFeature, v.minPartSize);
+      outlines[di] = spans.length ? intersection(outlines[di], spans.flatMap(([a, b]) => rect(a, -BIG, b, BIG))) : [];
+    });
+  }
+
+  // 1a'. image as height with a cut-off: no plate where the side picture is past it
+  const cut = !useForm && !isFlat && !input.mapTerrain && hf?.sideCut ? hf.sideCut : null;
+  if (cut) {
+    homeDefs.forEach((d, di) => {
+      if (!outlines[di].length || tuning?.[di]) return;
+      const spans = cleanSpans(sideCutSpans(d, cut, Math.max(0.5, v.sampleStep)), v.minFeature, v.minPartSize);
       outlines[di] = spans.length ? intersection(outlines[di], spans.flatMap(([a, b]) => rect(a, -BIG, b, BIG))) : [];
     });
   }
