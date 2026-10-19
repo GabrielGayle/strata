@@ -48,7 +48,7 @@ test('neasden map plates follow real elevation × exaggeration (fixture)', async
   await expect(dtm).toBeChecked();
   await expect.poll(async () => dtm.evaluate((el) => el.nextElementSibling?.getAttribute('for'))).toBe('map-model-dtm');
   await expect(page.locator('label[for="map-model-dtm"]')).toBeVisible();
-  await expect(page.locator('#map-water-bathy')).toBeChecked();
+  await expect(page.locator('#map-water-flat')).toBeChecked();
   await assertMapPreviewNonUniform(page);
 
   await mkdir(join(process.cwd(), 'docs/screenshots'), { recursive: true });

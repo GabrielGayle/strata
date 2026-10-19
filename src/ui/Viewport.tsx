@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
@@ -15,6 +15,7 @@ import { plateOutlineYRangeMm } from '../core/slicer';
 import { flatStackIsCapped, formatMapHeightCaption } from '../core/mapGeometryReadout';
 import AppearancePanel, { paintClick } from './AppearancePanel';
 import ObjectsPanel from './ObjectsPanel';
+import { UnobstructedDevDock } from './ShelfPanel';
 import { SunBar } from './SunStudy';
 import { MeasurePanel, MeasureTool, useMeasure } from './Measure';
 import {
@@ -26,7 +27,10 @@ import {
   ViewportParkedContext,
 } from './viewportKeepAlive';
 import ViewportLayersToolbar from './ViewportLayersToolbar';
+import ViewAidsToolbar from './ViewAidsToolbar';
 import { DEFAULT_VIEWPORT_LAYERS } from './viewportLayers';
+import { setLiveCamera, setLiveViewFromOffset } from './liveView';
+import ViewFromPointPanel, { ViewFromPointRig } from './ViewFromPoint';
 
 export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { dir: THREE.Vector3; up: THREE.Vector3 } {
   const f = stackFrame(model.v);
@@ -47,6 +51,9 @@ export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { di
           ? new THREE.Vector3(-f.stack[0], 0, -f.stack[1])
           : new THREE.Vector3(f.stack[0], 0, f.stack[1]),
       };
+    case 'shelf':
+      if (model.shelfEye) return { dir: new THREE.Vector3(...model.shelfEye), up };
+      return { dir: new THREE.Vector3(0.95, 0.75, 1.25).normalize(), up };
     default:
       return { dir: new THREE.Vector3(0.95, 0.75, 1.25).normalize(), up };
   }
@@ -62,6 +69,7 @@ function ResumeWhenVisible({ parked }: { parked: boolean }) {
 
 export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; snap: { dir: Snap; n: number; follow?: boolean }; ortho: boolean; mapNorthUp?: boolean }) {
   const { camera, controls, size } = useThree() as any;
+  const pointViewN = useStore((s) => s.ui.pointView?.n ?? 0);
   // a "follow" snap (preset load) frames again once the new model arrives a frame later
   const pending = useRef<{ n: number; model: Model } | null>(null);
   const frame = (m: Model) => {
@@ -86,18 +94,47 @@ export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; sn
   };
   useEffect(() => {
     if (!controls) return;
+    // A View-from-point pose owns the camera until Iso/Front/Side/Top (which clears it).
+    if (pointViewN > 0 && !snap.follow) return;
     frame(model);
     pending.current = snap.follow ? { n: snap.n, model } : null;
     // re-frame only on explicit snaps, camera type, or map north-up (top view flips)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snap.n, snap.dir, ortho, controls, camera, mapNorthUp]);
+  }, [snap.n, snap.dir, ortho, controls, camera, mapNorthUp, pointViewN]);
   useEffect(() => {
     const p = pending.current;
     if (!controls || !p || p.n !== snap.n || p.model === model) return;
+    if (pointViewN > 0 && !snap.follow) return;
     pending.current = null;
     frame(model);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model]);
+  }, [model, pointViewN]);
+  return null;
+}
+
+function LiveViewTracker() {
+  const { camera, controls, size } = useThree() as { camera: THREE.Camera; size: { width: number; height: number }; controls?: { target: THREE.Vector3; addEventListener: (t: string, fn: () => void) => void; removeEventListener: (t: string, fn: () => void) => void } };
+  useEffect(() => {
+    const sync = () => {
+      if (!controls) return;
+      const p = camera.position;
+      const t = controls.target;
+      setLiveViewFromOffset(p.x - t.x, p.y - t.y, p.z - t.z);
+      const persp = camera as THREE.PerspectiveCamera;
+      setLiveCamera({
+        position: [p.x, p.y, p.z],
+        target: [t.x, t.y, t.z],
+        up: [camera.up.x, camera.up.y, camera.up.z],
+        // an orthographic view is rendered with the 3D view's usual lens
+        fov: persp.isPerspectiveCamera ? persp.fov : 32,
+        aspect: size.width > 0 && size.height > 0 ? size.width / size.height : 1.5,
+        ortho: !persp.isPerspectiveCamera,
+      });
+    };
+    sync();
+    controls?.addEventListener('change', sync);
+    return () => controls?.removeEventListener('change', sync);
+  }, [camera, controls, size]);
   return null;
 }
 
@@ -109,7 +146,8 @@ export default function Viewport() {
   const ui = useStore((s) => s.ui);
   const setUi = useStore((s) => s.setUi);
   const v = model.v;
-  const snapTo = (dir: Snap) => setUi({ snap: { dir, n: ui.snap.n + 1 } });
+  const snapTo = (dir: Snap) => setUi({ snap: { dir, n: ui.snap.n + 1 }, pointViewFov: undefined, pointView: undefined });
+  const [fromPoint, setFromPoint] = useState(false);
   const onSelect = useCallback((id: string | null) => setUi({ selected: id }), [setUi]);
   const onPaint = useCallback((key: string, shift: boolean) => paintClick(modelRef.current, key, shift), []);
   const opts = useMemo(
@@ -122,10 +160,11 @@ export default function Viewport() {
       showIssues: ui.showIssues,
       showSource: ui.showSource,
       viewportLayers: ui.viewportLayers ?? DEFAULT_VIEWPORT_LAYERS,
+      viewAids: ui.viewAids,
       moveMode: ui.moveMode && !ui.paintMode && !ui.measureMode,
       onPaint: ui.paintMode && !ui.measureMode ? onPaint : undefined,
     }),
-    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.viewportLayers, ui.moveMode, ui.paintMode, ui.measureMode, onSelect, onPaint],
+    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.viewportLayers, ui.viewAids, ui.moveMode, ui.paintMode, ui.measureMode, onSelect, onPaint],
   );
   const bucketed = Object.keys(useStore((s) => s.project.appearance?.assign) ?? {}).length;
   const movedCount = Object.keys(useStore((s) => s.project.moves) ?? {}).length;
@@ -208,15 +247,24 @@ export default function Viewport() {
         style={VIEWPORT_STYLE}
       >
         <ResumeWhenVisible parked={parked} />
-        <PerspectiveCamera makeDefault={!ui.ortho} fov={32} near={clip.near} far={clip.far} position={VIEWPORT_CAM_POS} />
+        <PerspectiveCamera
+          makeDefault={!ui.ortho}
+          fov={ui.pointViewFov ?? 32}
+          near={clip.near}
+          far={ui.pointView ? Math.max(clip.far, 50_000) : clip.far}
+          position={VIEWPORT_CAM_POS}
+        />
         <OrthographicCamera makeDefault={ui.ortho} near={-clip.orthoSpan} far={clip.orthoSpan} position={VIEWPORT_CAM_POS} zoom={0.6} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
+        <LiveViewTracker />
         <CameraClipSync boundSize={boundSize} />
         <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} mapNorthUp={mapFace} />
+        <ViewFromPointRig />
         <Scene model={model} opts={opts} />
         <MeasureTool active={ui.measureMode} showDimensions={ui.viewportLayers.labels} />
       </Canvas>
       <ViewportLayersToolbar />
+      <ViewAidsToolbar />
       <div className="overlay tl">
         {(['iso', 'front', 'side', 'top'] as Snap[]).map((d) => (
           <button key={d} className={`btn sm ${ui.snap.dir === d ? 'on' : ''}`} onClick={() => snapTo(d)} title={d === 'front' ? 'Look through the stack (front-view image)' : d === 'side' ? 'Look at the plate faces edge-on (profile)' : undefined}>
@@ -226,46 +274,66 @@ export default function Viewport() {
         <button className={`btn sm ${ui.ortho ? 'on' : ''}`} onClick={() => setUi({ ortho: !ui.ortho })} title="Orthographic camera">
           Ortho
         </button>
+        <button
+          className={`btn sm ${fromPoint ? 'on' : ''}`}
+          data-testid="view-from-point-toggle"
+          onClick={() => setFromPoint((on) => !on)}
+          title="Paste a Google Earth URL or type lat, lon, altitude, heading and tilt"
+        >
+          View from point
+        </button>
       </div>
-      <div className="overlay tr col">
-        <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false, objectsMode: false, measureMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
-          Materials{bucketed ? ` (${bucketed})` : ''}
-        </button>
-        <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false, objectsMode: false, measureMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
-          Move plates{movedCount ? ` (${movedCount})` : ''}
-        </button>
-        <button className={`btn sm ${ui.objectsMode ? 'on' : ''}`} onClick={() => setUi({ objectsMode: !ui.objectsMode, paintMode: false, moveMode: false, measureMode: false })} title="Place postcards, boxes and other objects; each is cut out of the plates it passes through">
-          Objects{objectCount ? ` (${objectCount})` : ''}
-        </button>
-        <button className={`btn sm ${ui.measureMode ? 'on' : ''}`} onClick={() => setUi({ measureMode: !ui.measureMode, moveMode: false, paintMode: false, objectsMode: false })} title="Measuring tape: point to point, edge to edge, point to edge or face (M; Esc leaves)">
-          Measure
-        </button>
-        <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
-          X-ray concrete
-        </button>
-        <button className={`btn sm ${ui.showMoulds ? 'on' : ''}`} onClick={() => setUi({ showMoulds: !ui.showMoulds })}>
-          Moulds
-        </button>
-        {ui.showMoulds && (
-          <button className={`btn sm ${ui.explode ? 'on' : ''}`} onClick={() => setUi({ explode: !ui.explode })}>
-            Exploded
+      <div className="vp-tr-column">
+        <div className="overlay tr col">
+          <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false, objectsMode: false, measureMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
+            Materials{bucketed ? ` (${bucketed})` : ''}
           </button>
-        )}
-        <button className={`btn sm ${ui.showIssues ? 'on' : ''}`} onClick={() => setUi({ showIssues: !ui.showIssues })}>
-          Issue markers
-        </button>
-        {v.stackSource === 'form' && (
-          <button className={`btn sm ${ui.showSource ? 'on' : ''}`} onClick={() => setUi({ showSource: !ui.showSource })}>
-            Source ghost
+          <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false, objectsMode: false, measureMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
+            Move plates{movedCount ? ` (${movedCount})` : ''}
           </button>
-        )}
+          <button className={`btn sm ${ui.objectsMode ? 'on' : ''}`} onClick={() => setUi({ objectsMode: !ui.objectsMode, paintMode: false, moveMode: false, measureMode: false })} title="Place postcards, boxes and other objects; each is cut out of the plates it passes through">
+            Objects{objectCount ? ` (${objectCount})` : ''}
+          </button>
+          <button className={`btn sm ${ui.measureMode ? 'on' : ''}`} onClick={() => setUi({ measureMode: !ui.measureMode, moveMode: false, paintMode: false, objectsMode: false })} title="Measuring tape: point to point, edge to edge, point to edge or face (M; Esc leaves)">
+            Measure
+          </button>
+          <button className="btn sm" onClick={() => setUi({ tab: 'impress' })} title="Press a picture into the top surface or the front face, placed by hand with an x-ray of the cut">
+            Impress image
+          </button>
+          <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
+            X-ray concrete
+          </button>
+          <button className={`btn sm ${ui.showMoulds ? 'on' : ''}`} onClick={() => setUi({ showMoulds: !ui.showMoulds })}>
+            Moulds
+          </button>
+          {ui.showMoulds && (
+            <button className={`btn sm ${ui.explode ? 'on' : ''}`} onClick={() => setUi({ explode: !ui.explode })}>
+              Exploded
+            </button>
+          )}
+          <button className={`btn sm ${ui.showIssues ? 'on' : ''}`} onClick={() => setUi({ showIssues: !ui.showIssues })}>
+            Issue markers
+          </button>
+          {v.stackSource === 'form' && (
+            <button className={`btn sm ${ui.showSource ? 'on' : ''}`} onClick={() => setUi({ showSource: !ui.showSource })}>
+              Source ghost
+            </button>
+          )}
+        </div>
+        {fromPoint && <ViewFromPointPanel />}
       </div>
       <div className="overlay bl info">
         <span>
           base {fmt(v.baseLength, 0)} × {fmt(v.baseWidth, 0)} × {fmt(v.baseHeight, 0)} mm
         </span>
         <span>
-          {model.bom.plateCount} {v.sliceMode === 'flat' ? 'layers' : 'plates'} · {model.sliced.parts.length} parts × {fmt(v.thickness, 1)} mm {v.sliceMode === 'flat' ? 'face to face' : v.sliceMode !== 'radial' ? `@ ${fmt(v.pitch, 2)} pitch` : 'radial'}
+          {!model.sliced.plates.length ? (
+            'no plates'
+          ) : (
+            <>
+              {model.bom.plateCount} {v.sliceMode === 'flat' ? 'layers' : 'plates'} · {model.sliced.parts.length} parts × {fmt(v.thickness, 1)} mm {v.sliceMode === 'flat' ? 'face to face' : v.sliceMode !== 'radial' ? `@ ${fmt(v.pitch, 2)} pitch` : 'radial'}
+            </>
+          )}
         </span>
         <span
           data-testid="plate-height-range"
@@ -292,6 +360,7 @@ export default function Viewport() {
       {ui.moveMode && !ui.paintMode && !ui.measureMode && <MovePanel />}
       {ui.paintMode && !ui.measureMode && <AppearancePanel />}
       {ui.objectsMode && !ui.measureMode && <ObjectsPanel />}
+      {ui.objectsMode && !ui.measureMode && <UnobstructedDevDock />}
       {ui.measureMode && <MeasurePanel />}
       {v.sunOn && <SunBar model={model} />}
       {v.pourView !== 'plain' && model.pour.rows.length > 0 && (

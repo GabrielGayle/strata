@@ -1,0 +1,273 @@
+/* Strata Viewer (/m): the 98 window, full screen on a phone. Bigger hit areas
+   than the desktop chrome, and room for the notch and home bar. */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+.mv.window {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  margin: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  font-size: 13px;
+}
+.mv .title-bar {
+  min-height: 26px;
+  flex: none;
+}
+.mv .title-bar-text {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mv .title-bar-controls button {
+  min-width: 26px;
+  min-height: 22px;
+}
+.mv button.btn,
+.mv a.btn {
+  min-height: 36px;
+  min-width: 44px;
+  font-size: 13px;
+  padding: 0 10px;
+}
+.mv button.btn.sm {
+  min-height: 34px;
+  min-width: 52px;
+}
+/* 16px stops iOS zooming in when a field takes focus */
+.mv input[type='search'],
+.mv input[type='password'] {
+  font-size: 16px;
+  height: 36px;
+  min-width: 0;
+}
+.mv-bar {
+  display: flex;
+  gap: 4px;
+  align-items: flex-end;
+  padding: 4px;
+  flex: none;
+}
+.mv-search {
+  flex: 1;
+}
+.mv-tabs {
+  flex: 1;
+  margin: 0 0 -4px 6px;
+}
+.mv-tabs li[role='tab'] {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 13px;
+}
+.mv-gate {
+  padding: 0 4px 4px;
+  flex: none;
+}
+.mv-gate p {
+  margin: 0 0 6px;
+}
+.mv-row {
+  display: flex;
+  gap: 4px;
+}
+.mv-row input {
+  flex: 1;
+}
+.mv-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0 4px 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.mv-list {
+  margin: 0;
+  padding: 2px;
+  min-height: 100%;
+  list-style: none;
+}
+.mv-list li {
+  margin: 0;
+}
+.mv-list li::before {
+  display: none;
+}
+.mv .mv-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 64px;
+  padding: 6px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.mv .mv-item:active,
+.mv .mv-item:focus-visible {
+  background: #000080;
+  color: #fff;
+  outline: 1px dotted #fff;
+  outline-offset: -2px;
+}
+.mv-thumb {
+  width: 64px;
+  height: 48px;
+  object-fit: cover;
+  flex: none;
+  background: var(--viewport);
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080;
+}
+.mv-thumb-empty {
+  background: repeating-linear-gradient(0deg, #d4521c 0 3px, #141414 3px 6px);
+}
+.mv-item-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.mv-item-text strong {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mv-item-text small {
+  font-size: 12px;
+  opacity: 0.85;
+}
+.mv-empty {
+  padding: 24px 12px;
+  text-align: center;
+  background: #fff;
+  color: #222;
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+}
+.mv .status-bar {
+  flex: none;
+  margin: 0 2px 2px;
+}
+.mv .status-bar-field {
+  font-size: 12px;
+  padding: 3px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mv-links {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.mv-link {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+  color: #000080;
+  text-decoration: underline;
+  font: inherit;
+}
+/* the 3D stage fills the window body; the controls float over it */
+.mv-stage {
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  background: var(--viewport);
+}
+.mv-3d {
+  position: absolute;
+  inset: 2px;
+  touch-action: none;
+}
+.mv-3d[hidden] {
+  display: none;
+}
+.mv-overlay {
+  position: absolute;
+  display: flex;
+  gap: 3px;
+}
+.mv-snaps {
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  flex-wrap: wrap;
+}
+.mv-ar {
+  left: 6px;
+  right: 6px;
+  bottom: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.mv button.mv-ar-btn {
+  min-height: 48px;
+  font-size: 15px;
+  font-weight: bold;
+}
+.mv-ar-note {
+  text-align: center;
+  font-size: 12px;
+  min-height: 1em;
+  color: var(--chrome-fg);
+  background: rgba(192, 192, 192, 0.85);
+  align-self: center;
+  padding: 0 6px;
+}
+.mv-ar-note:empty {
+  display: none;
+}
+.mv-details {
+  position: absolute;
+  inset: 2px;
+  overflow: auto;
+  padding: 6px;
+  background: #c0c0c0;
+}
+.mv-details dl {
+  margin: 0;
+}
+.mv-details dl > div {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid #a0a0a0;
+}
+.mv-details dt {
+  font-weight: bold;
+}
+.mv-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.mv-issues {
+  margin: 0;
+  padding-left: 18px;
+}
+.mv-issues li {
+  padding: 2px 0;
+}
+.mv-issues li.error {
+  color: #a00000;
+}

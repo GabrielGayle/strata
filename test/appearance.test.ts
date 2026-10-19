@@ -94,7 +94,7 @@ describe('mixed metals through the pipeline', () => {
     const e = estimateMix(m.bom, m.v.thickness);
     expect(e.fitted).toBe(true);
     expect(e.lines.some((l) => l.label.startsWith('Aluminium'))).toBe(true);
-    expect(e.lines.some((l) => l.label.startsWith('Mild steel'))).toBe(true);
+    expect(e.lines.some((l) => l.label.startsWith('Mild steel (CR4)'))).toBe(true);
     expect(e.lines.filter((l) => l.label === 'Minimum order charge')).toHaveLength(e.subtotal < 55 - 1e-9 ? 1 : 0);
     // a single metal prices exactly as before
     const plain = createPipeline()(slimProject(), assets);

@@ -5,6 +5,7 @@ import { isLiteral } from '../core/expr';
 import { useStore } from '../state/store';
 import { useModel } from './model';
 import PourEditor from './PourEditor';
+import CandleMasterInfo from './CandleMasterInfo';
 import { changedByGroup, resetGroupPatch } from '../core/paramDiff';
 import RoundPreview, { ROUND_PREVIEW_IDS } from './RoundPreview';
 import {
@@ -31,6 +32,7 @@ const NumberParam = memo(function NumberParam({
   focus,
   factor,
   override,
+  overrideBy,
 }: {
   def: ParamDef;
   raw: string;
@@ -43,6 +45,7 @@ const NumberParam = memo(function NumberParam({
   factor: number;
   /** Expression imposed by "Fit face to image" or a fixed plate gap (read-only while active). */
   override?: string;
+  overrideBy?: 'spacing' | 'grid' | 'image';
 }) {
   const setParam = useStore((s) => s.setParam);
   const toggleLock = useStore((s) => s.toggleLock);
@@ -87,8 +90,8 @@ const NumberParam = memo(function NumberParam({
     else setParam(def.id, v);
   };
   if (override) {
-    const bySpacing = overrideSource(def.id) === 'spacing';
-    const by = bySpacing ? 'Plates › Spacing' : 'Image › Fit face to image';
+    const src = overrideBy ?? overrideSource(def.id);
+    const by = src === 'spacing' ? 'Plates › Spacing' : src === 'grid' ? 'Slicer › Closed grid' : 'Image › Fit face to image';
     return (
       <div className={`prow field-row-stacked ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
         <div className="field-row">
@@ -97,7 +100,7 @@ const NumberParam = memo(function NumberParam({
             <span className="pid">{def.id}</span>
           </div>
           <div className="ctrls">
-            <span className="pill" title={`Set by ${by}`}>{bySpacing ? 'fixed gap' : 'image fit'}</span>
+            <span className="pill" title={`Set by ${by}`}>{src === 'spacing' ? 'fixed gap' : src === 'grid' ? 'closed grid' : 'image fit'}</span>
           </div>
         </div>
         <div className="field-row">
@@ -367,10 +370,10 @@ export default function ParamPanel() {
   return (
     <div>
       <div className="title-bar panel-title left-panes">
-        <button type="button" className={leftPane === 'params' ? 'on' : ''} onClick={() => setUi({ leftPane: 'params' })} data-testid="left-params-tab">
+        <button type="button" className={leftPane === 'params' ? 'on' : ''} aria-pressed={leftPane === 'params'} onClick={() => setUi({ leftPane: 'params' })} data-testid="left-params-tab">
           Parameters
         </button>
-        <button type="button" className={leftPane === 'saves' ? 'on' : ''} onClick={() => setUi({ leftPane: 'saves' })} data-testid="left-saves-tab">
+        <button type="button" className={leftPane === 'saves' ? 'on' : ''} aria-pressed={leftPane === 'saves'} onClick={() => setUi({ leftPane: 'saves' })} data-testid="left-saves-tab">
           Saves
         </button>
         {leftPane === 'params' && <span className="pill" title="Every value regenerates everything downstream">live graph</span>}
@@ -443,6 +446,7 @@ export default function ParamPanel() {
                       focus={ui.focusParam === d.id}
                       factor={scaleFactorFor(d.id, project.params)}
                       override={model.ev.overrides[d.id]}
+                      overrideBy={overrideSource(d.id, project.params)}
                     />
                   ) : (
                     <OtherParam key={d.id} def={d} value={v[d.id]} />
@@ -456,6 +460,7 @@ export default function ParamPanel() {
                 )}
                 {g === 'Concrete' && !changedOnly && <PourEditor compact />}
                 {g === 'Tuning' && !changedOnly && <TuningTable />}
+                {g === 'Candle master' && !changedOnly && <CandleMasterInfo />}
               </div>
             )}
           </fieldset>

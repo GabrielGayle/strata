@@ -1,12 +1,13 @@
-import { useCallback, useState } from 'react';
-import { defaultMapSpec, type MapModel, type MapSource, type MapSpec, type MapWater, type LayerBudgetMode } from '../core/mapSpec';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { defaultMapSpec, MAP_RES_AUTO, type MapModel, type MapSource, type MapSpec, type MapWater, type LayerBudgetMode } from '../core/mapSpec';
 import { MAP_ENGRAVE_PRESETS, type MapEngravePresetId } from '../core/mapEngravePresets';
 import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
 import { engraveHasLabels } from '../core/quickMap';
 import { nominatimBbox, searchNominatim, type NominatimPlace } from '../core/mapNominatim';
 import { MAP_SOURCE_REGISTRY } from '../core/mapSourceRegistry';
+import { WORKING_MAP_SOURCES, isWorkingMapSource } from '../core/mapSourcePick';
 import { noticesWithoutStaleEngraveSkip } from '../core/mapNotices';
-import { formatLiveMapReadout } from '../core/mapGeometryReadout';
+import { formatLiveMapReadout, formatMapGridReadout } from '../core/mapGeometryReadout';
 import {
   EXAGGERATION_MAX,
   EXAGGERATION_MIN,
@@ -17,8 +18,14 @@ import { SUNKEN_FRAME_FLAT_HINT, SUNKEN_FRAME_FLAT_ONLY_HINT, sunkenFrameApplies
 import { useStore } from '../state/store';
 import { useModel } from './model';
 import MapPreviewPane from './MapPreviewPane';
+import { trackBusy } from './busy';
+import { useCloud } from '../state/cloud';
 
-const SOURCES: MapSource[] = ['auto', 'ea-dtm', 'ea-dsm', 'scot-dtm', 'wales-dtm', 'ni-dtm', 'cop30', 'terrarium'];
+function sourceLabel(id: MapSource): string {
+  if (id === 'auto') return 'auto (EA 1 m in England, else 30 m)';
+  const res = `${MAP_SOURCE_REGISTRY[id].resolutionM} m`;
+  return isWorkingMapSource(id) ? `${id} (${res})` : `${id} (not supported yet, uses terrarium)`;
+}
 
 function radioId(name: string, value: string): string {
   return `${name}-${value.replace(/[^a-z0-9]+/gi, '-')}`;
@@ -82,11 +89,14 @@ export default function MapView() {
   const mapTerrain = useStore((s) => s.mapTerrain);
   const geom = useModel();
   const existing = project.images.top?.map;
+  const boost = useCloud((s) => s.boost);
   const frameApplies = sunkenFrameApplies(geom.v.sliceMode);
   const frameHint = frameApplies ? SUNKEN_FRAME_FLAT_HINT : SUNKEN_FRAME_FLAT_ONLY_HINT;
   const factor =
     existing?.exaggerationFactor ?? (typeof existing?.exaggeration === 'number' ? existing.exaggeration : undefined);
   const reliefM = project.images.top?.depth?.mapOrtho?.reliefM;
+  const topDepth = project.images.top?.depth;
+  const gridReadout = topDepth ? formatMapGridReadout(topDepth) : '';
   const liveReadout =
     mapTerrain.phase === 'ready' && existing && typeof factor === 'number' && factor > 0 && reliefM != null
       ? formatLiveMapReadout({
@@ -108,6 +118,7 @@ export default function MapView() {
   const [north, setNorth] = useState(String(existing?.bbox?.[3] ?? ''));
   const [searchStatus, setSearchStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const bboxFocus = useRef<null | 'west' | 'south' | 'east' | 'north'>(null);
 
   const applyBbox = useCallback((bbox: MapSpec['bbox']) => {
     setWest(String(bbox[0]));
@@ -116,11 +127,22 @@ export default function MapView() {
     setNorth(String(bbox[3]));
   }, []);
 
+  const bboxKey = existing?.bbox?.join(',') ?? '';
+  useEffect(() => {
+    if (!existing?.bbox) return;
+    const [w, s, e, n] = existing.bbox;
+    const focus = bboxFocus.current;
+    if (focus !== 'west') setWest(String(w));
+    if (focus !== 'south') setSouth(String(s));
+    if (focus !== 'east') setEast(String(e));
+    if (focus !== 'north') setNorth(String(n));
+  }, [bboxKey, existing?.bbox]);
+
   const search = async () => {
     setBusy(true);
     setSearchStatus('');
     try {
-      const rows = await searchNominatim(query);
+      const rows = await trackBusy({ scene: 'search', title: 'Finding the place', detail: `Looking up “${query.trim()}” on OpenStreetMap…` }, searchNominatim(query));
       setHits(rows);
       if (rows[0]) {
         applyBbox(nominatimBbox(rows[0]));
@@ -153,7 +175,7 @@ export default function MapView() {
 
   const model = existing?.model ?? 'dtm';
   const source = existing?.source ?? 'auto';
-  const water = existing?.water ?? 'bathy';
+  const water = existing?.water ?? 'flat';
   const layerBudget = existing?.layerBudget ?? 'jenks';
   const exaggeration = existing?.exaggeration ?? 'auto';
   const engravePreset = (existing?.engrave?.preset ?? 'city') as MapEngravePresetId;
@@ -199,6 +221,7 @@ export default function MapView() {
         {liveReadout && mapTerrain.phase === 'ready' ? (
           <p className="map-readout" data-testid="map-readout">
             Exaggeration {liveReadout} · source {existing?.resolvedSource ?? source}
+            {gridReadout ? ` · ${gridReadout}` : ''}
           </p>
         ) : null}
       </div>
@@ -260,9 +283,12 @@ export default function MapView() {
             onChange={(e) => commit({ source: e.target.value as MapSource })}
             disabled={!existing}
           >
-            {SOURCES.map((id) => (
-              <option key={id} value={id}>{id} ({MAP_SOURCE_REGISTRY[id].resolutionM} m)</option>
+            {WORKING_MAP_SOURCES.map((id) => (
+              <option key={id} value={id}>{sourceLabel(id)}</option>
             ))}
+            {!isWorkingMapSource(source) && (
+              <option value={source} disabled>{sourceLabel(source)}</option>
+            )}
           </select>
         </label>
         <fieldset>
@@ -282,10 +308,10 @@ export default function MapView() {
         <fieldset>
           <legend>Bbox (WGS84)</legend>
           <div className="map-bbox-grid">
-            <label>West <input inputMode="decimal" value={west} onChange={(e) => setWest(e.target.value)} /></label>
-            <label>South <input inputMode="decimal" value={south} onChange={(e) => setSouth(e.target.value)} /></label>
-            <label>East <input inputMode="decimal" value={east} onChange={(e) => setEast(e.target.value)} /></label>
-            <label>North <input inputMode="decimal" value={north} onChange={(e) => setNorth(e.target.value)} /></label>
+            <label>West <input data-testid="map-bbox-west" inputMode="decimal" value={west} onChange={(e) => setWest(e.target.value)} onFocus={() => { bboxFocus.current = 'west'; }} onBlur={() => { bboxFocus.current = null; }} /></label>
+            <label>South <input data-testid="map-bbox-south" inputMode="decimal" value={south} onChange={(e) => setSouth(e.target.value)} onFocus={() => { bboxFocus.current = 'south'; }} onBlur={() => { bboxFocus.current = null; }} /></label>
+            <label>East <input data-testid="map-bbox-east" inputMode="decimal" value={east} onChange={(e) => setEast(e.target.value)} onFocus={() => { bboxFocus.current = 'east'; }} onBlur={() => { bboxFocus.current = null; }} /></label>
+            <label>North <input data-testid="map-bbox-north" inputMode="decimal" value={north} onChange={(e) => setNorth(e.target.value)} onFocus={() => { bboxFocus.current = 'north'; }} onBlur={() => { bboxFocus.current = null; }} /></label>
           </div>
         </fieldset>
         {searchStatus && <p className="map-window-status">{searchStatus}</p>}
@@ -361,18 +387,49 @@ export default function MapView() {
             <option value="equal">equal</option>
           </select>
         </label>
-        <label>
+        <label title="Snap the terrain to one level per plate, the stepped look. Flat stacks are always stepped.">
+          <input
+            type="checkbox"
+            id="map-terraced"
+            data-testid="map-terraced"
+            checked={geom.v.sliceMode === 'flat' || existing?.terraced === true}
+            disabled={!existing || geom.v.sliceMode === 'flat'}
+            onChange={(e) => commit({ terraced: e.target.checked })}
+          />
+          Terraced layers
+        </label>
+        <label title="Ground metres per terrain cell. Leave empty for auto: Environment Agency LiDAR is cut at 0.5 mm per cell on the model (up to 1024 px), Terrarium at 8 m (up to 512 px).">
           Ground resolution (m)
           <input
             type="number"
-            min={2}
+            min={1}
             max={64}
             step={1}
-            value={existing?.resM ?? 8}
+            placeholder="auto"
+            style={{ width: '6em' }}
+            value={existing?.resM ? existing.resM : ''}
             disabled={!existing}
-            onChange={(e) => commit({ resM: Number(e.target.value) })}
+            onChange={(e) => commit({ resM: e.target.value === '' ? MAP_RES_AUTO : Math.max(0, Number(e.target.value) || 0) })}
           />
         </label>
+        {boost && (
+          <label title="Build this map on the cloud at up to 2048 px (Environment Agency LiDAR only; Terrarium stays at 512 px). Saved projects keep a 1024 px copy. If the cloud is unavailable the map is built here at 1024 px.">
+            <input
+              type="checkbox"
+              data-testid="map-cloud-res"
+              checked={existing?.cloudRes === true}
+              disabled={!existing}
+              onChange={(e) => {
+                commit({ cloudRes: e.target.checked });
+                const cloud = useCloud.getState();
+                if (e.target.checked && (cloud.phase === 'resting' || cloud.phase === 'locked')) {
+                  useStore.getState().toast(`Cloud ${cloud.phase === 'locked' ? 'locked' : (cloud.reason ?? 'unavailable')}: building the map here at 1024 px instead`);
+                }
+              }}
+            />
+            High resolution (cloud)
+          </label>
+        )}
       </section>
 
       <section className="map-section">
@@ -441,8 +498,9 @@ export default function MapView() {
           ]}
         />
         <p className="map-view-note">
-          Each lake uses its own shoreline from the DEM inside the water polygon. Streams follow the terrain. Quick map
-          picks Bathymetry, which falls back to the same per-lake surface when no soundings exist.
+          Each lake uses its own shoreline from the DEM inside the water polygon. Streams follow the terrain. Bathymetry
+          falls back to the same per-lake surface where no soundings exist (only the Welsh Harp sample has them). Quick
+          map keeps your choice.
         </p>
       </section>
 

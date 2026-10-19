@@ -31,6 +31,20 @@ export interface CutObject {
   seat?: number;
   /** Shelf cards: plate kept either side of the notch above the trimmed tops (mm). */
   shoulder?: number;
+  /** How it is drawn: candles read as wax, tealights as a metal cup, a hidden cutter not at all. */
+  look?: 'candle' | 'tealight' | 'hidden';
+  /** Candlesticks held by a target: fins standing round it, gripping it from every side. */
+  holder?: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number };
+  /**
+   * Plates choked in to it (candles, shelf cards): how far round it the plates
+   * reach, and whether they join to the next object of the same group (candles
+   * along their path, cards along the shelf). Cards keep a band along their bottom edge.
+   */
+  choke?: { reach: number; join: boolean; closed: boolean; group?: string };
+  /** Candles that sit into the plates: how deep below the plate tops under them their bottom goes (mm). */
+  sink?: number;
+  /** Only shapes the plate tops (its seat), cutting nothing. */
+  noCut?: boolean;
 }
 
 export const KIND_NAMES: Record<ObjectKind, string> = {
@@ -88,6 +102,14 @@ export function cleanObjects(raw: unknown): CutObject[] | undefined {
   return out.length ? out : undefined;
 }
 
+/** World transform: yaw, pitch, roll (YXZ), then the centre. Matches the 3D mesh. */
+export function objectMatrix(o: CutObject): THREE.Matrix4 {
+  const r = (deg: number) => (deg * Math.PI) / 180;
+  const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(r(o.rx), r(o.ry), r(o.rz), 'YXZ'));
+  m.setPosition(o.x, o.y, o.z);
+  return m;
+}
+
 /** The object's solid, placed in the world. */
 export function objectGeometry(o: CutObject): THREE.BufferGeometry {
   let g: THREE.BufferGeometry;
@@ -96,10 +118,7 @@ export function objectGeometry(o: CutObject): THREE.BufferGeometry {
     g = new THREE.SphereGeometry(0.5, 40, 24);
     g.scale(o.w, o.h, o.d);
   } else g = new THREE.BoxGeometry(o.w, o.h, o.d);
-  const r = (deg: number) => (deg * Math.PI) / 180;
-  const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(r(o.rx), r(o.ry), r(o.rz), 'YXZ'));
-  m.setPosition(o.x, o.y, o.z);
-  g.applyMatrix4(m);
+  g.applyMatrix4(objectMatrix(o));
   g.computeVertexNormals();
   g.computeBoundingBox();
   return g;

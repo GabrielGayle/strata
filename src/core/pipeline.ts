@@ -8,10 +8,13 @@ import { blurSpec } from './blur';
 import { processImage, rotate, silhouetteMask, type Gray } from './image';
 import { buildHeightField, type HeightField } from './heightfield';
 import { buildMapHeightField, isMapDepth } from './mapPlateHeight';
-import { slice, type SliceResult } from './slicer';
+import { mapFaceParams } from './mapStack';
+import { plateDefs, slice, type SliceResult } from './slicer';
 import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
-import { nest, nestGroups, type NestResult } from './nest';
+import { layoutShelfResult, type SolveResult } from './shelfSolve';
+import { reportShelfVisibility, shelfEye, shelfLayoutKey, shelfSight, shelfViewKey, type V3, type VisibilityReport } from './shelfView';
+import { nest, nestFingerprint, nestGroups, nestMismatch, type NestGroup, type NestOptions, type NestResult, type SavedNest } from './nest';
 import { materialKey, materialOf } from './appearance';
 import { tuningActive } from './tuning';
 import { modesOfOutline } from './beam';
@@ -19,10 +22,17 @@ import { buildMoulds, pourPlan, type MouldResult, type PourPlanRow } from './mou
 import { unfold, type UnfoldResult } from './unfold';
 import { buildBom, type Bom } from './bom';
 import { share } from './memo';
-import { carveShadow, type ShadowReport } from './shadow';
+import { carveShadow, isCandle, type CarveResult, type ShadowInput, type ShadowReport } from './shadow';
 import type { Project } from './project';
 import { buildObjects, type ObjectBuild } from './objects';
-import { shelfCards } from './shelf';
+import { candleObjects, chokeCircles, sitOnSurface, snapToPlates, surfaceTop } from './candles';
+import { intersection, rect, shapeBBox, type Shape } from './geom2d';
+
+/** Top of a plate shape between two u values (plate coordinates), or null where it has no steel. */
+function topWithin(s: Shape, u0: number, u1: number): number | null {
+  const cut = intersection(s, rect(u0, -20000, u1, 20000));
+  return cut.length ? shapeBBox(cut).maxY : null;
+}
 import { originFrame, toWorld, type Frame } from './origin';
 import { baseTop } from './slicer';
 import { basePlan } from './base';
@@ -38,6 +48,9 @@ export interface Assets {
   /** Shadow pictures, decoded, in the order of project.shadow.frames. */
   shadowFrames?: (Gray | null)[];
 }
+
+/** Every asset the engine reads, in a fixed order. */
+export const ASSET_KEYS = ['sideImg', 'frontImg', 'topImg', 'insMesh', 'srcMesh', 'shadowFrames'] as const satisfies readonly (keyof Assets)[];
 
 export interface FormBuild {
   form: Form;
@@ -65,10 +78,18 @@ export interface Model {
   sliced: SliceResult;
   /** Placed objects that cut the plates (postcards, boxes…). */
   objects: ObjectBuild[];
+  /** Postcard-shelf faces hidden from the viewing angle (undefined when there is no shelf). */
+  cardVisibility?: VisibilityReport;
+  /** Unobstructed-view solver result (undefined when the flag is off). */
+  shelfSolve?: SolveResult;
+  /** Direction to the shelf's Unobstructed view eye (world, unit), when there is a shelf. */
+  shelfEye?: V3;
   /** The world origin objects and the shelf are measured from. */
   origin: Frame;
   /** Shadow carving: the wall, carved plate grids and how well each frame comes out (null when off). */
   shadow: ShadowReport | null;
+  /** The shadow carve is still running on another thread: the plates show uncarved until it lands. */
+  shadowPending?: boolean;
   issues: Issue[];
   nested: NestResult;
   moulds: MouldResult;
@@ -108,7 +129,8 @@ const IMG_KEYS = ['imgContrast', 'imgSmooth', 'imgInvert', 'imgRotate', ...BLUR_
 const BASE_KEYS = ['baseOn', 'baseLength', 'baseWidth', 'baseHeight', 'baseCornerChamfer', 'baseEdgeChamfer'];
 const CHECK_KEYS = ['minFeature', 'kerf', 'minPartSize', 'sheetW', 'sheetH', 'partSpacing', 'pitch', 'thickness', 'radialHub', 'radialCount', 'sliceMode', 'embedMode', ...BASE_KEYS];
 const MOULD_KEYS = [...PARAMS.filter((p) => p.group === 'Mould').map((p) => p.id), ...BASE_KEYS, 'embedDepth', 'thickness', 'insMaterial', 'insShape', 'clearance', 'sliceMode'];
-const SHADOW_KEYS = PARAMS.filter((p) => p.group === 'Shadow' || p.group === 'Sun').map((p) => p.id);
+// the wall's size only changes how it is drawn, so it doesn't re-carve
+const SHADOW_KEYS = PARAMS.filter((p) => (p.group === 'Shadow' || p.group === 'Sun') && p.id !== 'shadowWallW' && p.id !== 'shadowWallH').map((p) => p.id);
 const UNFOLD_KEYS = PARAMS.filter((p) => p.group === 'Unfold').map((p) => p.id);
 
 type Cache = Map<string, { deps: unknown[]; value: unknown; ms: number }>;
@@ -153,6 +175,8 @@ export interface DeferredInput {
   insert: { mesh: IndexedMesh; minY: number; maxY: number; volume: number } | null;
   pourRows: PourPlanRow[];
   appearance: Project['appearance'];
+  /** The cloud's tight nest, used while the parts still match it. */
+  savedNest?: SavedNest;
 }
 
 export interface DeferredModel {
@@ -181,10 +205,38 @@ export const deferredInput = (f: FrontModel, project: Project): DeferredInput =>
   insert: f.insert ? plainInsert(f.insert) : null,
   pourRows: f.pour.rows,
   appearance: project.appearance,
+  ...(project.nest ? { savedNest: project.nest } : {}),
 });
 
-/** The front stages. Fast enough to run on every edit. */
-export function createFrontPipeline() {
+/** Profile resolution used while a slider or gizmo is held down (mm; finer settings are coarsened to it). */
+export const PREVIEW_SAMPLE_STEP = 4;
+
+/** A shadow carve to run, and what it depends on (compared one by one, by identity). */
+export interface CarveJob {
+  deps: unknown[];
+  v: Values;
+  sliced: SliceResult;
+  frames: ShadowInput[];
+}
+
+export interface FrontOptions {
+  /** The coarse pipeline used while dragging (see PREVIEW_SAMPLE_STEP); it doesn't carve shadows. */
+  preview?: boolean;
+  /**
+   * Carves shadows somewhere else (the engine's shadow worker): returns the carve
+   * when it is done, or undefined while it runs, and the plates show uncarved.
+   * Without it the carve runs here.
+   */
+  carve?: (job: CarveJob) => CarveResult | undefined;
+}
+
+/**
+ * The front stages. Fast enough to run on every edit.
+ * A `preview` pipeline is the coarse one used while dragging: plate profiles
+ * sampled every PREVIEW_SAMPLE_STEP mm at most, no minimum corner radius and no shadow carve.
+ */
+export function createFrontPipeline(options: FrontOptions = {}) {
+  const preview = !!options.preview;
   const cache: Cache = new Map();
   return function computeFront(project: Project, assets: Assets): FrontModel {
     const t0 = performance.now();
@@ -206,8 +258,22 @@ export function createFrontPipeline() {
     };
     const frontAspect = faceAspect(assets.frontImg);
     const sideAspect = faceAspect(assets.sideImg);
-    const ev = stage('Parameters', [project.params, imgAspect, frontAspect, sideAspect], () => evaluateParams(project.params, { imgAspect, frontAspect, sideAspect }));
-    const v = ev.values;
+    const mapTop = isMapDepth(project.images.top?.depth) && project.images.top?.map;
+    const mapParams = mapTop ? mapFaceParams(project.params) : { raw: project.params, forced: false };
+    const ev = stage('Parameters', [mapParams.raw, imgAspect, frontAspect, sideAspect], () => evaluateParams(mapParams.raw, { imgAspect, frontAspect, sideAspect }));
+    const v = preview
+      ? stage('Preview values', [ev], () =>
+          ev.values.sampleStep < PREVIEW_SAMPLE_STEP || ev.values.curveStep < PREVIEW_SAMPLE_STEP || ev.values.minRadius > 0
+            ? {
+                ...ev.values,
+                sampleStep: Math.max(PREVIEW_SAMPLE_STEP, ev.values.sampleStep),
+                curveStep: Math.max(PREVIEW_SAMPLE_STEP, ev.values.curveStep),
+                // sub-millimetre corner rounding can't be seen mid-drag; the full pass adds it
+                minRadius: 0,
+              }
+            : ev.values,
+        )
+      : ev.values;
 
     const mkForm = (prefix: 'ins' | 'src', mesh: THREE.BufferGeometry | null): FormBuild | null => {
       const form = buildForm(formSpec(v, prefix), mesh);
@@ -215,7 +281,6 @@ export function createFrontPipeline() {
       const im = toIndexedMesh(form.geometry);
       return { form, mesh: im, volume: meshVolume(im) };
     };
-    const mapTop = isMapDepth(project.images.top?.depth) && project.images.top?.map;
     const mapDepth = mapTop ? project.images.top!.depth : undefined;
     // Vermilion’s default fin insert is a 360 mm dark curve; it is not map terrain.
     const insert = stage('Insert form', [...pick(v, formKeys('ins')), assets.insMesh, !!mapTop], () =>
@@ -240,8 +305,11 @@ export function createFrontPipeline() {
     const topMask = stage('Top silhouette', [assets.topImg ?? null, v.topOutline, v.topThreshold, v.imgRotate, !!mapTop], () =>
       !mapTop && assets.topImg && v.topOutline !== 'off' ? silhouetteMask(rotate(assets.topImg, Number(v.imgRotate)), String(v.topOutline), v.topThreshold) : null,
     );
-    const hf = stage('Strata field', [...pick(v, STRATA_KEYS), sideImg, mapDepth], () => {
-      if (mapDepth) return buildMapHeightField(v, mapDepth);
+    const hf = stage('Strata field', [...pick(v, STRATA_KEYS), sideImg, mapDepth, !!project.userParamOverrides?.stackHeight], () => {
+      if (mapDepth) {
+        const capMm = project.userParamOverrides?.stackHeight && v.sliceMode !== 'flat' ? v.stackHeight : undefined;
+        return buildMapHeightField(v, mapDepth, { capMm });
+      }
       return v.stackSource === 'strata' ? buildHeightField(v, sideImg) : null;
     });
     // parts that come out unchanged keep their identity, so checks, nesting and the 3D view skip them
@@ -249,13 +317,37 @@ export function createFrontPipeline() {
     const mats = materialKey(project.appearance, String(v.plateMaterial));
     const materialFor = (key: string) => materialOf(project.appearance, key, String(v.plateMaterial));
     // tuned plates ring by their own metal, so only then does the metal change the cut
-    const shelf = stage('Postcard shelf', [project.shelf, baseTop(v)], () => shelfCards(project.shelf, baseTop(v)));
     const origin = stage('World origin', [project.origin, v.baseLength, v.baseWidth, baseTop(v)], () => originFrame(project.origin, v));
-    const objects = stage('Objects', [project.objects, shelf, origin], () =>
-      buildObjects([...(project.objects ?? []).map((o) => toWorld(o, origin)), ...shelf.map((o) => toWorld(o, origin, true))]),
+    const laid = stage('Postcard shelf', [shelfLayoutKey(project.shelf), baseTop(v), project.shelf?.unobstructed ? origin : 0], () =>
+      layoutShelfResult(project.shelf, baseTop(v), project.shelf?.unobstructed ? origin : undefined),
     );
-    const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder }));
-    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, !!mapTop], () =>
+    const onSurface = project.candles?.sit === 'surface' || (project.candles?.sit === 'auto' && !!mapTop);
+    // the plates' planes, for candles that line up with them (they depend only on the settings)
+    const stackPlanes = stage('Plate planes', [...pick(v, SLICE_KEYS)], () => plateDefs(v).filter((d) => d.family === 'P').map((d) => d.plane));
+    const pitch = stackPlanes.length > 1 ? Math.abs((stackPlanes[1].origin[0] - stackPlanes[0].origin[0]) * stackPlanes[0].normal[0] + (stackPlanes[1].origin[2] - stackPlanes[0].origin[2]) * stackPlanes[0].normal[2]) : 0;
+    const candles = stage('Candelabra', [project.candles, baseTop(v), onSurface, pitch], () => candleObjects(project.candles, baseTop(v), onSurface, pitch));
+    const others = stage('Placed objects', [project.objects, laid, origin], () => [...(project.objects ?? []).map((o) => toWorld(o, origin)), ...laid.cards.map((o) => toWorld(o, origin, true))]);
+    // candles sitting into the plates need the plates as they are without them first
+    const bare = onSurface
+      ? stage('Plate surface', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, others, !!mapTop], () => {
+          const b = buildObjects(others);
+          return slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: mapTop ? null : topImg, topMask: mapTop ? null : topMask, moves: project.moves, materialFor, objects: b.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut })), mapTerrain: !!mapTop });
+        })
+      : null;
+    const placedCandles = stage('Candles placed', [candles, origin, bare, stackPlanes], () => {
+      const w = snapToPlates(
+        candles.map((o) => toWorld(o, origin, true)),
+        stackPlanes,
+        project.candles?.snap ?? 'off',
+      );
+      return bare ? sitOnSurface(w, (x, z, r) => surfaceTop(bare.parts, x, z, r, topWithin)) : w;
+    });
+    const objects = stage('Objects', [others, placedCandles], () => buildObjects([...others, ...placedCandles]));
+    const sight = stage('Sight lines', [objects, shelfViewKey(project.shelf), project.shelf?.seat], () => shelfSight(objects, project.shelf));
+    const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut }));
+    const choke = chokeCircles(objects.map((o) => o.object));
+    const holders = objects.flatMap(({ object: o }) => (o.holder ? [{ x: o.x, z: o.z, r: o.w / 2, bottom: o.y - o.h / 2, ry: o.ry, slack: o.clearance, holder: o.holder }] : []));
+    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, sight, !!mapTop, mapParams.forced], () =>
       share(
         cache.get('Slice plates')?.value as SliceResult | undefined,
         slice({
@@ -269,19 +361,44 @@ export function createFrontPipeline() {
           moves: project.moves,
           materialFor,
           objects: cutters,
+          sight,
+          candles: holders,
+          choke,
           mapTerrain: !!mapTop,
+          mapAxisForced: mapParams.forced,
         }),
       ),
     );
     attachMapPartEtch(sliced, project.images.top?.map);
-    const carved = stage('Shadow carve', [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow], () => {
-      if (!v.shadowOn || !v.sunOn || v.sliceMode !== 'parallel') return null;
-      const frames = (project.shadow?.frames ?? []).flatMap((f, i) => {
+    // checked against the cut plates, so a plate standing in front of a card counts as hiding it
+    const cardVisibility = stage('Card visibility', [objects, shelfViewKey(project.shelf), project.shelf?.seat, sliced], () => reportShelfVisibility(objects, project.shelf, sliced.parts));
+    // the preview shows the plates uncarved; the full pass that follows the drag carves them
+    const shadowWanted = !!v.shadowOn && (!!v.sunOn || isCandle(v)) && v.sliceMode === 'parallel';
+    if (preview && shadowWanted) stages.push({ name: 'Shadow carve', ms: 0, cached: true, stale: true });
+    const carveDeps = [sliced, ...pick(v, SHADOW_KEYS), assets.shadowFrames, project.shadow];
+    const carveFrames = () =>
+      (project.shadow?.frames ?? []).flatMap((f, i) => {
         const gray = assets.shadowFrames?.[i];
         return gray ? [{ gray, time: f.time, hold: f.hold }] : [];
       });
-      return frames.length ? carveShadow(v, sliced, frames) : null;
-    });
+    let shadowPending = false;
+    const carveElsewhere = (): CarveResult | null => {
+      const frames = shadowWanted ? carveFrames() : [];
+      if (!frames.length) return null;
+      const done = options.carve!({ deps: carveDeps, v, sliced, frames });
+      stages.push({ name: 'Shadow carve', ms: done?.report.ms ?? 0, cached: true, stale: !done });
+      shadowPending = !done;
+      return done ?? null;
+    };
+    const carved = preview
+      ? null
+      : options.carve
+        ? carveElsewhere()
+        : stage('Shadow carve', carveDeps, () => {
+            if (!shadowWanted) return null;
+            const frames = carveFrames();
+            return frames.length ? carveShadow(v, sliced, frames) : null;
+          });
     const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
     const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
     const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
@@ -295,7 +412,7 @@ export function createFrontPipeline() {
           ? buildMapSunkenFrameLayout(finalSliced, { sunkenFrame: mapFrame }, v.thickness, baseTop(v), v.baseOn ? union([basePlan(v)]) : undefined)
           : null,
     );
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, origin, shadow: carved?.report ?? null, unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, shelfSolve: laid.solve ?? undefined, shelfEye: project.shelf?.on ? shelfEye(project.shelf) : undefined, origin, shadow: carved?.report ?? null, ...(shadowPending ? { shadowPending } : {}), unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
   };
 }
 
@@ -304,8 +421,36 @@ export function createFrontPipeline() {
  * plain data, so the app runs them in a Web Worker (see deferred.worker.ts).
  * Mode 'fast' reuses the last result of any stage whose inputs changed.
  */
-export function createDeferredPipeline() {
+/**
+ * The metal parts to nest, one group per metal (a laser shop cuts each metal from its
+ * own sheet), each with its outline so the nester can fit wavy edges together.
+ */
+export function nestGroupsOf(sliced: SliceResult, defaultMaterial: string, materialFor: (plateKey: string) => string): NestGroup[] {
+  const groups = new Map<string, NestGroup>([[defaultMaterial, { material: defaultMaterial, items: [] }]]);
+  for (const p of sliced.parts) {
+    const m = materialFor(p.plateKey);
+    if (!groups.has(m)) groups.set(m, { material: m, items: [] });
+    groups.get(m)!.items.push({
+      id: p.id,
+      w: p.bbox.maxX - p.bbox.minX,
+      h: p.bbox.maxY - p.bbox.minY,
+      area: p.area,
+      outline: p.shape.map((e) => e.outer),
+      minX: p.bbox.minX,
+      minY: p.bbox.minY,
+    });
+  }
+  return [...groups.values()].filter((g, i) => i === 0 || g.items.length);
+}
+
+export interface DeferredOptions {
+  /** Time and seed for the metal nest; the cloud's tight nest passes 30 or 90 seconds. */
+  nest?: NestOptions;
+}
+
+export function createDeferredPipeline(opts: DeferredOptions = {}) {
   const cache: Cache = new Map();
+  const nestOpts = opts.nest ?? {};
   return function computeDeferred(input: DeferredInput, mode: 'fast' | 'full' = 'full'): DeferredModel {
     const t0 = performance.now();
     const st = stager(cache, mode);
@@ -314,15 +459,11 @@ export function createDeferredPipeline() {
     const mats = materialKey(appearance, String(v.plateMaterial));
     const materialFor = (key: string) => materialOf(appearance, key, String(v.plateMaterial));
     const issues = stage('Fit checks', [sliced, ...pick(v, CHECK_KEYS)], () => runChecks(v, sliced), true);
-    const nested = stage('Nest sheets', [sliced, v.sheetW, v.sheetH, v.partSpacing, mats], () => {
-      // a laser shop cuts each metal from its own sheet
-      const groups = new Map<string, { material: string; items: { id: string; w: number; h: number; area: number }[] }>([[String(v.plateMaterial), { material: String(v.plateMaterial), items: [] }]]);
-      for (const p of sliced.parts) {
-        const m = materialFor(p.plateKey);
-        if (!groups.has(m)) groups.set(m, { material: m, items: [] });
-        groups.get(m)!.items.push({ id: p.id, w: p.bbox.maxX - p.bbox.minX, h: p.bbox.maxY - p.bbox.minY, area: p.area });
-      }
-      return nestGroups([...groups.values()].filter((g, i) => i === 0 || g.items.length), v.sheetW, v.sheetH, v.partSpacing);
+    const nested = stage('Nest sheets', [sliced, v.sheetW, v.sheetH, v.partSpacing, mats, input.savedNest], () => {
+      const groups = nestGroupsOf(sliced, String(v.plateMaterial), materialFor);
+      const saved = input.savedNest;
+      if (saved && saved.fingerprint === nestFingerprint(groups, v.sheetW, v.sheetH, v.partSpacing) && !nestMismatch(groups, saved.result)) return { ...saved.result, source: 'saved' as const };
+      return nestGroups(groups, v.sheetW, v.sheetH, v.partSpacing, nestOpts);
     }, true);
     const moulds = stage('Moulds', [sliced, insert, ...pick(v, MOULD_KEYS)], () =>
       buildMoulds(v, sliced, insert?.mesh ?? null, insert ? { minY: insert.minY, maxY: insert.maxY } : null),
@@ -369,9 +510,10 @@ export function createDeferredPipeline() {
 
 /** Joins a front pass with a deferred result into the model the UI reads. */
 export function assemble(f: FrontModel, d: Omit<DeferredModel, 'totalMs'> & { totalMs?: number }, stale = d.stale): Model {
+  const extra = f.cardVisibility?.issues;
   return {
     ...f,
-    issues: d.issues,
+    issues: extra?.length ? [...d.issues, ...extra] : d.issues,
     nested: d.nested,
     moulds: d.moulds,
     mouldNest: d.mouldNest,
@@ -383,9 +525,9 @@ export function assemble(f: FrontModel, d: Omit<DeferredModel, 'totalMs'> & { to
   };
 }
 
-export function createPipeline() {
+export function createPipeline(opts: DeferredOptions = {}) {
   const front = createFrontPipeline();
-  const deferred = createDeferredPipeline();
+  const deferred = createDeferredPipeline(opts);
   /**
    * mode 'fast' recomputes what the 3D view needs (forms, strata, plates) and
    * reuses the last result of the deferred stages; 'full' brings everything up to date.

@@ -1,11 +1,15 @@
 // Layer budget: choose elevation plateaus per plate (equal, quantile, Jenks).
 import type { Float32Grid } from './mapGrid';
+import { gridFiniteMinMax } from './mapGrid';
+import { localMaximaElevations } from './mapSummits';
+
+export { localMaximaElevations } from './mapSummits';
 
 export type LayerBudgetMode = 'equal' | 'quantile' | 'jenks';
 
 export interface LayerBudgetResult {
   mode: LayerBudgetMode;
-  /** N break elevations in metres (length = plateCount, ascending). */
+  /** Break elevations in metres (plateCount classes, plus extra summit / lake pins). */
   breaksM: number[];
 }
 
@@ -20,14 +24,18 @@ export interface LayerBudgetApplyOpts {
 export const PINNED_BREAK_EPS_M = 0.05;
 /** Metres: Float32 cells sit a hair under a Float64 pin; still belong on that break. */
 const SNAP_EPS_M = 1e-3;
+/** Keep extra summit pins at least this far apart (Grasmoor / Crag Hill / High Stile). */
+const SUMMIT_PIN_EPS_M = 2;
 
-function sampleValues(data: Float32Array, max = 8000): number[] {
+function sampleValues(data: Float32Array, max = 8000, extra: number[] = []): number[] {
   const finite: number[] = [];
   for (const v of data) if (Number.isFinite(v)) finite.push(v);
+  const forced = extra.filter((v) => Number.isFinite(v));
   if (finite.length <= max) return finite;
-  const step = finite.length / max;
-  const out: number[] = [];
-  for (let i = 0; i < max; i++) out.push(finite[Math.floor(i * step)]);
+  const budget = Math.max(8, max - forced.length);
+  const step = finite.length / budget;
+  const out: number[] = [...forced];
+  for (let i = 0; i < budget; i++) out.push(finite[Math.floor(i * step)]!);
   return out;
 }
 
@@ -104,6 +112,25 @@ function uniqueSorted(values: number[]): number[] {
   return out;
 }
 
+/** Split a wide top class so distinct summits do not ceil onto one plateau. */
+export function summitClassSplits(peaks: number[], breaks: number[]): number[] {
+  const sorted = uniqueSorted(breaks);
+  if (sorted.length < 2) return uniqueSorted(peaks);
+  const hi = sorted[sorted.length - 1]!;
+  const lo = sorted[sorted.length - 2]!;
+  const span = hi - lo;
+  const interior: number[] = [];
+  for (const p of uniqueSorted(peaks.filter((v) => v > lo + SUMMIT_PIN_EPS_M && v < hi - PINNED_BREAK_EPS_M))) {
+    if (!interior.length || p - interior[interior.length - 1]! >= SUMMIT_PIN_EPS_M) interior.push(p);
+  }
+  if (interior.length) return interior;
+  if (span < 20) return [];
+  const step = Math.max(8, span / 5);
+  const extra: number[] = [];
+  for (let z = lo + step; z < hi - 2; z += step) extra.push(z);
+  return extra;
+}
+
 /**
  * Keep every original break (including the max-height class) and append lake pins.
  * Pins are extra levels — they must not steal summit slots from the plate budget.
@@ -134,16 +161,20 @@ export function computeLayerBreaks(
   mode: LayerBudgetMode,
   pinM: number[] = [],
 ): LayerBudgetResult {
-  const values = sampleValues(grid.data, mode === 'jenks' ? 200 : 8000);
+  const { min, max } = gridFiniteMinMax(grid.data);
   const k = Math.max(1, Math.min(512, Math.round(plateCount)));
-  if (!values.length) return { mode, breaksM: injectPinnedBreaks([], pinM, k) };
-  const min = values[0];
-  const max = values[values.length - 1];
+  if (!(max >= min) || !Number.isFinite(max)) return { mode, breaksM: injectPinnedBreaks([], pinM, k) };
+  const peaks = localMaximaElevations(grid);
+  const values = sampleValues(grid.data, mode === 'jenks' ? 200 : 8000, [min, max, ...peaks]);
+  if (!values.length) return { mode, breaksM: injectPinnedBreaks([max], pinM, k) };
   let breaksM: number[];
   if (mode === 'equal') breaksM = equalBreaks(min, max, k);
   else if (mode === 'quantile') breaksM = quantileBreaks(values, k);
   else breaksM = jenksBreaks(values, k);
-  return { mode, breaksM: injectPinnedBreaks(breaksM, pinM, k) };
+  if (!breaksM.length) breaksM = [max];
+  else breaksM[breaksM.length - 1] = max;
+  const extra = summitClassSplits(peaks, breaksM);
+  return { mode, breaksM: injectPinnedBreaks(breaksM, [...pinM, ...extra], k) };
 }
 
 function snapCeil(z: number, sorted: number[]): number {

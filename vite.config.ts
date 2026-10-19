@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { handleEaProxyHttp } from './src/server/eaProxyHttp';
 import { handleOverpassProxyHttp } from './src/server/overpassProxyHttp';
 import { handleProjectsHttp } from './src/server/projectsHttp';
+import { handleGeoHttp } from './src/server/geoHttp';
+import { engineHash } from './scripts/engine-hash';
 
 // Strata's own geometry code (and the mesh loaders it uses) needs only three's
 // core: maths, geometry, shapes. Point those imports straight at three.core.js,
@@ -28,6 +30,14 @@ function attachApiMiddleware(server: { middlewares: { use: Function } }) {
       void handleOverpassProxyHttp(req, res).catch((e) => {
         res.statusCode = 500;
         res.end((e as Error).message);
+      });
+      return;
+    }
+    if (url.startsWith('/api/geo/')) {
+      void handleGeoHttp(req, res).catch(() => {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Cloud request failed' }));
       });
       return;
     }
@@ -123,6 +133,11 @@ function threeCore(): Plugin {
   };
 }
 
+// The engine's version for the result cache and the cloud worker (scripts/engine-hash.ts).
+function engineBuild(): string {
+  return engineHash(fileURLToPath(new URL('.', import.meta.url)));
+}
+
 // Libraries in their own files, so an app update doesn't make phones fetch them again.
 function vendorChunk(id: string): string | undefined {
   if (!id.includes('node_modules')) return;
@@ -136,6 +151,7 @@ export default defineConfig({
   plugins: [react(), threeCore(), excludeNodeTerrarium(), mapCacheBrowser(), mapFixtures()],
   define: {
     'process.env': {},
+    __STRATA_ENGINE__: JSON.stringify(engineBuild()),
   },
   resolve: {
     alias: {

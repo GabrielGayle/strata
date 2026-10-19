@@ -8,7 +8,6 @@ export type MapSource =
   | 'ni-dtm'
   | 'ea-dtm'
   | 'ea-dsm'
-  | 'cop30'
   | 'terrarium';
 export type MapModel = 'dtm' | 'dsm' | 'dtm+buildings';
 export type MapWater = 'flat' | 'bathy' | 'raw';
@@ -23,6 +22,12 @@ export interface EngraveSpec {
   preset?: string;
 }
 
+/** `MapSpec.resM` value that sizes the grid from the source and the model. */
+export const MAP_RES_AUTO = 0;
+
+/** Default Gaussian width (sigma, mm on the model) for the map elevation grid: about what the old 3×3 box gave at 1 mm per cell. */
+export const MAP_SMOOTH_MM = 0.75;
+
 export interface MapSpec {
   kind: 'map';
   /** WGS84 west, south, east, north (degrees). */
@@ -31,7 +36,10 @@ export interface MapSpec {
   crs?: string;
   source: MapSource;
   model: MapModel;
-  /** Target ground metres per depth-grid pixel along the long edge. */
+  /**
+   * Target ground metres per depth-grid pixel along the long edge. MAP_RES_AUTO (0) picks it from
+   * the source and the model size (see mapGridSize).
+   */
   resM: number;
   exaggeration: number | 'auto';
   water: MapWater;
@@ -44,6 +52,16 @@ export interface MapSpec {
   cacheDir?: string;
   /** How elevation plateaus are chosen per plate (default jenks). */
   layerBudget?: LayerBudgetMode;
+  /**
+   * Snap upright map faces to the layer budget (the old terraced look).
+   * Flat stacks always snap; upright stacks keep continuous heights unless this is on.
+   */
+  terraced?: boolean;
+  /**
+   * Gaussian smoothing of the elevation grid, as a width (sigma) in millimetres on
+   * the model, so it smooths the same amount at any grid size. Default MAP_SMOOTH_MM.
+   */
+  smoothMm?: number;
   /** Resolved vertical exaggeration factor when auto was requested. */
   exaggerationFactor?: number;
   /** Human readout, e.g. "×21". */
@@ -72,6 +90,16 @@ export interface MapSpec {
   giftSizeId?: string;
   /** Matches `mapBuildKey` when depth grid was last built in the browser/CLI. */
   buildKey?: string;
+  /**
+   * Build this map on the cloud at up to 2048 px when Boost is on ("High resolution (cloud)").
+   * With Boost off, or when the cloud is unavailable, the local 1024 px build is used.
+   */
+  cloudRes?: boolean;
+  /**
+   * Set when the depth came from the cloud terrain job: the result's key in the cloud cache and
+   * its long edge. Saved projects keep a 1024 px copy; the full grid is fetched again by key.
+   */
+  cloudBuilt?: { key: string; px: number };
 }
 
 export const TERRARIUM_ATTRIBUTION = [
@@ -92,9 +120,9 @@ export function defaultMapSpec(patch: Partial<MapSpec> & { bbox: MapSpec['bbox']
     kind: 'map',
     source: patch.source ?? 'auto',
     model: patch.model ?? 'dtm',
-    resM: patch.resM ?? 8,
+    resM: patch.resM ?? MAP_RES_AUTO,
     exaggeration: patch.exaggeration ?? 'auto',
-    water: patch.water ?? 'bathy',
+    water: patch.water ?? 'flat',
     title: patch.title,
     crs: patch.crs,
     fetchedAt: patch.fetchedAt,
@@ -130,9 +158,10 @@ const SOURCES = new Set<MapSource>([
   'ni-dtm',
   'ea-dtm',
   'ea-dsm',
-  'cop30',
   'terrarium',
 ]);
+/** Ids older saves may carry: the Copernicus stub was removed and always fell back to Terrarium. */
+const RETIRED_SOURCES: Record<string, MapSource> = { cop30: 'terrarium' };
 const MODELS = new Set<MapModel>(['dtm', 'dsm', 'dtm+buildings']);
 const WATERS = new Set<MapWater>(['flat', 'bathy', 'raw']);
 const BUDGETS = new Set<LayerBudgetMode>(['equal', 'quantile', 'jenks']);
@@ -156,10 +185,15 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   if (!o || o.kind !== 'map') return undefined;
   const bbox = bboxOf(o.bbox);
   if (!bbox) return undefined;
-  const source = typeof o.source === 'string' && SOURCES.has(o.source as MapSource) ? (o.source as MapSource) : 'auto';
+  const source =
+    typeof o.source !== 'string'
+      ? 'auto'
+      : SOURCES.has(o.source as MapSource)
+        ? (o.source as MapSource)
+        : (RETIRED_SOURCES[o.source] ?? 'auto');
   const model = typeof o.model === 'string' && MODELS.has(o.model as MapModel) ? (o.model as MapModel) : 'dtm';
   const resM = num(o.resM);
-  const water = typeof o.water === 'string' && WATERS.has(o.water as MapWater) ? (o.water as MapWater) : 'bathy';
+  const water = typeof o.water === 'string' && WATERS.has(o.water as MapWater) ? (o.water as MapWater) : 'flat';
   let exaggeration: number | 'auto' = 'auto';
   if (o.exaggeration === 'auto') exaggeration = 'auto';
   else {
@@ -190,15 +224,17 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
   const commemorativeText =
     typeof o.commemorativeText === 'string' && o.commemorativeText.trim() ? o.commemorativeText.trim() : undefined;
   const buildingClampM = num(o.buildingClampM);
+  const smoothMm = num(o.smoothMm);
   const sunkenFrame = cleanSunkenFrame(o.sunkenFrame);
   const giftSizeId = typeof o.giftSizeId === 'string' && o.giftSizeId.trim() ? o.giftSizeId.trim() : undefined;
+  const cloudBuilt = cleanCloudBuilt(o.cloudBuilt);
   return {
     kind: 'map',
     bbox,
     ...(crs ? { crs } : {}),
     source,
     model,
-    resM: resM != null && resM > 0 ? resM : 8,
+    resM: resM != null && resM >= 0 ? resM : MAP_RES_AUTO,
     exaggeration,
     water,
     engrave: cleanEngrave(o.engrave),
@@ -207,6 +243,8 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     attribution: attribution.length ? attribution : [...TERRARIUM_ATTRIBUTION],
     ...(cacheDir ? { cacheDir } : {}),
     ...(layerBudget ? { layerBudget } : {}),
+    ...(o.terraced === true ? { terraced: true } : {}),
+    ...(smoothMm != null && smoothMm >= 0 ? { smoothMm } : {}),
     ...(exaggerationFactor != null && exaggerationFactor > 0 ? { exaggerationFactor } : {}),
     ...(exaggerationReadout ? { exaggerationReadout } : {}),
     ...(layerBreaksM?.length ? { layerBreaksM } : {}),
@@ -220,7 +258,16 @@ export function cleanMapSpec(raw: unknown): MapSpec | undefined {
     ...(buildingClampM != null && buildingClampM > 0 ? { buildingClampM } : {}),
     ...(sunkenFrame ? { sunkenFrame } : {}),
     ...(giftSizeId ? { giftSizeId } : {}),
+    ...(o.cloudRes === true ? { cloudRes: true } : {}),
+    ...(cloudBuilt ? { cloudBuilt } : {}),
   };
+}
+
+function cleanCloudBuilt(raw: unknown): MapSpec['cloudBuilt'] | undefined {
+  const o = (raw ?? null) as Record<string, unknown> | null;
+  if (!o || typeof o.key !== 'string' || !/^[0-9a-f]{32,64}$/.test(o.key)) return undefined;
+  const px = num(o.px);
+  return px != null && px > 0 ? { key: o.key, px: Math.round(px) } : undefined;
 }
 
 function cleanSunkenFrame(raw: unknown): MapSpec['sunkenFrame'] | undefined {

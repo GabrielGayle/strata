@@ -29,8 +29,10 @@ import {
 } from './geom2d';
 import { offsetPlane, planeToWorld, sectionShape, type Plane, type V3 } from './section';
 import { stackFrame, type HeightField } from './heightfield';
+import { isCandleMaster, masterFrame, masterLayers, type MasterSummary } from './candleMaster';
 import { flatFootprint, flatGrid, flatOutline, flatPinPoints, flatStampCut, outlinePaths, pinFits, type FlatGrid } from './flatstack';
 import type { IndexedMesh } from './forms';
+import { sightCut, type SightCard } from './sightLine';
 import { boxBlur, distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
 import { MAX_TUNED, MIN_TUNED, tunePlates, tuningActive, type PlateTune } from './tuning';
@@ -52,8 +54,10 @@ import {
   type StackRodPlan,
 } from './stackRods';
 import { orientMapPlatePlane } from './mapPlateHeight';
+import { MAP_WIDTH_AXIS_NOTE } from './mapStack';
+import { chokeSpans, finSlots, targetFins } from './candles';
 
-export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T';
+export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T' | 'K';
 
 export interface PlateDef {
   key: string;
@@ -148,6 +152,18 @@ export function plateTopHeightRangeMm(plates: PlateInfo[]): number {
   return r ? r.hi - r.lo : 0;
 }
 
+/** How many P/R plates share the highest cut outline (exact summit plateau). */
+export function countPlatesAtMaxHeight(plates: PlateInfo[], epsMm = 0.05): number {
+  const all = plateOutlineYRangeMm(plates);
+  if (!all) return 0;
+  let n = 0;
+  for (const pl of plates) {
+    const r = plateOutlineYRangeMm([pl]);
+    if (r && Math.abs(r.hi - all.hi) <= epsMm) n++;
+  }
+  return n;
+}
+
 export interface SliceResult {
   plates: PlateInfo[];
   parts: Part[];
@@ -156,6 +172,12 @@ export interface SliceResult {
   warnings: string[];
   front: FrontWindow | null;
   top: TopWindow | null;
+  /**
+   * Where an image could go, whether or not one is loaded: the whole top surface and
+   * front face (Impress image places pictures on these), and the lowest plate top on
+   * the top surface (flat impression floors are measured down from it).
+   */
+  areas?: { top: TopWindow | null; front: FrontWindow | null; topDatum: number | null };
   support: SupportSpec | null;
   /** Target note per plate (aligned with `plates`), when Tuning is on. */
   tuning: (PlateTune | null)[] | null;
@@ -164,6 +186,8 @@ export interface SliceResult {
   stackRods: StackRodPlan | null;
   /** The plates where Round all corners moved an edge the furthest, most first (empty when it is off). */
   roundSpots?: RoundSpot[];
+  /** Candle master: the stratified master, its box and the silicone it needs (null unless Candle master is on). */
+  candleMaster?: MasterSummary | null;
 }
 
 export interface BraceResult {
@@ -187,9 +211,17 @@ export interface SliceInput {
   /** Metal each plate is cut from, by plate key (tuned plates ring by it). */
   materialFor?: (key: string) => string;
   /** Placed objects (postcards, boxes…) cut out of every plate they pass through, each with its own clearance. */
-  objects?: { mesh: IndexedMesh; clearance: number; seat?: number; shoulder?: number }[];
+  objects?: { mesh: IndexedMesh; clearance: number; seat?: number; shoulder?: number; noCut?: boolean }[];
+  /** Unobstructed view: plate material in these sight lines (card face to eye) is cut away. */
+  sight?: { eye: V3; cards: SightCard[] } | null;
   /** Map terrain: skip image impression / strata-flow flatten; heights come from the map field. */
   mapTerrain?: boolean;
+  /** Plan circles (x, z, r) the plates are choked in to: each plate keeps only what lies inside them. */
+  choke?: [number, number, number][];
+  /** The project asked for sliceAxis 'width' on a map face, which was evaluated as 'length'. */
+  mapAxisForced?: boolean;
+  /** Candlesticks held by target fins: where each stands and how its fins grip it. */
+  candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number } }[];
 }
 
 const UP: V3 = [0, 1, 0];
@@ -267,6 +299,7 @@ export function crossingAt(a: Plane, b: Plane, y: number): { ua: number; ub: num
 export function plateDefs(v: Values): PlateDef[] {
   const top = baseTop(v);
   const defs: PlateDef[] = [];
+  if (!v.platesOn) return defs;
   if (v.sliceMode === 'radial') {
     const n = v.radialCount;
     const ch = v.baseOn ? baseChamfers(v) : { corner: 0, edge: 0 };
@@ -312,6 +345,8 @@ export function plateDefs(v: Values): PlateDef[] {
       u1: w / 2,
     });
   }
+  if (v.sliceMode === 'waffle' && v.waffleLayout === 'grid') return gridDefs(v, defs, f, top);
+  if (v.sliceMode === 'waffle' && Math.abs(gridAngleRad(v) - Math.PI / 2) > 1e-6) return slantedSpreadDefs(v, defs, f, top);
   if (v.sliceMode === 'waffle') {
     const m = v.crossCount;
     const cp = w / m;
@@ -330,6 +365,183 @@ export function plateDefs(v: Values): PlateDef[] {
     }
   }
   return defs;
+}
+
+/** Angle between a waffle's plates and its cross plates, in radians. */
+export const gridAngleRad = (v: Values) => (v.sliceMode === 'waffle' ? (Math.min(150, Math.max(30, Number(v.gridAngle) || 90)) * Math.PI) / 180 : Math.PI / 2);
+
+/**
+ * Width of an interlocking slot along a plate's face: the crossing plate's own thickness seen
+ * at the grid angle, plus how far it drifts across this plate's thickness, plus the allowance.
+ */
+export function waffleSlotWidth(v: Values): number {
+  const th = gridAngleRad(v);
+  const t = v.thickness;
+  return t / Math.sin(th) + t * Math.abs(Math.cos(th) / Math.sin(th)) + v.slotClearance;
+}
+
+/**
+ * Closed grid: the main plates sit on the cell size, the cross plates cross them at the grid
+ * angle on their own cell size, and every plate stops at the outer face of the outermost plate
+ * of the other set, so the outer plates frame the lattice and meet as half laps at the corners.
+ * Plan coordinates (s along the stack, a across); a cross plate is the line n·(s, a) = c.
+ */
+function gridDefs(v: Values, defs: PlateDef[], f: ReturnType<typeof stackFrame>, top: number): PlateDef[] {
+  const th = gridAngleRad(v);
+  const sin = Math.sin(th), cos = Math.cos(th);
+  const t = v.thickness;
+  const world = (s: number, a: number): V3 => [s * f.stack[0] + a * f.across[0], top, s * f.stack[1] + a * f.across[1]];
+  const n2: [number, number] = [-cos, sin];
+  const d2: [number, number] = [sin, cos];
+  const P = defs.filter((d) => d.family === 'P');
+  const ss = P.map((d) => d.plane.origin[0] * f.stack[0] + d.plane.origin[2] * f.stack[1]);
+  const sMin = Math.min(...ss), sMax = Math.max(...ss);
+  const m = Math.max(2, Math.round(v.crossCount));
+  const pc = v.gridCell === 'rect' ? v.cellCross : v.cellSize;
+  const cs = Array.from({ length: m }, (_, j) => (j - (m - 1) / 2) * pc);
+  const reach = t / 2 / sin;
+  // main plates: from the first cross plate to the last, out to its outer face
+  for (const d of P) {
+    const s = d.plane.origin[0] * f.stack[0] + d.plane.origin[2] * f.stack[1];
+    const sgn = d.plane.u[0] * f.across[0] + d.plane.u[2] * f.across[1] >= 0 ? 1 : -1;
+    const as = cs.map((c) => (c + s * cos) / sin);
+    const a0 = Math.min(...as) - reach, a1 = Math.max(...as) + reach;
+    d.u0 = sgn > 0 ? a0 : -a1;
+    d.u1 = sgn > 0 ? a1 : -a0;
+  }
+  cs.forEach((c, j) => {
+    const plane = makePlane(world(c * n2[0], c * n2[1]), [n2[0] * f.stack[0] + n2[1] * f.across[0], 0, n2[0] * f.stack[1] + n2[1] * f.across[1]]);
+    const dw: V3 = [d2[0] * f.stack[0] + d2[1] * f.across[0], 0, d2[0] * f.stack[1] + d2[1] * f.across[1]];
+    const sgn = plane.u[0] * dw[0] + plane.u[2] * dw[2] >= 0 ? 1 : -1;
+    // along the cross plate τ, its s is -c·cos + τ·sin
+    const t0 = (sMin + c * cos) / sin - reach, t1 = (sMax + c * cos) / sin + reach;
+    defs.push({ key: `X${j}`, family: 'X', index: j, count: m, plane, u0: sgn > 0 ? t0 : -t1, u1: sgn > 0 ? t1 : -t0 });
+  });
+  return defs;
+}
+
+/**
+ * Spread waffle with slanted cross plates: the plates keep their full width and the cross
+ * plates cross them at the grid angle, spread evenly and cut off where they meet the edge of
+ * the stack, so the two blocks of plates interpenetrate. Cross plates near the corners would be
+ * stubs, so they are spread only over the offsets where a cross plate is at least two plate
+ * pitches long.
+ */
+function slantedSpreadDefs(v: Values, defs: PlateDef[], f: ReturnType<typeof stackFrame>, top: number): PlateDef[] {
+  const th = gridAngleRad(v);
+  const sin = Math.sin(th), cos = Math.cos(th);
+  const n = v.plateCount, w = v.plateWidth;
+  const ext = Math.min(((n - 1) / 2) * v.pitch + v.pitch / 2, f.stackLen / 2 - Math.min(v.sideMargin, f.stackLen / 4));
+  const n2: [number, number] = [-cos, sin];
+  const d2: [number, number] = [sin, cos];
+  // the cross plate n·(s, a) = c, clipped to |s| ≤ ext, |a| ≤ w/2, as a range of τ along d
+  const clip = (c: number): [number, number] | null => {
+    let lo = -Infinity, hi = Infinity;
+    for (const [k, half, o] of [[0, ext, c * n2[0]], [1, w / 2, c * n2[1]]] as const) {
+      const dk = d2[k];
+      if (Math.abs(dk) < 1e-9) {
+        if (Math.abs(o) > half) return null;
+        continue;
+      }
+      const a = (-half - o) / dk, b = (half - o) / dk;
+      lo = Math.max(lo, Math.min(a, b));
+      hi = Math.min(hi, Math.max(a, b));
+    }
+    return hi > lo ? [lo, hi] : null;
+  };
+  const corner = Math.abs(ext * cos) + (w / 2) * sin;
+  const minLen = Math.min(2 * v.pitch, corner);
+  // longest cross plates are in the middle, so the usable offsets form one band |c| ≤ cMax
+  let a = 0, b = corner;
+  for (let k = 0; k < 40; k++) {
+    const mid = (a + b) / 2;
+    const r = clip(mid);
+    if (r && r[1] - r[0] >= minLen) a = mid;
+    else b = mid;
+  }
+  const m = Math.max(1, Math.round(v.crossCount));
+  const cp = (2 * a) / m;
+  const world = (s: number, aa: number): V3 => [s * f.stack[0] + aa * f.across[0], top, s * f.stack[1] + aa * f.across[1]];
+  for (let j = 0; j < m; j++) {
+    const c = -a + cp * (j + 0.5);
+    const r = clip(c);
+    if (!r) continue;
+    const plane = makePlane(world(c * n2[0], c * n2[1]), [n2[0] * f.stack[0] + n2[1] * f.across[0], 0, n2[0] * f.stack[1] + n2[1] * f.across[1]]);
+    const dw: V3 = [d2[0] * f.stack[0] + d2[1] * f.across[0], 0, d2[0] * f.stack[1] + d2[1] * f.across[1]];
+    const sgn = plane.u[0] * dw[0] + plane.u[2] * dw[2] >= 0 ? 1 : -1;
+    defs.push({ key: `X${j}`, family: 'X', index: j, count: m, plane, u0: sgn > 0 ? r[0] : -r[1], u1: sgn > 0 ? r[1] : -r[0] });
+  }
+  return defs;
+}
+
+/**
+ * A map plate's top line: sampled every `curveStep` mm, smoothed with a Gaussian
+ * of `curveSmooth` mm and simplified at `curveTolerance` mm, so the arc fitter
+ * can write most of it as arcs instead of hundreds of short kinked lines.
+ */
+function mapOutline(def: PlateDef, hf: HeightField, v: Values): Shape {
+  const { u0, u1, plane } = def;
+  const n = Math.max(2, Math.ceil((u1 - u0) / Math.max(0.05, v.curveStep)));
+  const du = (u1 - u0) / n;
+  const raw = new Float64Array(n + 1);
+  for (let k = 0; k <= n; k++) {
+    const p = planeToWorld(plane, u0 + du * k, 0);
+    raw[k] = hf.at(p[0], p[2]);
+  }
+  const h = gaussian1d(raw, v.curveSmooth / du);
+  const top: Path = [];
+  for (let k = 0; k <= n; k++) top.push([u0 + du * k, h[k]]);
+  // simplify before the union so Clipper sees hundreds of points, not thousands
+  const tol = Math.max(0.001, v.curveTolerance);
+  return outlineUnder(def, simplifyOpen(top, tol), v, tol);
+}
+
+/** Douglas-Peucker on an open line; both ends are kept. */
+function simplifyOpen(p: Path, tol: number): Path {
+  const n = p.length;
+  if (n < 3) return p;
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  const stack: [number, number][] = [[0, n - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    const A = p[a], B = p[b];
+    const dx = B[0] - A[0], dy = B[1] - A[1];
+    const L = Math.hypot(dx, dy) || 1e-12;
+    let idx = -1, dmax = tol;
+    for (let i = a + 1; i < b; i++) {
+      const d = Math.abs((p[i][0] - A[0]) * dy - (p[i][1] - A[1]) * dx) / L;
+      if (d > dmax) {
+        dmax = d;
+        idx = i;
+      }
+    }
+    if (idx >= 0) {
+      keep[idx] = 1;
+      stack.push([a, idx], [idx, b]);
+    }
+  }
+  return p.filter((_, i) => keep[i]);
+}
+
+/** Gaussian low-pass of a profile, `sigma` in samples, ends clamped. */
+export function gaussian1d(src: Float64Array, sigma: number): Float64Array {
+  if (!(sigma >= 0.3)) return src;
+  const r = Math.ceil(3 * sigma);
+  const wts = new Float64Array(r + 1);
+  let total = 0;
+  for (let j = 0; j <= r; j++) {
+    wts[j] = Math.exp(-(j * j) / (2 * sigma * sigma));
+    total += j ? 2 * wts[j] : wts[j];
+  }
+  const last = src.length - 1;
+  const out = new Float64Array(src.length);
+  for (let k = 0; k <= last; k++) {
+    let sum = wts[0] * src[k];
+    for (let j = 1; j <= r; j++) sum += wts[j] * (src[Math.max(0, k - j)] + src[Math.min(last, k + j)]);
+    out[k] = sum / total;
+  }
+  return out;
 }
 
 function strataOutline(def: PlateDef, hf: HeightField, v: Values): Shape {
@@ -366,7 +578,7 @@ function tunedOutline(def: PlateDef, height: number, v: Values): Shape {
 }
 
 /** The plate outline: the given top line (left to right), the sides, and the embedded tab. */
-function outlineUnder(def: PlateDef, top: Path, v: Values): Shape {
+function outlineUnder(def: PlateDef, top: Path, v: Values, tol = 0.01): Shape {
   const { u0, u1 } = def;
   const e = embedOf(v);
   const inset = Math.max(0, Math.min(v.tabInset, (u1 - u0) / 2 - 5));
@@ -376,7 +588,7 @@ function outlineUnder(def: PlateDef, top: Path, v: Values): Shape {
   else poly.push([u0, 0], [u1, 0]);
   for (let k = top.length - 1; k >= 0; k--) poly.push(top[k]);
   if (e > 0 && inset > 0) poly.push([u0, 0], [u0 + inset, 0]);
-  return simplifyShape(union([poly]), 0.01);
+  return simplifyShape(union([poly]), tol);
 }
 
 function formOutline(def: PlateDef, mesh: IndexedMesh, v: Values): Shape {
@@ -409,13 +621,9 @@ interface FrontCtx {
 function frontContext(v: Values, img: Gray | null, defs: PlateDef[], hf: HeightField | null, lowestTop: number | null = null): FrontCtx | null {
   if (!img || v.sliceMode !== 'parallel') return null;
   if (v.imgFrontMode === 'off' && v.etchMode === 'off') return null;
-  const p = defs.find((d) => d.family === 'P');
-  if (!p) return null;
-  const m = v.frontMargin;
-  const u0 = p.u0 + m, u1 = p.u1 - m;
-  const topV = lowestTop ?? (hf ? hf.min : v.stackHeight);
-  const v0 = m, v1 = topV - m;
-  if (u1 - u0 < 5 || v1 - v0 < 5) return null;
+  const area = frontArea(v, defs, hf, lowestTop);
+  if (!area) return null;
+  const { u0, u1, v0, v1 } = area;
   const ar = img.w / img.h;
   const w = u1 - u0, h = v1 - v0;
   let win: FrontWindow;
@@ -427,6 +635,19 @@ function frontContext(v: Values, img: Gray | null, defs: PlateDef[], hf: HeightF
     win = { u0, u1, v0: (v0 + v1) / 2 - fh / 2, v1: (v0 + v1) / 2 + fh / 2 };
   }
   return { img, win };
+}
+
+/** The whole front face a front image can cover (inside the front frame), in the front plate's coords. */
+export function frontArea(v: Values, defs: PlateDef[], hf: HeightField | null, lowestTop: number | null = null): FrontWindow | null {
+  if (v.sliceMode !== 'parallel') return null;
+  const p = defs.find((d) => d.family === 'P');
+  if (!p) return null;
+  const m = v.frontMargin;
+  const u0 = p.u0 + m, u1 = p.u1 - m;
+  const topV = lowestTop ?? (hf ? hf.min : v.stackHeight);
+  const v0 = m, v1 = topV - m;
+  if (u1 - u0 < 5 || v1 - v0 < 5) return null;
+  return { u0, u1, v0, v1 };
 }
 
 /** Darkness 0..1 of the front image at plate coords. Looking at the stack from the front, image-right is -u. */
@@ -547,6 +768,28 @@ export interface TopWindow {
  * image right = right when standing at the front, image top = the far end.
  */
 export function topWindow(v: Values, img: Gray, defs: PlateDef[]): TopWindow | null {
+  const area = topArea(v, defs);
+  if (!area) return null;
+  const { right, stack } = area;
+  let { r0, r1, s0, s1 } = area;
+  const turns = ((Math.round(Number(v.topRotate) / 90) % 4) + 4) % 4;
+  const ar = turns % 2 ? img.h / img.w : img.w / img.h; // on-surface width runs along `right`, height along `stack`
+  let w = r1 - r0, h = s1 - s0;
+  if (w / h > ar) w = h * ar;
+  else h = w / ar;
+  w *= v.topScale;
+  h *= v.topScale;
+  const cr = (r0 + r1) / 2 + v.topX * right[0] + v.topZ * right[1];
+  const cs = (s0 + s1) / 2 + v.topX * stack[0] + v.topZ * stack[1];
+  return { right, stack, r0: cr - w / 2, r1: cr + w / 2, s0: cs - h / 2, s1: cs + h / 2, turns };
+}
+
+/**
+ * The whole top surface a top image can cover (inside the top margin), upright
+ * and unturned: what the window would be for an image of exactly its proportions
+ * at full size with no offset.
+ */
+export function topArea(v: Values, defs: PlateDef[]): TopWindow | null {
   if (!defs.length) return null;
   // flat layers: the window spans the footprint; upright plates: the ends of every plate
   const pts: V3[] =
@@ -574,16 +817,7 @@ export function topWindow(v: Values, img: Gray, defs: PlateDef[]): TopWindow | n
   s0 += m;
   s1 -= m;
   if (r1 - r0 < 2 || s1 - s0 < 2) return null;
-  const turns = ((Math.round(Number(v.topRotate) / 90) % 4) + 4) % 4;
-  const ar = turns % 2 ? img.h / img.w : img.w / img.h; // on-surface width runs along `right`, height along `stack`
-  let w = r1 - r0, h = s1 - s0;
-  if (w / h > ar) w = h * ar;
-  else h = w / ar;
-  w *= v.topScale;
-  h *= v.topScale;
-  const cr = (r0 + r1) / 2 + v.topX * right[0] + v.topZ * right[1];
-  const cs = (s0 + s1) / 2 + v.topX * stack[0] + v.topZ * stack[1];
-  return { right, stack, r0: cr - w / 2, r1: cr + w / 2, s0: cs - h / 2, s1: cs + h / 2, turns };
+  return { right, stack, r0, r1, s0, s1, turns: 0 };
 }
 
 /** Image coordinates (0..1, y down) of a world point, or null outside the image. */
@@ -630,10 +864,12 @@ export function topProfileField(v: Values, img: Gray, win: TopWindow): Gray {
     for (let i = 0; i < n; i++) max = Math.max(max, dist[i]);
     R = Math.max(1, max);
   }
+  const puff = Math.min(5, Math.max(0.2, Number.isFinite(v.topPuff) ? v.topPuff : 1));
   for (let i = 0; i < n; i++) {
     if (!inside[i]) continue;
     const t = Math.min(1, dist[i] / R);
-    data[i] = v.topProfile === 'chamfer' ? t : Math.sqrt(1 - (1 - t) * (1 - t)); // quarter-circle shoulder
+    const f = v.topProfile === 'chamfer' ? t : Math.sqrt(1 - (1 - t) * (1 - t)); // quarter-circle shoulder
+    data[i] = puff === 1 ? f : Math.pow(f, puff);
   }
   return { w: img.w, h: img.h, data };
 }
@@ -1032,6 +1268,15 @@ export function roundAll(shape: Shape, rOut: number, rIn = rOut): Shape {
   return morph(shape, [i, -i - o, o, c, -c].filter((d) => Math.abs(d) > 1e-9));
 }
 
+/**
+ * The cheap floor under Round all corners: an opening of radius rOut, then a closing of rIn that
+ * rounds the valleys and blunts the cusps the opening leaves where two rounded bumps meet.
+ */
+export function minimumRadius(shape: Shape, rOut: number, rIn: number): Shape {
+  if (!(rOut > 0.05) || !shape.length) return shape;
+  return morph(shape, rIn > 0.05 ? [-rOut, rOut, rIn, -rIn] : [-rOut, rOut]);
+}
+
 /** Where rounding moved a plate's edge the furthest, for the warning and the zoomed preview. */
 export interface RoundSpot {
   key: string;
@@ -1187,6 +1432,12 @@ export function slice(input: SliceInput): SliceResult {
   const hf = input.hf;
   const v = input.mapTerrain ? { ...input.v, edgeFlow: 0 } : input.v;
   const warnings: string[] = [];
+  if (input.mapTerrain && input.mapAxisForced) warnings.push(MAP_WIDTH_AXIS_NOTE);
+  if (input.mapTerrain && hf?.heightCapScale != null && hf.heightCapScale < 1 - 1e-9) {
+    warnings.push(
+      `Terrain is taller than the ${v.stackHeight} mm plate height, so the whole map was scaled to fit (×${hf.heightCapScale.toFixed(2)}). Summits are not clipped.`,
+    );
+  }
   const fragmentEvents: FragmentEvent[] = [];
   const round: { spots: RoundSpot[] } = { spots: [] };
   const roundSplits: string[] = [];
@@ -1196,7 +1447,10 @@ export function slice(input: SliceInput): SliceResult {
   if (input.mapTerrain) {
     for (const d of homeDefs) {
       if (d.family !== 'P') continue;
-      d.plane = orientMapPlatePlane(d.plane);
+      const plane = orientMapPlatePlane(d.plane);
+      // u turns round, so the span does too (a closed grid's spans aren't centred)
+      if (plane !== d.plane) [d.u0, d.u1] = [-d.u1, -d.u0];
+      d.plane = plane;
     }
   }
   const defs = placeDefs(homeDefs, input.moves);
@@ -1247,8 +1501,21 @@ export function slice(input: SliceInput): SliceResult {
     // outline still grows an embed tab when one is asked for
     if (tune) return tunedOutline(d, tune.model === 'free' ? tune.cut - e : tune.cut, v);
     if (isFlat) return flat ? flatOutline(flat, flatFootprint(v), (d.index + 0.5) * t) : [];
-    return hf ? strataOutline(d, hf, v) : [];
+    if (!hf) return [];
+    return input.mapTerrain ? mapOutline(d, hf, v) : strataOutline(d, hf, v);
   });
+
+  // candle master: pin hole through each layer, and the frames that stack into the silicone box
+  let candleMaster: MasterSummary | null = null;
+  if (isFlat && useForm && input.source && isCandleMaster(v)) {
+    const frame = masterFrame(input.source, baseTop(v));
+    if (frame) {
+      const m = masterLayers(outlines, frame, v);
+      m.outlines.forEach((o, i) => (outlines[i] = o));
+      candleMaster = m.summary;
+      if (homeDefs.length < m.summary.layersNeeded) warnings.push(`Candle master: ${homeDefs.length} layers × ${t} mm stop short of the box top; raise Plate count to ${m.summary.layersNeeded} for ${v.cmCover} mm of silicone over the master.`);
+    }
+  }
 
   // 1a. trim every plate to the top image's silhouette
   if (topWin && input.topMask && v.topOutline !== 'off') {
@@ -1277,7 +1544,7 @@ export function slice(input: SliceInput): SliceResult {
   // 2. waffle slots (computed from the shared intersection line, so both halves agree)
   const slots: Shape[] = defs.map(() => []);
   if (v.sliceMode === 'waffle') {
-    const sw = t + v.slotClearance;
+    const sw = waffleSlotWidth(v);
     defs.forEach((p, pi) => {
       if (p.family !== 'P') return;
       defs.forEach((x, xi) => {
@@ -1305,6 +1572,14 @@ export function slice(input: SliceInput): SliceResult {
         slots[xi].push(...rect(xa, -BIG, xb, half));
       });
     });
+    if (v.waffleLayout === 'grid') {
+      const sin = Math.sin(gridAngleRad(v));
+      const side = Math.min(v.cellSize, v.gridCell === 'rect' ? v.cellCross : v.cellSize) / sin;
+      if (sw + v.minFeature > side) warnings.push(`Closed grid: the slots (${sw.toFixed(1)} mm wide at ${Math.round(v.gridAngle)}°) leave less than ${v.minFeature} mm of steel between crossings; open the angle or make the cells bigger.`);
+      const room = v.plateWidth * sin - t - (v.plateCount - 1) * v.cellSize * Math.abs(Math.cos(gridAngleRad(v)));
+      const pc = v.gridCell === 'rect' ? v.cellCross : v.cellSize;
+      if ((v.crossCount - 1) * pc > room + 1e-6) warnings.push(`Closed grid: ${v.crossCount} cross plates at ${pc} mm don't fit inside the plate width at ${Math.round(v.gridAngle)}°, so the grid runs past the side margins; make the cells smaller or the angle closer to 90°.`);
+    }
   }
 
   // threaded rods through the embedded tabs
@@ -1315,7 +1590,20 @@ export function slice(input: SliceInput): SliceResult {
   const rodMiss: number[] = rods ? rods.rods.map(() => 0) : [];
   let rodMissKey: string | undefined;
 
-  const front = frontContext(v, input.front, homeDefs, hf, tunes ? Math.min(...tunes.map((t) => t.cut)) : null);
+  const lowestTune = tunes ? Math.min(...tunes.map((t) => t.cut)) : null;
+  const front = frontContext(v, input.front, homeDefs, hf, lowestTune);
+  const areaTop = input.mapTerrain ? null : topArea(v, homeDefs);
+  let areaDatum = Infinity;
+  if (areaTop && !isFlat)
+    homeDefs.forEach((d, di) => {
+      for (let u = d.u0; u <= d.u1; u += 4) {
+        const p = planeToWorld(d.plane, u, 0);
+        if (!topUV(areaTop, p)) continue;
+        const t = topAt(outlines[di], u);
+        if (t !== null && t > 0) areaDatum = Math.min(areaDatum, t);
+      }
+    });
+  const areas = { top: areaTop, front: frontArea(v, homeDefs, hf, lowestTune), topDatum: Number.isFinite(areaDatum) ? areaDatum : null };
   // datum for flat impression floors: the lowest plate top inside the image window
   let topDatum = Infinity;
   if (topWin && !isFlat)
@@ -1340,8 +1628,23 @@ export function slice(input: SliceInput): SliceResult {
   // shelf cards: each plate is trimmed down to just above the bottom edge of the cards it holds
   const seats = seatTops(input.objects, defs, t);
 
+  // candle holders: target fins round each candlestick; slotted ones key into the plates with halving slots
+  const fins = (input.candles ?? []).flatMap((c, i) =>
+    targetFins(c, c.holder, { t, embed: e, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i).map((f) => ({
+      f,
+      slots: c.holder.slotted ? finSlots(f, defs, { t, candleBottom: c.bottom, baseTop: baseTop(v), engage: c.holder.engage ?? 16, fit: 0.3 }) : [],
+    })),
+  );
+  const finSlotsByPlate = new Map<string, Shape[]>();
+  for (const { slots } of fins) for (const s of slots) finSlotsByPlate.set(s.plate, [...(finSlotsByPlate.get(s.plate) ?? []), rect(...s.plateRect)]);
+
   defs.forEach((def, di) => {
     let shape = outlines[di];
+    // choked plates keep only the lengths round the candles (vertical plates; flat layers are left as they are)
+    if (input.choke?.length && Math.abs(def.plane.normal[1]) < 0.5 && shape.length) {
+      const spans = chokeSpans(def.plane, input.choke, Math.max(6, 2 * v.minFeature));
+      shape = spans.length ? intersection(shape, unionShapes(...spans.map(([a, b]) => rect(a, -BIG, b, BIG)))) : [];
+    }
     const info: PlateInfo = { def, parts: [], bevel: 0, collision: 0, collisionAt: null, islands: 0, cavity: [], sweptInsert: [], tenons: tenons[di].spans.length };
     if (!shape.length) {
       plates.push(info);
@@ -1375,6 +1678,7 @@ export function slice(input: SliceInput): SliceResult {
 
     // 3b. placed objects: each one's section through the plate, grown by its clearance
     for (const o of input.objects ?? []) {
+      if (o.noCut) continue;
       const cav = insertCavity(o.mesh, def.plane, t, 'larger', o.clearance);
       // a thin object crossing at a slant leaves one slit per section; close the slivers between them into one slot
       if (cav) cuts.push(cached(o.mesh, `close:${def.key}:${def.plane.origin.join(',')}:${def.plane.normal.join(',')}:${t}:${o.clearance}`, () => offset(offset(cav.cavity, t, 'round'), -t, 'round')));
@@ -1402,6 +1706,11 @@ export function slice(input: SliceInput): SliceResult {
     // the top impression rounds its own floor (topCarve), so it is only cut out here
     if (carveCut.length) shape = v.cutSmooth > 0.05 ? simplifyShape(difference(shape, carveCut), SMOOTH_TOL / 2) : difference(shape, carveCut);
     if (seats) shape = difference(shape, seatTrim(seats.plates[di], seats.floor));
+    // unobstructed view: push the plate back out of every card's sight line
+    if (input.sight) {
+      const clear = sightCut(input.sight.cards, input.sight.eye, def.plane, t);
+      if (clear.length) shape = difference(shape, clear);
+    }
     // all-edges rounding happens before the functional cuts below, so they stay crisp
     if (v.edgeRound > 0.05 || v.edgeRoundIn > 0.05) {
       const before = shape;
@@ -1415,6 +1724,13 @@ export function slice(input: SliceInput): SliceResult {
       const label = partLabel(v, def.family, def.index, def.count);
       if (pieces(shape) > pieces(before)) roundSplits.push(label);
       if (move > 0.05) round.spots.push({ key: def.key, label, before, after: shape, at, move });
+    }
+    // a light opening so no outside corner is sharper than the laser cuts cleanly, and valleys keep half
+    // that radius once the kerf offset has eaten into them; no hairline stubs either way. When the
+    // user rounds corners themselves, their inside radius stands (0 keeps valleys crisp).
+    if (v.minRadius > Math.max(0.05, v.edgeRound)) {
+      const blunt = Math.min(0.3, v.minRadius / 2);
+      shape = minimumRadius(shape, v.minRadius, v.edgeRound > 0.05 ? blunt : Math.max(v.edgeRoundIn, blunt, v.minRadius / 2 + v.kerf / 2));
     }
 
     // 5. anchor holes in the embedded tab (any that would run into a rod hole are left out)
@@ -1475,6 +1791,7 @@ export function slice(input: SliceInput): SliceResult {
 
     // 6. waffle slots
     if (slots[di].length) cuts.push(slots[di]);
+    for (const s of finSlotsByPlate.get(def.key) ?? []) cuts.push(s);
     if (cuts.length) shape = difference(shape, cuts.flat());
 
     // 7. split into physical pieces; islands inside holes would fall out
@@ -1669,6 +1986,34 @@ export function slice(input: SliceInput): SliceResult {
       });
     }
   }
+  // 10. candle holders: target fins standing in the concrete round each candlestick
+  const unslotted = fins.filter(({ f, slots: fs }) => input.candles![f.holder].holder.slotted && !fs.length).length;
+  if (unslotted) warnings.push(`${unslotted} slotted candle fin${unslotted > 1 ? 's run' : ' runs'} along the plates, so ${unslotted > 1 ? 'they have' : 'it has'} nothing to slot into: turn the fins with Spin (45° crosses them all).`);
+  fins.forEach(({ f, slots: fs }, j) => {
+    const cut = fs.length ? difference(f.shape, unionShapes(...fs.map((s) => rect(...s.finRect)))) : f.shape;
+    // keep the biggest piece should a slot ever cut a fin through
+    const ex = cut.reduce((a, b) => (shapeArea([b]) > shapeArea([a]) ? b : a), cut[0] ?? f.shape[0]);
+    const id = partLabel(v, 'K', j, fins.length);
+    const lab = placeLabel(id, ex, f.labelAt, Math.min(v.labelHeight, f.labelMax));
+    allParts.push({
+      id,
+      plateKey: `K${j}`,
+      family: 'K',
+      index: j,
+      piece: 0,
+      plane: f.plane,
+      thickness: t,
+      shape: [ex],
+      etch: [],
+      labelPaths: lab?.paths ?? [],
+      labelAt: lab?.at ?? null,
+      area: shapeArea([ex]),
+      perimeter: shapePerimeter([ex]),
+      bbox: bboxOf([ex.outer]),
+      anchored: true,
+      kind: 'plate',
+    });
+  });
   const brace: BraceResult | null = rods || spacers ? { rods, spacers, hardware: rods ? rodHardware(rods) : [], issues: braceIssues } : braceIssues.length ? { rods: null, spacers: null, hardware: [], issues: braceIssues } : null;
 
   placeLooseParts(allParts, input.moves, new Set(defs.map((d) => d.key)));
@@ -1677,5 +2022,11 @@ export function slice(input: SliceInput): SliceResult {
   const spots = round.spots.sort((a, b) => b.move - a.move).slice(0, 6);
   if (spots.length && spots[0].move > Math.max(2, rMax * 3)) warnings.push(`Round all corners flattens detail: the edge of ${spots[0].label} moves ${spots[0].move.toFixed(1)} mm. Lower the radius, or set Inside corners lower.`);
   if (roundSplits.length) warnings.push(`Round all corners cuts through a narrow neck and splits ${roundSplits.slice(0, 4).join(', ')}${roundSplits.length > 4 ? ` and ${roundSplits.length - 4} more` : ''} into pieces.`);
-  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, support, tuning, brace, stackRods, roundSpots: spots };
+  // the master's top face is the top of every candle cast from it: no part number etched there
+  if (candleMaster && candleMaster.masterLayers) {
+    const top = Math.round(candleMaster.height / t) - 1;
+    const ring = v.cmFrame > 0 ? candleMaster.inner.w : Infinity;
+    for (const p of allParts) if (p.index === top && p.bbox.maxX - p.bbox.minX < ring) p.labelPaths = [];
+  }
+  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, areas, support, tuning, brace, stackRods, roundSpots: spots, candleMaster };
 }

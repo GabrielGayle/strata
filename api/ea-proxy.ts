@@ -1,8 +1,8 @@
 /**
  * Vercel serverless EA CORS proxy (ticket T6). Live on Vercel — whitelists only
- * `environment.data.gov.uk` hosts over HTTPS.
+ * `environment.data.gov.uk` hosts over HTTPS; 20 s upstream timeout, 16 MB response cap.
  */
-import { buildEaUpstreamHeaders, fetchEaUpstream, parseAllowedEaProxyTarget } from './_lib/eaCorsProxy.js';
+import { buildEaUpstreamHeaders, eaProxyErrorStatus, fetchEaUpstream, parseAllowedEaProxyTarget } from './_lib/eaCorsProxy.js';
 
 type VercelReq = {
   method?: string;
@@ -48,6 +48,6 @@ export default async function handler(req: VercelReq, res: VercelRes) {
     }
     res.send(Buffer.from(proxied.body ?? new ArrayBuffer(0)));
   } catch (e) {
-    res.status(502).json({ error: `Upstream failed: ${(e as Error).message}` });
+    res.status(eaProxyErrorStatus(e)).json({ error: `Upstream failed: ${(e as Error).message}` });
   }
 }

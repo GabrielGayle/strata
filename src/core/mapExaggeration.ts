@@ -121,19 +121,20 @@ export function formatExaggerationStackReadout(
   return `${exaggerationReadout(factor)} · ${Math.round(reliefM)} m relief → ${Math.round(stackMm)} mm stack on ${Math.round(masterWidthMm)} mm`;
 }
 
-function percentile(vals: number[], p: number): number {
-  if (!vals.length) return 0;
-  const sorted = [...vals].sort((a, b) => a - b);
+function percentile(sorted: ArrayLike<number>, p: number): number {
+  if (!sorted.length) return 0;
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
   return sorted[idx];
 }
 
-/** Robust relief (p98 − p2). Used only to pick the auto exaggeration *factor*. */
+/** Robust relief (p98 − p2). Used only to pick the auto exaggeration *factor*. One typed sort, both percentiles. */
 export function reliefMetres(grid: Float32Grid): number {
-  const finite: number[] = [];
-  for (const v of grid.data) if (Number.isFinite(v)) finite.push(v);
-  if (finite.length < 2) return 0;
-  return Math.max(0, percentile(finite, 98) - percentile(finite, 2));
+  const finite = new Float32Array(grid.data.length);
+  let n = 0;
+  for (const v of grid.data) if (Number.isFinite(v)) finite[n++] = v;
+  if (n < 2) return 0;
+  const sorted = finite.subarray(0, n).sort();
+  return Math.max(0, percentile(sorted, 98) - percentile(sorted, 2));
 }
 
 /** True (max − min) metres — same measure as `mapOrtho.reliefM` / plate heights. */

@@ -11,6 +11,10 @@
 .status-bar {
   grid-area: status;
 }
+/* Silver like the rest of the chrome; on the theme panel its #222 text vanished in dark themes */
+.statusbar {
+  background: #c0c0c0;
+}
 
 .topbar {
   align-items: center;
@@ -477,6 +481,17 @@ button.section-head {
   letter-spacing: 0;
   text-transform: none;
 }
+/* The li is the focusable tab (see ui/Tab.tsx); draw 98.css's dotted focus on its label. */
+menu[role='tablist'] > li[role='tab'] {
+  background: #c0c0c0;
+  cursor: default;
+}
+menu[role='tablist'] > li[role='tab']:focus {
+  outline: none;
+}
+menu[role='tablist'] > li[role='tab']:focus-visible > a {
+  outline: 1px dotted #222;
+}
 .setup-tabs {
   align-items: flex-end;
 }
@@ -522,6 +537,10 @@ button.setup-add {
   background: #fff;
   border-right: none;
 }
+/* Column headers are silver like 98 list headers (was the theme panel, dark in dark themes) */
+table.tbl th {
+  background: #c0c0c0;
+}
 table.tbl tbody tr.sel td,
 table.tbl tbody tr.highlighted td {
   background: #000080;
@@ -544,7 +563,7 @@ button.card.sel {
 }
 .note,
 .kv dt {
-  color: #444;
+  color: var(--muted);
 }
 .toast {
   background: transparent;
@@ -647,4 +666,22 @@ button.card.sel {
 }
 .round-steps button {
   min-width: 28px;
+}
+
+/* object panels size their text inputs; keep wrapped checkboxes square */
+.appearance .ap-edit label > input[type='checkbox'] {
+  width: 13px;
+}
+
+/* Parameters / Saves switch sits on the navy title bar: white text, no raised button
+   (it was inheriting #222 button text, unreadable on navy) */
+.title-bar.left-panes button {
+  background: transparent;
+  box-shadow: none;
+  color: #fff;
+  min-height: 0;
+  min-width: 0;
+}
+.title-bar.left-panes button:focus-visible {
+  outline: 1px dotted #fff;
 }

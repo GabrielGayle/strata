@@ -24,10 +24,12 @@ const DERIVED_MAP_KEYS = [
   'resolvedSource',
   'sourceWarnings',
   'engraveArt',
+  'cloudBuilt',
 ] as const;
 
 /** Image / insert / slicer fields that hide the terrain. User param overrides still win. */
 export const QUICK_MAP_PARAM_PATCH: Record<string, RawValue> = {
+  platesOn: true,
   sliceMode: 'parallel',
   sliceAxis: 'length',
   spacingMode: 'fit',
@@ -127,7 +129,7 @@ export function quickMapSpecKeepingUser(prev?: MapSpec): MapSpec | undefined {
   const mode = defaultMapSpec({
     ...place,
     exaggeration: 'auto',
-    water: 'bathy',
+    water: prev.water,
     model: 'dtm',
     layerBudget: 'jenks',
     engrave: quickMapEngrave(prev.engrave),
@@ -137,7 +139,7 @@ export function quickMapSpecKeepingUser(prev?: MapSpec): MapSpec | undefined {
   const kept = keepUserMapSettings(prev, mode);
   return defaultMapSpec({
     ...stripDerivedMapFields(kept),
-    water: 'bathy',
+    water: prev.water,
     model: 'dtm',
     layerBudget: 'jenks',
     engrave: quickMapEngrave(prev.engrave),

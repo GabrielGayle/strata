@@ -9,7 +9,7 @@ import type { Part } from '../core/slicer';
 import { topAt } from '../core/slicer';
 import { planeToWorld } from '../core/section';
 import { stackFrame } from '../core/heightfield';
-import { extrudeOnPlane } from '../core/geometry3d';
+import { partGeometry } from '../core/partMesh';
 import { Env } from './Scene';
 import { METALS } from './materials';
 
@@ -70,7 +70,7 @@ function makePlateMaterial(color: string, metalness: number, roughness: number) 
 }
 
 const Plate = memo(function Plate({ part, material }: { part: Part; material: THREE.Material }) {
-  const geo = useMemo(() => extrudeOnPlane(part.shape, part.thickness, part.plane), [part]);
+  const geo = useMemo(() => partGeometry(part), [part]);
   useEffect(() => () => geo.dispose(), [geo]);
   return <mesh geometry={geo} material={material} castShadow receiveShadow />;
 });

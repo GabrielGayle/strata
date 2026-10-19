@@ -10,9 +10,12 @@ import { DEFAULT_SOUND, type SoundSpec } from '../core/sound';
 import type { Composition, Surface } from '../core/compose';
 import { moveBlock } from '../core/compose';
 import { isLayered, LayerNodes, SurfaceLayers, useLiveLayers } from './SurfaceLayers';
-import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, invertDataUrl, sampleDepthMetres, wakeDepth } from '../core/depth';
+import { DEPTH_URL, defaultDepthSettings, depthFromPhoto, depthToGray, depthWaitEstimate, invertDataUrl, sampleDepthMetres, wakeDepth } from '../core/depth';
+import { beginBusy, depthStep } from './busy';
+import { Loading } from './BusyWindow';
 import { isMapDepthFace } from '../core/depthFlat';
 import { exifFocalFromDataUrl } from '../core/exifFocal';
+import { Tab as TabItem } from './Tab';
 
 function GrayCanvas({ g, picking, onPick }: { g: Gray | null; picking?: boolean; onPick?: (u: number, v: number) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -69,7 +72,7 @@ const preload = (load: () => Promise<unknown>) => () => {
 };
 const modalFallback = (
   <div className="pm-back">
-    <div className="empty">Loading…</div>
+    <Loading />
   </div>
 );
 
@@ -109,8 +112,13 @@ export default function ImageView() {
     if (!photo) return;
     setDepthBusy(slot);
     setDepthError(null);
+    const ctrl = new AbortController();
+    const est = depthWaitEstimate();
+    const started = Date.now();
+    const busy = beginBusy({ scene: 'depth', title: 'Depth from photo', detail: depthStep(0, est), expectMs: est.totalMs, cancel: () => ctrl.abort() });
+    const tick = setInterval(() => busy.update({ detail: depthStep(Date.now() - started, est) }), 500);
     try {
-      const { png, depth } = await depthFromPhoto(photo.dataUrl);
+      const { png, depth } = await depthFromPhoto(photo.dataUrl, { signal: ctrl.signal });
       const name = `depth · ${photo.name}`;
       if (depth) {
         // keep the real depth so near / far / curve can be changed here; side profile reads bright as high
@@ -128,8 +136,10 @@ export default function ImageView() {
       // near parts of the photo stand proud on the top surface rather than sinking
       open(slot === 'top' ? { ...enable, imgTopMode: 'raise' } : enable);
     } catch (e) {
-      setDepthError({ slot, msg: e instanceof Error ? e.message : String(e) });
+      if (!ctrl.signal.aborted) setDepthError({ slot, msg: e instanceof Error ? e.message : String(e) });
     } finally {
+      clearInterval(tick);
+      busy.end();
       setDepthBusy(null);
     }
   };
@@ -201,16 +211,12 @@ export default function ImageView() {
       <div className="pad" style={{ display: 'grid', gap: 12 }}>
         <div className="sl-bar">
           <menu role="tablist" aria-label="Surfaces view">
-            <li role="tab" aria-selected={board === 'cards'}>
-              <a href="#cards" onClick={(e) => (e.preventDefault(), setBoard('cards'))} title="One card per surface, its layers arranged on it">
-                Cards
-              </a>
-            </li>
-            <li role="tab" aria-selected={board === 'nodes'}>
-              <a href="#nodes" onClick={(e) => (e.preventDefault(), setBoard('nodes'))} title="Every layer as a node, wired into a surface">
-                Layer nodes
-              </a>
-            </li>
+            <TabItem selected={board === 'cards'} onSelect={() => setBoard('cards')} title="One card per surface, its layers arranged on it">
+              Cards
+            </TabItem>
+            <TabItem selected={board === 'nodes'} onSelect={() => setBoard('nodes')} title="Every layer as a node, wired into a surface">
+              Layer nodes
+            </TabItem>
           </menu>
           <span className="note">
             {board === 'nodes'
@@ -421,8 +427,8 @@ export default function ImageView() {
               </button>
             </span>
           </div>
-          <div style={{ position: 'relative', height: 'min(56vh, 460px)', background: 'var(--viewport)', borderBottom: '1px solid var(--line)' }}>
-            <Suspense fallback={<div className="empty">Loading preview…</div>}>
+          <div className="on-viewport" style={{ position: 'relative', height: 'min(56vh, 460px)', background: 'var(--viewport)', borderBottom: '1px solid var(--line)' }}>
+            <Suspense fallback={<Loading label="Loading preview…" />}>
               <ReliefPreview model={model} tilt={tilt} tint={tint} />
             </Suspense>
           </div>

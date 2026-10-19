@@ -39,6 +39,7 @@ export const GROUPS = [
   'Edges',
   'Insert',
   'Source form',
+  'Candle master',
   'Image',
   'Margins',
   'Tuning',
@@ -106,6 +107,9 @@ const hasSupport = (v: Values) => v.baseOn && v.supportMode !== 'off';
 const isParallelish = (v: Values) => v.sliceMode !== 'radial';
 const isUpright = (v: Values) => v.sliceMode !== 'radial' && v.sliceMode !== 'flat';
 const isFlat = (v: Values) => v.sliceMode === 'flat';
+/** Waffle laid out as a closed grid: cell size drives pitch and both counts. */
+export const isGrid = (v: Values) => v.sliceMode === 'waffle' && v.waffleLayout === 'grid';
+const isMaster = (v: Values) => !!v.cmOn && v.sliceMode === 'flat' && v.stackSource === 'form';
 const hasRods = (v: Values) => isUpright(v) && v.rodsOn;
 const hasStackRods = (v: Values) => isFlat(v) && v.stackRodsOn;
 const hasCross = (v: Values) => isUpright(v) && (v.spacerMode === 'cross' || v.spacerMode === 'both');
@@ -195,10 +199,11 @@ export const PARAMS: ParamDef[] = [
   // Plates
   // Chop Chop CR4 mild steel — cut list and price share this default.
   choice('plateMaterial', 'Material', 'Plates', DEFAULT_PLATE_MATERIAL, [
-    { value: 'steel', label: 'Mild steel' },
+    { value: 'steel', label: 'Mild steel (CR4)' },
     { value: 'aluminium', label: 'Aluminium' },
     { value: 'corten', label: 'Corten' },
   ]),
+  { id: 'platesOn', label: 'Plates on', group: 'Plates', kind: 'toggle', def: true, help: 'Off leaves the concrete base on its own: no plates, nothing to cut' },
   num('thickness', 'Thickness', 'Plates', 3, 0.5, 12, { step: 0.5, help: 'Common: 1.5, 3, 6 mm' }),
   choice('spacingMode', 'Spacing', 'Plates', 'fit', [
     { value: 'fit', label: 'Spread count over base' },
@@ -248,8 +253,22 @@ export const PARAMS: ParamDef[] = [
   num('radialCount', 'Radial plates', 'Slicer', 24, 3, 180, { int: true, unit: '', show: (v) => v.sliceMode === 'radial', scaleCount: true }),
   num('radialHub', 'Hub radius', 'Slicer', 30, 0, 500, { show: (v) => v.sliceMode === 'radial' }),
   num('crossCount', 'Cross plates', 'Slicer', 'max(2, floor(plateWidth / 55))', 1, 200, { int: true, unit: '', show: (v) => v.sliceMode === 'waffle', scaleCount: true }),
+  choice('waffleLayout', 'Cross plate layout', 'Slicer', 'spread', [
+    { value: 'spread', label: 'Spread over the width' },
+    { value: 'grid', label: 'Closed grid' },
+  ], { show: (v) => v.sliceMode === 'waffle', help: 'Closed grid sets the plates out on a cell size and trims both sets to the outer plates, so they meet flush at the corners and frame one closed lattice of square, rectangular or diamond cells' }),
+  choice('gridCell', 'Cell shape', 'Slicer', 'square', [
+    { value: 'square', label: 'Equal sides' },
+    { value: 'rect', label: 'Two sizes' },
+  ], { show: isGrid, help: 'Equal sides gives squares (diamonds at other angles); two sizes gives rectangles (parallelograms)' }),
+  num('cellSize', 'Cell size', 'Slicer', 'max(4*thickness, round((acrossLength - 2*sideMargin) / 4))', 2, 1000, { step: 0.5, show: isGrid, help: 'Centre to centre of the plates; it sets the plate pitch and count' }),
+  num('cellCross', 'Cross cell size', 'Slicer', 'cellSize * 1.5', 2, 1000, { step: 0.5, show: (v) => isGrid(v) && v.gridCell === 'rect', help: 'Centre to centre of the cross plates, square to their faces' }),
+  num('gridAngle', 'Cross plate angle', 'Slicer', 90, 30, 150, { step: 1, unit: '°', noScale: true, show: (v) => v.sliceMode === 'waffle', help: 'Angle between the plates and the cross plates; the slots widen to clear a slanted plate. Spread: the slanted cross plates run corner to corner, cut off at the base. Closed grid: diamond or parallelogram cells inside a slanted frame' }),
   num('slotClearance', 'Slot allowance', 'Slicer', 0.2, 0, 3, { step: 0.05, show: (v) => v.sliceMode === 'waffle', help: 'Added to slot width (kerf allowance) for interlocking slots', noScale: true }),
   num('sampleStep', 'Profile resolution', 'Slicer', 2, 0.5, 20, { step: 0.5, noScale: true }),
+  num('curveStep', 'Map profile step', 'Slicer', 0.4, 0.1, 4, { step: 0.05, noScale: true, help: 'Map faces only: how often each plate top samples the terrain' }),
+  num('curveSmooth', 'Map curve smoothing', 'Slicer', 0.75, 0, 10, { step: 0.05, noScale: true, help: 'Map faces only: Gaussian width along each plate top, so the cut follows smooth curves instead of grid steps' }),
+  num('curveTolerance', 'Map curve tolerance', 'Slicer', 0.01, 0.005, 0.5, { step: 0.005, noScale: true, help: 'Map faces only: how far a simplified plate top may stray from the smoothed terrain' }),
 
   // Strata / erosion
   { id: 'strataOn', label: 'Strata erosion on', group: 'Strata', kind: 'toggle', def: true, show: strataSource, help: 'Off gives flat-topped plates at Plates › Plate height (images still apply)' },
@@ -300,6 +319,14 @@ export const PARAMS: ParamDef[] = [
 
   // Source form
   ...formParams('src', 'Source form', (v) => v.stackSource === 'form', { shape: 'revolve', width: 260, height: 300, taper: 0.5, camber: 60, length: 600 }),
+
+  // Candle master: a flat stack of the source form glued into a positive for a silicone mould
+  { id: 'cmOn', label: 'Candle master', group: 'Candle master', kind: 'toggle', def: false, help: 'Glue the flat layers into a solid stratified copy of the candle, then cast a silicone mould around it. Each layer also gets a frame, and the frames stack into the mould box.' },
+  num('cmPin', 'Centre pin Ø', 'Candle master', 'max(4, thickness + 1)', 0, 12, { step: 0.5, noScale: true, show: isMaster, help: 'A rod through every layer lines the glue-up up (a hole wants to be wider than the sheet is thick). Left standing above the top, it casts the wick hole into the silicone. 0 for none.' }),
+  num('cmPinOut', 'Pin above the top', 'Candle master', 10, 0, 60, { noScale: true, show: (v) => isMaster(v) && v.cmPin > 0, help: 'How far the pin stands above the master: the wick channel through the top of the mould' }),
+  num('cmWall', 'Silicone wall', 'Candle master', 10, 3, 40, { noScale: true, show: isMaster, help: 'Silicone between the master and the box walls. 8 to 12 mm is typical.' }),
+  num('cmCover', 'Silicone over the top', 'Candle master', 'cmWall', 3, 40, { noScale: true, show: isMaster, help: 'Silicone above the top of the master; the frames rise this far above it' }),
+  num('cmFrame', 'Box wall', 'Candle master', 10, 0, 40, { noScale: true, show: isMaster, help: 'Width of the frame around each layer. Stacked, the frames make the box the silicone is poured into. 0 for no box.' }),
 
   // Image
   { id: 'imageOn', label: 'Image on', group: 'Image', kind: 'toggle', def: true, help: 'Off ignores every image (side, top, front and etching) without clearing them' },
@@ -366,6 +393,13 @@ export const PARAMS: ParamDef[] = [
     show: (v) => v.imgTopMode !== 'off' && (v.topProfile === 'pillow' || v.topProfile === 'chamfer'),
     rand: true,
     help: 'How far in from the edge of the shape the rounded shoulder reaches',
+  }),
+  num('topPuff', 'Profile curve', 'Image', 1, 0.2, 5, {
+    step: 0.05,
+    unit: '',
+    show: (v) => v.imgTopMode !== 'off' && v.topProfile !== 'tone' && !!v.topProfile,
+    rand: true,
+    help: 'Bends the profile: below 1 puffs it fuller (steep sides, broad flat crown), above 1 draws it to a soft point in the middle. 1 keeps the plain round or straight shape.',
   }),
   num('topThreshold', 'Ignore lighter than', 'Image', 0.15, 0, 0.95, { step: 0.01, unit: '', show: (v) => v.imgTopMode !== 'off', help: 'Darkness below this is left flat (keeps a white background uncut)' }),
   num('topScale', 'Image size', 'Image', 0.9, 0.1, 1, { step: 0.01, unit: '×', show: (v) => v.imgTopMode !== 'off' }),
@@ -510,11 +544,19 @@ export const PARAMS: ParamDef[] = [
 
   // Shadow carving: holes through the plates so the sun casts pictures on a wall behind
   { id: 'shadowOn', label: 'Shadow pictures', group: 'Shadow', kind: 'toggle', def: false, help: 'Carve the plates so the sun casts your pictures on a wall, the ground or the concrete behind the piece. Add pictures and their times in the Shadow view.' },
+  choice('shadowLight', 'Light', 'Shadow', 'sun', [
+    { value: 'sun', label: 'Sun' },
+    { value: 'candle', label: 'Candle' },
+  ], { help: 'Sun: carved for the real sun at the Sun panel\'s place, date and times. Candle: a candle flame in front of the piece, which casts one picture whenever it is lit (no Sun study needed). Its shadows grow the further the screen is from the flame' }),
+  num('candleD', 'Candle distance', 'Shadow', 200, 10, 5000, { show: (v) => v.shadowLight === 'candle', help: 'From the front plate to the flame. Closer makes the picture bigger and uses more of each plate' }),
+  num('candleH', 'Flame height', 'Shadow', 'baseHeight + 80', 1, 5000, { show: (v) => v.shadowLight === 'candle', help: 'Height of the flame above the ground the base stands on. Level with the middle of the picture throws it straight back' }),
+  num('candleX', 'Candle across', 'Shadow', 0, -3000, 3000, { show: (v) => v.shadowLight === 'candle', help: 'Right of the middle as you look from the front' }),
+  num('candleFlame', 'Flame size', 'Shadow', 12, 0, 60, { show: (v) => v.shadowLight === 'candle', help: 'How wide the flame is. Only softens the preview (a bigger flame blurs the shadow more); the carve aims at its middle' }),
   choice('shadowExec', 'Execution', 'Shadow', 'frames', [
     { value: 'frames', label: 'Timed frames in place (a flip book)' },
     { value: 'side', label: 'Timed frames side by side (a film strip)' },
     { value: 'allday', label: 'One picture, all day' },
-  ], { help: 'In place: each picture appears at its own time, all on the same patch of screen. Side by side: each picture sits where its own light comes straight through the plates, so they make a row along the screen (spaced by the sun) and light up in turn. All day: the first picture is carved for every hour of daylight (softer, but always there)' }),
+  ], { show: (v) => v.shadowLight !== 'candle', help: 'In place: each picture appears at its own time, all on the same patch of screen. Side by side: each picture sits where its own light comes straight through the plates, so they make a row along the screen (spaced by the sun) and light up in turn. All day: the first picture is carved for every hour of daylight (softer, but always there)' }),
   choice('shadowScreen', 'Screen', 'Shadow', 'wall', [
     { value: 'wall', label: 'Wall behind' },
     { value: 'ground', label: 'Ground behind' },
@@ -523,11 +565,14 @@ export const PARAMS: ParamDef[] = [
   num('shadowGap', 'Screen distance', 'Shadow', 30, -3000, 3000, {
     help: 'Wall: from the back plate to the wall (closer is crisper: the sun blurs shadows about 1 mm per 100 mm). Ground or concrete top: from the back plate to the near edge of the picture; negative starts it under the plates',
   }),
+  num('shadowWallW', 'Wall width', 'Shadow', 3000, 100, 20000, { show: (v) => v.shadowScreen === 'wall', help: 'The whole wall the shadow lands on, centred behind the piece. Room scale by default' }),
+  num('shadowWallH', 'Wall height', 'Shadow', 2400, 100, 10000, { show: (v) => v.shadowScreen === 'wall' }),
   num('shadowW', 'Picture width', 'Shadow', 180, 10, 3000, { help: 'Each picture, side by side or not' }),
   num('shadowH', 'Picture height', 'Shadow', 120, 10, 3000, { help: 'On the ground or the concrete, this runs away from the front of the piece' }),
   num('shadowX', 'Picture across', 'Shadow', 0, -3000, 3000, { help: 'Centre of the picture (or the row of pictures), right of the middle as you look from the front' }),
   num('shadowY', 'Picture bottom', 'Shadow', 'baseHeight + 20', 0, 3000, { show: (v) => v.shadowScreen === 'wall', help: 'Height of the bottom of the picture above the ground' }),
   num('shadowDays', 'Date window', 'Shadow', 21, 0, 90, {
+    show: (v) => v.shadowLight !== 'candle',
     unit: 'days',
     int: true,
     noScale: true,
@@ -536,7 +581,7 @@ export const PARAMS: ParamDef[] = [
   num('shadowFade', 'Crossfade', 'Shadow', 0, 0, 100, {
     unit: '%',
     noScale: true,
-    show: (v) => v.shadowExec !== 'allday',
+    show: (v) => v.shadowExec !== 'allday' && v.shadowLight !== 'candle',
     help: 'Stretches each frame toward its neighbours\' times so one fades out as the next fades in. 50% meets halfway; more overlaps. Softer pictures and more stray light',
   }),
   num('shadowBridge', 'Bridge width', 'Shadow', 'thickness', 0, 30, {
@@ -544,7 +589,7 @@ export const PARAMS: ParamDef[] = [
     help: 'Loose bits inside the cut-outs are held in by bridges this wide, like a stencil. 0 cuts them away instead (cleaner plates, more stray light)',
   }),
   num('shadowRim', 'Solid rim', 'Shadow', 8, 0, 100, { help: 'Uncut border kept up both sides of every plate and above the concrete. The top edge may be notched where the low sun reaches over it' }),
-  num('shadowCell', 'Resolution', 'Shadow', 3, 1, 10, { step: 0.5, noScale: true, help: 'Size of one picture pixel on the wall and in the plates. Finer is sharper but makes more, smaller holes' }),
+  num('shadowCell', 'Resolution', 'Shadow', 2, 0.5, 10, { step: 0.5, noScale: true, help: 'Grid the cuts are worked out on. The cut edges follow the picture smoothly between grid points, so finer mainly catches smaller details (and makes more, smaller holes and a slower carve)' }),
   num('shadowThreshold', 'Light above', 'Shadow', 0.5, 0, 1, { unit: '', step: 0.01, noScale: true, help: 'Picture brightness above which the wall should be lit' }),
   { id: 'shadowInvert', label: 'Swap light and dark', group: 'Shadow', kind: 'toggle', def: false, help: 'Light the dark parts of the pictures instead' },
 
@@ -579,6 +624,11 @@ export const PARAMS: ParamDef[] = [
   // Fabrication
   num('kerf', 'Kerf', 'Fabrication', 0.15, 0, 3, { step: 0.01, help: 'Laser beam width; outlines are offset by half', noScale: true }),
   num('arcTolerance', 'Arc fit tolerance', 'Fabrication', 0.05, 0.005, 2, { step: 0.005, noScale: true }),
+  num('minRadius', 'Smallest outside radius', 'Fabrication', 'min(0.75, max(0.5, thickness / 3))', 0, 5, {
+    step: 0.05,
+    noScale: true,
+    help: 'Every outside corner of a plate is rounded at least this much (inside corners half as much), so the laser never cuts a hairline stub or a needle point. Slots, holes and the insert cavity stay crisp. 0 keeps corners sharp.',
+  }),
   num('minFeature', 'Min feature', 'Fabrication', 2, 0, 50, { step: 0.1, help: 'Narrowest web of material the laser can leave', noScale: true }),
   num('minFragment', 'Min fragment', 'Fabrication', 'max(2 * thickness, 4 * kerf)', 0, 200, {
     step: 0.1,
@@ -619,6 +669,7 @@ export const GROUP_SWITCHES: Partial<Record<(typeof GROUPS)[number], GroupSwitch
   Base: { id: 'baseOn', keepOpen: true },
   Support: { id: 'supportOn', forces: { supportMode: 'off' } },
   Bracing: { id: 'bracingOn', forces: { rodsOn: false, spacerMode: 'off' } },
+  Plates: { id: 'platesOn' },
   Strata: { id: 'strataOn', forces: { erosionAmp: '0', banding: '0', crest: '0', slope: '0' } },
   Edges: { id: 'edgesOn', forces: { edgeFlow: '0', edgeRound: '0', edgeRoundIn: '0' } },
   Insert: { id: 'insertOn', forces: { insShape: 'none' } },
@@ -627,6 +678,7 @@ export const GROUP_SWITCHES: Partial<Record<(typeof GROUPS)[number], GroupSwitch
   Mould: { id: 'mouldOn' },
   Sun: { id: 'sunOn' },
   Shadow: { id: 'shadowOn' },
+  'Candle master': { id: 'cmOn' },
 };
 const SLICE_NAME: Record<string, string> = { parallel: 'parallel', radial: 'radial', waffle: 'waffle', flat: 'flat stack' };
 
@@ -639,14 +691,22 @@ export const GROUP_IDLE: Partial<Record<(typeof GROUPS)[number], (v: Values) => 
   Bracing: (v) => (isUpright(v) ? null : `Not used with ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing: rods and spacers brace upright parallel or waffle plates.`),
   Strata: (v) => (strataSource(v) ? null : 'Not used while Slicer › Slice what is Source form: plate edges come from the form.'),
   'Source form': (v) => (v.stackSource === 'form' ? null : 'Used only when Slicer › Slice what is Source form.'),
+  'Candle master': (v) => (!v.cmOn || (v.sliceMode === 'flat' && v.stackSource === 'form') ? null : 'Needs Slicer › Slicing on Flat stack and Slice what on Source form: the master is the form cut into flat layers.'),
   Tuning: (v) =>
     !strataSource(v)
       ? 'Not used while Slicer › Slice what is Source form.'
       : v.sliceMode === 'parallel' || v.sliceMode === 'radial'
         ? null
         : `Not used with ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing: tuning works on parallel or radial plates.`,
-  Shadow: (v) => (!v.shadowOn ? null : !v.sunOn ? 'Needs Sun study on: the pictures are carved for the real sun at its place and date.' : v.sliceMode !== 'parallel' ? `Works with parallel plates for now, not ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing.` : null),
+  Shadow: (v) => (!v.shadowOn ? null : !v.sunOn && v.shadowLight !== 'candle' ? 'Needs Sun study on (or set Light to Candle): the pictures are carved for the real sun at its place and date.' : v.sliceMode !== 'parallel' ? `Works with parallel plates for now, not ${SLICE_NAME[v.sliceMode] ?? v.sliceMode} slicing.` : null),
 };
+
+// groups that only shape plates rest while Plates is off
+const NO_PLATES = 'Not used while Plates is off: the base stands on its own.';
+for (const g of ['Support', 'Bracing', 'Slicer', 'Strata', 'Edges', 'Tuning', 'Margins', 'Source form'] as const) {
+  const own = GROUP_IDLE[g];
+  GROUP_IDLE[g] = (v) => (v.platesOn ? (own ? own(v) : null) : NO_PLATES);
+}
 
 export const SWITCH_IDS = new Set(Object.values(GROUP_SWITCHES).map((s) => s!.id));
 
@@ -774,6 +834,16 @@ export function fitOverrides(raw: Record<string, RawValue>): Record<string, stri
  */
 export function spacingOverrides(raw: Record<string, RawValue>): Record<string, string> {
   const mode = String(raw.spacingMode ?? 'fit');
+  if (String(raw.sliceMode ?? 'parallel') === 'waffle' && String(raw.waffleLayout ?? 'spread') === 'grid') {
+    // both sets on the cell size; the cross plates fill the width that stays inside the sheared frame
+    const cross = String(raw.gridCell ?? 'square') === 'rect' ? 'cellCross' : 'cellSize';
+    return {
+      pitch: 'cellSize',
+      // a slanted frame shears across the stack: its area peaks when the stack takes half the room
+      plateCount: `max(2, min(floor((stackLength - 2*endMargin) / cellSize) + 1, floor((plateWidth * sin(gridAngle) - thickness) / (2 * cellSize * abs(cos(gridAngle)) + 0.000001)) + 1))`,
+      crossCount: `max(2, floor((plateWidth * sin(gridAngle) - thickness - (plateCount - 1) * cellSize * abs(cos(gridAngle))) / ${cross}) + 1)`,
+    };
+  }
   if (mode === 'fit' || String(raw.sliceMode ?? 'parallel') === 'radial') return {};
   const out: Record<string, string> = { pitch: 'thickness + plateGap' };
   if (mode === 'gap') out.plateCount = 'floor((stackLength - 2*endMargin) / (thickness + plateGap)) + 1';
@@ -781,8 +851,10 @@ export function spacingOverrides(raw: Record<string, RawValue>): Record<string, 
 }
 
 /** Which setting drives each overridden parameter, for the panel's label. */
-export function overrideSource(id: string): 'spacing' | 'image' {
-  return id === 'pitch' || id === 'plateCount' ? 'spacing' : 'image';
+export function overrideSource(id: string, raw?: Record<string, RawValue>): 'spacing' | 'grid' | 'image' {
+  if (id === 'crossCount') return 'grid';
+  if (id === 'pitch' || id === 'plateCount') return raw && String(raw.sliceMode) === 'waffle' && String(raw.waffleLayout) === 'grid' ? 'grid' : 'spacing';
+  return 'image';
 }
 
 export const FLAG_NAMES = ['alongWidth', 'isRadial', 'isWaffle', 'imgAspect', 'frontAspect', 'sideAspect'];

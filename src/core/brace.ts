@@ -128,6 +128,8 @@ function frame(v: Values, top: number): Frame {
 }
 
 const hasStack = (v: Values) => v.sliceMode === 'parallel' || v.sliceMode === 'waffle';
+/** A waffle whose cross plates are not square to the plates. */
+const slantedGrid = (v: Values) => v.sliceMode === 'waffle' && Math.abs((Number(v.gridAngle) || 90) - 90) > 0.01;
 
 /** Plate-u positions of the waffle cross plates (the rods and spacers must miss them). */
 function crossPlateUs(defs: { family: string; plane: Plane }[], fr: Frame): number[] {
@@ -246,6 +248,10 @@ export function planRods(v: Values, defs: { family: string; plane: Plane; u0: nu
   const issues: BraceIssue[] = [];
   const P = defs.filter((d) => d.family === 'P');
   if (!hasStack(v) || P.length < 2) return null;
+  if (slantedGrid(v)) {
+    issues.push({ severity: 'info', message: 'Threaded rods run along the stack, so they would cut the slanted cross plates: set Cross plate angle to 90° for rods.' });
+    return { size: String(v.rodSize), spec, hole: spec.d, rods: [], dir: [0, 0, 0], nuts: 0, washers: 0, issues };
+  }
   const fr = frame(v, top);
   const t = v.thickness;
   const n = P.length;
@@ -497,6 +503,10 @@ export function buildSpacers(
   const issues: BraceIssue[] = [];
   if (!hasStack(v)) {
     issues.push({ severity: 'info', message: 'Laser-cut spacers need an upright parallel or waffle stack.' });
+    return { parts: [], holds: {}, issues };
+  }
+  if (slantedGrid(v)) {
+    issues.push({ severity: 'info', message: 'Spacers run square across the stack, so they would cut the slanted cross plates: set Cross plate angle to 90° for spacers.' });
     return { parts: [], holds: {}, issues };
   }
   const P = defs.filter((d) => d.family === 'P');

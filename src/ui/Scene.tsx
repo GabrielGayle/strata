@@ -9,7 +9,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { Model } from '../core/pipeline';
 import type { Part } from '../core/slicer';
 import type { MouldPart } from '../core/mould';
-import { etchSegments, extrudeOnPlane, extrudePlan, extrudeSunkenFrame } from '../core/geometry3d';
+import { etchSegments, extrudePlan, extrudeSunkenFrame } from '../core/geometry3d';
+import { partGeometry } from '../core/partMesh';
 import { planeToWorld } from '../core/section';
 import { baseGeometry } from '../core/base';
 import { shapeBBox } from '../core/geom2d';
@@ -17,9 +18,13 @@ import { makeConcreteMaterial, METALS, PLY, type Band } from './materials';
 import { lookOf, MAIN, type Appearance } from '../core/appearance';
 import { isMapDepth } from '../core/mapPlateHeight';
 import { useStore } from '../state/store';
+import { objectMatrix, type CutObject } from '../core/objects';
+import type { CardSight } from '../core/shelfView';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
-import { SunStudy3D } from './SunStudy';
-import { showInsertMesh, type ViewportLayers } from './viewportLayers';
+import CandleGizmo from './CandleGizmo';
+import { Candle3D, SunStudy3D } from './SunStudy';
+import { showBaseMesh, showInsertMesh, showObject, type ViewportLayers } from './viewportLayers';
+import { contourStep, makeHeightBandMaterial, outlineColor, outlineSegments, reliefRange, spreadOffsets, tintColor, type ViewAids } from './viewAids';
 
 export interface SceneOpts {
   selected: string | null;
@@ -30,10 +35,14 @@ export interface SceneOpts {
   showIssues: boolean;
   showSource: boolean;
   viewportLayers: ViewportLayers;
+  /** Edge outlines, plate tint and spread (view only). */
+  viewAids?: ViewAids;
   /** Hand placement: the selected plate gets a move / rotate gizmo. */
   moveMode?: boolean;
   /** Material picking: a click puts the plate in the active bucket (shift-click: the run since the last one). */
   onPaint?: (plateKey: string, shift: boolean) => void;
+  /** X-ray plates: see-through and outlined, so what is cut inside them shows (Impress image). */
+  ghost?: boolean;
 }
 
 export function cssVar(name: string, fallback: string): string {
@@ -42,28 +51,29 @@ export function cssVar(name: string, fallback: string): string {
   return v || fallback;
 }
 
-export function Env() {
+export function Env({ intensity = 0.55 }: { intensity?: number }) {
   const { gl, scene } = useThree();
   useEffect(() => {
     const pm = new THREE.PMREMGenerator(gl);
     const env = pm.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = env;
-    scene.environmentIntensity = 0.55;
+    scene.environmentIntensity = intensity;
     return () => {
       scene.environment = null;
       env.dispose();
       pm.dispose();
     };
-  }, [gl, scene]);
+  }, [gl, scene, intensity]);
   return null;
 }
 
-const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selected, onSelect, onPaint }: { part: Part; material: THREE.Material; selMaterial: THREE.Material; selected: boolean; onSelect?: (id: string) => void; onPaint?: (key: string, shift: boolean) => void }) {
-  const geo = useMemo(() => extrudeOnPlane(part.shape, part.thickness, part.plane), [part]);
+const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selected, onSelect, onPaint, offset }: { part: Part; material: THREE.Material; selMaterial: THREE.Material; selected: boolean; onSelect?: (id: string) => void; onPaint?: (key: string, shift: boolean) => void; offset?: [number, number, number] }) {
+  const geo = useMemo(() => partGeometry(part), [part]);
   useEffect(() => () => geo.dispose(), [geo]);
   return (
     <mesh
       geometry={geo}
+      position={offset}
       userData={{ measure: part.id }}
       castShadow
       receiveShadow
@@ -87,7 +97,7 @@ const PlateMesh = memo(function PlateMesh({ part, material, selMaterial, selecte
   );
 });
 
-function Etches({ parts, engraving, labels }: { parts: Part[]; engraving: boolean; labels: boolean }) {
+function Etches({ parts, engraving, labels, offsets }: { parts: Part[]; engraving: boolean; labels: boolean; offsets: Map<string, [number, number, number]> }) {
   const geo = useMemo(() => {
     const geos = parts
       .map((p) => {
@@ -95,7 +105,10 @@ function Etches({ parts, engraving, labels }: { parts: Part[]; engraving: boolea
         if (engraving) seg.push(...p.etch);
         if (labels) seg.push(...p.labelPaths);
         if (!seg.length) return null;
-        return etchSegments(seg, p.thickness, p.plane);
+        const g = etchSegments(seg, p.thickness, p.plane);
+        const o = offsets.get(p.id);
+        if (o) g.translate(o[0], o[1], o[2]);
+        return g;
       })
       .filter(Boolean) as THREE.BufferGeometry[];
     if (!geos.length) return new THREE.BufferGeometry();
@@ -110,12 +123,29 @@ function Etches({ parts, engraving, labels }: { parts: Part[]; engraving: boolea
     const out = new THREE.BufferGeometry();
     out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     return out;
-  }, [parts, engraving, labels]);
+  }, [parts, engraving, labels, offsets]);
   useEffect(() => () => geo.dispose(), [geo]);
   if (!engraving && !labels) return null;
   return (
     <lineSegments geometry={geo}>
       <lineBasicMaterial color="#1b1b1b" transparent opacity={0.75} />
+    </lineSegments>
+  );
+}
+
+/** View aid: every plate face outlined in one draw call, so each top edge reads against the plate behind. */
+function PlateOutlines({ parts, offsets, color }: { parts: Part[]; offsets: Map<string, [number, number, number]>; color: string }) {
+  const geo = useMemo(() => {
+    const pos: number[] = [];
+    for (const p of parts) outlineSegments(p.shape, p.thickness, p.plane, pos, offsets.get(p.id));
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    return g;
+  }, [parts, offsets]);
+  useEffect(() => () => geo.dispose(), [geo]);
+  return (
+    <lineSegments geometry={geo} renderOrder={1}>
+      <lineBasicMaterial color={color} transparent opacity={0.9} />
     </lineSegments>
   );
 }
@@ -170,7 +200,8 @@ function Insert({ model }: { model: Model }) {
 }
 
 /** Objects placed among the plates: postcards read as paper, the rest as see-through cutters. */
-function PlacedObjects({ model }: { model: Model }) {
+function PlacedObjects({ model, layers }: { model: Model; layers: ViewportLayers }) {
+  const hidden = useStore((s) => s.ui.hiddenObjects);
   const sel = useStore((s) => (s.ui.objectsMode ? s.ui.objectSel : null));
   const hl = useStore((s) => s.ui.highlight);
   const setUi = useStore((s) => s.setUi);
@@ -178,6 +209,8 @@ function PlacedObjects({ model }: { model: Model }) {
   return (
     <>
       {model.objects.map(({ object: o, geometry }) => {
+        if (o.look === 'hidden' || !showObject(layers, hidden, o.id)) return null;
+        if (o.look) return <Candle key={o.id} o={o} geometry={geometry} picked={o.id === sel || hl === 'objects'} onPick={() => useStore.getState().ui.objectsMode && setUi({ objectSel: o.id })} />;
         const shelf = o.seat !== undefined || o.id.startsWith('shelf');
         const lit = hl === 'notches' || (hl === 'cards' && shelf) || (hl === 'objects' && !shelf);
         const picked = o.id === sel || lit;
@@ -200,7 +233,97 @@ function PlacedObjects({ model }: { model: Model }) {
         );
       })}
       <OriginMarker model={model} />
+      <HiddenFaceTint model={model} />
+      <CandleGizmo model={model} />
     </>
+  );
+}
+
+function overlayGeometry(sight: CardSight, o: CutObject): THREE.BufferGeometry | null {
+  const polys = sight.localHidden.filter((e) => e.outer.length >= 3);
+  if (!polys.length) return null;
+  const shapes = polys.map((e) => {
+    const s = new THREE.Shape(e.outer.map(([x, y]) => new THREE.Vector2(x, y)));
+    for (const h of e.holes) {
+      if (h.length < 3) continue;
+      s.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
+    }
+    return s;
+  });
+  const g = new THREE.ShapeGeometry(shapes);
+  const bump = Math.sign(sight.faceZ || 1) * 0.2;
+  g.translate(0, 0, sight.faceZ + bump);
+  g.applyMatrix4(objectMatrix(o));
+  return g;
+}
+
+/** Paint occluded postcard faces while Unobstructed view (dev) is open and tint is on. */
+function HiddenFaceTint({ model }: { model: Model }) {
+  const devOpen = useStore((s) => s.ui.shelfViewDevOpen);
+  const tint = useStore((s) => !!s.project.shelf?.tintHidden);
+  const vis = model.cardVisibility;
+  const geos = useMemo(() => {
+    if (!devOpen || !tint || !vis) return [];
+    const byId = new Map(model.objects.map((b) => [b.object.id, b.object]));
+    return vis.cards
+      .map((c) => {
+        const o = byId.get(c.id);
+        if (!o || c.hiddenArea < 0.2) return null;
+        const g = overlayGeometry(c, o);
+        return g ? { id: c.id, g } : null;
+      })
+      .filter(Boolean) as { id: string; g: THREE.BufferGeometry }[];
+  }, [devOpen, tint, vis, model.objects]);
+  useEffect(() => () => geos.forEach((x) => x.g.dispose()), [geos]);
+  if (!geos.length) return null;
+  return (
+    <group>
+      {geos.map((x) => (
+        <mesh key={x.id} geometry={x.g} renderOrder={20}>
+          <meshBasicMaterial color="#c0281f" transparent opacity={0.45} depthTest depthWrite={false} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** A candle or tealight: wax (in a metal cup for a tealight), a wick and a small flame. */
+function Candle({ o, geometry, picked, onPick }: { o: CutObject; geometry: THREE.BufferGeometry; picked: boolean; onPick: () => void }) {
+  const accent = cssVar('--accent', '#d4521c');
+  const tea = o.look === 'tealight';
+  const top = o.y + o.h / 2;
+  const flame = Math.min(22, Math.max(9, o.w * 0.45));
+  return (
+    <group>
+      <mesh
+        geometry={geometry}
+        userData={{ measure: o.id }}
+        castShadow
+        receiveShadow
+        onClick={(e) => {
+          if (!useStore.getState().ui.objectsMode) return;
+          e.stopPropagation();
+          onPick();
+        }}
+      >
+        {tea ? <meshStandardMaterial color="#c9ccd1" metalness={0.85} roughness={0.35} /> : <meshStandardMaterial color="#f1e8d6" roughness={0.6} />}
+        {picked && <Edges color={accent} threshold={20} />}
+      </mesh>
+      {tea && (
+        <mesh position={[o.x, top + 0.01, o.z]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[o.w / 2 - 1, 40]} />
+          <meshStandardMaterial color="#f6f1e6" roughness={0.7} />
+        </mesh>
+      )}
+      <mesh position={[o.x, top + 2.5, o.z]}>
+        <cylinderGeometry args={[0.5, 0.5, 5, 6]} />
+        <meshStandardMaterial color="#2a2420" />
+      </mesh>
+      <mesh position={[o.x, top + 5 + flame / 2, o.z]} scale={[1, 1.9, 1]}>
+        <sphereGeometry args={[flame / 3.8, 16, 12]} />
+        <meshBasicMaterial color="#ffc35a" transparent opacity={0.9} />
+      </mesh>
+    </group>
   );
 }
 
@@ -393,7 +516,55 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
     [lookKey], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const material = materials.get(MAIN)!;
-  const matFor = (p: Part) => materials.get(appearance?.assign[p.plateKey] ?? MAIN) ?? material;
+  const aids = opts.viewAids;
+  const tint = aids?.tint ?? 'off';
+  const parts = model.sliced.parts;
+  // view aids: tinted copies of the plate materials, made once per look and colour
+  const tinted = useMemo(() => {
+    const out = new Map<string, THREE.Material>();
+    if (tint === 'off') return out;
+    if (tint === 'height') {
+      const hb = makeHeightBandMaterial(looks[MAIN]);
+      // bands run over the plate tops, where the relief is, not from the base up
+      const { lo, hi } = reliefRange(parts);
+      const lift = model.sunkenFrame?.plateLiftMm ?? 0;
+      hb.setRange(lo + lift, hi + lift, contourStep(hi - lo));
+      out.set('height', hb);
+      return out;
+    }
+    const count = new Map<string, number>();
+    for (const p of parts) count.set(p.family, Math.max(count.get(p.family) ?? 0, p.index + 1));
+    for (const p of parts) {
+      const look = looks[appearance?.assign[p.plateKey] ?? MAIN] ?? looks[MAIN];
+      const c = tintColor(tint, look.color, p.index, count.get(p.family) ?? 1);
+      if (!c || out.has(c)) continue;
+      out.set(c, new THREE.MeshStandardMaterial({ color: c, metalness: Math.min(look.metalness, 0.35), roughness: Math.max(look.roughness, 0.55) }));
+    }
+    return out;
+  }, [tint, parts, lookKey, appearance?.assign, model.sunkenFrame]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => tinted.forEach((m) => m.dispose()), [tinted]);
+  const familyCount = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const p of parts) c.set(p.family, Math.max(c.get(p.family) ?? 0, p.index + 1));
+    return c;
+  }, [parts]);
+  const ghostMat = useMemo(
+    () => (opts.ghost ? new THREE.MeshStandardMaterial({ color: looks[MAIN].color, metalness: 0.2, roughness: 0.7, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }) : null),
+    [opts.ghost, lookKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  useEffect(() => () => ghostMat?.dispose(), [ghostMat]);
+  const matFor = (p: Part) => {
+    if (ghostMat) return ghostMat;
+    const base = materials.get(appearance?.assign[p.plateKey] ?? MAIN) ?? material;
+    if (tint === 'off') return base;
+    if (tint === 'height') return tinted.get('height') ?? base;
+    const look = looks[appearance?.assign[p.plateKey] ?? MAIN] ?? looks[MAIN];
+    const c = tintColor(tint, look.color, p.index, familyCount.get(p.family) ?? 1);
+    return (c && tinted.get(c)) || base;
+  };
+  // spread is off while a plate is being moved by hand, so the gizmo sits on the real plate
+  const spread = opts.moveMode ? 1 : (aids?.spread ?? 1);
+  const offsets = useMemo(() => spreadOffsets(parts, spread), [parts, spread]);
   // re-read theme colours whenever the window appearance changes
   const theme = useStore((st) => st.ui.theme);
   const selMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: cssVar('--accent', '#d4521c'), metalness: 0.2, roughness: 0.5, emissive: new THREE.Color('#5a1a00') }), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -408,13 +579,15 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const dragKey = opts.moveMode ? (moveTarget(model, opts.selected)?.key ?? null) : null;
   const L = opts.viewportLayers;
   const showEngrave = L.engraving || (L.water && !!topMap);
+  // a candle-lit shadow design is seen at night, by the candle
+  const candle = !!v.shadowOn && v.shadowLight === 'candle' && v.sliceMode === 'parallel';
   return (
     <>
-      <Env />
+      <Env intensity={candle ? 0.06 : 0.55} />
       <color attach="background" args={[cssVar('--viewport', '#e6e3dc')]} />
-      <ambientLight intensity={v.sunOn ? 0.28 : 0.35} />
-      {v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
-      <directionalLight position={[-900, 500, -600]} intensity={v.sunOn ? 0.18 : 0.45} />
+      <ambientLight intensity={candle ? 0.06 : v.sunOn ? 0.28 : 0.35} />
+      {candle ? <Candle3D model={model} /> : v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
+      <directionalLight position={[-900, 500, -600]} intensity={candle ? 0.04 : v.sunOn ? 0.18 : 0.45} />
       {L.grid && (
         <ViewportGrid
           args={[Math.max(bounds.size * 6, 1200), Math.max(bounds.size * 6, 1200)]}
@@ -429,11 +602,11 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
           position={[0, gridY, 0]}
         />
       )}
-      {(model.sunkenFrame || v.baseOn) && (L.base || L.concrete) && <Base model={model} xray={opts.xray} />}
+      {(model.sunkenFrame || v.baseOn) && showBaseMesh(L) && <Base model={model} xray={opts.xray || !!opts.ghost} />}
       <group position={[0, model.sunkenFrame?.plateLiftMm ?? 0, 0]}>
         {L.plates &&
           model.sliced.parts.filter((p) => p.plateKey !== dragKey).map((p) => (
-            <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} />
+            <PlateMesh key={p.id} part={p} material={matFor(p)} selMaterial={selMaterial} selected={(!opts.onPaint && opts.selected === p.id) || platesLit} onSelect={opts.onSelect} onPaint={opts.onPaint} offset={offsets.get(p.id)} />
           ))}
         {/* the plate under the gizmo, carried rigidly while it is dragged */}
         <group ref={preview} matrixAutoUpdate={false}>
@@ -444,11 +617,12 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
             ))}
         </group>
         {opts.moveMode && <PlateGizmo model={model} partId={opts.selected} preview={preview} />}
-        <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} />
+        {L.plates && (aids?.outlines || opts.ghost) && <PlateOutlines parts={parts} offsets={offsets} color={outlineColor(tint, looks[MAIN].color)} />}
+        <Etches parts={model.sliced.parts} engraving={showEngrave} labels={L.labels} offsets={offsets} />
         {L.rods !== false && <Rods model={model} />}
         {L.rods !== false && <StackRods model={model} />}
         {showInsertMesh(L) && <Insert model={model} />}
-        <PlacedObjects model={model} />
+        <PlacedObjects model={model} layers={L} />
         {opts.showSource && model.source && v.stackSource === 'form' && (
           <mesh geometry={model.source.form.geometry}>
             <meshBasicMaterial color={cssVar('--info', '#2f5f9e')} wireframe transparent opacity={0.12} />
@@ -495,7 +669,7 @@ function ShadowSun({ model }: { model: Model }) {
 }
 
 /** Bounding size of the design, for camera framing. */
-export function modelBounds(model: Model): { center: THREE.Vector3; size: number } {
+export function modelBounds(model: Model): { center: THREE.Vector3; size: number; radius: number } {
   const v = model.v;
   const box = new THREE.Box3();
   const frame = model.sunkenFrame;
@@ -514,5 +688,5 @@ export function modelBounds(model: Model): { center: THREE.Vector3; size: number
   if (model.insert) box.union(model.insert.form.bbox);
   if (box.isEmpty()) box.set(new THREE.Vector3(-300, 0, -300), new THREE.Vector3(300, 300, 300));
   const size = box.getSize(new THREE.Vector3());
-  return { center: box.getCenter(new THREE.Vector3()), size: Math.max(size.x, size.y, size.z) };
+  return { center: box.getCenter(new THREE.Vector3()), size: Math.max(size.x, size.y, size.z), radius: size.length() / 2 };
 }

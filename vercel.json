@@ -3,5 +3,15 @@
   "framework": "vite",
   "installCommand": "npm install",
   "buildCommand": "npm run build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/m",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/api/geo/:path*",
+      "destination": "/api/geo?path=:path*"
+    }
+  ]
 }

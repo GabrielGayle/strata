@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { Html } from '@react-three/drei';
 import type { Model } from '../core/pipeline';
 import { bearingToWorld, clock, siteOf, sunPosition, sunTimes, sunVector, type Site } from '../core/sun';
+import { shadowGeom, wallPoint, type ShadowGeom } from '../core/shadow';
 import { useStore } from '../state/store';
 import { modelBounds } from './Scene';
 
@@ -37,37 +38,74 @@ function PathLine({ points, color, opacity, dashed }: { points: THREE.Vector3[];
   return <primitive object={line} />;
 }
 
-/** The light itself: follows the sun, warm and dim near the horizon, off at night. */
+/**
+ * The light itself: follows the sun, warm and dim near the horizon, off at night.
+ * Its shadow camera hugs the piece (only the piece casts), so every texel of
+ * the shadow map lands on the plates and the carved pictures stay sharp.
+ */
 function SunLight({ model, dir, elevation }: { model: Model; dir: THREE.Vector3; elevation: number }) {
-  const { center, size } = modelBounds(model);
+  const { center, radius } = modelBounds(model);
   const up = THREE.MathUtils.smoothstep(elevation, -1, 8);
   const warm = THREE.MathUtils.smoothstep(elevation, 0, 25);
   const color = new THREE.Color('#ff9a52').lerp(new THREE.Color('#fff4e6'), warm);
-  const pos = dir.clone().multiplyScalar(size * 2.2);
-  // long low-sun shadows reach well past the piece
-  const r = size * 1.4 + center.length();
+  const r = radius * 1.08;
+  const pos = center.clone().addScaledVector(dir, r * 3);
+  const target = useMemo(() => new THREE.Object3D(), []);
+  target.position.copy(center);
   return (
-    <directionalLight
-      position={pos}
-      intensity={2.1 * up}
-      color={color}
-      castShadow={up > 0}
-      shadow-mapSize={[4096, 4096]}
-      shadow-bias={-0.0004}
-      shadow-normalBias={0.6}
-      shadow-camera-left={-r}
-      shadow-camera-right={r}
-      shadow-camera-top={r}
-      shadow-camera-bottom={-r}
-      shadow-camera-near={1}
-      shadow-camera-far={size * 6}
-    />
+    <>
+      <primitive object={target} />
+      <directionalLight
+        position={pos}
+        target={target}
+        intensity={2.1 * up}
+        color={color}
+        castShadow={up > 0}
+        shadow-mapSize={[4096, 4096]}
+        shadow-bias={-0.0003}
+        shadow-normalBias={0.4}
+        shadow-camera-left={-r}
+        shadow-camera-right={r}
+        shadow-camera-top={r}
+        shadow-camera-bottom={-r}
+        shadow-camera-near={1}
+        // far enough to reach a distant wall and long low-sun shadows on the ground
+        shadow-camera-far={r * 4 + 30000}
+      />
+    </>
   );
 }
 
-/** The screen the shadow pictures fall on: a pale panel (wall or ground) that catches the real shadow. */
-function ShadowScreen({ model }: { model: Model }) {
-  const g = model.shadow!.geom;
+/** Where the shadow screen and candle are, even before any picture is carved. */
+export function screenGeom(model: Model): ShadowGeom {
+  if (model.shadow) return model.shadow.geom;
+  const plates = model.sliced.plates.filter((p) => p.def.family === 'P' && p.parts.length).map((p) => ({ plane: p.parts[0].plane, thickness: p.parts[0].thickness }));
+  return shadowGeom(model.v, plates);
+}
+
+/**
+ * The screen the shadow pictures fall on: a whole wall (room scale, centred
+ * behind the piece, with the picture area outlined) or a pale patch of ground,
+ * catching the real shadow.
+ */
+export function ShadowScreen({ model }: { model: Model }) {
+  const g = screenGeom(model);
+  const v = model.v;
+  const outline = useMemo(() => {
+    if (g.screen !== 'wall') return null;
+    const pts = [
+      [g.x0, g.y0],
+      [g.x0 + g.w, g.y0],
+      [g.x0 + g.w, g.y0 + g.h],
+      [g.x0, g.y0 + g.h],
+      [g.x0, g.y0],
+    ].map(([a, b]) => {
+      const p = wallPoint(g, a, b);
+      // a hair in front of the wall
+      return new THREE.Vector3(p[0] - g.s[0] * 1.5, p[1], p[2] - g.s[1] * 1.5);
+    });
+    return pts;
+  }, [g]);
   if (g.screen === 'base') return null; // the concrete itself catches it
   const pad = Math.max(g.w, g.h) * 0.35;
   const w = g.w + pad * 2;
@@ -84,17 +122,144 @@ function ShadowScreen({ model }: { model: Model }) {
       </mesh>
     );
   }
-  const top = g.y0 + g.h + pad;
-  // centre of the panel, a hair in front of the wall so it never fights the grid
-  const cx = g.s[0] * (g.wallS + 1) + g.right[0] * a;
-  const cz = g.s[1] * (g.wallS + 1) + g.right[1] * a;
-  // the panel's face looks back along the stack, toward the piece
+  // the whole wall, centred behind the middle of the piece and tall enough for the picture
+  const ww = Math.max(Number(v.shadowWallW) || 3000, g.w + 40);
+  const wh = Math.max(Number(v.shadowWallH) || 2400, g.y0 + g.h + 40);
+  // its face sits a hair behind the screen plane so the outline never fights it
+  const at = g.wallS + 0.5;
+  const edge = [
+    [-ww / 2, 0],
+    [ww / 2, 0],
+    [ww / 2, wh],
+    [-ww / 2, wh],
+    [-ww / 2, 0],
+  ].map(([a, b]) => new THREE.Vector3(g.s[0] * at + g.right[0] * a, b, g.s[1] * at + g.right[1] * a));
+  // the face looks back along the stack, toward the piece; from behind it is see-through, so it never hides the piece
   const rotY = Math.atan2(-g.s[0], -g.s[1]);
   return (
-    <mesh position={[cx, top / 2, cz]} rotation={[0, rotY, 0]} receiveShadow>
-      <planeGeometry args={[w, top]} />
-      <meshStandardMaterial color="#efe9dd" roughness={0.95} metalness={0} side={THREE.DoubleSide} />
-    </mesh>
+    <>
+      <mesh position={[g.s[0] * at, wh / 2, g.s[1] * at]} rotation={[0, rotY, 0]} receiveShadow>
+        <planeGeometry args={[ww, wh]} />
+        <meshStandardMaterial color="#efe4cc" roughness={0.95} metalness={0} side={THREE.FrontSide} />
+      </mesh>
+      {/* from behind, a faint sheet and its edge show where the wall is */}
+      <mesh position={[g.s[0] * at, wh / 2, g.s[1] * at]} rotation={[0, rotY, 0]}>
+        <planeGeometry args={[ww, wh]} />
+        <meshBasicMaterial color="#d8d0c0" transparent opacity={0.22} depthWrite={false} side={THREE.BackSide} />
+      </mesh>
+      <PathLine points={edge} color="#8a8478" opacity={0.7} />
+      {outline && <PathLine points={outline} color="#e0701c" opacity={0.55} />}
+    </>
+  );
+}
+
+/**
+ * A candle on a stand, lighting the scene at night. The light is a spotlight
+ * from the flame, wide enough to light the whole wall, with its shadow map
+ * narrowed to just the piece so the carved pictures cast sharp.
+ */
+export function Candle3D({ model }: { model: Model }) {
+  const v = model.v;
+  const g = screenGeom(model);
+  const C = g.candle;
+  const { center, radius } = modelBounds(model);
+  const target = useMemo(() => new THREE.Object3D(), []);
+  if (!C) return null;
+  const flame = new THREE.Vector3(...C);
+  target.position.copy(center);
+  const axis = center.clone().sub(flame);
+  const dist = axis.length() || 1;
+  axis.divideScalar(dist);
+  // the cone reaches every corner of the wall (or the picture on the ground)
+  const ww = Math.max(Number(v.shadowWallW) || 3000, g.w);
+  const wh = Math.max(Number(v.shadowWallH) || 2400, g.y0 + g.h);
+  const corners: [number, number][] =
+    g.screen === 'wall'
+      ? [
+          [-ww / 2, 0],
+          [ww / 2, 0],
+          [-ww / 2, wh],
+          [ww / 2, wh],
+          [g.x0, g.y0],
+          [g.x0 + g.w, g.y0 + g.h],
+        ]
+      : [
+          [g.x0, g.y0],
+          [g.x0 + g.w, g.y0],
+          [g.x0, g.y0 + g.h],
+          [g.x0 + g.w, g.y0 + g.h],
+        ];
+  let angle = 0.2;
+  let far = dist + radius;
+  for (const [a, b] of corners) {
+    const p = new THREE.Vector3(...wallPoint(g, a, b)).sub(flame);
+    far = Math.max(far, p.length());
+    angle = Math.max(angle, p.normalize().angleTo(axis));
+  }
+  angle = Math.min(1.5, angle + 0.05);
+  // the shadow camera only needs to see the piece
+  const piece = dist > radius ? Math.asin(Math.min(1, (radius * 1.1) / dist)) : Math.PI / 2;
+  const focus = Math.min(1, piece / angle);
+  const mid = new THREE.Vector3(...wallPoint(g, g.x0 + g.w / 2, g.y0 + g.h / 2));
+  const reach = mid.distanceTo(flame);
+  const size = Math.max(2, Number(v.candleFlame) || 12);
+  const bodyH = 70;
+  const bodyTop = C[1] - size * 0.6;
+  const bodyBot = bodyTop - bodyH;
+  return (
+    <>
+      <primitive object={target} />
+      <spotLight
+        position={flame}
+        target={target}
+        angle={angle}
+        penumbra={0.15}
+        decay={1}
+        intensity={1.8 * reach}
+        color="#ffb46b"
+        castShadow
+        shadow-mapSize={[4096, 4096]}
+        shadow-focus={focus}
+        shadow-bias={-0.0002}
+        shadow-normalBias={0.4}
+        shadow-camera-near={Math.max(1, size)}
+        shadow-camera-far={far * 1.05}
+      />
+      {/* a little light all round, so the room isn't black behind the flame */}
+      <pointLight position={flame} intensity={0.3 * reach} decay={1} color="#ff9a52" />
+      <group position={[C[0], 0, C[2]]}>
+        <mesh position={[0, C[1], 0]} scale={[1, 2, 1]}>
+          <sphereGeometry args={[size / 2, 16, 12]} />
+          <meshBasicMaterial color="#ffd27a" />
+        </mesh>
+        <mesh position={[0, bodyBot + bodyH / 2, 0]}>
+          <cylinderGeometry args={[11, 11, bodyH, 24]} />
+          <meshStandardMaterial color="#f3ead8" roughness={0.6} emissive="#5a3a10" emissiveIntensity={0.4} />
+        </mesh>
+        {bodyBot > 4 && (
+          <>
+            <mesh position={[0, bodyBot - 2, 0]}>
+              <cylinderGeometry args={[24, 20, 4, 24]} />
+              <meshStandardMaterial color="#3a3632" metalness={0.6} roughness={0.4} />
+            </mesh>
+            <mesh position={[0, (bodyBot - 4) / 2, 0]}>
+              <cylinderGeometry args={[3, 3, Math.max(0.1, bodyBot - 4), 12]} />
+              <meshStandardMaterial color="#3a3632" metalness={0.6} roughness={0.4} />
+            </mesh>
+            <mesh position={[0, 2, 0]}>
+              <cylinderGeometry args={[40, 46, 4, 32]} />
+              <meshStandardMaterial color="#3a3632" metalness={0.6} roughness={0.4} />
+            </mesh>
+          </>
+        )}
+      </group>
+      {/* catches the shadows on the floor */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[center.x, 0.3, center.z]} receiveShadow>
+        <planeGeometry args={[Math.max(8000, ww * 2), Math.max(8000, ww * 2)]} />
+        <shadowMaterial transparent opacity={0.45} depthWrite={false} />
+      </mesh>
+      <ShadowScreen model={model} />
+    </>
   );
 }
 
@@ -145,7 +310,7 @@ export function SunStudy3D({ model }: { model: Model }) {
         <planeGeometry args={[r * 8, r * 8]} />
         <shadowMaterial transparent opacity={0.32} depthWrite={false} />
       </mesh>
-      {model.shadow && <ShadowScreen model={model} />}
+      {v.shadowOn && v.sliceMode === 'parallel' && <ShadowScreen model={model} />}
       {paths && (
         <>
           <PathLine points={ring} color="#8a8478" opacity={0.6} />

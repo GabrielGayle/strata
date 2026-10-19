@@ -79,3 +79,11 @@ export function formatLiveMapReadout(input: LiveMapGeometryInput): string {
   });
   return `${exaggerationReadout(input.factor)} · ${Math.round(Math.max(0, input.reliefM))} m relief → ${caption}`;
 }
+
+/** Size of the terrain grid behind a map face, e.g. "grid 1024 × 1024 px, 8.0 m cells". */
+export function formatMapGridReadout(depth: { w: number; h: number; mapOrtho?: { widthM: number; heightM: number } }): string {
+  const o = depth.mapOrtho;
+  if (!o || !(depth.w > 0) || !(depth.h > 0)) return '';
+  const cellM = Math.max(o.widthM / depth.w, o.heightM / depth.h);
+  return `grid ${depth.w} × ${depth.h} px, ${cellM < 10 ? cellM.toFixed(1) : Math.round(cellM)} m cells`;
+}

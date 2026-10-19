@@ -22,7 +22,7 @@ describe('MapSpec schema', () => {
     };
     p.images.top = asset;
     const text = serialize(p);
-    expect(text).toContain('"kind": "map"');
+    expect(text).toContain('"kind":"map"');
     const back = deserialize(text);
     expect(back.images.top?.map).toEqual(map);
     expect(back.images.top?.depth).toBeUndefined();
@@ -77,5 +77,10 @@ describe('MapSpec schema', () => {
     expect(back.images.top?.map?.exaggeration).toBe(21);
     expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], exaggeration: 4 })?.exaggeration).toBe(4);
     expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], exaggeration: 11 })?.exaggeration).toBe(11);
+  });
+
+  it('loads saves with the removed cop30 source as terrarium (what they always built from)', () => {
+    expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], source: 'cop30' })?.source).toBe('terrarium');
+    expect(cleanMapSpec({ kind: 'map', bbox: [0, 0, 1, 1], source: 'nonsense' })?.source).toBe('auto');
   });
 });

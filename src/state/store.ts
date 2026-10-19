@@ -1,7 +1,10 @@
 import { create } from 'zustand';
 import { isLiteral } from '../core/expr';
 import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
-import { applyPreset, applyVariant, deserialize, newProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
+import type { SavedNest } from '../core/nest';
+import type { SavedHero } from '../core/heroSaved';
+import { applyPreset, applyVariant, deserialize, startingProject, type ImageAsset, type Preset, type Project, type Variant } from '../core/project';
+import type { EarthView, EarthWorldPose } from '../core/earthView';
 import type { MapSpec } from '../core/mapSpec';
 import type { Composition, Surface } from '../core/compose';
 import type { PourLayer } from '../core/mould';
@@ -15,25 +18,29 @@ import { markUserParamOverrides } from '../core/projectOverrides';
 import type { ShadowSpec } from '../core/shadow';
 import type { CutObject } from '../core/objects';
 import type { ShelfSpec } from '../core/shelf';
+import type { CandleSpec } from '../core/candles';
 import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { loadViewportLayers, saveViewportLayers, type ViewportLayerId, type ViewportLayers } from '../ui/viewportLayers';
+import { loadViewAids, saveViewAids, type ViewAids } from '../ui/viewAids';
 import { createSaver, defaultKV, readWithLegacy, requestPersistentStorage, type KV, type SaveStatus } from './persist';
 import { applyProjectPatch, type ProjectPatch } from '../core/design';
 import { applyBuiltMapAsset, projectWithTopMapSpec } from '../core/mapTopAsset';
 import { mapBuildKey } from '../core/mapBuildKey';
+import { mapStackFromProject } from '../core/mapStack';
 import { applyQuickMapToProject } from '../core/quickMap';
 import { wordsParamPatch } from '../core/chantWords';
 import { speechParamPatch } from '../core/speechTuning';
 
-export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'map' | 'shadow' | 'graph' | 'nodes' | 'compare';
+export type Tab = '3d' | 'plates' | 'nest' | 'mould' | 'unfold' | 'image' | 'map' | 'shadow' | 'graph' | 'nodes' | 'compare' | 'impress';
 
 export interface MapTerrainUi {
   phase: 'idle' | 'working' | 'ready' | 'error';
   message: string;
   error?: string;
 }
-export type Snap = 'iso' | 'front' | 'side' | 'top';
+/** `shelf` looks from the postcard shelf's Unobstructed view angle. */
+export type Snap = 'iso' | 'front' | 'side' | 'top' | 'shelf';
 
 export interface UiState {
   tab: Tab;
@@ -68,12 +75,22 @@ export interface UiState {
   /** Placed objects panel in the 3D view, and which object it is editing. */
   objectsMode: boolean;
   objectSel: string | null;
+  /** Placed objects hidden one by one in the 3D view (view only: they still cut and export). */
+  hiddenObjects: string[];
+  /** Postcard shelf: Unobstructed view (dev) section is expanded. */
+  shelfViewDevOpen: boolean;
   /** What the node view is pointing at, lit up in the 3D view (origin, cards, objects, plates). */
   highlight: string | null;
   /** Sun study: clock time of day in hours, and whether the day is playing. Not part of the undo history. */
   sunTime: number;
   sunPlaying: boolean;
   viewportLayers: ViewportLayers;
+  /** Edge outlines, plate tint and spread in the 3D view (view only). */
+  viewAids: ViewAids;
+  /** Apply a View-from-point pose in the 3D camera (n increments to retrigger). */
+  pointView?: { n: number; pose: EarthWorldPose };
+  /** Vertical FOV from the last point view; Iso/Front/… clear it. */
+  pointViewFov?: number;
 }
 
 /** A whole master setup (project) open in its own tab. The active one lives in `project`. */
@@ -105,6 +122,9 @@ interface Store {
   applyDesignPatch: (patch: ProjectPatch, label?: string) => void;
   toggleLock: (id: string) => void;
   setPour: (pour: PourLayer[]) => void;
+  /** Keep the cloud's tight nest in the project (or drop it, for the local nest). */
+  setNest: (nest: SavedNest | undefined) => void;
+  setHero: (hero: SavedHero | undefined) => void;
   /** Shadow pictures and their times; `key` merges rapid edits (a time being typed) into one undo step. */
   setShadow: (shadow: ShadowSpec | undefined, key?: string) => void;
   /** Place one plate by hand (null puts it back where it was designed). */
@@ -116,7 +136,11 @@ interface Store {
   setObjects: (objects: CutObject[], key?: string) => void;
   /** The postcard shelf (undefined removes it). */
   setShelf: (shelf: ShelfSpec | undefined, key?: string) => void;
+  /** The candelabra (undefined removes it). */
+  setCandles: (candles: CandleSpec | undefined, key?: string) => void;
   setOrigin: (origin: WorldOrigin | undefined, key?: string) => void;
+  /** Persist the 3D View-from-point camera with the project (local + cloud saves). */
+  setSavedView: (view: EarthView | undefined) => void;
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
   /** Attach or update MapSpec on the top face (map window / design parser). */
@@ -141,6 +165,7 @@ interface Store {
   deleteVariant: (id: string) => void;
   setUi: (patch: Partial<UiState>) => void;
   toggleViewportLayer: (id: ViewportLayerId) => void;
+  setViewAids: (patch: Partial<ViewAids>) => void;
   setTheme: (t: ThemeChoice) => void;
   toast: (msg: string) => void;
 }
@@ -213,7 +238,7 @@ export const useStore = create<Store>((set, get) => {
     commit(r.project, key);
     if (r.message) get().toast(r.message);
   };
-  const initial = newProject();
+  const initial = startingProject();
   /** Park the active tab (project and history) and bring another one in. */
   const activate = (id: string, setups: SetupTab[]) => {
     const { project, past, future, activeSetup } = get();
@@ -251,7 +276,7 @@ export const useStore = create<Store>((set, get) => {
     newSetup: (mode) => {
       const { project, setups } = get();
       const id = `s${Date.now().toString(36)}`;
-      const fresh = mode === 'duplicate' ? { ...project, name: `${project.name} copy` } : newProject();
+      const fresh = mode === 'duplicate' ? { ...project, name: `${project.name} copy` } : startingProject();
       if (mode === 'blank') fresh.name = `Setup ${setups.length + 1}`;
       activate(id, [...setups, { id, project: fresh }]);
       get().toast(mode === 'duplicate' ? 'Duplicated this setup into a new tab' : 'Opened a blank setup');
@@ -296,10 +321,13 @@ export const useStore = create<Store>((set, get) => {
       measureMode: false,
       objectsMode: false,
       objectSel: null,
+      hiddenObjects: [],
+      shelfViewDevOpen: false,
       highlight: null,
       sunTime: 12,
       sunPlaying: false,
       viewportLayers: loadViewportLayers(),
+      viewAids: loadViewAids(),
       ...loadUi(),
     },
     setParam: (id, value) => {
@@ -343,6 +371,8 @@ export const useStore = create<Store>((set, get) => {
       commit({ ...p, locks: { ...p.locks, [id]: !p.locks[id] } }, `lock:${id}:${performance.now()}`);
     },
     setPour: (pour) => commit({ ...get().project, pour }, 'pour'),
+    setNest: (nest) => commit({ ...get().project, nest }, `nest:${performance.now()}`),
+    setHero: (hero) => commit({ ...get().project, hero }, `hero:${performance.now()}`),
     setShadow: (shadow, key = 'shadow') => commit({ ...get().project, shadow: shadow?.frames.length ? shadow : undefined }, key),
     movePart: (key, move) => {
       const p = get().project;
@@ -363,7 +393,9 @@ export const useStore = create<Store>((set, get) => {
     },
     setObjects: (objects, key = `objects:${performance.now()}`) => commit({ ...get().project, objects: objects.length ? objects : undefined }, key),
     setShelf: (shelf, key = `shelf:${performance.now()}`) => commit({ ...get().project, shelf }, key),
+    setCandles: (candles, key = `candles:${performance.now()}`) => commit({ ...get().project, candles }, key),
     setOrigin: (origin, key = `origin:${performance.now()}`) => commit({ ...get().project, origin }, key),
+    setSavedView: (view) => commit({ ...get().project, savedView: view }, `saved-view:${performance.now()}`),
     setName: (name) => commit({ ...get().project, name }, 'name'),
     setAsset: (kind, slot, asset) => {
       const p = get().project;
@@ -372,7 +404,9 @@ export const useStore = create<Store>((set, get) => {
     },
     setTopMap: (map) => {
       const p = get().project;
-      const next = projectWithTopMapSpec(p, map);
+      let next = projectWithTopMapSpec(p, map);
+      // a map is terrain on the plate tops: from the plain starting slab, bring the plates back
+      if (next.params.platesOn === false) next = { ...next, params: { ...next.params, platesOn: true } };
       commit(next, `map:${performance.now()}`);
       set({
         mapTerrain: { phase: 'working', message: 'Queued terrain build…' },
@@ -382,8 +416,10 @@ export const useStore = create<Store>((set, get) => {
     applyQuickMap: () => {
       const p = get().project;
       const next = applyQuickMapToProject(p);
-      const prevKey = p.images.top?.map ? mapBuildKey(p.images.top.map) : '';
-      const nextKey = next.images.top?.map ? mapBuildKey(next.images.top.map) : '';
+      const prevKey = p.images.top?.map ? mapBuildKey(p.images.top.map, mapStackFromProject(p, p.images.top.map.layerBudget)) : '';
+      const nextKey = next.images.top?.map
+        ? mapBuildKey(next.images.top.map, mapStackFromProject(next, next.images.top.map.layerBudget))
+        : '';
       const retryError = get().mapTerrain.phase === 'error';
       commitParams(next, `quick-map:${performance.now()}`);
       if (next.images.top?.map && (nextKey !== prevKey || !next.images.top.map.buildKey || retryError)) {
@@ -475,6 +511,7 @@ export const useStore = create<Store>((set, get) => {
         topThreshold: () => r(0.05, 0.3),
         topProfile: () => pick(['tone', 'pillow', 'pillow', 'balloon', 'balloon']),
         topBillow: () => r(8, 45, 0),
+        topPuff: () => r(0.5, 2, 2),
         cutSmooth: () => r(2, 10, 1),
         edgeRound: () => r(0.5, 4, 1),
         edgeFlow: () => r(6, 40, 0),
@@ -526,6 +563,7 @@ export const useStore = create<Store>((set, get) => {
         shadow: p.shadow ?? null,
         objects: p.objects ?? null,
         shelf: p.shelf ?? null,
+        candles: p.candles ?? null,
         origin: p.origin ?? null,
         createdAt: new Date().toISOString(),
       };
@@ -545,9 +583,17 @@ export const useStore = create<Store>((set, get) => {
     },
     setUi: (patch) => set({ ui: { ...get().ui, ...patch } }),
     toggleViewportLayer: (id) => {
-      const layers = { ...get().ui.viewportLayers, [id]: !get().ui.viewportLayers[id] };
+      const cur = get().ui.viewportLayers;
+      const layers = { ...cur, [id]: !cur[id] };
+      // Base also clears an old Concrete-off, which no longer has a button of its own
+      if (id === 'base') layers.concrete = layers.base;
       saveViewportLayers(layers);
       set({ ui: { ...get().ui, viewportLayers: layers } });
+    },
+    setViewAids: (patch) => {
+      const aids = { ...get().ui.viewAids, ...patch };
+      saveViewAids(aids);
+      set({ ui: { ...get().ui, viewAids: aids } });
     },
     setTheme: (t) => {
       applyTheme(t);

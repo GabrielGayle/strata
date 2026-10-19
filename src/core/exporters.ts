@@ -7,6 +7,7 @@ import { installCardHtml } from './installCard';
 import { buildPackHtml } from './buildPack';
 import { fitArcs, type Seg } from './arcs';
 import { DxfWriter, LAYERS } from './dxf';
+import { placeTransform } from './nest';
 import { bboxOf, offset, type Path, type Shape, type Vec2 } from './geom2d';
 import type { Issue } from './checks';
 import type { Model } from './pipeline';
@@ -15,6 +16,8 @@ import type { MouldPart } from './mould';
 import type { Values } from './params';
 import { extrudeOnPlane, extrudePlan, extrudeSunkenFrame, mergeGeometries } from './geometry3d';
 import { cutListCsv, hardwareCsv } from './bom';
+import { candlesCsv, candleShopping } from './candles';
+import { masterText } from './candleMaster';
 import { stackRodsCsv } from './stackRods';
 import { DEFAULT_RATES, estimateMix, priceText, withHardware, type PriceRates } from './price';
 import { baseGeometry } from './base';
@@ -25,6 +28,7 @@ import { mapBackPlateEtchPaths } from './mapBackPlateEtch';
 import { mapEngravePathsForPart, type MapEngravePlateContext } from './mapEngravePlate';
 import type { UnfoldPiece } from './unfold';
 import { materialOf } from './appearance';
+import { currentHero, heroPngBytes } from './hero';
 import { packManifest } from './counts';
 import {
   assertHtmlBuildPackIntegrity,
@@ -88,14 +92,23 @@ export interface FittedContour {
   hole: boolean;
 }
 
-/** Kerf-compensate a shape then fit lines + arcs to every contour. */
+const fitted = new WeakMap<Shape, { kerf: number; tol: number; out: FittedContour[] }>();
+
+/**
+ * Kerf-compensate a shape then fit lines + arcs to every contour. Remembered per shape
+ * (parts keep their identity across edits that don't touch them), so the sheet preview,
+ * the plate view and the exports fit each part once; treat the result as read-only.
+ */
 export function fitShape(shape: Shape, v: Values): FittedContour[] {
+  const hit = fitted.get(shape);
+  if (hit && hit.kerf === v.kerf && hit.tol === v.arcTolerance) return hit.out;
   const comp = offset(shape, v.kerf / 2);
   const out: FittedContour[] = [];
   for (const ex of comp) {
     out.push({ segs: fitArcs(ex.outer, v.arcTolerance), hole: false });
     for (const h of ex.holes) out.push({ segs: fitArcs(h, v.arcTolerance), hole: true });
   }
+  fitted.set(shape, { kerf: v.kerf, tol: v.arcTolerance, out });
   return out;
 }
 
@@ -105,18 +118,17 @@ export function segsAsCircle(segs: Seg[], tol: number): { cx: number; cy: number
   const arcs = segs.filter((s): s is Extract<Seg, { kind: 'arc' }> => s.kind === 'arc');
   const lines = segs.filter((s): s is Extract<Seg, { kind: 'line' }> => s.kind === 'line');
   if (arcs.length >= 2) {
-    const a0 = arcs[0];
+    const a0 = arcs.reduce((best, s) => (Math.abs(s.sweep) > Math.abs(best.sweep) ? s : best));
     const allow = Math.max(tol, a0.r * 0.02);
+    const onCircle = (s: Extract<Seg, { kind: 'arc' }>) => Math.abs(s.r - a0.r) <= allow && Math.hypot(s.c[0] - a0.c[0], s.c[1] - a0.c[1]) <= allow;
+    const main = arcs.filter(onCircle);
+    if (main.length < 2) return null;
     let sweep = 0;
-    for (const s of arcs) {
-      if (Math.abs(s.r - a0.r) > allow) return null;
-      if (Math.hypot(s.c[0] - a0.c[0], s.c[1] - a0.c[1]) > allow) return null;
-      sweep += s.sweep;
-    }
-    // Two 180° arcs plus a tiny closing chord is still a circle; a rounded
-    // rect has corner arcs on different centres and fails above.
+    for (const s of main) sweep += s.sweep;
+    // Two 180° arcs plus a tiny closing chord (or a nearly flat closing arc) is still a
+    // circle; a rounded rect has corner arcs on different centres and fails on the chords.
     if (Math.abs(Math.abs(sweep) - Math.PI * 2) > 0.6) return null;
-    for (const s of lines) {
+    for (const s of [...lines, ...arcs.filter((q) => !onCircle(q))]) {
       const d0 = Math.hypot(s.a[0] - a0.c[0], s.a[1] - a0.c[1]);
       const d1 = Math.hypot(s.b[0] - a0.c[0], s.b[1] - a0.c[1]);
       if (Math.abs(d0 - a0.r) > allow || Math.abs(d1 - a0.r) > allow) return null;
@@ -225,23 +237,12 @@ function mapEngraveForPart(part: Part, project?: Project, model?: Model): Path[]
   return mapEngravePathsForPart(part, art, ctx);
 }
 
-function rotPlace(bb: { minX: number; minY: number; maxX: number; maxY: number }, x: number, y: number, rot: boolean) {
-  return (p: Vec2): Vec2 => {
-    const lx = p[0] - bb.minX;
-    const ly = p[1] - bb.minY;
-    if (!rot) return [x + lx, y + ly];
-    // rotate 90° CCW: (lx, ly) -> (h - ly, lx)
-    const h = bb.maxY - bb.minY;
-    return [x + (h - ly), y + lx];
-  };
-}
-
 function sheetParts(model: Model, sheetIndex: number) {
   const sheet = model.nested.sheets[sheetIndex];
   const byId = new Map(model.sliced.parts.map((p) => [p.id, p]));
   return sheet.placements.map((pl) => {
     const part = byId.get(pl.id);
-    return part ? { pl, part, tf: rotPlace(part.bbox, pl.x, pl.y, pl.rot) } : null;
+    return part ? { pl, part, tf: placeTransform(part.bbox, pl) } : null;
   }).filter((x): x is { pl: (typeof sheet.placements)[number]; part: Part; tf: (p: Vec2) => Vec2 } => !!x);
 }
 
@@ -369,7 +370,7 @@ export function sheetFiles(model: Model): Record<string, Uint8Array> {
   return files;
 }
 
-export function packReadme(model: Model): string {
+export function packReadme(model: Model, project?: Project): string {
   const v = model.v;
   const lines = [
     'Strata fabrication pack',
@@ -396,6 +397,15 @@ export function packReadme(model: Model): string {
   ];
   if (model.sliced.stackRods) {
     lines.push('', 'rods.csv', '  Cut list of support poles: rod id, diameter (mm), length (mm) from the base to the top of the highest layer each rod holds.');
+  }
+  if (model.sliced.candleMaster) {
+    lines.push('', 'candle-master.txt', '  The candle master: what to buy (silicone, wax per candle, the centre pin) and how to glue up the master, cast the mould and pour.');
+  }
+  if (candleShopping(project?.candles).length) {
+    lines.push('', 'candles.csv', '  Candles to buy for the candelabra: one row per size with how many, what holds them and the hole each drops into, then the total.');
+  }
+  if (project?.hero && currentHero(project, model)) {
+    lines.push('', 'hero.png', '  A photograph-style render of the finished piece (Blender Cycles), also on the build pack cover.');
   }
   const dropped = (model.sliced.fragments ?? []).filter((e) => e.action === 'dropped' || e.action === 'merged');
   if (dropped.length) {
@@ -479,7 +489,13 @@ export function buildPackHtmlChecked(project: Project, model: Model, opts: impor
 }
 
 /** `rates` are the price estimate's (the user's edited ones, when the UI has them). */
-export function buildZip(model: Model, project: Project, rates: PriceRates = DEFAULT_RATES): Uint8Array {
+export interface ZipOptions {
+  /** Date printed in the build pack and stamped on every file (now when missing). Fixed, it makes the zip repeatable byte for byte. */
+  date?: Date;
+}
+
+export function buildZip(model: Model, project: Project, rates: PriceRates = DEFAULT_RATES, opts: ZipOptions = {}): Uint8Array {
+  const date = opts.date ?? new Date();
   assertExportable(model);
   const v = model.v;
   const files: Record<string, Uint8Array> = {};
@@ -506,8 +522,13 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
     files['price-estimate.json'] = strToU8(JSON.stringify(estimate, null, 2) + '\n');
   }
   if (model.shadow && project.shadow?.frames.length) files['shadow-install-card.html'] = strToU8(installCardHtml(project, v, model.shadow));
-  files['README.txt'] = strToU8(packReadme(model));
-  files['build-pack.html'] = strToU8(buildPackHtmlChecked(project, model, { rates }));
+  const candles = candleShopping(project.candles);
+  if (candles.length) files['candles.csv'] = strToU8(candlesCsv(candles));
+  if (model.sliced.candleMaster) files['candle-master.txt'] = strToU8(masterText(model.sliced.candleMaster));
+  const hero = currentHero(project, model);
+  if (hero) files['hero.png'] = heroPngBytes(hero);
+  files['README.txt'] = strToU8(packReadme(model, project));
+  files['build-pack.html'] = strToU8(buildPackHtmlChecked(project, model, { rates, date }));
   files['manifest.json'] = strToU8(JSON.stringify({ ...packManifest(model), ...buildPlateManifest(model, project) }, null, 2) + '\n');
   const archetype = project.images.top?.map?.archetypeCard;
   if (archetype && typeof archetype === 'object') {
@@ -515,7 +536,7 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   }
   files['project.strata.json'] = strToU8(serialize(project));
   assertZipBuildPackIntegrity(model, project, files);
-  return zipSync(files, { level: 6 });
+  return zipSync(files, { level: 6, mtime: date });
 }
 
 export function pourPlanText(model: Model): string {

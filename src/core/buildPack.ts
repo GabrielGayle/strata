@@ -13,10 +13,13 @@ import { planeToWorld, type V3 } from './section';
 import type { Shape } from './geom2d';
 import { baseChamfers, basePlan } from './base';
 import { bucketOf, finishOf, lookOf, METAL_NAMES } from './appearance';
+import { currentHero } from './hero';
 import { isIdentity } from './moves';
 import { DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from './price';
 import type { Rod, RodPlan } from './brace';
 import { formatFragment } from './fragments';
+import { candleNote, candleShopping } from './candles';
+import { masterShopping } from './candleMaster';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -231,13 +234,14 @@ function positionText(m: Model, view: View, p: Part): string {
     return `layer ${p.index + 1}: ${n1(y0)}–${mm(y0 + p.thickness)} up`;
   }
   if (p.family === 'P') return `${mm(b + view.stackLen / 2)} from front`;
-  if (p.family === 'X') return `${mm(x + view.acrossLen / 2)} from left`;
+  if (p.family === 'X') return `${mm(x + view.acrossLen / 2)} from left${slanted(m.v) ? `, at ${Math.round(m.v.gridAngle)}° to the plates` : ''}`;
   if (p.family === 'R') {
     const [ux, ub] = [p.plane.u[0] * view.right[0] + p.plane.u[2] * view.right[1], p.plane.u[0] * view.back[0] + p.plane.u[2] * view.back[1]];
     const deg = ((Math.atan2(-ux, -ub) * 180) / Math.PI + 360) % 360;
     return `${n1(deg)}° clockwise from front`;
   }
   if (p.family === 'C' || p.family === 'T') return Math.abs(x) < 0.5 ? 'on the centre line' : `${mm(Math.abs(x))} ${x > 0 ? 'right' : 'left'} of centre`;
+  if (p.family === 'K') return `candle fin, ${mm(Math.abs(x))} ${x > 0 ? 'right' : 'left'} of centre, ${mm(b + view.stackLen / 2)} from front`;
   return 'cast in';
 }
 
@@ -272,6 +276,7 @@ function planSvg(m: Model, view: View, names: Map<string, string>): string {
 
   // labels
   const labels: string[] = [];
+  let thinned = 0;
   const leftEdge = f.X(b.minX), rightEdge = f.X(b.maxX), topEdge = f.Y(b.maxY);
   if (!flat) {
     const byKey = new Map<string, Part[]>();
@@ -279,14 +284,37 @@ function planSvg(m: Model, view: View, names: Map<string, string>): string {
     const P = [...byKey.values()].filter((ps) => ps[0].family === 'P').sort((a, c) => a[0].index - c[0].index);
     const spacing = P.length > 1 ? Math.abs(f.Y(view.plan(P[1][0].plane.origin)[1]) - f.Y(view.plan(P[0][0].plane.origin)[1])) : 99;
     const alternate = spacing < font + 3;
-    P.forEach((ps, i) => {
+    // where plates stand closer than a line of text, name what fits on each side (first and last always) rather than print them over each other
+    const gap = font + 2;
+    const rows = P.map((ps) => {
       const pts = ps.flatMap((p) => foot.get(p)!.flat()).map(([x, y]) => [f.X(x), f.Y(y)] as P2);
-      const y = pts.reduce((a, q) => a + q[1], 0) / pts.length;
-      const left = alternate && i % 2 === 1;
+      return { ps, pts, y: pts.reduce((a, q) => a + q[1], 0) / pts.length };
+    });
+    const placed: { i: number; left: boolean }[] = [];
+    const lastY = { left: -Infinity, right: -Infinity };
+    const fits = (y: number, left: boolean) => Math.abs(y - (left ? lastY.left : lastY.right)) >= gap;
+    rows.forEach((r, i) => {
+      const order = alternate ? (i % 2 ? [true, false] : [false, true]) : [false];
+      const left = order.find((l) => fits(r.y, l));
+      if (left === undefined) {
+        if (i !== rows.length - 1) return;
+        // the last plate always gets its name: drop whichever neighbour is in its way
+        const side = placed.length && placed[placed.length - 1].left ? true : false;
+        while (placed.length && placed[placed.length - 1].left === side && Math.abs(rows[placed[placed.length - 1].i].y - r.y) < gap && placed[placed.length - 1].i !== 0) placed.pop();
+        placed.push({ i, left: side });
+        return;
+      }
+      placed.push({ i, left });
+      if (left) lastY.left = r.y;
+      else lastY.right = r.y;
+    });
+    if (placed.length < rows.length) thinned = rows.length;
+    for (const { i, left } of placed) {
+      const { ps, pts, y } = rows[i];
       const end = left ? Math.min(...pts.map((q) => q[0])) : Math.max(...pts.map((q) => q[0]));
       const lx = left ? leftEdge - 8 : rightEdge + 8;
       labels.push(`<line x1="${px(end + (left ? -2 : 2))}" y1="${px(y)}" x2="${px(lx + (left ? 2 : -2))}" y2="${px(y)}" stroke="#999" stroke-width="0.5"/><text x="${px(lx + (left ? -2 : 2))}" y="${px(y + 3.8)}" text-anchor="${left ? 'end' : 'start'}" font-size="${font}" font-weight="600">${esc(names.get(ps[0].plateKey) ?? ps[0].id)}</text>`);
-    });
+    }
     for (const ps of byKey.values()) {
       const p0 = ps[0];
       if (p0.family === 'X') {
@@ -318,6 +346,7 @@ function planSvg(m: Model, view: View, names: Map<string, string>): string {
       const x = pts.reduce((a, q) => a + q[0], 0) / pts.length;
       labels.push(`<text x="${px(f.X(x))}" y="${px(topEdge - (v.sliceMode === 'waffle' ? 24 : 8) - (p.family === 'T' ? 13 : 0))}" text-anchor="middle" font-size="${font}" font-style="italic">${esc(p.id)}</text>`);
     });
+  if (thinned) labels.push(`<text x="${px(f.w - 12)}" y="${px(f.h - (ins.length > 2 ? 26 : 10))}" text-anchor="end" font-size="11">plates too close to name each: all ${thinned} are in the schedule</text>`);
   if (ins.length > 2) {
     labels.push(`<text x="${px(f.w - 12)}" y="${px(f.h - 10)}" text-anchor="end" font-size="11">dashed outline: insert</text>`);
   }
@@ -398,26 +427,119 @@ function shade(hex: string, k: number): string {
   return `#${c.map((x) => x.toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** Cut a closed ring down to the part at or above the ground (y ≥ 0). */
-function aboveGround(ring: V3[]): V3[] {
+/** Cut a closed ring down to the part at or above height `h` (the top of the concrete: what's below is cast in, out of sight). */
+export function aboveGround(ring: V3[], h = 0): V3[] {
   const out: V3[] = [];
   for (let i = 0; i < ring.length; i++) {
     const a = ring[i], b = ring[(i + 1) % ring.length];
-    if (a[1] >= 0) out.push(a);
-    if (a[1] >= 0 !== b[1] >= 0) {
-      const t = a[1] / (a[1] - b[1]);
-      out.push([a[0] + (b[0] - a[0]) * t, 0, a[2] + (b[2] - a[2]) * t]);
+    if (a[1] >= h) out.push(a);
+    if (a[1] >= h !== b[1] >= h) {
+      const t = (a[1] - h) / (a[1] - b[1]);
+      out.push([a[0] + (b[0] - a[0]) * t, h, a[2] + (b[2] - a[2]) * t]);
     }
   }
   return out;
 }
 
+/** A vertex of a ring in world space; `e` says whether the edge on to the next vertex is the part's own (not a cut). */
+export type Vtx = { p: V3; e: boolean };
+export type Plane3 = { n: V3; d: number };
+export interface PaintItem {
+  /** Depth of the whole part, nearest smallest. */
+  d: number;
+  rings: Vtx[][];
+  fill: string;
+  stroke: string;
+  sw: number;
+  tri?: boolean;
+  plate?: boolean;
+  spacer?: boolean;
+  /** Index in m.sliced.parts. */
+  part?: number;
+  /** Index of the plane this part lies in. */
+  plane?: number;
+}
+
+/** Cut a ring by a plane: the pieces on its front (n·p ≥ d) and back. Cut edges are marked. */
+function splitRing(ring: Vtx[], pl: Plane3): { front: Vtx[]; back: Vtx[] } {
+  const s = ring.map((q) => q.p[0] * pl.n[0] + q.p[1] * pl.n[1] + q.p[2] * pl.n[2] - pl.d);
+  const front: Vtx[] = [], back: Vtx[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const j = (i + 1) % ring.length;
+    const a = ring[i], b = ring[j];
+    const af = s[i] >= 0, bf = s[j] >= 0;
+    (af ? front : back).push(a);
+    if (af !== bf) {
+      const t = s[i] / (s[i] - s[j]);
+      const x: V3 = [a.p[0] + (b.p[0] - a.p[0]) * t, a.p[1] + (b.p[1] - a.p[1]) * t, a.p[2] + (b.p[2] - a.p[2]) * t];
+      // the side we are leaving closes along the cut; the side we enter carries on along a's edge
+      (af ? front : back).push({ p: x, e: false });
+      (af ? back : front).push({ p: x, e: a.e });
+    }
+  }
+  return { front, back };
+}
+
+/**
+ * Far-to-near order for an orthographic view looking along -`toCam`. A BSP
+ * over the parts' own planes: each node draws the side away from the camera,
+ * then the parts lying in its plane, then the near side, splitting anything
+ * that straddles it. So crossing plates (waffle, radial, candle fins) and the
+ * insert threading through a row come out right, not just roughly by distance.
+ */
+export function paintOrder(items: PaintItem[], planes: Plane3[], toCam: V3, depth: (w: V3) => number): PaintItem[] {
+  const eps = 0.01;
+  const out: PaintItem[] = [];
+  const centroid = (it: PaintItem) => {
+    const r = it.rings[0];
+    return r.reduce((s, q) => s + depth(q.p), 0) / r.length;
+  };
+  const walk = (list: PaintItem[], k: number) => {
+    if (!list.length) return;
+    if (k >= planes.length || list.length === 1) {
+      list.map((it) => ({ it, d: centroid(it) })).sort((a, b) => b.d - a.d).forEach(({ it }) => out.push(it));
+      return;
+    }
+    const pl = planes[k];
+    const front: PaintItem[] = [], back: PaintItem[] = [], on: PaintItem[] = [];
+    for (const it of list) {
+      if (it.plane === k) {
+        on.push(it);
+        continue;
+      }
+      let lo = Infinity, hi = -Infinity;
+      for (const r of it.rings) for (const q of r) {
+        const sd = q.p[0] * pl.n[0] + q.p[1] * pl.n[1] + q.p[2] * pl.n[2] - pl.d;
+        if (sd < lo) lo = sd;
+        if (sd > hi) hi = sd;
+      }
+      if (lo >= -eps) front.push(it);
+      else if (hi <= eps) back.push(it);
+      else {
+        const f: Vtx[][] = [], b: Vtx[][] = [];
+        for (const r of it.rings) {
+          const sp = splitRing(r, pl);
+          if (sp.front.length > 2) f.push(sp.front);
+          if (sp.back.length > 2) b.push(sp.back);
+        }
+        if (f.length) front.push({ ...it, rings: f });
+        if (b.length) back.push({ ...it, rings: b });
+      }
+    }
+    const camFront = pl.n[0] * toCam[0] + pl.n[1] * toCam[1] + pl.n[2] * toCam[2] >= 0;
+    const [far, near] = camFront ? [back, front] : [front, back];
+    walk(far, k + 1);
+    on.map((it) => ({ it, d: centroid(it) })).sort((a, b) => b.d - a.d).forEach(({ it }) => out.push(it));
+    walk(near, k + 1);
+  };
+  walk(items, 0);
+  return out;
+}
+
 /**
  * The finished piece in an orthographic view from above one corner: every
- * part in its metal and finish, the insert, and the concrete base. Drawn back
- * to front, so parts that cross each other (a waffle, a radial star) can
- * overlap a little wrongly where they meet; it is for seeing the design, not
- * for measuring.
+ * part in its metal and finish, the insert, and the concrete base, painted far
+ * to near (see `paintOrder`). It is for seeing the design, not for measuring.
  * `turn` is the camera's angle round from the front, in degrees (positive:
  * from the right); `tilt` how far it looks down.
  */
@@ -451,8 +573,9 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   };
   const clip = v.baseOn;
 
-  type Item = { d: number; pts: P2[][]; fill: string; stroke: string; sw: number; tri?: boolean; plate?: boolean; spacer?: boolean };
-  const items: Item[] = [];
+  const items: PaintItem[] = [];
+  // the camera's direction (towards it) in world x, y, z
+  const camWorld: V3 = [cam[0] * view.right[0] + cam[1] * view.back[0], cam[2], cam[0] * view.right[1] + cam[1] * view.back[1]];
   const all: P2[] = [];
 
   // the base: a convex block, so faces turned towards us are all that shows
@@ -493,47 +616,46 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
     }
   }
 
-  // the parts
-  for (const p of m.sliced.parts) {
+  // the parts: kept in world space, so the drawing order below can split them where they cross
+  const planes: Plane3[] = [];
+  const planeOf = (n: V3, o: V3): number => {
+    const d = n[0] * o[0] + n[1] * o[1] + n[2] * o[2];
+    const i = planes.findIndex((q) => (Math.abs(dot(q.n, n) - 1) < 1e-6 && Math.abs(q.d - d) < 0.01) || (Math.abs(dot(q.n, n) + 1) < 1e-6 && Math.abs(q.d + d) < 0.01));
+    if (i >= 0) return i;
+    planes.push({ n, d });
+    return planes.length - 1;
+  };
+  m.sliced.parts.forEach((p, idx) => {
     const metal = metalOf(project, m, p.plateKey);
     const b = bucketOf(project.appearance, p.plateKey);
     const look = lookOf(metal.material, b ? b.finish : project.appearance?.main?.finish, b ? b.color : project.appearance?.main?.color);
     const nr = nOf(p.plane.normal);
-    const rings = p.shape.flatMap((ex2) => [ex2.outer, ...ex2.holes]).map((path) => {
-      const w = path.map(([a, c]) => planeToWorld(p.plane, a, c));
-      return clip ? aboveGround(w) : w;
-    }).filter((r) => r.length > 2);
-    if (!rings.length) {
-      // Plates fully below the ground clip still need a path (embedded tabs); project the raw outline.
-      if (isMain(p)) {
-        const worldRings = p.shape
-          .flatMap((ex2) => [ex2.outer, ...ex2.holes])
-          .map((path) => path.map(([a, c]) => planeToWorld(p.plane, a, c)))
-          .filter((r) => r.length > 2);
-        if (worldRings.length) {
-          const flatPts = worldRings[0];
-          const d = flatPts.reduce((s, q) => s + depth(q), 0) / flatPts.length;
-          const pts = worldRings.map((r) => r.map(scr));
-          items.push({
-            d,
-            pts,
-            fill: shade(look.color, lit(nr) * 0.9),
-            stroke: shade(look.color, 1.6),
-            sw: 0.6,
-            plate: true,
-            spacer: false,
-          });
-          all.push(...pts[0]);
-        }
-      }
-      continue;
+    const world = p.shape
+      .flatMap((ex2) => [ex2.outer, ...ex2.holes])
+      .map((path) => path.map(([a, c]) => planeToWorld(p.plane, a, c)))
+      .filter((r) => r.length > 2);
+    let rings = clip ? world.map((r) => aboveGround(r, v.baseHeight)).filter((r) => r.length > 2) : world;
+    // plates wholly below the ground (embedded tabs) still get drawn, unclipped, so every plate shows
+    const buried = !rings.length;
+    if (buried) {
+      if (!isMain(p)) return;
+      rings = world;
     }
-    const flatPts = rings[0];
-    const d = flatPts.reduce((s, q) => s + depth(q), 0) / flatPts.length;
-    const pts = rings.map((r) => r.map(scr));
-    all.push(...pts[0]);
-    items.push({ d, pts, fill: shade(look.color, lit(nr) * (p.family === 'S' ? 0.85 : 1)), stroke: shade(look.color, 1.6), sw: 0.6, plate: isMain(p), spacer: p.family === 'C' || p.family === 'T' });
-  }
+    if (!rings.length) return;
+    const d = rings[0].reduce((s, q) => s + depth(q), 0) / rings[0].length;
+    all.push(...rings[0].map(scr));
+    items.push({
+      d,
+      rings: rings.map((r) => r.map((q) => ({ p: q, e: true }))),
+      fill: shade(look.color, lit(nr) * (buried ? 0.9 : p.family === 'S' ? 0.85 : 1)),
+      stroke: shade(look.color, 1.6),
+      sw: 0.6,
+      plate: isMain(p),
+      spacer: p.family === 'C' || p.family === 'T',
+      part: idx,
+      plane: planeOf(p.plane.normal, p.plane.origin),
+    });
+  });
 
   // the insert, a triangle at a time (only the side facing us)
   const ins = m.insert && v.insShape !== 'none' && v.insMaterial !== 'void' ? m.insert.mesh : null;
@@ -548,13 +670,12 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
       if (k < 1e-9) continue;
       const nn: V3 = [nr[0] / k, nr[1] / k, nr[2] / k];
       if (dot(nn, cam) <= 0) continue;
-      const ring = clip ? aboveGround(tri) : tri;
+      const ring = clip ? aboveGround(tri, v.baseHeight) : tri;
       if (ring.length < 3) continue;
-      const pts = ring.map(scr);
-      all.push(...pts);
+      all.push(...ring.map(scr));
       // a few shades only, so neighbouring triangles merge into one path below
       const col = shade(tint, 0.55 + Math.round(10 * Math.max(0, dot(nn, light))) / 20);
-      items.push({ d: ring.reduce((s, q) => s + depth(q), 0) / ring.length, pts: [pts], fill: col, stroke: col, sw: 0.5, tri: true });
+      items.push({ d: ring.reduce((s, q) => s + depth(q), 0) / ring.length, rings: [ring.map((q) => ({ p: q, e: true }))], fill: col, stroke: col, sw: 0.5, tri: true });
     }
   }
   if (!all.length) return '';
@@ -563,37 +684,48 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   const f = fitBox(bx, opts.maxW ?? 690, opts.maxH ?? 520, [16, 16, 16, 16]);
   const out: string[] = [];
   for (const b of baseFaces) out.push(`<path d="${pathD(b.pts, f.X, f.Y)}" fill="${b.fill}" stroke="${shade(b.fill, 0.6)}" stroke-width="0.8" stroke-linejoin="round"/>`);
-  const byDepth = (a: Item, b: Item) => b.d - a.d;
-  const tris = items.filter((it) => it.tri).sort(byDepth);
-  const plates = items.filter((it) => !it.tri).sort(byDepth);
-  // a little haze with distance, so plates standing one behind another read apart
-  const d0 = plates.length ? plates[plates.length - 1].d : 0, d1 = plates.length ? plates[0].d : 1;
-  for (const it of plates) {
-    const k = 1 - 0.3 * ((it.d - d0) / Math.max(1e-6, d1 - d0));
-    it.fill = shade(it.fill, k);
-  }
+  // a little haze with distance, so plates standing one behind another read apart (per part, before any split)
+  const solid = items.filter((it) => !it.tri);
+  const d0 = Math.min(...solid.map((it) => it.d)), d1 = Math.max(...solid.map((it) => it.d));
+  for (const it of solid) it.fill = shade(it.fill, 1 - 0.3 * ((it.d - d0) / Math.max(1e-6, d1 - d0)));
+
+  const ordered = paintOrder(items, planes, camWorld, depth);
   const triTol = { tol: 0.6, minPts: 3 };
   const platePrec = { prec: 2 };
-  const emit = (list: Item[], pathOpts: PathDOpts) => {
-    for (let i = 0; i < list.length; i++) {
-      const it = list[i];
-      let d = it.pts.map((r) => pathD(r, f.X, f.Y, true, pathOpts)).join('');
-      if (it.tri) {
-        while (list[i + 1]?.tri && list[i + 1].fill === it.fill) d += pathD(list[++i].pts[0], f.X, f.Y, true, pathOpts);
-      }
-      if (!d && it.plate && it.pts[0]?.length) d = pathD(it.pts[0], f.X, f.Y, true, { ...pathOpts, prec: 3 });
-      if (!d && it.plate) d = `M${px(f.X(0))},${px(f.Y(0))}h1v1h-1Z`;
-      if (d) {
-        const cls = it.plate ? ' class="plate"' : it.spacer ? ' class="spacer"' : '';
-        out.push(
-          `<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"${it.tri ? '' : ' fill-rule="evenodd"'}${cls}/>`,
-        );
-      }
+  const toScr = (r: Vtx[]) => r.map((q) => scr(q.p));
+  for (let i = 0; i < ordered.length; i++) {
+    const it = ordered[i];
+    if (it.tri) {
+      let d = pathD(toScr(it.rings[0]), f.X, f.Y, true, triTol);
+      // a run of insert triangles in one shade: one path (they don't overlap, so nonzero fill is right)
+      while (ordered[i + 1]?.tri && ordered[i + 1].fill === it.fill) d += pathD(toScr(ordered[++i].rings[0]), f.X, f.Y, true, triTol);
+      if (d) out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round"/>`);
+      continue;
     }
-  };
-  // insert and other meshes first; plates on top so thin rows stay visible through the cast-in shape
-  emit(tris, triTol);
-  emit(plates, platePrec);
+    const attrs = `${it.plate ? ' class="plate"' : it.spacer ? ' class="spacer"' : ''}${it.part !== undefined ? ` data-part="${it.part}"` : ''}`;
+    let d = it.rings.map((r) => pathD(toScr(r), f.X, f.Y, true, platePrec)).join('');
+    if (!d && it.plate) d = `M${px(f.X(0))},${px(f.Y(0))}h1v1h-1Z`;
+    if (!d) continue;
+    const cut = it.rings.some((r) => r.some((q) => !q.e));
+    if (!cut) {
+      out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round" fill-rule="evenodd"${attrs}/>`);
+      continue;
+    }
+    // a piece split off where another part crosses it: fill it whole, but only outline the part's own edges
+    const edges = it.rings
+      .map((r) => {
+        let s = '';
+        r.forEach((q, j) => {
+          if (!q.e) return;
+          const a = scr(q.p), b = scr(r[(j + 1) % r.length].p);
+          s += `M${px(f.X(a[0]))},${px(f.Y(a[1]))}L${px(f.X(b[0]))},${px(f.Y(b[1]))}`;
+        });
+        return s;
+      })
+      .join('');
+    out.push(`<path d="${d}" fill="${it.fill}" stroke="${it.fill}" stroke-width="0.3" fill-rule="evenodd"${attrs}/>`);
+    if (edges) out.push(`<path d="${edges}" fill="none" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linecap="round"/>`);
+  }
   return `<svg class="drawing angled" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="${esc(title)}">${out.join('')}</svg>`;
 }
 
@@ -601,7 +733,8 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
 export function angledPlatePathCount(project: Project, m: Model, opts: { turn?: number; tilt?: number; maxW?: number; maxH?: number } = {}): { expected: number; drawn: number; pitchPx: number } {
   const svg = angledSvg(project, m, viewOf(m), 'count', { turn: opts.turn ?? 35, tilt: opts.tilt ?? 30, maxW: opts.maxW ?? 690, maxH: opts.maxH ?? 400 });
   const expected = m.sliced.parts.filter((p) => p.family === 'P' || p.family === 'X' || p.family === 'R').length;
-  const drawn = svg ? [...svg.matchAll(/class="plate"/g)].length : 0;
+  // a plate split where another crosses it is several paths: count plates, not paths
+  const drawn = svg ? new Set([...svg.matchAll(/class="plate" data-part="(\d+)"/g)].map((x) => x[1])).size : 0;
   const v = m.v;
   const f = stackFrame(v);
   const back: P2 = [f.stack[0], f.stack[1]];
@@ -624,14 +757,19 @@ export function angledPlatePathCount(project: Project, m: Model, opts: { turn?: 
 
 // --- sections -----------------------------------------------------------------------
 
+const slanted = (v: Model['v']) => v.sliceMode === 'waffle' && Math.abs(v.gridAngle - 90) > 0.01;
+
 function modeText(m: Model, mains: PlateInfo[]): string {
   const v = m.v;
   const n = mains.length;
+  if (!m.sliced.plates.length) return v.baseOn ? 'Concrete base only: no plates' : 'No plates and no base';
   switch (v.sliceMode) {
     case 'radial':
       return `Radial: ${n} plates round a ${mm(v.radialHub)} hub`;
     case 'waffle':
-      return `Waffle: ${mains.filter((p) => p.def.family === 'P').length} plates interlocking with ${mains.filter((p) => p.def.family === 'X').length} cross plates`;
+      if (v.waffleLayout === 'grid')
+        return `Closed grid: ${mains.filter((p) => p.def.family === 'P').length} plates × ${mains.filter((p) => p.def.family === 'X').length} cross plates, ${n1(v.cellSize)} × ${mm(v.gridCell === 'rect' ? v.cellCross : v.cellSize)} cells at ${Math.round(v.gridAngle)}°`;
+      return `Waffle: ${mains.filter((p) => p.def.family === 'P').length} plates interlocking with ${mains.filter((p) => p.def.family === 'X').length} cross plates${slanted(v) ? ` at ${Math.round(v.gridAngle)}°` : ''}`;
     case 'flat':
       return `Flat stack: ${n} layers glued face to face`;
     default:
@@ -736,7 +874,7 @@ function assemblySteps(project: Project, m: Model, view: View, names: Map<string
     if (!slot) {
       if (v.sliceMode === 'waffle') {
         steps.push(
-          `<b>Assemble the grid off the base.</b> Stand the ${P.length} long plates (${nm(P[0])} … ${nm(P[P.length - 1])}) in order, then lower the ${X.length} cross plates (${X.length ? `${nm(X[0])} … ${nm(X[X.length - 1])}` : ''}) over them from above so each pair of slots meets half way. Check it square.`,
+          `<b>Assemble the grid off the base.</b> Stand the ${P.length} long plates (${nm(P[0])} … ${nm(P[P.length - 1])}) in order, then lower the ${X.length} cross plates (${X.length ? `${nm(X[0])} … ${nm(X[X.length - 1])}` : ''}) over them from above so each pair of slots meets half way. ${slanted(v) ? `Check the cross plates sit at ${Math.round(v.gridAngle)}° to the long plates (the slots are wider than the steel at a slant, so set the angle with a bevel gauge before the concrete).` : 'Check it square.'}`,
         );
         steps.push(`<b>Lower the grid into the mould</b> as one piece${into}${insert ? ', over the insert' : ''}. There is no jig board for a waffle: prop or clamp it level until the concrete takes it.`);
       } else if (v.sliceMode === 'radial') {
@@ -959,7 +1097,7 @@ function plateGallery(m: Model, names: Map<string, string>): string {
   return `<p class="note">One card per model plate, including empty or zero-area layers. Count must match the cover legend and <span class="mono">manifest.json</span>.</p><div class="plate-gallery" data-plate-count="${m.sliced.plates.length}">${cards.join('')}</div>`;
 }
 
-function cutListSection(m: Model, rates: PriceRates): string {
+function cutListSection(m: Model, rates: PriceRates, project?: Project): string {
   const v = m.v;
   const bom = m.bom;
   const out: string[] = [];
@@ -977,6 +1115,10 @@ function cutListSection(m: Model, rates: PriceRates): string {
   }
   const bought: string[] = [];
   for (const r of bom.hardware) bought.push(`<tr><td class="id">${esc(r.item)}</td><td>${esc(r.spec)}</td><td class="n">${r.qty}</td><td>${esc(r.note ?? '')}</td></tr>`);
+  const master = m.sliced.candleMaster;
+  if (master) for (const r of masterShopping(master)) bought.push(`<tr data-candle-master="1"><td class="id">${esc(r.item)}</td><td>${esc(r.spec)}</td><td class="n">${esc(r.qty)}</td><td>${esc(r.note)}</td></tr>`);
+  const candles = candleShopping(project?.candles);
+  for (const c of candles) bought.push(`<tr data-candle-qty="${c.qty}"><td class="id">${esc(c.name)}</td><td>Ø${mm(c.d)} × ${mm(c.h)} ${c.tealight ? 'tealight' : 'candle'}</td><td class="n">${c.qty}</td><td>${esc(candleNote(c))}</td></tr>`);
   const conc = bom.concreteBase + bom.concreteInsert;
   if (conc > 0) bought.push(`<tr><td class="id">Concrete (dry mix)</td><td>25 kg bags</td><td class="n">${bags(conc)}</td><td>${n1(conc)} L poured, ${bom.concreteMass.toFixed(0)} kg cured${bom.concreteInsert > 0 ? ` (insert ${n1(bom.concreteInsert)} L)` : ''}</td></tr>`);
   if (bom.plyParts) bought.push(`<tr><td class="id">Plywood</td><td>${mm(v.plyThickness)}, ${n1(v.plySheetW)} × ${n1(v.plySheetH)}</td><td class="n">${bom.plySheets}</td><td>${bom.plyParts} CNC parts, ${bom.plyArea.toFixed(2)} m²</td></tr>`);
@@ -986,6 +1128,11 @@ function cutListSection(m: Model, rates: PriceRates): string {
   if (v.sliceMode === 'flat') bought.push(`<tr><td class="id">Adhesive</td><td>epoxy or construction adhesive</td><td class="n">—</td><td>for ${plural(m.sliced.plates.filter((p) => p.parts.length).length, 'layer')}</td></tr>`);
   if (v.baseOn) bought.push(`<tr><td class="id">Release agent</td><td>for the mould</td><td class="n">—</td><td></td></tr>`);
   if (bought.length) out.push(`<h3>Bought in</h3><table><thead><tr><th>Item</th><th>Spec</th><th>Qty</th><th>Note</th></tr></thead><tbody>${bought.join('')}</tbody></table>`);
+  if (master) out.push(`<p class="note" data-candle-master-layers="${master.masterLayers}">Candle master: glue the ${plural(master.masterLayers, 'master layer')} in order on the centre pin, glue the ${plural(master.frameLayers, 'frame')} into a box round it on a flat board, seal the seams, then pour the silicone. The box inside is ${n1(master.inner.w)} × ${n1(master.inner.d)} × ${n1(master.inner.h)} mm. Step by step: candle-master.txt in the ZIP.</p>`);
+  if (candles.length) {
+    const n = candles.reduce((a, c) => a + c.qty, 0);
+    out.push(`<p class="note" data-candle-total="${n}">${plural(n, 'candle')} to fill the candelabra (candles.csv in the ZIP). Measure a candle before you buy a box: it should drop into its hole with a little play.</p>`);
+  }
   if (bom.partCount) {
     const est = withHardware(estimateMix(bom, v.thickness, rates), bom.hardware, rates);
     out.push(`<p class="note">Laser cutting${bom.hardware.length ? ' and rod hardware' : ''}: about £${est.total.toFixed(0)} including VAT (an estimate, not a quote; see price-estimate.txt).</p>`);
@@ -1068,16 +1215,18 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
       body: `<p class="note">Licence lines for the relief map (also etched on the back plate).</p><ul>${mapAttr.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>`,
     });
   }
-  sections.push({ id: 'parts', title: 'Cut list and bought-in parts', body: cutListSection(m, rates) });
+  sections.push({ id: 'parts', title: 'Cut list and bought-in parts', body: cutListSection(m, rates, project) });
 
   const facts: [string, string][] = [
     ['Design', modeText(m, mains)],
     ['Overall size', `${n1(pb.maxX - pb.minX)} wide × ${n1(pb.maxY - pb.minY)} deep × ${n1(top)} high (mm)`],
     ['Plates', `${m.sliced.plates.length} plates · ${parts.length} laser-cut parts`],
     ['Weight', `about ${weight.toFixed(0)} kg${v.baseOn ? ` (steel ${m.bom.plateMass.toFixed(1)} kg, concrete ${m.bom.concreteMass.toFixed(0)} kg)` : ''}`],
-    ['Materials', `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
+    ['Materials', `${parts.length ? `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet` : 'No sheet metal'}${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
     ['Date', `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`],
   ];
+  // the cloud's hero render, while it still shows this design
+  const hero = currentHero(project, m);
   const cover = `<section class="cover">
 <p class="kicker">Strata build pack</p>
 <h1>${esc(project.name || 'Untitled')}</h1>
@@ -1085,6 +1234,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
 ${errors ? `<p class="warn">The design has ${plural(errors, 'check error')}: fix ${errors === 1 ? 'it' : 'them'} in Strata before cutting.</p>` : ''}
 <p class="plate-legend" data-plate-count="${m.sliced.plates.length}">This pack lists <b>${m.sliced.plates.length}</b> plates — the same count as the model and <span class="mono">manifest.json</span>.</p>
 ${(m.sliced.fragments ?? []).length ? `<p class="note">Fragments: ${m.sliced.fragments.map((e) => esc(formatFragment(e))).join(' ')}</p>` : ''}
+${hero ? `<figure class="full hero"><img src="${hero.png}" width="${hero.w}" height="${hero.h}" alt="The finished piece, rendered"><figcaption>The finished piece, rendered (${esc(hero.date)}). <span class="mono">hero.png</span> in the zip is the full picture.</figcaption></figure>` : ''}
 <figure class="full">${angledSvg(project, m, view, 'The finished piece from the front right', { maxH: 400 })}<figcaption>From the front right, in the plates' metals and finishes. Orthographic: parallel edges stay parallel, so nothing shrinks with distance.</figcaption></figure>
 <h2>Contents</h2>
 <ol class="toc">${sections.map((s) => `<li><a href="#${s.id}">${s.title}</a></li>`).join('')}</ol>
@@ -1114,6 +1264,7 @@ ${(m.sliced.fragments ?? []).length ? `<p class="note">Fragments: ${m.sliced.fra
     section + section { padding-top: 56px; }
   }
   figure { margin: 6px 0 10px; } figure.full { text-align: center; } figcaption { font-size: 12px; margin-top: 4px; }
+  figure.hero img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
   svg.drawing { display: block; max-width: 100%; height: auto; margin: 0 auto; font-family: inherit; }
   svg.angled { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   svg text { fill: #000; } .dim line { stroke: #000; stroke-width: 0.8; } .dim text { font-size: 11px; }

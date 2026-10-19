@@ -32,6 +32,7 @@ import NodeView from './NodeView';
 import PatternModal, { ASPECTS } from './PatternModal';
 import { sampleCliff } from './sample';
 import { grayDataUrl, paintGray, readImage, SURFACE_INFO } from './surfaces';
+import { Tab as TabItem } from './Tab';
 
 const BLENDS: { value: BlendMode; label: string; hint: string }[] = [
   { value: 'darken', label: 'Darken', hint: 'Keeps the deeper cut where blocks overlap' },
@@ -241,10 +242,13 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
               const n = comp.blocks.filter((b) => b.surface === s).length;
               const on = view === 'canvas' && surface === s;
               return (
-                <li
+                <TabItem
                   key={s}
-                  role="tab"
-                  aria-selected={on}
+                  selected={on}
+                  onSelect={() => {
+                    setSurface(s);
+                    setView('canvas');
+                  }}
                   onDragOver={(e) => e.dataTransfer.types.includes('text/x-block') && e.preventDefault()}
                   onDrop={(e) => {
                     const id = e.dataTransfer.getData('text/x-block');
@@ -252,31 +256,13 @@ export default function ComposerModal({ initial, initialSurface, stackAspect, on
                   }}
                   title={`${SURFACE_INFO[s].title}. Drop a block here to move it to this surface.`}
                 >
-                  <a
-                    href={`#${s}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setSurface(s);
-                      setView('canvas');
-                    }}
-                  >
-                    {SURFACE_INFO[s].short} {n}
-                  </a>
-                </li>
+                  {SURFACE_INFO[s].short} {n}
+                </TabItem>
               );
             })}
-            <li role="tab" aria-selected={view === 'nodes'}>
-              <a
-                href="#nodes"
-                title="See every block and wire it to a surface"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setView('nodes');
-                }}
-              >
-                Nodes
-              </a>
-            </li>
+            <TabItem selected={view === 'nodes'} onSelect={() => setView('nodes')} title="See every block and wire it to a surface">
+              Nodes
+            </TabItem>
           </menu>
           <button className="btn sm" onClick={undo} disabled={!past.current.length} title="Undo (Ctrl+Z)">
             Undo

@@ -92,7 +92,8 @@ export interface DepthData {
   mapOrtho?: MapOrthoMeta;
 }
 
-export const DEPTH_RESOLUTIONS = [128, 256, 384, 512];
+/** 768 and 1024 only show for map grids that big (photo depth is 512 px). */
+export const DEPTH_RESOLUTIONS = [128, 256, 384, 512, 768, 1024];
 
 export interface DepthResult {
   png: string;
@@ -178,6 +179,7 @@ export async function depthFromPhoto(
     const detail = (body as { detail?: unknown } | null)?.detail;
     throw new Error(typeof detail === 'string' ? detail : `Depth service error ${res.status}`);
   }
+  answeredAt = Date.now();
   return parseDepthResponse(body);
 }
 
@@ -185,6 +187,21 @@ export async function depthFromPhoto(
 // last request (scaledown_window=300 in modal_app/worker.py).
 const WAKE_EVERY = 4 * 60_000;
 let wokeAt = -Infinity;
+let answeredAt = -Infinity;
+const BOOT_MS = 45_000;
+const STAYS_UP_MS = 5 * 60_000;
+const READ_MS = 8_000;
+
+/**
+ * How long a depth request starting now should take, from what this page has
+ * seen: a recent answer means the server is up; a recent wake-up nudge means
+ * part of the ~45 s boot has already passed. A guess for the progress window.
+ */
+export function depthWaitEstimate(now = Date.now()): { bootMs: number; totalMs: number } {
+  if (now - answeredAt < STAYS_UP_MS) return { bootMs: 0, totalMs: READ_MS };
+  const bootMs = now - wokeAt < STAYS_UP_MS ? Math.max(0, BOOT_MS - (now - wokeAt)) : BOOT_MS;
+  return { bootMs, totalMs: bootMs + READ_MS };
+}
 
 /**
  * Nudge the depth service awake so its cold start overlaps with picking a photo.
@@ -223,14 +240,14 @@ export async function invertDataUrl(dataUrl: string): Promise<string> {
   return cv.toDataURL('image/png');
 }
 
-function b64Bytes(b64: string): Uint8Array {
+export function b64Bytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
 
-const decoded = new Map<string, { metres: Float32Array; mask: Float32Array | null }>();
+const decoded = new Map<string, { data: string; maskData: string | undefined; hit: { metres: Float32Array; mask: Float32Array | null } }>();
 
 /** Metres per pixel (NaN = no depth) and the 0..1 matte, decoded once per depth map. */
 /** Sample metric depth at normalised image coords (0..1). Null if no depth there. */
@@ -242,8 +259,11 @@ export function decodeDepthBuffers(d: Pick<DepthData, 'w' | 'h' | 'minM' | 'maxM
   // minM/maxM must be in the key: map exaggeration rescales the metre window but the
   // uint16 payload is the same (q is (zMax−z)/relief). Reusing ×11 metres with a ×21
   // window lifts valleys (live: terrain 136–282 mm vs a 278 mm stack).
-  const key = `${d.w}x${d.h}:${d.minM}:${d.maxM}:${d.data.length}:${d.data.slice(0, 48)}${d.data.slice(-48)}:${d.mask?.length ?? 0}:${d.mask?.slice(0, 48) ?? ''}${d.mask?.slice(-48) ?? ''}`;
-  let hit = decoded.get(key);
+  // The payload itself is compared (=== on the same string is a pointer check); a
+  // key built from its first and last bytes let two maps with flat edges share one decode.
+  const key = `${d.w}x${d.h}:${d.minM}:${d.maxM}:${d.data.length}:${d.mask?.length ?? 0}`;
+  const prev = decoded.get(key);
+  let hit = prev && prev.data === d.data && prev.maskData === d.mask ? prev.hit : undefined;
   if (!hit) {
     const bytes = b64Bytes(d.data);
     const n = d.w * d.h;
@@ -260,8 +280,9 @@ export function decodeDepthBuffers(d: Pick<DepthData, 'w' | 'h' | 'minM' | 'maxM
       for (let i = 0; i < n; i++) mask[i] = (mb[i] ?? 255) / 255;
     }
     hit = { metres, mask };
+    decoded.delete(key);
     if (decoded.size > 6) decoded.delete(decoded.keys().next().value!);
-    decoded.set(key, hit);
+    decoded.set(key, { data: d.data, maskData: d.mask, hit });
   }
   return hit;
 }

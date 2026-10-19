@@ -652,7 +652,7 @@ async function stampedDemModel(stackRodSmall: 'keep' | 'drop' | 'merge' = 'keep'
   return { p, m };
 }
 
-describe('support poles on a stamped DEM', { timeout: 45_000 }, () => {
+describe('support poles on a stamped DEM', { timeout: 30_000 }, () => {
   it('exports with poles on and 0 errors', async () => {
     const { p, m } = await stampedDemModel('keep');
     expect(m.v.sliceMode).toBe('flat');
@@ -667,9 +667,11 @@ describe('support poles on a stamped DEM', { timeout: 45_000 }, () => {
   });
 
   it('does not drop or merge held islands on a real DEM', async () => {
+    const t0 = performance.now();
     const keep = await stampedDemModel('keep');
     const drop = await stampedDemModel('drop');
     const merge = await stampedDemModel('merge');
+    const ms = performance.now() - t0;
     const keepN = keep.m.sliced.parts.filter((q) => q.family === 'P').length;
     const dropN = drop.m.sliced.parts.filter((q) => q.family === 'P').length;
     const mergeN = merge.m.sliced.parts.filter((q) => q.family === 'P').length;
@@ -679,5 +681,7 @@ describe('support poles on a stamped DEM', { timeout: 45_000 }, () => {
     expect(keep.m.issues.filter((i) => i.severity === 'error')).toHaveLength(0);
     expect(drop.m.issues.filter((i) => i.severity === 'error')).toHaveLength(0);
     expect(merge.m.issues.filter((i) => i.severity === 'error')).toHaveLength(0);
+    // Base (pre-summit-stamp) was ~6.3 s; stay within 1.5×.
+    expect(ms, `real DEM stack-rods took ${ms.toFixed(0)} ms`).toBeLessThan(9_500);
   });
 });

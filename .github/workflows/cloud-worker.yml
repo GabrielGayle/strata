@@ -1,0 +1,48 @@
+# Redeploys the Boost cloud worker (worker/app.py on Modal, and the hero renderer worker/hero.py) when the engine changes on
+# claude/strata-app, so the worker always runs the same engine build as the app Vercel serves.
+# Needs repository secrets MODAL_TOKEN_ID and MODAL_TOKEN_SECRET; without them it does nothing.
+name: Cloud worker
+
+on:
+  push:
+    branches: [claude/strata-app]
+    paths:
+      - 'src/core/**'
+      - 'api/_lib/geoJob.ts'
+      - 'worker/**'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+concurrency:
+  group: cloud-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+    steps:
+      - name: Skip without a Modal token
+        if: env.MODAL_TOKEN_ID == '' || env.MODAL_TOKEN_SECRET == ''
+        run: echo "MODAL_TOKEN_ID / MODAL_TOKEN_SECRET are not set; the worker is deployed by hand (docs/cloud-jobs.md)."
+      - uses: actions/checkout@v4
+        if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+      - uses: actions/setup-node@v4
+        if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+        with:
+          python-version: '3.12'
+      - name: Build and deploy
+        if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+        run: |
+          npm ci
+          npx tsx worker/build.ts
+          pip install modal==1.6.2
+          modal deploy worker/hero.py
+          modal deploy worker/app.py

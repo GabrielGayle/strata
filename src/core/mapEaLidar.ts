@@ -11,7 +11,7 @@ export const EA_LIDAR_DTM_CATALOG = EA_DTM_WCS_BASE;
 /** Live Environment Agency WCS 2.0.1 — LiDAR composite DSM 1 m (OGL v3). */
 export const EA_LIDAR_DSM_CATALOG = EA_DSM_WCS_BASE;
 
-export type EaGridLoader = (source: MapSource, spec: Pick<MapSpec, 'bbox'> & { resM?: number }) => Promise<Float32Grid | null>;
+export type EaGridLoader = (source: MapSource, spec: Pick<MapSpec, 'bbox'> & { resM?: number; maxSide?: number }) => Promise<Float32Grid | null>;
 
 let loaderOverride: EaGridLoader | null = null;
 
@@ -25,8 +25,13 @@ export function isEaLidarSource(source: MapSource): boolean {
 
 export async function fetchEaLidarGrid(
   source: MapSource,
-  spec: Pick<MapSpec, 'bbox' | 'cacheDir'> & { resM?: number },
-  opts: { loader?: EaGridLoader; fetchBytes?: (url: string) => Promise<Uint8Array> } = {},
+  spec: Pick<MapSpec, 'bbox' | 'cacheDir'> & { resM?: number; maxSide?: number },
+  opts: {
+    loader?: EaGridLoader;
+    fetchBytes?: (url: string) => Promise<Uint8Array>;
+    /** Why the fetch failed, so the fallback notice can say it. */
+    onError?: (message: string) => void;
+  } = {},
 ): Promise<Float32Grid | null> {
   if (!isEaLidarSource(source)) return null;
   const run = opts.loader ?? loaderOverride;
@@ -38,8 +43,9 @@ export async function fetchEaLidarGrid(
     (async (url: string) => cachedMapBytes(spec.cacheDir, 'cog', url, (u) => fetchEaBytes(u)));
   try {
     const bytes = await fetchBytes(wcsUrl);
-    return await parseFloat32Geotiff(bytes);
-  } catch {
+    return await parseFloat32Geotiff(bytes, spec.maxSide);
+  } catch (e) {
+    opts.onError?.((e as Error).message);
     return null;
   }
 }

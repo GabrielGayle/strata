@@ -13,7 +13,12 @@ import { cleanUserParamOverrides, type UserParamOverrides } from './projectOverr
 import { cleanShadow, type ShadowSpec } from './shadow';
 import { cleanObjects, type CutObject } from './objects';
 import { cleanShelf, type ShelfSpec } from './shelf';
+import { cleanCandles, type CandleSpec } from './candles';
+import { cleanSavedNest, type SavedNest } from './nest';
+import { cleanSavedHero, type SavedHero } from './heroSaved';
 import { cleanOrigin, type WorldOrigin } from './origin';
+import { cleanEarthView, type EarthView } from './earthView';
+import { compactCloudAsset } from './mapTopAsset';
 
 export interface ImageAsset {
   name: string;
@@ -58,6 +63,8 @@ export interface Variant {
   objects?: CutObject[] | null;
   /** The postcard shelf as it was. Missing on variants saved before this existed: those keep the project's. */
   shelf?: ShelfSpec | null;
+  /** The candelabra as it was. Missing on variants saved before this existed: those keep the project's. */
+  candles?: CandleSpec | null;
   /** The world origin as it was. Missing on variants saved before this existed: those keep the project's. */
   origin?: WorldOrigin | null;
   createdAt: string;
@@ -85,10 +92,18 @@ export interface Project {
   objects?: CutObject[];
   /** Postcards laid along an arc, each held in a seat cut into the plates. */
   shelf?: ShelfSpec;
+  /** Candlesticks and tealights laid along a path, the plates stepping up to hold each one. */
+  candles?: CandleSpec;
   /** Where placed objects and the shelf are measured from (the middle of the floor under the base when missing). */
   origin?: WorldOrigin;
   /** Parameter ids the user set; auto-dimension and design size patches must not overwrite them. */
   userParamOverrides?: UserParamOverrides;
+  /** 3D "View from point" (Google Earth URL / lat,lon,alt,heading,tilt). Missing on older saves. */
+  savedView?: EarthView;
+  /** The cloud's tight nest of the metal parts; used while the parts still match its fingerprint. */
+  nest?: SavedNest;
+  /** The cloud's hero render of the finished piece; in the build pack while the design still matches its fingerprint. */
+  hero?: SavedHero;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -117,6 +132,8 @@ export interface Preset {
   params: Record<string, RawValue>;
   /** Listed under "Small (under 10 cm)" in the Presets menu. */
   small?: boolean;
+  /** Replaces the pour bands; presets without one leave the project's pour as it is. */
+  pour?: PourLayer[];
 }
 
 /**
@@ -154,7 +171,27 @@ const SMALL: Record<string, RawValue> = {
   supportLand: '3',
 };
 
+/**
+ * What a new project opens as: an A5 slab of plain concrete with nothing on
+ * it. Plates, Strata and Insert are switched off rather than zeroed, and the
+ * sizes behind them are set for a piece this size, so switching any of them
+ * back on gives a sensible start.
+ */
+export const PLAIN_A5: Preset = {
+  name: 'Plain A5 base',
+  note: 'An A5 slab (210 × 148 mm) of plain concrete: no plates, no insert, one pour',
+  params: {
+    platesOn: false, strataOn: false, insertOn: false, pourView: 'plain',
+    baseLength: '210', baseWidth: '148', baseHeight: '30',
+    thickness: '1.5', plateCount: '16', endMargin: '15', sideMargin: '12', embedDepth: '15', anchorHoles: '1', anchorDia: '5',
+    stackHeight: '90', erosionAmp: '15', erosionScale: '60', crest: '12', slope: '0',
+    insLength: '130', insWidth: '14', insHeight: '110', insSweep: '20', insCamber: '5', insBend: '4',
+  },
+  pour: [{ id: 'p1', name: 'Concrete', height: 'baseHeight', color: '#a39e96' }],
+};
+
 export const PRESETS: Preset[] = [
+  PLAIN_A5,
   { name: 'Vermilion 40', note: '40 eroded corten plates, central fin, 3-band pour', params: { plateMaterial: 'corten' } },
   {
     name: 'Radial bloom',
@@ -173,6 +210,14 @@ export const PRESETS: Preset[] = [
     name: 'Sliced vessel',
     note: 'A revolved form sliced into 30 plates',
     params: { stackSource: 'form', srcShape: 'revolve', srcWidth: '240', srcHeight: '320', srcTaper: '0.55', srcCamber: '70', plateCount: '30', pitch: '(srcWidth - 16) / (plateCount - 1)', insShape: 'none', baseWidth: '420', baseLength: '420', embedDepth: '30' },
+  },
+  {
+    name: 'Candle master',
+    note: 'A revolved candle cut into 3 mm layers: glue it up, cast a silicone mould round it, pour candles with the layer lines',
+    params: {
+      sliceMode: 'flat', stackSource: 'form', srcShape: 'revolve', srcWidth: '70', srcHeight: '120', srcTaper: '0.6', srcCamber: '12', srcX: '0', srcZ: '0', srcY: '0', srcRot: '0',
+      thickness: '3', plateCount: 'ceil((srcHeight + cmCover) / thickness)', baseOn: false, insShape: 'none', flatPins: '0', cmOn: true, plateMaterial: 'aluminium',
+    },
   },
   {
     name: 'Stamped stack',
@@ -224,7 +269,13 @@ export const PRESETS: Preset[] = [
 
 /** Images that come with a preset (e.g. a sound picture) replace those slots. */
 export function applyPreset(p: Project, preset: Preset, images: Project['images'] = {}): Project {
-  return { ...p, name: preset.name, params: { ...defaultRaw(), ...preset.params }, locks: {}, images: { ...p.images, ...images }, moves: undefined };
+  const pour = preset.pour ? preset.pour.map((l) => ({ ...l })) : p.pour;
+  return { ...p, name: preset.name, params: { ...defaultRaw(), ...preset.params }, locks: {}, pour, images: { ...p.images, ...images }, moves: undefined };
+}
+
+/** A fresh project for first load and new tabs. Files and saves still read against newProject(). */
+export function startingProject(): Project {
+  return applyPreset(newProject(), PLAIN_A5);
 }
 
 /** Stands in for a variant image (or set of shadow pictures) that is the same as the project's own, so files don't carry it twice. */
@@ -240,14 +291,21 @@ export function serialize(p: Project): string {
     }
     return { ...v, images };
   }).map((v) => (v.shadow && p.shadow && JSON.stringify(v.shadow) === JSON.stringify(p.shadow) ? { ...v, shadow: SAME_IMAGE } : v));
-  return JSON.stringify({ ...p, variants }, null, 2);
+  // compact: a 1024 px map depth plus engrave paths pretty-printed would pass 4 MB
+  return JSON.stringify({ ...p, images: compactCloudImages(p.images), variants });
+}
+
+/** Cloud-built map grids (up to 2048 px) are saved as their 1024 px copy. */
+function compactCloudImages(images: Project['images']): Project['images'] {
+  const top = compactCloudAsset(images.top);
+  return top === images.top ? images : { ...images, top };
 }
 
 function readVariants(raw: any): Variant[] {
   if (!Array.isArray(raw.variants)) return [];
   const own = raw.images ?? {};
   const shadow = (v: any) => (v.shadow === SAME_IMAGE ? cleanShadow(raw.shadow) ?? null : v.shadow === undefined ? undefined : cleanShadow(v.shadow) ?? null);
-  return raw.variants.map((v: any) => (v && typeof v === 'object' && 'shadow' in v ? { ...v, shadow: shadow(v) } : v)).map((v: any) => (v && typeof v === 'object' && 'objects' in v ? { ...v, objects: cleanObjects(v.objects) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'shelf' in v ? { ...v, shelf: cleanShelf(v.shelf) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'origin' in v ? { ...v, origin: cleanOrigin(v.origin) ?? null } : v)).map((v: any) => {
+  return raw.variants.map((v: any) => (v && typeof v === 'object' && 'shadow' in v ? { ...v, shadow: shadow(v) } : v)).map((v: any) => (v && typeof v === 'object' && 'objects' in v ? { ...v, objects: cleanObjects(v.objects) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'shelf' in v ? { ...v, shelf: cleanShelf(v.shelf) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'candles' in v ? { ...v, candles: cleanCandles(v.candles) ?? null } : v)).map((v: any) => (v && typeof v === 'object' && 'origin' in v ? { ...v, origin: cleanOrigin(v.origin) ?? null } : v)).map((v: any) => {
     if (!v?.images || typeof v.images !== 'object') return v;
     const images: Project['images'] = {};
     for (const [slot, a] of Object.entries(v.images)) {
@@ -272,6 +330,7 @@ export function applyVariant(p: Project, v: Variant): Project {
     ...(v.shadow !== undefined ? { shadow: v.shadow ?? undefined } : {}),
     ...(v.objects !== undefined ? { objects: v.objects ?? undefined } : {}),
     ...(v.shelf !== undefined ? { shelf: v.shelf ?? undefined } : {}),
+    ...(v.candles !== undefined ? { candles: v.candles ?? undefined } : {}),
     ...(v.origin !== undefined ? { origin: v.origin ?? undefined } : {}),
   };
 }
@@ -325,7 +384,11 @@ export function deserialize(text: string): Project {
     shadow: cleanShadow(raw.shadow),
     objects: cleanObjects(raw.objects),
     shelf: cleanShelf(raw.shelf),
+    candles: cleanCandles(raw.candles),
     origin: cleanOrigin(raw.origin),
     userParamOverrides: cleanUserParamOverrides(raw.userParamOverrides),
+    savedView: cleanEarthView(raw.savedView),
+    nest: cleanSavedNest(raw.nest),
+    hero: cleanSavedHero(raw.hero),
   };
 }

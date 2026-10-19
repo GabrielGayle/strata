@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import ShelfPanel from './ShelfPanel';
+import CandlePanel from './CandlePanel';
+import { useDragWindow } from './dragWindow';
 import { KIND_NAMES, newObject, type CutObject, type ObjectKind } from '../core/objects';
 
 type NumKey = 'w' | 'h' | 'd' | 'x' | 'y' | 'z' | 'rx' | 'ry' | 'rz' | 'clearance';
@@ -35,9 +37,20 @@ const DEFAULT_HINT = 'Objects are cut out of every plate they pass through, so t
 
 /** Placed objects and the postcard shelf, in the 3D view. */
 export default function ObjectsPanel() {
-  const [view, setView] = useState<'objects' | 'shelf'>(() => (useStore.getState().project.shelf ? 'shelf' : 'objects'));
+  const [view, setView] = useState<'objects' | 'shelf' | 'candles'>(() => {
+    const p = useStore.getState().project;
+    return p.candles ? 'candles' : p.shelf ? 'shelf' : 'objects';
+  });
+  const setUi = useStore((s) => s.setUi);
+  const drag = useDragWindow('objects');
   return (
-    <div className="overlay movepanel appearance objects">
+    <section className="overlay movepanel appearance objects" ref={(el) => void (drag.ref.current = el)} style={drag.style} aria-label="Objects">
+      <header {...drag.bind} title="Drag to move this window. Double-click to put it back.">
+        <div className="title-bar-text">Objects</div>
+        <div className="title-bar-controls">
+          <button aria-label="Close" onClick={() => setUi({ objectsMode: false })} title="Close (the objects stay; Objects on the right opens this again)"></button>
+        </div>
+      </header>
       <div className="mp-row">
         <button className={`btn sm ${view === 'objects' ? 'on' : ''}`} onClick={() => setView('objects')} title="Single objects you place one by one">
           Objects
@@ -45,8 +58,57 @@ export default function ObjectsPanel() {
         <button className={`btn sm ${view === 'shelf' ? 'on' : ''}`} onClick={() => setView('shelf')} title="A list of postcards laid along an arc, each held in a notch">
           Postcard shelf
         </button>
+        <button className={`btn sm ${view === 'candles' ? 'on' : ''}`} onClick={() => setView('candles')} title="Candlesticks and tealights along a curve, a path or a shape, the plates rising to hold them">
+          Candelabra
+        </button>
       </div>
-      {view === 'shelf' ? <ShelfPanel /> : <ObjectList />}
+      <ShowRow view={view} />
+      {view === 'shelf' ? <ShelfPanel /> : view === 'candles' ? <CandlePanel /> : <ObjectList />}
+    </section>
+  );
+}
+
+/** Which objects each tab owns, by id: placed ones are o1, o2…, cards shelf1…, candles candle1… */
+export function tabOwns(view: 'objects' | 'shelf' | 'candles', o: CutObject): boolean {
+  if (o.look === 'hidden') return false; // a candle holder's well: never drawn
+  if (view === 'shelf') return o.id.startsWith('shelf');
+  if (view === 'candles') return o.id.startsWith('candle');
+  return !o.id.startsWith('shelf') && !o.id.startsWith('candle') && !o.id.startsWith('well');
+}
+
+/** Show or hide objects in the 3D view: all at once, or one by one. View only. */
+function ShowRow({ view }: { view: 'objects' | 'shelf' | 'candles' }) {
+  const model = useModel();
+  const allOn = useStore((s) => s.ui.viewportLayers.objects !== false);
+  const hidden = useStore((s) => s.ui.hiddenObjects);
+  const toggleLayer = useStore((s) => s.toggleViewportLayer);
+  const setUi = useStore((s) => s.setUi);
+  const mine = model.objects.map((b) => b.object).filter((o) => tabOwns(view, o));
+  if (!model.objects.length) return null;
+  const flip = (id: string) => setUi({ hiddenObjects: hidden.includes(id) ? hidden.filter((x) => x !== id) : [...hidden, id] });
+  const ids = mine.map((o) => o.id);
+  const someHidden = ids.some((id) => hidden.includes(id));
+  return (
+    <div className="mp-row ob-show" data-testid="objects-show">
+      <span title="Hiding only changes the 3D view: the object still cuts the plates and goes in exports.">Show</span>
+      <button className={`btn sm ${allOn ? 'on' : ''}`} data-testid="objects-show-all" onClick={() => toggleLayer('objects')} title="Show or hide every object, card and candle in the 3D view (they still cut the plates)">
+        All objects
+      </button>
+      {mine.map((o, i) => {
+        const on = !hidden.includes(o.id);
+        // candles and cards often share a name, so number them in path order
+        const label = mine.some((x) => x !== o && x.name === o.name) ? `${i + 1} ${o.name}` : o.name;
+        return (
+          <button key={o.id} className={`btn sm ${on && allOn ? 'on' : ''}`} data-testid={`object-show-${o.id}`} disabled={!allOn} aria-pressed={on} onClick={() => flip(o.id)} title={`${on ? 'Hide' : 'Show'} ${o.name} in the 3D view (it still cuts the plates)`}>
+            {on ? '●' : '○'} {label}
+          </button>
+        );
+      })}
+      {someHidden && (
+        <button className="btn sm" onClick={() => setUi({ hiddenObjects: hidden.filter((x) => !ids.includes(x)) })} title="Show every one in this tab again">
+          Show all
+        </button>
+      )}
     </div>
   );
 }

@@ -9,6 +9,8 @@ export interface HeightField {
   /** Erosion-only component, for previews. */
   min: number;
   max: number;
+  /** Uniform scale so map tops fit a user-set Plate height (never clip). */
+  heightCapScale?: number;
 }
 
 export interface StackFrame {

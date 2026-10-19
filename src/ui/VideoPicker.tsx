@@ -1,6 +1,7 @@
 // Pull stills out of a video for the shadow kitchen: pick the stretch of the
 // clip and how many frames, see them, then add them as shadow frames.
 import { useEffect, useRef, useState } from 'react';
+import { BusyNote } from './BusyWindow';
 
 export interface Still {
   name: string;
@@ -120,7 +121,11 @@ export default function VideoPicker({ file, onAdd, onClose }: { file: File; onAd
             {stills.map((s) => (
               <img key={s.name} src={s.dataUrl} alt={s.name} title={s.name} />
             ))}
-            {busy && <span className="note">Reading frames…</span>}
+            {busy && (
+              <span className="note">
+                <BusyNote>Reading frames…</BusyNote>
+              </span>
+            )}
           </div>
           <p className="note">6 to 8 frames read best in place; side by side takes more. Each still becomes a frame half an hour after the one before, which you can retime after.</p>
           <div className="vp-actions">
@@ -130,7 +135,9 @@ export default function VideoPicker({ file, onAdd, onClose }: { file: File; onAd
           </div>
         </>
       ) : (
-        <p className="note">Opening the video…</p>
+        <p className="note">
+          <BusyNote>Opening the video…</BusyNote>
+        </p>
       )}
       </div>
     </div>

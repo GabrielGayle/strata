@@ -1,4 +1,5 @@
 // Metric depth → plate proportions: pinhole back-projection, robust extents, master-size fit.
+import { mapFaceParams } from './mapStack';
 import type { DepthData } from './depth';
 import { decodeDepthBuffers } from './depth';
 import { evaluateParams, PARAM_MAP, type RawValue, type Values } from './params';
@@ -232,7 +233,7 @@ export function previewAutoDimension(
   if (mapOrtho) {
     const note = MAP_ORTHO_NOTE;
     const exaggeration = opts.reliefExaggeration ?? 1;
-    const ev = evaluateParams(raw);
+    const ev = evaluateParams(mapFaceParams(raw).raw);
     const v = ev.values;
     const readout = formatMapOrthoReadout(depth);
     const patch: Record<string, RawValue> = {};

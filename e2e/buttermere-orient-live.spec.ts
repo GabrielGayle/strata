@@ -44,7 +44,7 @@ test('live Buttermere 500×500: 3D Top north matches Map preview', async ({ page
   expect(dialogs, dialogs.join(' | ')).toEqual([]);
   await expect(page.locator('.app.window')).toHaveAttribute('data-strata-map-phase', 'ready');
   await expect(page.locator('.overlay.bl.info')).toContainText(/500\s*×\s*500/);
-  await expect(page.locator('#map-water-bathy')).toBeChecked();
+  await expect(page.locator('#map-water-flat')).toBeChecked();
   await expect(page.getByLabel('OSM engrave on top face')).toBeChecked();
 
   await snapViewportDir(page, 'top', true);

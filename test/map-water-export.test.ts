@@ -192,7 +192,7 @@ function bundleOpts(
     fetch: async () => {
       throw new Error('water-export test must not mosaic tiles');
     },
-    stack: { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as const },
+    stack: { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as const, sliceMode: 'flat' },
   };
 }
 

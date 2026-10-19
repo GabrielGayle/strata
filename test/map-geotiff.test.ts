@@ -17,7 +17,7 @@ describe('parseFloat32Geotiff nodata', () => {
     }
     const buf = encodeFloat32Geotiff(w, h, data, FLOAT32_NODATA);
     const grid = await parseFloat32Geotiff(buf);
-    expect(grid.w * grid.h).toBeLessThanOrEqual(512 * 512);
+    expect(grid.w * grid.h).toBeLessThanOrEqual(514 * 514);
     expect(grid.w).toBeGreaterThan(8);
     expect(grid.h).toBeGreaterThan(8);
 

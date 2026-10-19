@@ -17,6 +17,15 @@ describe('share', () => {
     expect(s.a[0]).toBe(prev.a[0]);
     expect(s.a[1]).toBe(next.a[1]);
   });
+
+  it('keeps an object held in two places as one object', () => {
+    const part = (y: number) => ({ id: 'P0', at: [0, y], outline: [[0, 0], [1, 0]] });
+    const prev = (() => { const a = part(1); return { parts: [a], plates: [{ parts: [a] }] }; })();
+    const b = part(2);
+    const s = share(prev, { parts: [b], plates: [{ parts: [b] }] });
+    expect(s.parts[0]).toBe(s.plates[0].parts[0]);
+    expect(s.parts[0].outline).toBe(prev.parts[0].outline);
+  });
 });
 
 describe('cached', () => {

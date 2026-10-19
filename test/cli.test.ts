@@ -10,14 +10,12 @@ import { applyMasterSizeCli, loadProject, main, parseCliArgs, type CliIo } from 
 import { MAP_RENDER_HEIGHT, MAP_RENDER_WIDTH } from '../src/core/mapRender';
 import { setOverpassFetcher } from '../src/core/mapOverpass';
 import { setMapTileFetcher } from '../src/core/mapTerrarium';
-import { setCop30GridLoader } from '../src/core/mapCopernicus';
-import { loadBuiltinCop30Fixture } from '../src/core/mapCopernicus.fixtures';
 import { fixtureTileFetcher } from './map-cli-fixtures';
 
 const overpassNeasdenFixture = JSON.parse(
   readFileSync(fileURLToPath(new URL('./fixtures/map/overpass-neasden.json', import.meta.url)), 'utf8'),
 );
-import { NEASDEN_BBOX, NEASDEN_FAST_BBOX } from './map-fixtures';
+import { NEASDEN_BBOX } from './map-fixtures';
 import { evaluateParams } from '../src/core/params';
 import { buildZip } from '../src/core/exporters';
 import { createPipeline, type Assets } from '../src/core/pipeline';
@@ -329,49 +327,15 @@ describe('cli images', () => {
   });
 });
 
-/** Minimal stack for fast map CLI cases (cop30 fallback, etc.). */
-const MAP_CLI_LIGHT_PROJECT = {
-  format: 'strata-project',
-  version: 1,
-  params: { plateCount: '4', imgTopMode: 'carve', topDepth: '24' },
-};
-
-function mapCop30CliArgs(project: string, out: string, bbox: [number, number, number, number], cache: string): string[] {
-  const [w, s, e, n] = bbox;
-  return [
-    project,
-    '--out',
-    out,
-    '--map',
-    'T',
-    '--bbox',
-    `${w},${s},${e},${n}`,
-    '--map-source',
-    'cop30',
-    '--map-res',
-    '32',
-    '--exaggeration',
-    '1',
-    '--layer-budget',
-    'equal',
-    '--engrave',
-    'off',
-    '--map-cache',
-    cache,
-  ];
-}
-
 // Module-level tile fetcher override is shared; run map CLI cases sequentially.
 describe.sequential('cli map', () => {
   beforeEach(() => {
     setMapTileFetcher(fixtureTileFetcher);
     setOverpassFetcher(async () => overpassNeasdenFixture);
-    setCop30GridLoader(async () => loadBuiltinCop30Fixture());
   });
   afterEach(() => {
     setMapTileFetcher(null);
     setOverpassFetcher(null);
-    setCop30GridLoader(null);
   });
 
   it('builds Neasden from fixtures offline with --map flags', async () => {
@@ -438,16 +402,11 @@ describe.sequential('cli map', () => {
     expect(io.err).toMatch(/invalid bbox/i);
   });
 
-  it('accepts cop30 and builds from offline COG fixture grid', async () => {
-    const dir = scratch();
-    const project = join(dir, 'p.json');
-    writeFileSync(project, JSON.stringify(MAP_CLI_LIGHT_PROJECT));
-    const out = join(dir, 'out');
-    const io = capture();
-    expect(await main(mapCop30CliArgs(project, out, NEASDEN_FAST_BBOX, join(dir, 'map-cache')), io)).toBe(0);
-    const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
-    expect(back.images.top?.map?.resolvedSource).toBe('cop30');
-  }, 20_000);
+  it('refuses the removed cop30 source', () => {
+    expect(() => parseCliArgs(['p.json', '--out', 'x', '--map', 'T', '--bbox', '0,0,1,1', '--map-source', 'cop30'])).toThrow(
+      /unknown map source/,
+    );
+  });
 
   it('defaults engraving on when --engrave is omitted', () => {
     const args = parseCliArgs(['p.json', '--out', 'x', '--map', 'T', '--bbox', '0,0,1,1']);

@@ -4,6 +4,7 @@ import type { DepthData } from './depth';
 import { decodeDepthBuffers } from './depth';
 import type { Gray } from './image';
 import type { HeightField } from './heightfield';
+import { cubicAt } from './mapGrid';
 import { stackFrame } from './heightfield';
 import type { Values } from './params';
 import type { Plane } from './section';
@@ -124,20 +125,15 @@ export function mapDepthToGray(d: DepthData): Gray {
   return { w: d.w, h: d.h, data };
 }
 
+/**
+ * u, v run 0..1 across the outer edges of the map, the same frame as the OSM
+ * engrave art (pixel i spans [i, i + 1]), so cell i's centre sits at (i + 0.5) / w.
+ */
 function sampleMetres(metres: Float32Array, w: number, h: number, u: number, v: number): number {
-  const x = Math.min(w - 1, Math.max(0, u * (w - 1)));
-  const y = Math.min(h - 1, Math.max(0, v * (h - 1)));
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const x1 = Math.min(w - 1, x0 + 1);
-  const y1 = Math.min(h - 1, y0 + 1);
-  const tx = x - x0;
-  const ty = y - y0;
-  const at = (ix: number, iy: number) => metres[iy * w + ix];
-  const lerp = (a: number, b: number, t: number) => (Number.isFinite(a) && Number.isFinite(b) ? a + (b - a) * t : Number.isFinite(a) ? a : b);
-  const a = lerp(at(x0, y0), at(x1, y0), tx);
-  const b = lerp(at(x0, y1), at(x1, y1), tx);
-  return lerp(a, b, ty);
+  const x = Math.min(w - 1, Math.max(0, u * w - 0.5));
+  const y = Math.min(h - 1, Math.max(0, v * h - 0.5));
+  // bicubic, so plate tops have no kink at every grid cell
+  return cubicAt(metres, w, h, x, y);
 }
 
 /**
@@ -145,7 +141,7 @@ function sampleMetres(metres: Float32Array, w: number, h: number, u: number, v: 
  * Ignores mix, contrast, blur, flatten, curve, perspective, matte, and strata erosion.
  * User near/far window the elevation; linear in metres.
  */
-export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
+export function buildMapHeightField(v: Values, depth: DepthData, opts: { capMm?: number } = {}): HeightField {
   const { metres } = decodeDepthBuffers(depth);
   const ortho = depth.mapOrtho;
   const masterMm = mapMasterWidthMm(v);
@@ -156,6 +152,14 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
   const near = clampFinite(Math.min(nearRaw, farRaw - 1e-6), 1e-6, MAX_ENCODED_M, 1e-6);
   const far = clampFinite(Math.max(near + 1e-6, farRaw), near + 1e-6, MAX_ENCODED_M, near + 1e-6);
   const f = stackFrame(v);
+  const reliefMm = Math.max(0, far - near) * scale;
+  const unscaledMax = MAP_HEIGHT_FLOOR_MM + reliefMm;
+  const capMm = v.sliceMode === 'flat' ? Infinity : opts.capMm;
+  let heightCapScale = 1;
+  if (capMm != null && Number.isFinite(capMm) && capMm > MAP_HEIGHT_FLOOR_MM && unscaledMax > capMm + 1e-6 && reliefMm > 0) {
+    heightCapScale = (capMm - MAP_HEIGHT_FLOOR_MM) / reliefMm;
+  }
+  const mmPerEncodedM = scale * heightCapScale;
 
   const at = (x: number, z: number) => {
     const s = x * f.stack[0] + z * f.stack[1];
@@ -165,26 +169,30 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
     // +across / +Z is west; geographic easting on the north-up grid is 1 − an.
     const d = sampleMetres(metres, depth.w, depth.h, 1 - an, sn);
     const dd = Number.isFinite(d) ? Math.min(far, Math.max(near, d)) : far;
-    const h = MAP_HEIGHT_FLOOR_MM + (far - dd) * scale;
+    const h = MAP_HEIGHT_FLOOR_MM + (far - dd) * mmPerEncodedM;
     return clampFinite(h, 0, MAX_MAP_PLATE_MM, MAP_HEIGHT_FLOOR_MM);
   };
 
   let min = Infinity;
   let max = -Infinity;
-  for (let i = 0; i <= 24; i++) {
-    for (let j = 0; j <= 12; j++) {
-      const s = (i / 24 - 0.5) * f.stackLen;
-      const ac = (j / 12 - 0.5) * f.acrossLen;
-      const h = at(s * f.stack[0] + ac * f.across[0], s * f.stack[1] + ac * f.across[1]);
-      min = Math.min(min, h);
-      max = Math.max(max, h);
-    }
+  for (let i = 0; i < metres.length; i++) {
+    const d = metres[i];
+    if (!Number.isFinite(d)) continue;
+    const dd = Math.min(far, Math.max(near, d));
+    const h = clampFinite(MAP_HEIGHT_FLOOR_MM + (far - dd) * mmPerEncodedM, 0, MAX_MAP_PLATE_MM, MAP_HEIGHT_FLOOR_MM);
+    if (h < min) min = h;
+    if (h > max) max = h;
   }
   if (!Number.isFinite(min) || !Number.isFinite(max)) {
     min = MAP_HEIGHT_FLOOR_MM;
     max = MAP_HEIGHT_FLOOR_MM;
   }
-  return { at, min, max };
+  return {
+    at,
+    min,
+    max,
+    ...(heightCapScale < 1 - 1e-9 ? { heightCapScale } : {}),
+  };
 }
 
 /**
@@ -194,9 +202,9 @@ export function buildMapHeightField(v: Values, depth: DepthData): HeightField {
 export function sampleMapHeightGrid(hf: HeightField, v: Values, w: number, h: number): Float32Array {
   const data = new Float32Array(w * h);
   for (let row = 0; row < h; row++) {
-    const sn = h <= 1 ? 0 : row / (h - 1);
+    const sn = (row + 0.5) / h;
     for (let col = 0; col < w; col++) {
-      const an = w <= 1 ? 0 : col / (w - 1);
+      const an = (col + 0.5) / w;
       const { x, z } = mapGridUvToWorld(v, an, sn);
       data[row * w + col] = hf.at(x, z);
     }

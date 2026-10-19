@@ -6,6 +6,14 @@ import type { CutObject } from './objects';
 
 export type ShelfLayout = 'fan' | 'bands' | 'arch' | 'spiral';
 
+export type ShelfChoke = 'off' | 'cards' | 'shelf';
+
+export const SHELF_CHOKE_NAMES: Record<ShelfChoke, string> = {
+  off: 'Full length plates',
+  cards: 'Choke round each card',
+  shelf: 'Choke along the shelf',
+};
+
 export const LAYOUT_NAMES: Record<ShelfLayout, string> = {
   fan: 'Fan (one curved row)',
   bands: 'Bands (rows rising behind)',
@@ -46,7 +54,34 @@ export interface ShelfSpec {
   lift: number;
   /** Trim the plate tops down to the cards' seats. */
   trim: boolean;
+  /** Choke the plates in to the cards: off, round each card, or along the shelf as one band. */
+  choke: ShelfChoke;
+  /** Plate kept beyond each card when choked (mm). */
+  pad: number;
+  /**
+   * When on, the layout solver nudges lean / gap / radius (and the other
+   * placement numbers) so every card face is visible from the viewing angle.
+   * Missing means off: existing project files stay as they were.
+   */
+  unobstructed?: boolean;
+  /** Viewing azimuth in degrees: 0 looks from +Z (the iso camera's starting side). */
+  viewAzimuth?: number;
+  /** Viewing elevation in degrees: 0 is horizontal, 90 looks straight down. */
+  viewElevation?: number;
+  /** Corner overlap allowed in the view plane (mm). */
+  maxOverlapMm?: number;
+  /** Hidden fraction of a card face allowed (%). */
+  maxHiddenPct?: number;
+  /** Extra view-plane shrink for card stock that can bend (mm). */
+  flexMm?: number;
+  /** Tint occluded face regions in the 3D view while the dev panel is open. */
+  tintHidden?: boolean;
+  /** Placement fields the user typed; the unobstructed solver must not overwrite them. */
+  overrides?: Partial<Record<ShelfSolveKey, true>>;
 }
+
+/** Placement numbers the unobstructed solver may adjust (never those in `overrides`). */
+export type ShelfSolveKey = 'radius' | 'gap' | 'rows' | 'rowStep' | 'rowRise' | 'seat' | 'lean' | 'lift' | 'shoulder';
 
 export const DEFAULT_SHELF: ShelfSpec = {
   on: true,
@@ -67,6 +102,22 @@ export const DEFAULT_SHELF: ShelfSpec = {
   turn: 0,
   lift: 40,
   trim: true,
+  choke: 'off',
+  pad: 15,
+};
+
+/**
+ * Arch of mixed A6-ish cards: the Magenta Eye rainbow standing up.
+ * Tight enough that a side-on iso view hides corners until the solver opens them.
+ */
+export const MAGENTA_EYE_SHELF: ShelfSpec = {
+  ...DEFAULT_SHELF,
+  layout: 'arch',
+  radius: 260,
+  gap: 2,
+  lean: 12,
+  lift: 48,
+  cards: '148 x 105 Magenta\n148 x 105\n150 x 100\n105 x 148 Eye\n148 x 105\n152 x 102\n148 x 105',
 };
 
 export interface CardSize {
@@ -123,7 +174,80 @@ export function cleanShelf(raw: unknown): ShelfSpec | undefined {
     turn: num(r.turn, d.turn),
     lift: num(r.lift, d.lift, 0),
     trim: r.trim !== false,
+    choke: (Object.keys(SHELF_CHOKE_NAMES) as ShelfChoke[]).includes(r.choke as ShelfChoke) ? (r.choke as ShelfChoke) : d.choke,
+    pad: num(r.pad, d.pad, 0),
+    ...cleanViewFields(r),
   };
+}
+
+export const SHELF_SOLVE_KEYS: ShelfSolveKey[] = ['radius', 'gap', 'rows', 'rowStep', 'rowRise', 'seat', 'lean', 'lift', 'shoulder'];
+
+const optNum = (x: unknown, lo: number, hi: number) => (typeof x === 'number' && Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : undefined);
+
+function cleanOverrides(raw: unknown): ShelfSpec['overrides'] {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: NonNullable<ShelfSpec['overrides']> = {};
+  for (const k of SHELF_SOLVE_KEYS) if ((raw as Record<string, unknown>)[k]) out[k] = true;
+  return Object.keys(out).length ? out : undefined;
+}
+
+function cleanViewFields(r: Record<string, unknown>): Partial<ShelfSpec> {
+  const out: Partial<ShelfSpec> = {};
+  if (r.unobstructed === true) out.unobstructed = true;
+  else if (r.unobstructed === false) out.unobstructed = false;
+  const az = optNum(r.viewAzimuth, -360, 360);
+  if (az !== undefined) out.viewAzimuth = az;
+  const el = optNum(r.viewElevation, -90, 90);
+  if (el !== undefined) out.viewElevation = el;
+  const overlap = optNum(r.maxOverlapMm, 0, 50);
+  if (overlap !== undefined) out.maxOverlapMm = overlap;
+  const hidden = optNum(r.maxHiddenPct, 0, 50);
+  if (hidden !== undefined) out.maxHiddenPct = hidden;
+  const flex = optNum(r.flexMm, 0, 20);
+  if (flex !== undefined) out.flexMm = flex;
+  if (r.tintHidden === true) out.tintHidden = true;
+  else if (r.tintHidden === false) out.tintHidden = false;
+  const overrides = cleanOverrides(r.overrides);
+  if (overrides) out.overrides = overrides;
+  return out;
+}
+
+/** Mark placement fields as user-set so the unobstructed solver leaves them alone. Retyping the same number does not lock. */
+export function withShelfOverride(s: ShelfSpec, patch: Partial<ShelfSpec>, keys: ShelfSolveKey[]): ShelfSpec {
+  const overrides: NonNullable<ShelfSpec['overrides']> = { ...s.overrides };
+  let locked = false;
+  for (const k of keys) {
+    const next = patch[k];
+    if (typeof next === 'number' && next === s[k]) continue;
+    overrides[k] = true;
+    locked = true;
+  }
+  if (!locked && keys.every((k) => patch[k] === undefined || patch[k] === s[k])) return s;
+  return { ...s, ...patch, overrides: Object.keys(overrides).length ? overrides : s.overrides };
+}
+
+/**
+ * Lock a placement field only when the committed number differs from `from`
+ * (the value at focus). Intermediate keystrokes are not compared.
+ */
+export function commitShelfLock(s: ShelfSpec, key: ShelfSolveKey, from: number): ShelfSpec {
+  if (s[key] === from) return s;
+  if (s.overrides?.[key]) return s;
+  return { ...s, overrides: { ...s.overrides, [key]: true } };
+}
+
+/** Drop typed locks so the unobstructed solver may adjust those fields again. */
+export function clearShelfOverride(s: ShelfSpec, keys: ShelfSolveKey[]): ShelfSpec {
+  if (!s.overrides) return s;
+  const overrides = { ...s.overrides };
+  let changed = false;
+  for (const k of keys) {
+    if (!overrides[k]) continue;
+    delete overrides[k];
+    changed = true;
+  }
+  if (!changed) return s;
+  return { ...s, overrides: Object.keys(overrides).length ? overrides : undefined };
 }
 
 /** Split the cards into rows whose lengths grow with each row's radius, keeping their order. */
@@ -186,6 +310,7 @@ export function shelfCards(spec: ShelfSpec | undefined, baseTop: number): CutObj
       clearance: spec.clearance,
       on: true,
       ...(spec.trim ? { seat: spec.seat, shoulder: spec.shoulder } : {}),
+      ...(spec.choke !== 'off' ? { choke: { reach: spec.thick / 2 + spec.clearance + spec.pad, join: spec.choke === 'shelf', closed: false, group: 'shelf' } } : {}),
     });
   };
   const y0 = baseTop + spec.lift - spec.seat;

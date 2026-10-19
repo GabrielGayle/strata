@@ -1,6 +1,6 @@
 // Sub-minimum and unsupported plate fragments: merge into a touching parent,
 // drop, or keep as their own laser parts.
-import { bboxOf, difference, intersection, offset, shapeArea, unionShapes, type ExPoly, type Shape } from './geom2d';
+import { bboxOf, difference, intersection, offset, shapeArea, shapePerimeter, unionShapes, type ExPoly, type Shape } from './geom2d';
 import type { Values } from './params';
 
 export type FragmentMode = 'auto' | 'merge' | 'drop' | 'keep';
@@ -35,11 +35,21 @@ export function morphClose(s: Shape, width: number, join: 'miter' | 'round' = 'm
   return offset(offset(s, width / 2, join), -width / 2, join);
 }
 
-/** Voids the kerf check reports: closing minus the original, ignoring Clipper dust. */
+/**
+ * Voids the kerf check reports: closing minus the original, ignoring Clipper dust. Dust along a
+ * long straight edge can pass the area test, so a void must also average a micron or more across
+ * (twice its area over its perimeter).
+ */
 export function kerfGapRegions(s: Shape, kerf: number): Shape {
   if (kerf <= 0 || !s.length) return [];
-  return difference(morphClose(s, kerf), s).filter((e) => shapeArea([e]) > kerf * kerf * 4);
+  return difference(morphClose(s, kerf), s).filter((e) => {
+    const a = shapeArea([e]);
+    return a > kerf * kerf * 4 && (2 * a) / shapePerimeter([e]) > GAP_DUST_WIDTH;
+  });
 }
+
+/** Mean width below which a closing-minus-original sliver is rounding, not a gap (mm). */
+const GAP_DUST_WIDTH = 0.005;
 
 /** Material the min-feature check reports: original minus opening, ignoring Clipper dust. */
 export function thinFeatureRegions(s: Shape, mf: number): Shape {
@@ -69,8 +79,7 @@ export function repairThinNecks(
   if (mf <= 0 || !s.length) return s;
   const mode = (String(v.fragmentMode || 'auto') as FragmentMode) || 'auto';
   if (mode === 'keep') return s;
-  const opened = morphOpen(s, mf);
-  if (mode === 'drop') return opened;
+  if (mode === 'drop') return morphOpen(s, mf);
   const thin = thinFeatureRegions(s, mf);
   if (!thin.length) return s;
   // Thicken the thin web in place (long necks are far apart as "cores").
@@ -155,10 +164,15 @@ export function cleanupPlateShape(
   const mode = (String(v.fragmentMode || 'auto') as FragmentMode) || 'auto';
   if (mode === 'keep' || !s.length) return s;
   let out = s;
+  // set when the last kerf repair found nothing, so the final pass would too
+  let gapFree = false;
   for (let i = 0; i < 6; i++) {
     const g = repairKerfGaps(out, v);
     const next = mode === 'drop' ? g : repairThinNecks(g, v);
-    if (next === out) break;
+    if (next === out) {
+      gapFree = true;
+      break;
+    }
     out = next;
     const kerf = Number(v.kerf) || 0;
     const mf = Number(v.minFeature) || 0;
@@ -166,7 +180,7 @@ export function cleanupPlateShape(
     const thinLeft = mode !== 'drop' && mf > 0 && thinFeatureRegions(out, mf).length > 0;
     if (!gapsLeft && !thinLeft) break;
   }
-  if (mode !== 'drop') out = repairKerfGaps(out, v);
+  if (mode !== 'drop' && !gapFree) out = repairKerfGaps(out, v);
   return out;
 }
 

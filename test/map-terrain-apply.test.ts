@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mapBuildKey } from '../src/core/mapBuildKey';
+import { mapStackFromProject } from '../src/core/mapStack';
 import { defaultMapSpec } from '../src/core/mapSpec';
 import { applyBuiltMapAsset, projectWithTopMapSpec } from '../src/core/mapTopAsset';
 import type { ImageAsset } from '../src/core/project';
@@ -38,7 +39,7 @@ describe('applyBuiltMapAsset', () => {
     p = projectWithTopMapSpec(p, spec);
     expect(p.params.masterScale).toBe('1.4');
 
-    const builtKey = mapBuildKey(p.images.top!.map!);
+    const builtKey = mapBuildKey(p.images.top!.map!, mapStackFromProject(p));
     const asset: ImageAsset = {
       name: 'built terrain',
       dataUrl: 'data:image/png;base64,xx',
@@ -64,16 +65,16 @@ describe('applyBuiltMapAsset', () => {
     expect(next!.images.top!.map!.exaggerationReadout).toBe('×18');
     expect(next!.images.top!.map!.resolvedSource).toBe('terrarium');
     expect(next!.images.top!.depth).toEqual(asset.depth);
-    expect(mapBuildKey(next!.images.top!.map!)).toBe(builtKey);
+    expect(mapBuildKey(next!.images.top!.map!, mapStackFromProject(next!))).toBe(builtKey);
     expect(next!.images.top!.map!.buildKey).toBe(builtKey);
   });
 
   it('drops a stale build after the user changes the spec', () => {
     let p = newProject();
     p = projectWithTopMapSpec(p, userSpec());
-    const oldKey = mapBuildKey(p.images.top!.map!);
+    const oldKey = mapBuildKey(p.images.top!.map!, mapStackFromProject(p));
     p = projectWithTopMapSpec(p, { ...userSpec(), exaggeration: 12 });
-    expect(mapBuildKey(p.images.top!.map!)).not.toBe(oldKey);
+    expect(mapBuildKey(p.images.top!.map!, mapStackFromProject(p))).not.toBe(oldKey);
 
     const asset: ImageAsset = {
       name: 'stale',

@@ -7,8 +7,8 @@ import {
   maskElevationSamples,
 } from './mapElevation';
 
-/** Decode cap if WCS ignored SCALEFACTOR (native Neasden is ~12 M cells). */
-const MAX_DECODE_CELLS = 512 * 512;
+/** Default long edge to decode to if WCS ignored SCALEFACTOR (native Neasden is ~12 M cells). */
+const DEFAULT_MAX_EDGE_PX = 512;
 /** Read natively (then NaN-aware downsample) up to this many cells (~64 MB Float32). */
 const MAX_NATIVE_CELLS = 16 * 1024 * 1024;
 
@@ -31,14 +31,17 @@ function gdalNodata(image: {
   return FLOAT32_NODATA;
 }
 
-export async function parseFloat32Geotiff(buf: Uint8Array): Promise<Float32Grid> {
+/** `maxEdgePx` is the grid size the build asked WCS for; a raster bigger than that is reduced on read. */
+export async function parseFloat32Geotiff(buf: Uint8Array, maxEdgePx = DEFAULT_MAX_EDGE_PX): Promise<Float32Grid> {
+  // two spare px per side: the WCS subset is rounded out to whole metres
+  const maxDecodeCells = (maxEdgePx + 2) ** 2;
   const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
   const tiff = await fromArrayBuffer(ab);
   const image = await tiff.getImage();
   const width = image.getWidth();
   const height = image.getHeight();
   const cells = width * height;
-  const scale = cells > MAX_DECODE_CELLS ? Math.sqrt(MAX_DECODE_CELLS / cells) : 1;
+  const scale = cells > maxDecodeCells ? Math.sqrt(maxDecodeCells / cells) : 1;
   const readW = Math.max(2, Math.round(width * scale));
   const readH = Math.max(2, Math.round(height * scale));
   const nodata = gdalNodata(image);
@@ -75,9 +78,10 @@ export async function parseFloat32Geotiff(buf: Uint8Array): Promise<Float32Grid>
   const sy = height / readH;
   const pixelW = (res?.[0] ?? 1) * sx;
   const pixelH = -Math.abs(res?.[1] ?? 1) * sy;
+  // GeoTIFF bbox / origin is the outer edge of the top-left pixel; GridTransform wants its centre.
   const transform: GridTransform = {
-    originX: bbox?.[0] ?? origin?.[0] ?? 0,
-    originY: bbox?.[3] ?? origin?.[1] ?? 0,
+    originX: (bbox?.[0] ?? origin?.[0] ?? 0) + pixelW / 2,
+    originY: (bbox?.[3] ?? origin?.[1] ?? 0) + pixelH / 2,
     pixelW,
     pixelH,
   };

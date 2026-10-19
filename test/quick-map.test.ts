@@ -104,7 +104,9 @@ async function projectQuickMap(id: string) {
   let p = newProject();
   p = projectWithTopMapSpec(p, mapPresetSpec(id));
   p = applyQuickMapToProject(p);
-  const spec = p.images.top!.map!;
+  // Auto picks Terrarium outside England; these cases drive the LiDAR fixture grids through the explicit adapter id.
+  const fixtureSource = id === 'kingsbarns' ? 'scot-dtm' : id === 'royal-county-down' ? 'ni-dtm' : null;
+  const spec = fixtureSource ? { ...p.images.top!.map!, source: fixtureSource } as const : p.images.top!.map!;
   const bundle = await buildMapBundle(spec, {
     ...loadersFor(id),
     overpass: async () => overpassFixture,
@@ -154,7 +156,7 @@ describe('Quick map mode', () => {
     expect(next.giftSizeId).toBe('a6');
     expect(next.bbox).toEqual(NEASDEN_BBOX);
     expect(next.title).toBe('Neasden');
-    expect(next.water).toBe('bathy');
+    expect(next.water).toBe('raw');
     expect(next.engrave.enabled).toBe(true);
     expect(next.engrave.preset).toBe(QUICK_MAP_ENGRAVE_PRESET);
     expect(next.engrave.features).toContain('labels');
@@ -183,7 +185,7 @@ describe('Quick map mode', () => {
       expect(m.v.imgSideMode).toBe('off');
       expect(p.images.top?.map?.engrave.enabled).toBe(true);
       expect(p.images.top?.map?.engrave.preset).toBe(QUICK_MAP_ENGRAVE_PRESET);
-      expect(p.images.top?.map?.water).toBe('bathy');
+      expect(p.images.top?.map?.water).toBe(id === 'neasden-welsh-harp' ? 'bathy' : 'flat');
       expect(p.images.top?.map?.engrave.features).toContain('labels');
       assertExportable(m);
       const zip = unzipSync(buildZip(m, p));

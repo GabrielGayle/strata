@@ -92,12 +92,25 @@ export async function dismissTour(page: Page, opts?: { waitMs?: number }) {
   }
 }
 
-/** Fresh Playwright contexts have no tour-seen flag; the 1.5 s Composer tour steals clicks. */
-export async function openApp(page: Page) {
+/**
+ * Fresh Playwright contexts have no tour-seen flag; the 1.5 s Composer tour steals clicks.
+ * A new project opens as the plain A5 slab (no plates), so specs written against a plate
+ * stack start from `preset` (Vermilion 40 unless told otherwise); `preset: null` keeps the slab.
+ */
+export async function openApp(page: Page, opts: { preset?: string | null } = {}) {
   await page.addInitScript(seedAllTourSeenKeys);
   await page.goto('/');
   await page.waitForSelector('.app.window', { timeout: 60_000 });
   await dismissTour(page, { waitMs: 2_000 });
+  const preset = opts.preset === undefined ? 'Vermilion 40' : opts.preset;
+  if (preset) await loadPreset(page, preset);
+}
+
+/** Toolbar Presets ▾ → a named preset. */
+export async function loadPreset(page: Page, name: string) {
+  await page.getByRole('button', { name: 'Presets ▾' }).click();
+  await page.locator('.menu-pop').getByRole('button', { name: new RegExp(`^${name}\\b`) }).first().click();
+  await expect(page.locator('.topbar input').first()).toHaveValue(name);
 }
 
 export async function waitForMapReady(page: Page) {
@@ -110,6 +123,8 @@ export async function waitForMapReady(page: Page) {
           const err = (await root.getAttribute('data-strata-map-error'))?.trim();
           throw new Error(err || 'map terrain error');
         }
+        // the plates come from the engine worker a moment after the project changes
+        if ((await root.getAttribute('data-strata-model-current')) !== '1') return 0;
         const range = Number(await root.getAttribute('data-strata-plate-height-range-mm'));
         const expected = Number(await root.getAttribute('data-strata-map-expected-height-mm'));
         return phase === 'ready' && range > 0 && expected > 0 ? range : 0;
@@ -171,12 +186,19 @@ export async function applyNeasdenDesign(page: Page) {
   await dismissTour(page);
 }
 
+/** Once the model on screen has caught up with the project, so intermediate engine results aren't read. */
+export async function waitForModelCurrent(page: Page) {
+  await expect(page.locator('.app.window')).toHaveAttribute('data-strata-model-current', '1', { timeout: 60_000 });
+}
+
 export async function plateHeightRangeMm(page: Page): Promise<number> {
+  await waitForModelCurrent(page);
   const raw = await page.locator('.app.window').getAttribute('data-strata-plate-height-range-mm');
   return Number(raw);
 }
 
 export async function assertPlateHeightMatchesRelief(page: Page, tolerance = 0.3) {
+  await waitForModelCurrent(page);
   await expect
     .poll(async () => Number(await page.locator('.app.window').getAttribute('data-strata-map-expected-height-mm')), {
       timeout: 60_000,

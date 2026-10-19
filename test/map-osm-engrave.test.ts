@@ -26,7 +26,7 @@ beforeEach(() => {
   setOverpassFetcher(null);
   setEaGridLoader(null);
   resetOverpassInflight();
-  setOverpassTestDelays({ backoffMs: [0, 0], timeoutMs: 1, browserRetryMs: 0 });
+  setOverpassTestDelays({ timeoutMs: 1, browserRetryMs: 0 });
 });
 
 afterEach(() => {

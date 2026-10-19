@@ -27,21 +27,31 @@ const same = (a: unknown, b: unknown) => a === b || (a !== a && b !== b); // NaN
  * itself comes back when nothing changed). Downstream stages and React memos
  * that compare by identity then skip work for anything that did not change.
  * Only plain data (objects, arrays, typed arrays, primitives) is compared.
+ * An object `next` holds in two places (a part in both `parts` and its plate's
+ * `parts`) still comes back as one object, so code that finds it by identity
+ * (the shadow carve swapping parts) keeps working.
  */
 export function share<T>(prev: T | undefined, next: T): T {
-  return prev === undefined ? next : (merge(prev, next) as T);
+  return prev === undefined ? next : (merge(prev, next, new Map()) as T);
 }
 
-function merge(a: any, b: any): any {
+function merge(a: any, b: any, done: Map<object, any>): any {
   if (same(a, b)) return a;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return b;
+  if (done.has(b)) return done.get(b);
+  const out = mergeObject(a, b, done);
+  done.set(b, out);
+  return out;
+}
+
+function mergeObject(a: any, b: any, done: Map<object, any>): any {
   if (Array.isArray(a)) {
     if (!Array.isArray(b)) return b;
     // copy-on-write: `next` is only copied when some of it can be swapped for `prev`
     let out: any[] | null = null;
     let all = a.length === b.length;
     for (let i = 0; i < b.length; i++) {
-      const m = i < a.length ? merge(a[i], b[i]) : b[i];
+      const m = i < a.length ? merge(a[i], b[i], done) : b[i];
       if (m !== a[i]) all = false;
       if (m !== b[i]) (out ??= b.slice())[i] = m;
     }
@@ -59,7 +69,7 @@ function merge(a: any, b: any): any {
   let out: any = null;
   let all = Object.keys(a).length === kb.length;
   for (const k of kb) {
-    const m = k in a ? merge(a[k], b[k]) : b[k];
+    const m = k in a ? merge(a[k], b[k], done) : b[k];
     if (m !== a[k] || !(k in a)) all = false;
     if (m !== b[k]) (out ??= { ...b })[k] = m;
   }

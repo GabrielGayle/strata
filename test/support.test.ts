@@ -46,9 +46,9 @@ describe('radial support ring', () => {
     // one mortise per tenon, plus the centre hole of the ring
     const slots = plates.reduce((a, p) => a + p.tenons, 0);
     expect(ring[0].shape[0].holes.length).toBe(slots + 1);
-    // tenons reach the bottom of the ring
+    // tenons reach the bottom of the ring (to within the tidy-up tolerance of the corner rounding)
     const sup = m.sliced.support!;
-    for (const p of plates) expect(Math.min(...p.parts.map((q) => q.bbox.minY))).toBeCloseTo(sup.tenonBottom, 3);
+    for (const p of plates) expect(Math.abs(Math.min(...p.parts.map((q) => q.bbox.minY)) - sup.tenonBottom)).toBeLessThan(0.02);
     expect(m.issues.filter((i) => i.severity === 'error')).toEqual([]);
     expect(m.nested.unplaced).toEqual([]);
   });

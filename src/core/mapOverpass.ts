@@ -3,6 +3,7 @@ import { cachedMapJson, readMapCacheJson, writeMapCacheJson } from './mapCache';
 import {
   fetchOverpassDeduped,
   fetchOverpassWithMirrors,
+  OverpassFetchError,
   resolveOverpassBrowserRetryMs,
   sleep,
   STRATA_OVERPASS_UA,
@@ -33,7 +34,10 @@ async function postBrowserProxy(query: string): Promise<unknown> {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `data=${encodeURIComponent(query)}`,
   });
-  if (!res.ok) throw new Error(`Overpass proxy failed (${res.status})`);
+  if (!res.ok) {
+    const detail = (await res.text().catch(() => '')).slice(0, 200);
+    throw new OverpassFetchError(`Overpass proxy failed (${res.status})${detail ? `: ${detail}` : ''}`, res.status);
+  }
   return res.json();
 }
 
@@ -44,6 +48,9 @@ export async function defaultOverpassFetch(query: string): Promise<unknown> {
       try {
         return await postBrowserProxy(q);
       } catch (e) {
+        // A refused or bad query (4xx) would fail the same way again; only a 502 is worth one retry.
+        const status = (e as OverpassFetchError).status ?? 0;
+        if (status >= 400 && status < 500) throw e;
         await sleep(resolveOverpassBrowserRetryMs());
         try {
           return await postBrowserProxy(q);

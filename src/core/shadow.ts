@@ -1,13 +1,16 @@
 // Shadow carving: holes cut through a stack of parallel plates so the sun,
-// at chosen times of day, casts chosen pictures onto a screen: a wall behind
-// the piece, the ground behind it, or the top of the concrete.
+// at chosen times of day, or a candle in front of the piece casts chosen
+// pictures onto a screen: a wall behind the piece, the ground behind it, or
+// the top of the concrete.
 //
-// Light reaches a point on the screen only where the ray from it toward the sun
-// passes through an opening in every plate. So for each lit pixel of a frame
-// we trace back toward where the sun will be at that frame's time and open the
-// plate wherever the ray crosses it (on both faces, so thick plates stay open
-// at a slant). One frame's holes line up into tunnels that open only while
-// the sun sits at that angle.
+// Light reaches a point on the screen only where the ray from it toward the
+// light passes through an opening in every plate. So for every point of every
+// plate (on both faces, so thick plates stay open at a slant) we follow the
+// light on to the screen and read the picture there: the plate is opened where
+// the picture is bright. Reading the picture smoothly, not cell by cell, puts
+// the cut edges between grid points, so outlines follow the picture rather
+// than the grid. One frame's holes line up into tunnels that open only while
+// the sun sits at that angle (a candle's are always open).
 import type { Values } from './params';
 import type { Part, SliceResult } from './slicer';
 import type { Plane, V3 } from './section';
@@ -40,6 +43,9 @@ export interface ShadowInput {
 
 export type ScreenKind = 'wall' | 'ground' | 'base';
 
+/** Where the light comes from: the sun (a unit direction toward it) or a candle flame (a point). */
+export type Light = { dir: V3 } | { at: V3 };
+
 /** The screen and the picture rectangle on it. */
 export interface ShadowGeom {
   screen: ScreenKind;
@@ -65,6 +71,8 @@ export interface ShadowGeom {
   slots: { c0: number; cols: number }[] | null;
   /** The concrete block (centred on the origin), which shades the ground and is the screen for "base". */
   base: { l: number; w: number; h: number } | null;
+  /** The candle flame (world), or null when the sun is the light. */
+  candle: V3 | null;
 }
 
 /** One carved plate as a grid, for previews and scoring. */
@@ -79,6 +87,8 @@ export interface PlateGrid {
   rows: number;
   /** 1 where the plate blocks light after carving. */
   block: Uint8Array;
+  /** The carved plate's outline (plate coordinates), for sharper renders than the grid. */
+  shape: Shape;
 }
 
 export interface FrameScore {
@@ -166,8 +176,22 @@ export function shadowGeom(v: Values, plates: { plane: Plane; thickness: number 
   const s: [number, number] = [f.stack[0], f.stack[1]];
   const right: [number, number] = [-s[1], s[0]];
   let back = -Infinity;
-  for (const p of plates) back = Math.max(back, p.plane.origin[0] * s[0] + p.plane.origin[2] * s[1] + p.thickness / 2);
+  let front = Infinity;
+  for (const p of plates) {
+    const at = p.plane.origin[0] * s[0] + p.plane.origin[2] * s[1];
+    back = Math.max(back, at + p.thickness / 2);
+    front = Math.min(front, at - p.thickness / 2);
+  }
   if (!Number.isFinite(back)) back = f.stackLen / 2;
+  if (!Number.isFinite(front)) front = -f.stackLen / 2;
+  // the candle stands in front of the front plate
+  const candle: V3 | null = isCandle(v)
+    ? (() => {
+        const along = front - Math.max(1, Number(v.candleD) || 0);
+        const across = Number(v.candleX) || 0;
+        return [s[0] * along + right[0] * across, Math.max(1, Number(v.candleH) || 0), s[1] * along + right[1] * across];
+      })()
+    : null;
   const cell = Math.max(0.5, Number(v.shadowCell) || 3);
   const pc = Math.max(1, Math.round(Math.max(cell * 4, Number(v.shadowW) || 0) / cell));
   const rows = Math.max(1, Math.round(Math.max(cell * 4, Number(v.shadowH) || 0) / cell));
@@ -185,7 +209,7 @@ export function shadowGeom(v: Values, plates: { plane: Plane; thickness: number 
   const along = screen === 'wall' ? wallS : y0 + (rows * cell) / 2;
   const site = siteOf(v);
   const offs =
-    v.shadowExec === 'side' && times.length > 1
+    !candle && v.shadowExec === 'side' && times.length > 1
       ? times.map((t) => {
           const pos = sunPosition(site, t);
           const L = sunVector(v, pos);
@@ -214,8 +238,12 @@ export function shadowGeom(v: Values, plates: { plane: Plane; thickness: number 
     rows,
     slots: offs.length > 1 ? lefts.map((l) => ({ c0: l - c0, cols: pc })) : null,
     base,
+    candle,
   };
 }
+
+/** Is a candle the light (rather than the sun)? */
+export const isCandle = (v: Values) => v.shadowLight === 'candle';
 
 /** World position of a point on the screen: a along "right", b up the picture. */
 export function wallPoint(g: ShadowGeom, a: number, b: number): V3 {
@@ -236,9 +264,72 @@ export function onScreen(g: ShadowGeom, plates: { plane: Plane; thickness: numbe
   return true;
 }
 
-/** Does the sun reach this screen point's face at all (before any plate)? */
-function facesSun(g: ShadowGeom, L: V3): boolean {
+/** Does the light reach the screen's face at all (before any plate)? */
+function facesLight(g: ShadowGeom, lt: Light): boolean {
+  if ('at' in lt) {
+    const C = lt.at;
+    return g.screen === 'wall' ? C[0] * g.s[0] + C[2] * g.s[1] < g.wallS - 1 : C[1] > (g.screen === 'base' ? (g.base?.h ?? 0) : 0) + 1;
+  }
+  const L = lt.dir;
   return g.screen === 'wall' ? -(L[0] * g.s[0] + L[2] * g.s[1]) > 0.02 : L[1] > 0.02;
+}
+
+/**
+ * The light at a clock time, some days from the set date: the sun where it is
+ * then, or the candle (always the same). `up` is false when it can't reach the
+ * screen at all (the sun is down or behind the wall, the candle behind it).
+ */
+export function lightAt(v: Values, g: ShadowGeom, time: number, dayOffset = 0): { light: Light; up: boolean } {
+  if (g.candle) {
+    const light = { at: g.candle };
+    return { light, up: facesLight(g, light) };
+  }
+  const pos = sunPosition(shiftSite(siteOf(v), dayOffset), time);
+  const light = { dir: sunVector(v, pos) };
+  return { light, up: pos.elevation > 0 && facesLight(g, light) };
+}
+
+/** Vector from P toward the light, written into D; returns how far along it the light is (a candle is reached at 1). */
+function toward(lt: Light, P: V3, D: V3): number {
+  if ('at' in lt) {
+    D[0] = lt.at[0] - P[0];
+    D[1] = lt.at[1] - P[1];
+    D[2] = lt.at[2] - P[2];
+    return 1;
+  }
+  D[0] = lt.dir[0];
+  D[1] = lt.dir[1];
+  D[2] = lt.dir[2];
+  return Infinity;
+}
+
+/**
+ * Small points across the light's real size, for soft shadows: the sun's disc
+ * (half a degree across) or the candle flame (`flame` mm wide, twice as tall).
+ */
+export function lightSpread(g: ShadowGeom, lt: Light, flame: number, n = 7): Light[] {
+  const out: Light[] = [lt];
+  const ring = Math.max(0, n - 1);
+  for (let k = 0; k < ring; k++) {
+    const a = (k / ring) * Math.PI * 2;
+    const x = Math.cos(a) * 0.7;
+    const y = Math.sin(a) * 0.7;
+    if ('at' in lt) {
+      const r = flame / 2;
+      out.push({ at: [lt.at[0] + g.right[0] * x * r, lt.at[1] + y * r * 2, lt.at[2] + g.right[1] * x * r] });
+    } else {
+      // two directions square to the sun's
+      const L = lt.dir;
+      const h = Math.hypot(L[0], L[2]) || 1;
+      const e1: V3 = [-L[2] / h, 0, L[0] / h];
+      const e2: V3 = [L[1] * e1[2] - L[2] * e1[1], L[2] * e1[0] - L[0] * e1[2], L[0] * e1[1] - L[1] * e1[0]];
+      const r = 0.00465; // the sun's radius in radians
+      const d: V3 = [L[0] + (e1[0] * x + e2[0] * y) * r, L[1] + (e1[1] * x + e2[1] * y) * r, L[2] + (e1[2] * x + e2[2] * y) * r];
+      const m = Math.hypot(...d);
+      out.push({ dir: [d[0] / m, d[1] / m, d[2] / m] });
+    }
+  }
+  return out;
 }
 
 /**
@@ -271,7 +362,7 @@ export function frameTarget(g: ShadowGeom, gray: Gray, threshold: number, invert
 interface Carving {
   part: Part[];
   plane: Plane;
-  t: number;
+  thickness: number;
   x0: number;
   y0: number;
   cell: number;
@@ -280,39 +371,58 @@ interface Carving {
   solid: Uint8Array;
   carvable: Uint8Array;
   hole: Uint8Array;
+  /** Best picture signal the light through each node lands on (> 0: should be open), for smooth cut edges. */
+  val: Float32Array;
   bottom: number; // rows below this are under the base top
 }
 
-/** For each plate face the ray from P toward L crosses (ahead of P), the node it lands on (or -1 off the grid). */
-function* hits(cv: Carving, P: V3, L: V3): Generator<number> {
-  const n = cv.plane.normal;
-  const ln = dot3(L, n);
-  if (Math.abs(ln) < 1e-6) return;
-  const o = cv.plane.origin;
-  for (const w of [-cv.t / 2, cv.t / 2]) {
-    const tHit = ((o[0] + n[0] * w - P[0]) * n[0] + (o[1] + n[1] * w - P[1]) * n[1] + (o[2] + n[2] * w - P[2]) * n[2]) / ln;
-    if (tHit < 0) continue;
-    const H: V3 = [P[0] + L[0] * tHit - o[0], P[1] + L[1] * tHit - o[1], P[2] + L[2] * tHit - o[2]];
-    const c = Math.round((dot3(H, cv.plane.u) - cv.x0) / cv.cell);
-    const r = Math.round((dot3(H, cv.plane.v) - cv.y0) / cv.cell);
-    yield c < 0 || r < 0 || c >= cv.cols || r >= cv.rows ? -1 : r * cv.cols + c;
-  }
+/** A plate laid out as a grid of nodes (carving, carved, or a finer copy for rendering). */
+interface Gridded {
+  plane: Plane;
+  thickness: number;
+  x0: number;
+  y0: number;
+  cell: number;
+  cols: number;
+  rows: number;
 }
 
-/** Does a ray from P toward L pass through the concrete block? */
-function hitsBase(base: ShadowGeom['base'], P: V3, L: V3): boolean {
+/**
+ * Where the ray P + D·t (0 ≤ t ≤ tMax) crosses one face of a plate (side −1
+ * or +1): the node it lands on, −1 off the grid, or −2 if it doesn't cross.
+ */
+function cross(g: Gridded, P: V3, D: V3, tMax: number, side: number): number {
+  const n = g.plane.normal;
+  const ln = D[0] * n[0] + D[1] * n[1] + D[2] * n[2];
+  if (Math.abs(ln) < 1e-9) return -2;
+  const o = g.plane.origin;
+  const w = (side * g.thickness) / 2;
+  const t = ((o[0] + n[0] * w - P[0]) * n[0] + (o[1] + n[1] * w - P[1]) * n[1] + (o[2] + n[2] * w - P[2]) * n[2]) / ln;
+  if (t < 0 || t > tMax) return -2;
+  const hx = P[0] + D[0] * t - o[0];
+  const hy = P[1] + D[1] * t - o[1];
+  const hz = P[2] + D[2] * t - o[2];
+  const u = g.plane.u;
+  const vv = g.plane.v;
+  const c = Math.round((hx * u[0] + hy * u[1] + hz * u[2] - g.x0) / g.cell);
+  const r = Math.round((hx * vv[0] + hy * vv[1] + hz * vv[2] - g.y0) / g.cell);
+  return c < 0 || r < 0 || c >= g.cols || r >= g.rows ? -1 : r * g.cols + c;
+}
+
+/** Does the ray P + D·t (0 < t ≤ tMax) pass through the concrete block? */
+function hitsBase(base: ShadowGeom['base'], P: V3, D: V3, tMax = Infinity): boolean {
   if (!base) return false;
   const lo: V3 = [-base.l / 2, 0, -base.w / 2];
   const hi: V3 = [base.l / 2, base.h, base.w / 2];
   let t0 = 1e-3;
-  let t1 = Infinity;
+  let t1 = tMax;
   for (let k = 0; k < 3; k++) {
-    if (Math.abs(L[k]) < 1e-9) {
+    if (Math.abs(D[k]) < 1e-9) {
       if (P[k] <= lo[k] || P[k] >= hi[k]) return false;
       continue;
     }
-    let a = (lo[k] - P[k]) / L[k];
-    let b = (hi[k] - P[k]) / L[k];
+    let a = (lo[k] - P[k]) / D[k];
+    let b = (hi[k] - P[k]) / D[k];
     if (a > b) [a, b] = [b, a];
     t0 = Math.max(t0, a);
     t1 = Math.min(t1, b);
@@ -321,52 +431,115 @@ function hitsBase(base: ShadowGeom['base'], P: V3, L: V3): boolean {
   return true;
 }
 
-/** Is a ray from screen point P toward the sun L blocked by any plate or the concrete? */
-function blocked(grids: PlateGrid[], base: ShadowGeom['base'], P: V3, L: V3): boolean {
-  for (const g of grids) {
-    const n = g.plane.normal;
-    const ln = dot3(L, n);
-    if (Math.abs(ln) < 1e-6) continue;
-    const o = g.plane.origin;
-    for (const w of [-g.thickness / 2, g.thickness / 2]) {
-      const tHit = ((o[0] + n[0] * w - P[0]) * n[0] + (o[1] + n[1] * w - P[1]) * n[1] + (o[2] + n[2] * w - P[2]) * n[2]) / ln;
-      if (tHit < 0) continue;
-      const H: V3 = [P[0] + L[0] * tHit - o[0], P[1] + L[1] * tHit - o[1], P[2] + L[2] * tHit - o[2]];
-      const c = Math.round((dot3(H, g.plane.u) - g.x0) / g.cell);
-      const r = Math.round((dot3(H, g.plane.v) - g.y0) / g.cell);
-      if (c >= 0 && r >= 0 && c < g.cols && r < g.rows && g.block[r * g.cols + c]) return true;
+/** Is the ray from screen point P toward the light blocked by any plate (grid `block`) or the concrete? */
+function blocked(grids: (Gridded & { block: Uint8Array })[], base: ShadowGeom['base'], P: V3, D: V3, tMax: number): boolean {
+  for (const g of grids)
+    for (let side = -1; side <= 1; side += 2) {
+      const i = cross(g, P, D, tMax, side);
+      if (i >= 0 && g.block[i]) return true;
     }
-  }
-  return hitsBase(base, P, L);
+  return hitsBase(base, P, D, tMax);
 }
 
-/** Does a ray from P toward L cross any plate's outline (carved or not)? Light that misses every plate can't be shaped. */
-function throughPlates(cvs: Carving[], P: V3, L: V3): boolean {
-  for (const cv of cvs) for (const i of hits(cv, P, L)) if (i >= 0 && cv.solid[i]) return true;
+/** Does the ray cross any plate's outline (carved or not)? Light that misses every plate can't be shaped. */
+function throughPlates(cvs: Carving[], P: V3, D: V3, tMax: number): boolean {
+  for (const cv of cvs)
+    for (let side = -1; side <= 1; side += 2) {
+      const i = cross(cv, P, D, tMax, side);
+      if (i >= 0 && cv.solid[i]) return true;
+    }
   return false;
 }
 
 /**
- * Light on the screen at a clock time: 1 where sunlit, 2 where the grid is off the
+ * Light on the screen at a clock time: 1 where lit, 2 where the grid is off the
  * screen (inside the concrete or a plate). The grid covers the picture rectangle
- * grown by `margin` cells each side.
+ * grown by `margin` cells each side. Coarse (one picture cell per pixel): for scoring.
  */
 export function renderWall(v: Values, rep: ShadowReport, time: number, margin = 0, dayOffset = 0): { lit: Uint8Array; cols: number; rows: number; up: boolean } {
   const g = rep.geom;
   const cols = g.cols + margin * 2;
   const rows = g.rows + margin * 2;
   const lit = new Uint8Array(cols * rows);
-  const pos = sunPosition(shiftSite(siteOf(v), dayOffset), time);
-  const L = sunVector(v, pos);
-  const up = pos.elevation > 0 && facesSun(g, L);
-  const plates = rep.grids.map((p) => ({ plane: p.plane, thickness: p.thickness }));
+  const { light, up } = lightAt(v, g, time, dayOffset);
+  const plates = rep.grids;
+  const D: V3 = [0, 0, 0];
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++) {
       const P = wallPoint(g, g.x0 + (c - margin + 0.5) * g.cell, g.y0 + (r - margin + 0.5) * g.cell);
       if (!onScreen(g, plates, P)) lit[r * cols + c] = 2;
-      else if (up && !blocked(rep.grids, g.base, P, L)) lit[r * cols + c] = 1;
+      else if (up && !blocked(rep.grids, g.base, P, D, toward(light, P, D))) lit[r * cols + c] = 1;
     }
   return { lit, cols, rows, up };
+}
+
+const fineCache = new WeakMap<PlateGrid, { cell: number; g: Gridded & { block: Uint8Array } }>();
+
+/** A carved plate rasterised from its real outline at a finer cell, for sharp renders. */
+function fineGrid(p: PlateGrid, cell: number): Gridded & { block: Uint8Array } {
+  const hit = fineCache.get(p);
+  if (hit && hit.cell === cell) return hit.g;
+  const bb = bboxOf(p.shape.map((ex) => ex.outer));
+  const x0 = bb.minX - cell;
+  const y0 = bb.minY - cell;
+  const cols = Math.max(1, Math.ceil((bb.maxX - bb.minX) / cell) + 3);
+  const rows = Math.max(1, Math.ceil((bb.maxY - bb.minY) / cell) + 3);
+  const block = new Uint8Array(cols * rows);
+  fillShape(p.shape, x0, y0, cell, cols, rows, block);
+  const g = { plane: p.plane, thickness: p.thickness, x0, y0, cell, cols, rows, block };
+  fineCache.set(p, { cell, g });
+  return g;
+}
+
+/** A patch of screen to render: `cols` × `rows` pixels of `px` mm from (a0, b0), row 0 at the bottom. */
+export interface ScreenView {
+  a0: number;
+  b0: number;
+  px: number;
+  cols: number;
+  rows: number;
+}
+
+/**
+ * Light on a patch of screen, traced through the carved plates' real outlines:
+ * for each pixel, the share of `lights` that reach it (soft shadows when they
+ * spread across the light's size), times how bright the light is there (a
+ * candle falls off with distance and angle, normalised to 1 in the middle of
+ * the picture). −1 where it is not screen. Renders rows r0 to r1 into `out`.
+ */
+export function renderScreen(rep: ShadowReport, lights: Light[], view: ScreenView, out: Float32Array, r0 = 0, r1 = view.rows) {
+  const g = rep.geom;
+  const fine = Math.max(0.25, g.cell / 4);
+  const grids = rep.grids.map((p) => fineGrid(p, fine));
+  const N: V3 = [g.A[1] * g.B[2] - g.A[2] * g.B[1], g.A[2] * g.B[0] - g.A[0] * g.B[2], g.A[0] * g.B[1] - g.A[1] * g.B[0]];
+  const ups = lights.map((lt) => facesLight(g, lt));
+  const C = g.candle;
+  // brightness reference: the middle of the picture
+  const mid = wallPoint(g, g.x0 + g.w / 2, g.y0 + g.h / 2);
+  const glow = (P: V3) => {
+    if (!C) return 1;
+    const d: V3 = [C[0] - P[0], C[1] - P[1], C[2] - P[2]];
+    const r2 = dot3(d, d);
+    const cos = Math.abs(dot3(d, N)) / Math.sqrt(r2);
+    const m: V3 = [C[0] - mid[0], C[1] - mid[1], C[2] - mid[2]];
+    const m2 = dot3(m, m);
+    const cosM = Math.abs(dot3(m, N)) / Math.sqrt(m2) || 1;
+    return (cos / cosM) * (m2 / r2);
+  };
+  const plates = rep.grids;
+  const D: V3 = [0, 0, 0];
+  for (let r = r0; r < r1; r++)
+    for (let c = 0; c < view.cols; c++) {
+      const P = wallPoint(g, view.a0 + (c + 0.5) * view.px, view.b0 + (r + 0.5) * view.px);
+      const k = r * view.cols + c;
+      if (!onScreen(g, plates, P)) {
+        out[k] = -1;
+        continue;
+      }
+      let n = 0;
+      for (let j = 0; j < lights.length; j++) if (ups[j] && !blocked(grids, g.base, P, D, toward(lights[j], P, D))) n++;
+      out[k] = n ? (n / lights.length) * glow(P) : 0;
+    }
 }
 
 /** Days either side of the set date the carve is tuned for: evenly spread across the date window. */
@@ -510,10 +683,34 @@ function bridgeIslands(cv: Carving, keep: Uint8Array, islands: number[][], width
   return left;
 }
 
-/** Is a ray from P toward L blocked by any carving's remaining steel or the concrete? */
-function blockedNow(cvs: Carving[], base: ShadowGeom['base'], P: V3, L: V3): boolean {
-  for (const cv of cvs) for (const i of hits(cv, P, L)) if (i >= 0 && cv.solid[i] && !cv.hole[i]) return true;
-  return hitsBase(base, P, L);
+/** Is the ray from P toward the light blocked by any carving's remaining steel or the concrete? */
+function blockedNow(cvs: Carving[], base: ShadowGeom['base'], P: V3, D: V3, tMax: number): boolean {
+  for (const cv of cvs)
+    for (let side = -1; side <= 1; side += 2) {
+      const i = cross(cv, P, D, tMax, side);
+      if (i >= 0 && cv.solid[i] && !cv.hole[i]) return true;
+    }
+  return hitsBase(base, P, D, tMax);
+}
+
+/**
+ * Where the light through world point X lands on the screen plane, as screen
+ * (a, b) and how far on from X (≤ 0: the screen isn't beyond X); null if never.
+ */
+function toPlane(g: ShadowGeom, N: V3, lt: Light, X: V3): [number, number, number] | null {
+  // on from X, away from the light
+  const D: V3 = 'at' in lt ? [X[0] - lt.at[0], X[1] - lt.at[1], X[2] - lt.at[2]] : [-lt.dir[0], -lt.dir[1], -lt.dir[2]];
+  const dn = dot3(D, N);
+  if (Math.abs(dn) < 1e-9) return null;
+  const lam = ((g.o[0] - X[0]) * N[0] + (g.o[1] - X[1]) * N[1] + (g.o[2] - X[2]) * N[2]) / dn;
+  const rel: V3 = [X[0] + D[0] * lam - g.o[0], X[1] + D[1] * lam - g.o[1], X[2] + D[2] * lam - g.o[2]];
+  return [dot3(rel, g.A), dot3(rel, g.B), lam];
+}
+
+/** Where the light through world point X lands on the screen, as screen (a, b); null if it doesn't. */
+function toScreen(g: ShadowGeom, N: V3, lt: Light, X: V3): [number, number] | null {
+  const p = toPlane(g, N, lt, X);
+  return p && p[2] > 0 ? [p[0], p[1]] : null;
 }
 
 /**
@@ -522,9 +719,10 @@ function blockedNow(cvs: Carving[], base: ShadowGeom['base'], P: V3, L: V3): boo
  * inside lit tunnels only spoil the picture, so those are cut away even when
  * bridges are on.
  */
-function islandMatters(cells: number[], cv: Carving, cvs: Carving[], g: ShadowGeom, valid: Uint8Array, looks: { L: V3; target: Uint8Array }[]): boolean {
+function islandMatters(cells: number[], cv: Carving, cvs: Carving[], g: ShadowGeom, valid: Uint8Array, looks: { light: Light; target: Uint8Array }[]): boolean {
   const N: V3 = [g.A[1] * g.B[2] - g.A[2] * g.B[1], g.A[2] * g.B[0] - g.A[0] * g.B[2], g.A[0] * g.B[1] - g.A[1] * g.B[0]];
   const { plane } = cv;
+  const D: V3 = [0, 0, 0];
   let need = Math.min(2, cells.length);
   for (const k of cells) cv.hole[k] = 1; // as if cut away
   try {
@@ -533,21 +731,17 @@ function islandMatters(cells: number[], cv: Carving, cvs: Carving[], g: ShadowGe
       const u = cv.x0 + (k % cv.cols) * cv.cell;
       const w = cv.y0 + Math.floor(k / cv.cols) * cv.cell;
       for (let d = 0; d < 3; d++) X[d] = plane.origin[d] + plane.u[d] * u + plane.v[d] * w;
-      for (const { L, target } of looks) {
-        // back along the ray from this bit of steel to the screen
-        const ln = dot3(L, N);
-        if (Math.abs(ln) < 1e-6) continue;
-        const lam = ((X[0] - g.o[0]) * N[0] + (X[1] - g.o[1]) * N[1] + (X[2] - g.o[2]) * N[2]) / ln;
-        if (lam <= 0) continue;
-        const P: V3 = [X[0] - L[0] * lam, X[1] - L[1] * lam, X[2] - L[2] * lam];
-        const rel: V3 = [P[0] - g.o[0], P[1] - g.o[1], P[2] - g.o[2]];
-        const c = Math.floor((dot3(rel, g.A) - g.x0) / g.cell);
-        const r = Math.floor((dot3(rel, g.B) - g.y0) / g.cell);
+      for (const { light, target } of looks) {
+        // on along the light from this bit of steel to the screen
+        const ab = toScreen(g, N, light, X);
+        if (!ab) continue;
+        const c = Math.floor((ab[0] - g.x0) / g.cell);
+        const r = Math.floor((ab[1] - g.y0) / g.cell);
         if (c < 0 || r < 0 || c >= g.cols || r >= g.rows) continue;
         const i = r * g.cols + c;
         if (!valid[i] || target[i]) continue;
         const Pc = wallPoint(g, g.x0 + (c + 0.5) * g.cell, g.y0 + (r + 0.5) * g.cell);
-        if (!blockedNow(cvs, g.base, Pc, L) && --need <= 0) return true;
+        if (!blockedNow(cvs, g.base, Pc, D, toward(light, Pc, D)) && --need <= 0) return true;
       }
     }
     return false;
@@ -574,11 +768,160 @@ export function frameMatch(v: Values, rep: ShadowReport, fi: number, time: numbe
   return { match: either ? both / either : 1, stray: dark ? stray / dark : 0 };
 }
 
-/** Cut the frames' tunnels into the parallel plates. Returns the carved plates and a report. */
-export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[]): { sliced: SliceResult; report: ShadowReport } {
+/** A frame's picture as a smooth signal over the picture rectangle (a third of a cell per sample). */
+interface Signal {
+  data: Float32Array;
+  cols: number;
+  rows: number;
+  px: number;
+  /** The brightest it reads anywhere. */
+  top: number;
+}
+
+/**
+ * The picture laid into the picture rectangle like `frameTarget`, but kept
+ * smooth: brightness above the threshold (> 0 should be lit), −1 off the
+ * picture, outside its side-by-side slot, or where there is no screen.
+ */
+function pictureSignal(g: ShadowGeom, gray: Gray, threshold: number, invert: boolean, slot: { c0: number; cols: number } | null, valid: Uint8Array): Signal {
+  const k = 3;
+  const cols = g.cols * k;
+  const rows = g.rows * k;
+  const data = new Float32Array(cols * rows).fill(-1);
+  const c0 = slot?.c0 ?? 0;
+  const sc = slot?.cols ?? g.cols;
+  const aspect = gray.w / gray.h;
+  const boxAspect = sc / g.rows;
+  const fw = aspect > boxAspect ? 1 : aspect / boxAspect;
+  const fh = aspect > boxAspect ? boxAspect / aspect : 1;
+  const alpha = gray.alpha ? { ...gray, data: gray.alpha } : null;
+  for (let R = 0; R < rows; R++)
+    for (let C = 0; C < cols; C++) {
+      if (!valid[Math.floor(R / k) * g.cols + Math.floor(C / k)]) continue;
+      const bx = ((C + 0.5) / k - c0) / sc;
+      if (bx < 0 || bx > 1) continue;
+      const by = (R + 0.5) / k / g.rows;
+      const fx = (bx - (1 - fw) / 2) / fw;
+      const fy = 1 - (by - (1 - fh) / 2) / fh;
+      if (fx < 0 || fx > 1 || fy < 0 || fy > 1) continue;
+      let b = sample(gray, fx, fy);
+      if (alpha) b *= sample(alpha, fx, fy);
+      data[R * cols + C] = invert ? threshold - b : b - threshold;
+    }
+  let top = -1;
+  for (const x of data) if (x > top) top = x;
+  return { data, cols, rows, px: g.cell / k, top };
+}
+
+/** The picture signal at screen point (a, b), read smoothly; −1 off it. */
+function signalAt(sg: Signal, g: ShadowGeom, a: number, b: number): number {
+  const x = (a - g.x0) / sg.px - 0.5;
+  const y = (b - g.y0) / sg.px - 0.5;
+  if (x < -0.5 || y < -0.5 || x > sg.cols - 0.5 || y > sg.rows - 0.5) return -1;
+  const cx = Math.min(sg.cols - 1, Math.max(0, x));
+  const cy = Math.min(sg.rows - 1, Math.max(0, y));
+  const x0 = Math.min(sg.cols - 2, Math.floor(cx));
+  const y0 = Math.min(sg.rows - 2, Math.floor(cy));
+  if (x0 < 0 || y0 < 0) return sg.data[Math.round(cy) * sg.cols + Math.round(cx)];
+  const tx = cx - x0;
+  const ty = cy - y0;
+  const d = sg.data;
+  const i = y0 * sg.cols + x0;
+  return (d[i] * (1 - tx) + d[i + 1] * tx) * (1 - ty) + (d[i + sg.cols] * (1 - tx) + d[i + sg.cols + 1] * tx) * ty;
+}
+
+/**
+ * Open one plate face wherever the light through it lands on a bright part of
+ * the picture: for every carvable node of the face, follow the light on to the
+ * screen and keep the best signal seen in `val`. Only the nodes whose light can
+ * land on the picture rectangle are visited.
+ */
+function openFace(cv: Carving, side: number, g: ShadowGeom, N: V3, lt: Light, sg: Signal) {
+  const { plane, cell, cols, rows } = cv;
+  const n = plane.normal;
+  const w = (side * cv.thickness) / 2;
+  const O: V3 = [plane.origin[0] + n[0] * w, plane.origin[1] + n[1] * w, plane.origin[2] + n[2] * w];
+  const node = (u: number, vv: number): V3 => [O[0] + plane.u[0] * u + plane.v[0] * vv, O[1] + plane.u[1] * u + plane.v[1] * vv, O[2] + plane.u[2] * u + plane.v[2] * vv];
+  // the picture rectangle's corners, traced back toward the light onto this face, bound the nodes to visit
+  let c0 = 0;
+  let c1 = cols - 1;
+  let r0 = 0;
+  let r1 = rows - 1;
+  let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+  let behind = 0;
+  const D: V3 = [0, 0, 0];
+  for (const [a, b] of [
+    [g.x0, g.y0],
+    [g.x0 + g.w, g.y0],
+    [g.x0, g.y0 + g.h],
+    [g.x0 + g.w, g.y0 + g.h],
+  ]) {
+    const P = wallPoint(g, a, b);
+    const tMax = toward(lt, P, D);
+    const dn = dot3(D, n);
+    const t = Math.abs(dn) < 1e-9 ? -1 : ((O[0] - P[0]) * n[0] + (O[1] - P[1]) * n[1] + (O[2] - P[2]) * n[2]) / dn;
+    if (t < 0 || t > tMax) {
+      behind++;
+      continue;
+    }
+    const rel: V3 = [P[0] + D[0] * t - O[0], P[1] + D[1] * t - O[1], P[2] + D[2] * t - O[2]];
+    const u = dot3(rel, plane.u);
+    const vv = dot3(rel, plane.v);
+    uMin = Math.min(uMin, u);
+    uMax = Math.max(uMax, u);
+    vMin = Math.min(vMin, vv);
+    vMax = Math.max(vMax, vv);
+  }
+  if (behind === 4) return; // the face isn't between the light and the screen
+  if (!behind) {
+    c0 = Math.max(0, Math.floor((uMin - cv.x0) / cell) - 1);
+    c1 = Math.min(cols - 1, Math.ceil((uMax - cv.x0) / cell) + 1);
+    r0 = Math.max(0, Math.floor((vMin - cv.y0) / cell) - 1);
+    r1 = Math.min(rows - 1, Math.ceil((vMax - cv.y0) / cell) + 1);
+  }
+  const { carvable, val } = cv;
+  const top = sg.top; // nothing reads brighter, so nodes already there are done
+  if ('dir' in lt) {
+    // parallel light: the screen point moves in straight, even steps across the face
+    const p00 = toPlane(g, N, lt, node(cv.x0, cv.y0));
+    const p10 = toPlane(g, N, lt, node(cv.x0 + cell, cv.y0));
+    const p01 = toPlane(g, N, lt, node(cv.x0, cv.y0 + cell));
+    if (!p00 || !p10 || !p01) return;
+    const dac = p10[0] - p00[0], dbc = p10[1] - p00[1], dlc = p10[2] - p00[2];
+    const dar = p01[0] - p00[0], dbr = p01[1] - p00[1], dlr = p01[2] - p00[2];
+    for (let r = r0; r <= r1; r++)
+      for (let c = c0; c <= c1; c++) {
+        const i = r * cols + c;
+        if (!carvable[i] || val[i] >= top || p00[2] + c * dlc + r * dlr <= 0) continue;
+        const s = signalAt(sg, g, p00[0] + c * dac + r * dar, p00[1] + c * dbc + r * dbr);
+        if (s > val[i]) val[i] = s;
+      }
+    return;
+  }
+  for (let r = r0; r <= r1; r++)
+    for (let c = c0; c <= c1; c++) {
+      const i = r * cols + c;
+      if (!carvable[i] || val[i] >= top) continue;
+      const ab = toScreen(g, N, lt, node(cv.x0 + c * cell, cv.y0 + r * cell));
+      if (!ab) continue;
+      const s = signalAt(sg, g, ab[0], ab[1]);
+      if (s > val[i]) val[i] = s;
+    }
+}
+
+/** Smallest signal an open node gets: keeps cut edges a little way off the nodes, so no hair-thin slivers. */
+const OPEN = 0.1;
+
+/**
+ * The carve, a step at a time: it yields after each light, plate and frame, so
+ * a worker can stop it when a newer edit arrives. carveShadow runs it through.
+ */
+export function* carveShadowSteps(v: Values, sliced: SliceResult, frames: ShadowInput[]): Generator<void, CarveResult> {
   const t0 = performance.now();
-  const allDay = v.shadowExec === 'allday';
-  const use = allDay ? frames.slice(0, 1) : frames;
+  const candle = isCandle(v);
+  const allDay = !candle && v.shadowExec === 'allday';
+  // a candle doesn't move, so it shows one picture
+  const use = allDay || candle ? frames.slice(0, 1) : frames;
   const cell = Math.max(0.5, Number(v.shadowCell) || 3);
   const rim = Math.max(0, Number(v.shadowRim) || 0);
   const site = siteOf(v);
@@ -599,61 +942,91 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
     const bottom = Math.max(0, Math.ceil((rim - y0) / cell));
     const carvable = erodeSides(solid, cols, rows, Math.ceil(rim / cell));
     for (let r = 0; r < Math.min(rows, bottom); r++) carvable.fill(0, r * cols, (r + 1) * cols);
-    carvings.push({ part: parts, plane: parts[0].plane, t: parts[0].thickness, x0, y0, cell, cols, rows, solid, carvable, hole: new Uint8Array(cols * rows), bottom });
+    carvings.push({ part: parts, plane: parts[0].plane, thickness: parts[0].thickness, x0, y0, cell, cols, rows, solid, carvable, hole: new Uint8Array(cols * rows), val: new Float32Array(cols * rows).fill(-1), bottom });
   }
 
-  const plates = carvings.map((c) => ({ plane: c.plane, thickness: c.t }));
+  const plates = carvings.map((c) => ({ plane: c.plane, thickness: c.thickness }));
   const geom = shadowGeom(v, plates, use.map((f) => f.time));
+  const N: V3 = [geom.A[1] * geom.B[2] - geom.A[2] * geom.B[1], geom.A[2] * geom.B[0] - geom.A[0] * geom.B[2], geom.A[0] * geom.B[1] - geom.A[1] * geom.B[0]];
   const valid = new Uint8Array(geom.cols * geom.rows);
   for (let r = 0; r < geom.rows; r++)
     for (let c = 0; c < geom.cols; c++) valid[r * geom.cols + c] = onScreen(geom, plates, wallPoint(geom, geom.x0 + (c + 0.5) * cell, geom.y0 + (r + 0.5) * cell)) ? 1 : 0;
-  const threshold = Number(v.shadowThreshold);
+  const thr = Number(v.shadowThreshold);
+  const threshold = Number.isFinite(thr) ? thr : 0.5;
   const targets = use.map((f, fi) => {
-    const t = frameTarget(geom, f.gray, Number.isFinite(threshold) ? threshold : 0.5, !!v.shadowInvert, geom.slots?.[fi] ?? null);
+    const t = frameTarget(geom, f.gray, threshold, !!v.shadowInvert, geom.slots?.[fi] ?? null);
     for (let i = 0; i < t.length; i++) t[i] &= valid[i];
     return t;
   });
   const problems: (string | null)[] = use.map(() => null);
   const hints: (string | null)[] = use.map(() => null);
   const byTime = use.map((f) => f.time).sort((a, b) => a - b);
-  const days = windowDays(v);
+  const days = candle ? [0] : windowDays(v);
+  const D: V3 = [0, 0, 0];
 
-  // 2. open the plates along every lit pixel's ray, for every sample time
-  use.forEach((f, fi) => {
-    let usable = 0;
-    let missing = 0;
-    let lit = 0;
+  // 2. open the plates wherever the light through them falls on the bright parts of the picture
+  for (let fi = 0; fi < use.length; fi++) {
+    const f = use[fi];
     const k = byTime.indexOf(f.time);
     const prev = k > 0 ? byTime[k - 1] : null;
     const next = k >= 0 && k < byTime.length - 1 ? byTime[k + 1] : null;
-    const tgt = targets[fi];
-    const times = sampleTimes(v, f, allDay, prev, next);
-    for (const day of days) {
-      const siteD = shiftSite(site, day);
-      for (const time of times) {
-        const pos = sunPosition(siteD, time);
-        const L = sunVector(v, pos);
-        if (pos.elevation <= 1 || !facesSun(geom, L)) continue;
-        usable++;
-        for (let r = 0; r < geom.rows; r++)
-          for (let c = 0; c < geom.cols; c++) {
-            if (!tgt[r * geom.cols + c]) continue;
-            const P = wallPoint(geom, geom.x0 + (c + 0.5) * cell, geom.y0 + (r + 0.5) * cell);
-            for (const cv of carvings) for (const i of hits(cv, P, L)) if (i >= 0 && cv.carvable[i]) cv.hole[i] = 1;
+    // every light to carve for, and the ones (the frame's own time each day) whose rays also open every lit pixel
+    const lights: Light[] = [];
+    const rays = new Set<Light>();
+    if (geom.candle) {
+      const lt = { at: geom.candle };
+      if (facesLight(geom, lt)) lights.push(lt), rays.add(lt);
+    } else {
+      const times = sampleTimes(v, f, allDay, prev, next);
+      const mid = times.reduce((m, t) => (Math.abs(t - f.time) < Math.abs(m - f.time) ? t : m), times[0]);
+      for (const day of days) {
+        const siteD = shiftSite(site, day);
+        for (const time of times) {
+          const pos = sunPosition(siteD, time);
+          const lt = { dir: sunVector(v, pos) };
+          if (pos.elevation > 1 && facesLight(geom, lt)) {
+            lights.push(lt);
+            if (allDay || time === mid) rays.add(lt);
           }
+        }
       }
     }
-    if (!usable) {
-      problems[fi] =
-        sunPosition(site, f.time).elevation <= 1
+    if (!lights.length) {
+      problems[fi] = geom.candle
+        ? geom.screen === 'wall'
+          ? 'The candle is behind the wall: it must stand in front of the piece.'
+          : 'The candle is too low to reach the screen: raise its flame.'
+        : sunPosition(site, f.time).elevation <= 1
           ? 'The sun is down at this time.'
           : geom.screen === 'wall'
             ? 'The sun is behind the wall at this time: it must shine on the front of the piece.'
             : 'The sun is too low to reach the screen at this time.';
-      return;
+      continue;
     }
+    const sg = pictureSignal(geom, f.gray, threshold, !!v.shadowInvert, geom.slots?.[fi] ?? null, valid);
+    const tgt = targets[fi];
+    for (const lt of lights) {
+      for (const cv of carvings) for (let side = -1; side <= 1; side += 2) openFace(cv, side, geom, N, lt, sg);
+      yield;
+      if (!rays.has(lt)) continue;
+      // and every lit pixel's own ray, so features thinner than a cell (or stretched across a slanting screen) still get through
+      for (let r = 0; r < geom.rows; r++)
+        for (let c = 0; c < geom.cols; c++) {
+          if (!tgt[r * geom.cols + c]) continue;
+          const P = wallPoint(geom, geom.x0 + (c + 0.5) * cell, geom.y0 + (r + 0.5) * cell);
+          const tMax = toward(lt, P, D);
+          for (const cv of carvings)
+            for (let side = -1; side <= 1; side += 2) {
+              const i = cross(cv, P, D, tMax, side);
+              if (i >= 0 && cv.carvable[i] && cv.val[i] < OPEN) cv.val[i] = OPEN;
+            }
+        }
+    }
+
     // light that misses every plate can't be shaped, and light that must pass uncut steel can't get through
-    const L = sunVector(v, sunPosition(site, f.time));
+    const lt: Light = geom.candle ? { at: geom.candle } : { dir: sunVector(v, sunPosition(site, f.time)) };
+    let missing = 0;
+    let lit = 0;
     let want = 0;
     let stuck = 0;
     for (let r = 0; r < geom.rows; r++)
@@ -663,16 +1036,33 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
         if (!valid[i] || (slot && (c < slot.c0 || c >= slot.c0 + slot.cols))) continue;
         lit++;
         const P = wallPoint(geom, geom.x0 + (c + 0.5) * cell, geom.y0 + (r + 0.5) * cell);
-        const inBase = hitsBase(geom.base, P, L);
-        if (!inBase && !throughPlates(carvings, P, L)) missing++;
+        const tMax = toward(lt, P, D);
+        const inBase = hitsBase(geom.base, P, D, tMax);
+        if (!inBase && !throughPlates(carvings, P, D, tMax)) missing++;
         if (!tgt[i]) continue;
         want++;
-        if (inBase || carvings.some((cv) => [...hits(cv, P, L)].some((k) => k >= 0 && cv.solid[k] && !cv.carvable[k]))) stuck++;
+        if (
+          inBase ||
+          carvings.some((cv) => {
+            for (let side = -1; side <= 1; side += 2) {
+              const j = cross(cv, P, D, tMax, side);
+              if (j >= 0 && cv.solid[j] && !cv.carvable[j]) return true;
+            }
+            return false;
+          })
+        )
+          stuck++;
       }
-    if (lit && missing / lit > 0.5) problems[fi] = 'At this time most of the sun reaching the picture misses the plates. Move the picture or the screen so the light comes through the plates.';
+    const mover = geom.candle ? 'the candle' : 'the screen';
+    if (lit && missing / lit > 0.5) problems[fi] = `${geom.candle ? 'Most of the candle light' : 'At this time most of the sun'} reaching the picture misses the plates. Move the picture or ${mover} so the light comes through the plates.`;
     else if (want && stuck / want > 0.5)
-      hints[fi] = geom.screen === 'wall' ? `Most of this picture's light would have to pass the uncut rim at the plates' sides or bottom${v.insertOn ? ', or round the insert' : ''}. Move the picture, or lower the Solid rim.` : 'Most of this picture\'s light would have to pass the concrete or the uncut rim low on the plates. Move the picture further back, or lower the Solid rim.';
-  });
+      hints[fi] =
+        geom.screen === 'wall'
+          ? `Most of this picture's light would have to pass the uncut rim at the plates' sides or bottom${v.insertOn ? ', or round the insert' : ''}. Move the picture${geom.candle ? ' or the candle' : ''}, or lower the Solid rim.`
+          : "Most of this picture's light would have to pass the concrete or the uncut rim low on the plates. Move the picture further back, or lower the Solid rim.";
+    yield;
+  }
+  for (const cv of carvings) for (let i = 0; i < cv.hole.length; i++) if (cv.carvable[i] && cv.val[i] > 0) cv.hole[i] = 1;
 
   // tidy the cuts for the laser: no lone pinholes, and no steel joined only at a corner
   for (const cv of carvings) tidyCuts(cv);
@@ -682,13 +1072,18 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
   let islands = 0;
   let bridged = 0;
   // what each frame should look like at its own time (all day: on the hour), to judge loose bits by
-  const looks: { L: V3; target: Uint8Array }[] = [];
+  const looks: { light: Light; target: Uint8Array }[] = [];
   use.forEach((f, fi) => {
+    if (geom.candle) {
+      const light = { at: geom.candle };
+      if (facesLight(geom, light)) looks.push({ light, target: targets[fi] });
+      return;
+    }
     const times = allDay ? sampleTimes(v, f, true, null, null).filter((_, i) => i % 6 === 0) : [f.time];
     for (const t of times) {
       const pos = sunPosition(site, t);
-      const L = sunVector(v, pos);
-      if (pos.elevation > 1 && facesSun(geom, L)) looks.push({ L, target: targets[fi] });
+      const light = { dir: sunVector(v, pos) };
+      if (pos.elevation > 1 && facesLight(geom, light)) looks.push({ light, target: targets[fi] });
     }
   });
   let carved = 0;
@@ -747,6 +1142,7 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
       if (cv.carvable[i]) carvableTotal++;
       if (hole[i] && cv.carvable[i]) carved++;
     }
+    yield;
   }
   const cutAway = islands - bridged;
 
@@ -754,8 +1150,33 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
   const replaced = new Map<Part, Part>();
   for (const cv of carvings) {
     if (!cv.hole.some(Boolean)) continue;
+    // open nodes > 0, closed < 0; where the picture decided, its smooth signal places the edge between nodes
     const field = new Float32Array(cv.cols * cv.rows);
-    for (let i = 0; i < field.length; i++) field[i] = cv.hole[i] ? 1 : -1;
+    for (let i = 0; i < field.length; i++) {
+      const s = cv.val[i];
+      field[i] = cv.hole[i] ? (s > 0 ? Math.min(1, Math.max(OPEN, s)) : 1) : cv.solid[i] && cv.carvable[i] && s <= 0 ? Math.max(-1, Math.min(-OPEN, s)) : -1;
+    }
+    // a web of steel one node wide between two cuts must stay at least the min feature wide: pull the cut edges back from it
+    const half = (Math.max(0, Number(v.minFeature) || 0) / 2) * 1.08;
+    if (half > 0) {
+      const t = half / cv.cell; // how far from the web node each edge must sit, in cells
+      const cap = t < 1 ? Math.max(OPEN, 1 / t - 1) : -1;
+      const { cols } = cv;
+      const thin: [number, number][] = [];
+      for (let i = 0; i < field.length; i++) {
+        if (field[i] >= 0 || !cv.solid[i]) continue;
+        const c = i % cols;
+        if (c > 0 && c < cols - 1 && field[i - 1] > 0 && field[i + 1] > 0) thin.push([i, 1]);
+        if (i >= cols && i + cols < field.length && field[i - cols] > 0 && field[i + cols] > 0) thin.push([i, cols]);
+      }
+      for (const [i, d] of thin) {
+        field[i] = -1;
+        for (const j of [i - d, i + d]) {
+          if (cap < 0 && cv.carvable[j]) cv.hole[j] = 0;
+          field[j] = Math.min(field[j], cap);
+        }
+      }
+    }
     // carry cuts that reach the plate's edge out past it, so no sliver of steel is left along the outline
     for (let i = 0; i < field.length; i++) {
       if (!cv.hole[i] || !cv.solid[i]) continue;
@@ -786,28 +1207,67 @@ export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[
         bbox: bboxOf([ex.outer]),
       });
     }
+    yield;
   }
 
   const grids: PlateGrid[] = carvings.map((cv) => {
     const block = new Uint8Array(cv.solid.length);
     for (let i = 0; i < block.length; i++) block[i] = cv.solid[i] && !cv.hole[i] ? 1 : 0;
-    return { key: cv.part[0].plateKey, plane: cv.plane, thickness: cv.t, x0: cv.x0, y0: cv.y0, cell: cv.cell, cols: cv.cols, rows: cv.rows, block };
+    const shape = cv.part.flatMap((p) => (replaced.get(p) ?? p).shape);
+    return { key: cv.part[0].plateKey, plane: cv.plane, thickness: cv.thickness, x0: cv.x0, y0: cv.y0, cell: cv.cell, cols: cv.cols, rows: cv.rows, block, shape };
   });
   const report: ShadowReport = { geom, grids, targets, valid, scores: [], removed: carvableTotal ? carved / carvableTotal : 0, islands, bridged, plates: carvings.length, cut: carvings.filter((cv) => cv.hole.some((h, i) => h && cv.carvable[i])).length, ms: 0 };
 
   // 5. how well each frame comes out
-  report.scores = use.map((f, fi) => {
-    if (problems[fi]) return { time: f.time, match: 0, stray: 0, problem: problems[fi] };
-    return { time: f.time, ...frameMatch(v, report, fi, f.time), problem: null, hint: hints[fi] };
-  });
+  for (let fi = 0; fi < use.length; fi++) {
+    const f = use[fi];
+    report.scores.push(problems[fi] ? { time: f.time, match: 0, stray: 0, problem: problems[fi] } : { time: f.time, ...frameMatch(v, report, fi, f.time), problem: null, hint: hints[fi] });
+    yield;
+  }
 
+  report.ms = performance.now() - t0;
+  return { sliced: swapParts(sliced, replaced, cutAway), report };
+}
+
+/** Puts the carved parts in place of the ones they were cut from. */
+function swapParts(sliced: SliceResult, replaced: Map<Part, Part>, cutAway: number): SliceResult {
   const swap = (p: Part) => replaced.get(p) ?? p;
-  const out: SliceResult = replaced.size
+  const out: SliceResult = replaced.size || cutAway
     ? { ...sliced, plates: sliced.plates.map((pl) => (pl.parts.some((p) => replaced.has(p)) ? { ...pl, parts: pl.parts.map(swap) } : pl)), parts: sliced.parts.map(swap) }
     : sliced;
   if (cutAway) out.warnings = [...sliced.warnings, `Shadow carve: ${cutAway} loose bit(s) inside the cut-outs were cut away so nothing falls out.`];
-  report.ms = performance.now() - t0;
-  return { sliced: out, report };
+  return out;
+}
+
+/** Cut the frames' tunnels into the parallel plates. Returns the carved plates and a report. */
+export function carveShadow(v: Values, sliced: SliceResult, frames: ShadowInput[]): CarveResult {
+  const steps = carveShadowSteps(v, sliced, frames);
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+}
+
+export interface CarveResult {
+  sliced: SliceResult;
+  report: ShadowReport;
+}
+
+/** What a carve changed, small enough to send back to the thread that sliced the plates: the replaced parts by index, and how many loose bits were cut away. */
+export interface CarveDiff {
+  parts: [number, Part][];
+  cutAway: number;
+}
+
+export function carveDiff(sliced: SliceResult, carved: CarveResult): CarveDiff {
+  const parts: [number, Part][] = [];
+  carved.sliced.parts.forEach((p, i) => p !== sliced.parts[i] && parts.push([i, p]));
+  return { parts, cutAway: carved.report.islands - carved.report.bridged };
+}
+
+/** The carved plates from the plates as sliced and a carve's diff: the same as carveShadow's own. */
+export function applyCarveDiff(sliced: SliceResult, diff: CarveDiff): SliceResult {
+  return swapParts(sliced, new Map(diff.parts.map(([i, p]) => [sliced.parts[i], p])), diff.cutAway);
 }
 
 /** Frames as saved in a project file, cleaned up. */

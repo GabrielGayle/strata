@@ -29,6 +29,7 @@ table.tbl,
 }
 
 .theme-surface,
+.view,
 .map-view,
 .nodes-view,
 .shadow-view,
@@ -36,7 +37,6 @@ table.tbl,
 .nv-body,
 .cm-body,
 .pm-body,
-.appearance.overlay,
 .nd-node,
 .sf-row {
   color: var(--ink);
@@ -46,6 +46,10 @@ table.tbl,
 .map-view :is(fieldset, legend, label, h2, h3) {
   color: var(--ink);
 }
+/* 98.css paints legends silver; on a themed panel that leaves light ink on silver */
+.map-view legend {
+  background: transparent;
+}
 .map-view .map-view-note,
 .map-view .map-window-status,
 .map-view .map-readout {
@@ -54,6 +58,39 @@ table.tbl,
 .map-view button:disabled {
   color: var(--field-disabled-fg);
   text-shadow: none;
+}
+
+/* Silver Win98 surfaces (and the white sunken lists/tables on them): themed --muted / --ok / --warn / --err are tuned for the theme's
+   panels and fail contrast on #c0c0c0 (light ones too pale, dark ones far too pale),
+   so give anything drawn on silver its own AA-safe set. */
+.left.window,
+.right.window,
+.topbar,
+.statusbar,
+.window.box,
+.svgwrap > .overlay,
+.appearance.overlay,
+menu[role='tablist'] > li,
+table.tbl,
+.list.sunken-panel {
+  --muted: var(--chrome-muted);
+  --ok: #16521f;
+  --warn: #644004;
+  --err: #8f1a13;
+}
+
+/* A themed viewport set into a silver window (Image tab relief preview): its notes sit on
+   --viewport, so they take the theme's own --muted back. */
+:root {
+  --theme-muted: var(--muted);
+}
+.window.box .on-viewport {
+  --muted: var(--theme-muted);
+}
+
+/* Materials, Move plates and Objects windows over the 3D view are silver in every theme: dark ink, not the theme's pale --ink */
+.appearance.overlay {
+  color: var(--chrome-fg);
 }
 
 /* Parameters + Inspector side panels: Win98 silver, never themed --ink/--muted on labels */

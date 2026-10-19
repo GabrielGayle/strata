@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  EA_PROXY_MAX_BYTES,
+  eaProxyErrorStatus,
   fetchEaUpstream,
   isAllowedEaDataGovHost,
   parseAllowedEaProxyTarget,
@@ -94,5 +96,65 @@ describe('EA CORS proxy allowlist (T6)', () => {
     expect(out.headers['set-cookie']).toBeUndefined();
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(vi.mocked(fetchImpl).mock.calls[0][1]).toMatchObject({ redirect: 'manual' });
+  });
+
+  it('drops content-length when the upstream body was compressed', () => {
+    const gz = pickEaProxyResponseHeaders(new Headers({ 'content-encoding': 'gzip', 'content-length': '100' }));
+    expect(gz['content-length']).toBeUndefined();
+    const plain = pickEaProxyResponseHeaders(new Headers({ 'content-length': '100' }));
+    expect(plain['content-length']).toBe('100');
+  });
+
+  it('refuses a declared oversized response without reading it', async () => {
+    const cancel = vi.fn();
+    const body = new ReadableStream({ cancel });
+    const fetchImpl = vi.fn(async () =>
+      new Response(body, { status: 200, headers: { 'content-length': String(EA_PROXY_MAX_BYTES + 1) } }),
+    ) as unknown as typeof fetch;
+    const url = parseAllowedEaProxyTarget('https://environment.data.gov.uk/big.tif');
+    const err = await fetchEaUpstream(url, { method: 'GET', headers: {}, fetchImpl }).catch((e) => e);
+    expect(eaProxyErrorStatus(err)).toBe(413);
+    expect(String(err.message)).toMatch(/larger than 16 MB/);
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it('stops reading a streamed response once it passes the cap', async () => {
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        pulled += 1;
+        c.enqueue(new Uint8Array(1024));
+        if (pulled > 100) c.close();
+      },
+    });
+    const fetchImpl = vi.fn(async () => new Response(body, { status: 200 })) as unknown as typeof fetch;
+    const url = parseAllowedEaProxyTarget('https://environment.data.gov.uk/stream.tif');
+    const err = await fetchEaUpstream(url, { method: 'GET', headers: {}, fetchImpl, maxBytes: 4096 }).catch((e) => e);
+    expect(eaProxyErrorStatus(err)).toBe(413);
+    expect(pulled).toBeLessThan(10);
+  });
+
+  it('passes responses under the cap through intact', async () => {
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(2048), { status: 200 })) as unknown as typeof fetch;
+    const url = parseAllowedEaProxyTarget('https://environment.data.gov.uk/ok.tif');
+    const out = await fetchEaUpstream(url, { method: 'GET', headers: {}, fetchImpl, maxBytes: 4096 });
+    expect(out.body?.byteLength).toBe(2048);
+  });
+
+  it('times out a hung upstream with 504', async () => {
+    const fetchImpl = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+        }),
+    ) as unknown as typeof fetch;
+    const url = parseAllowedEaProxyTarget('https://environment.data.gov.uk/slow');
+    const err = await fetchEaUpstream(url, { method: 'GET', headers: {}, fetchImpl, timeoutMs: 20 }).catch((e) => e);
+    expect(eaProxyErrorStatus(err)).toBe(504);
+    expect(String(err.message)).toMatch(/did not answer/);
+  });
+
+  it('answers 502 for a plain upstream failure', () => {
+    expect(eaProxyErrorStatus(new Error('ECONNRESET'))).toBe(502);
   });
 });

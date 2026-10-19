@@ -1,13 +1,13 @@
 import type { MapSpec } from './mapSpec';
-import { defaultMapSpec, TERRARIUM_ATTRIBUTION } from './mapSpec';
+import { defaultMapSpec, MAP_SMOOTH_MM, TERRARIUM_ATTRIBUTION } from './mapSpec';
 import { fetchTerrariumGrid, getTileFetcher, type TileFetcher } from './mapTerrarium';
 import { cachedTileFetch } from './mapCache';
-import { reprojectResample } from './mapProject';
+import { mapGridSize, reprojectResample } from './mapProject';
 import { mapGridToDepth } from './mapToDepth';
 import { applyLayerBudget, computeLayerBreaks, injectPinnedBreaks, type LayerBudgetMode } from './mapLayerBudget';
 import { formatExaggerationStackReadout, resolveExaggerationFactor } from './mapExaggeration';
-import { simplifyMetricGrid } from './mapSimplify';
-import { fetchCop30Grid, type Cop30GridLoader } from './mapCopernicus';
+import { restoreSummitCells, simplifyMetricGrid } from './mapSimplify';
+import { prominentSummitCells } from './mapSummits';
 import { fetchEaLidarGrid, isEaLidarSource, type EaGridLoader } from './mapEaLidar';
 import { fetchRegionalLidarGrid, isRegionalLidarSource, type RegionalGridLoader } from './mapRegionalLidar';
 import { pickAutoMapSource, pickExplicitSource } from './mapSourcePick';
@@ -28,12 +28,12 @@ import { serializeMapEngraveArt } from './mapOsmEngrave';
 import type { OverpassFetcher } from './mapOverpass';
 import type { MapSource } from './mapSpec';
 import { mapBuildKey } from './mapBuildKey';
+import { mapStackFromProject, mapUsesLayerBudget, type MapStackContext } from './mapStack';
 import { mapInfo, mapWarn, noticesWithoutStaleEngraveSkip, type MapSourceNotice } from './mapNotices';
 import type { DepthData } from './depth';
 import type { Float32Grid } from './mapGrid';
 import { sanitizeElevationGrid } from './mapElevation';
-import type { ImageAsset, Project } from './project';
-import type { RawValue } from './params';
+import type { ImageAsset } from './project';
 
 const PLACEHOLDER_TOP = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
@@ -62,13 +62,7 @@ export function resolveMapSource(spec: Pick<MapSpec, 'source' | 'bbox'>): Resolv
   return { requested, effective: pick.source, warnings: pick.warnings };
 }
 
-export interface MapStackContext {
-  plateCount: number;
-  thicknessMm: number;
-  masterWidthMm: number;
-  layerBudget?: LayerBudgetMode;
-  kerfMm?: number;
-}
+
 
 export interface BuildMapImageOptions {
   cacheDir?: string;
@@ -79,7 +73,25 @@ export interface BuildMapImageOptions {
   overpass?: OverpassFetcher;
   /** When true, Overpass may use the network if the cache misses (CLI default). */
   allowOverpassNetwork?: boolean;
-  cop30Loader?: Cop30GridLoader;
+  /** Cancels tile fetches and stops the build between stages (a newer build superseded it). */
+  signal?: AbortSignal;
+  /** Long-edge cap of the grid: MAP_LOCAL_MAX_PX here and in the CLI, MAP_CLOUD_MAX_PX in the cloud job. */
+  maxPx?: number;
+  /** Called as each stage finishes, with the share of the build done (0..1). */
+  onStage?: (done: number, stage: string) => void;
+}
+
+/**
+ * Give the event loop a turn between heavy stages and stop if the build was
+ * cancelled. Until the engine runs in a worker this keeps each main-thread
+ * task to one stage.
+ */
+async function nextStage(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  const sched = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+  if (sched?.yield) await sched.yield();
+  else await new Promise((r) => setTimeout(r, 0));
+  signal?.throwIfAborted();
 }
 
 export interface MapBuildResult {
@@ -95,43 +107,37 @@ async function fetchElevationGrid(
   notices: MapSourceNotice[],
   opts: BuildMapImageOptions,
 ): Promise<{ grid: Float32Grid; used: MapSource }> {
-  const fetch: TileFetcher = async (url) => {
+  const fetch: TileFetcher = async (url, signal) => {
     const inner = opts.fetch ?? getTileFetcher();
-    return cachedTileFetch(spec.cacheDir ?? opts.cacheDir, url, inner);
+    return cachedTileFetch(spec.cacheDir ?? opts.cacheDir, url, (u) => inner(u, signal));
   };
 
   const ok = (grid: Float32Grid, used: MapSource) => ({ grid: sanitizeElevationGrid(grid), used });
 
   if (effective === 'terrarium') {
-    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
-  }
-
-  if (effective === 'cop30') {
-    const grid = await fetchCop30Grid(spec, { loader: opts.cop30Loader });
-    if (grid) return ok(grid, 'cop30');
-    notices.push(mapWarn('cop30 COG tile unavailable for this bbox; falling back to terrarium (~30 m).'));
-    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
+    return ok(await fetchTerrariumGrid(spec, { fetch, signal: opts.signal }), 'terrarium');
   }
 
   if (isRegionalLidarSource(effective)) {
     const grid = await fetchRegionalLidarGrid(effective, spec, opts.regionalLoader);
     if (grid) return ok(grid, effective);
-    notices.push(
-      mapWarn(`${effective} LiDAR not available for this bbox (no tile coverage or adapter offline); falling back to terrarium (~30 m).`),
-    );
-    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
+    notices.push(mapWarn(`${effective} LiDAR is not supported yet; using terrarium (~30 m).`));
+    return ok(await fetchTerrariumGrid(spec, { fetch, signal: opts.signal }), 'terrarium');
   }
 
   if (isEaLidarSource(effective)) {
-    const grid = await fetchEaLidarGrid(effective, spec, { loader: opts.eaLoader });
+    let reason = '';
+    const sized = { ...spec, ...mapGridSize(spec, effective, opts.stack?.masterWidthMm, opts.maxPx) };
+    const grid = await fetchEaLidarGrid(effective, sized, { loader: opts.eaLoader, onError: (m) => (reason = m) });
     if (grid) return ok(grid, effective);
-    notices.push(mapWarn(`${effective} LiDAR not available for this bbox; falling back to terrarium (~30 m).`));
-    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
+    const why = reason ? ` (${reason})` : '';
+    notices.push(mapWarn(`${effective} LiDAR not available for this bbox${why}; falling back to terrarium (~30 m).`));
+    return ok(await fetchTerrariumGrid(spec, { fetch, signal: opts.signal }), 'terrarium');
   }
 
   if (STUB_SOURCES.has(effective)) {
     notices.push(mapWarn(`${effective} adapter not shipped yet; falling back to terrarium (~30 m).`));
-    return ok(await fetchTerrariumGrid(spec, { fetch }), 'terrarium');
+    return ok(await fetchTerrariumGrid(spec, { fetch, signal: opts.signal }), 'terrarium');
   }
 
   throw new MapSourceNotImplementedError(effective);
@@ -157,14 +163,23 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   const fetchSource = resolveElevationSourceForModel(resolved.effective, spec.model);
   const elevHit = await fetchElevationGrid(spec, fetchSource, notices, opts);
   const elev = elevHit.grid;
+  opts.onStage?.(0.35, 'elevation');
+  await nextStage(opts.signal);
   /** Actual raster after fallback — auto exaggeration and the readout source must use this, not the pick. */
   const usedSource = elevHit.used;
-  const resampleSpec = { ...spec, model: spec.model === 'dtm+buildings' ? 'dtm' : spec.model };
+  // grid size follows the raster actually fetched: a fallback to Terrarium keeps the 512 px grid
+  const resampleSpec = {
+    ...spec,
+    ...mapGridSize(spec, usedSource, opts.stack?.masterWidthMm, opts.maxPx),
+    model: spec.model === 'dtm+buildings' ? 'dtm' : spec.model,
+  };
   let metric = reprojectResample(elev, resampleSpec);
+  opts.onStage?.(0.5, 'resample');
+  await nextStage(opts.signal);
   let dtmMetric = metric;
   if (spec.model === 'dsm' && fetchSource !== resolved.effective) {
     const dtmElev = await fetchElevationGrid(spec, resolved.effective, notices, opts);
-    dtmMetric = reprojectResample(dtmElev.grid, { ...spec, model: 'dtm' });
+    dtmMetric = reprojectResample(dtmElev.grid, { ...resampleSpec, model: 'dtm' });
   }
   if (spec.model === 'dtm+buildings') {
     dtmMetric = metric;
@@ -216,6 +231,8 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       notices.push(mapWarn(`Water flatten skipped: ${(e as Error).message}`));
     }
   }
+  opts.onStage?.(0.6, 'water');
+  await nextStage(opts.signal);
   const stack = opts.stack ?? { plateCount: 12, thicknessMm: 3, masterWidthMm: 520, layerBudget: 'jenks' as LayerBudgetMode };
   const { factor } = resolveExaggerationFactor(
     { exaggeration: spec.exaggeration },
@@ -229,12 +246,17 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     ...landBudget,
     breaksM: injectPinnedBreaks(landBudget.breaksM, water?.lakeSurfacesM ?? [], stack.plateCount),
   };
-  metric = applyLayerBudget(rawMetric, landBudget.breaksM);
+  const terraced = mapUsesLayerBudget(spec, stack);
+  metric = terraced ? applyLayerBudget(rawMetric, landBudget.breaksM) : rawMetric;
+  // the smoothing width is set on the model, so convert millimetres to grid cells
+  const mmPerPx = stack.masterWidthMm / Math.max(1, metric.w);
   const simplified = simplifyMetricGrid(metric, {
     kerfMm: stack.kerfMm ?? 0.2,
     pixelSizeM: Math.abs(metric.transform.pixelW),
+    smoothSigmaPx: mmPerPx > 0 ? (spec.smoothMm ?? MAP_SMOOTH_MM) / mmPerPx : 0,
   });
-  metric = water ? restoreWaterSurfaces(simplified.grid, rawMetric, water, landBudget.breaksM) : simplified.grid;
+  const restoredLand = restoreSummitCells(simplified.grid, metric, prominentSummitCells(rawMetric));
+  metric = water ? restoreWaterSurfaces(restoredLand, rawMetric, water, terraced ? landBudget.breaksM : []) : restoredLand;
   const { depth } = mapGridToDepth(metric, { exaggeration: factor, resolution: 384, bbox: spec.bbox });
   const ortho = depth.mapOrtho;
   const readout = formatExaggerationStackReadout(
@@ -243,6 +265,8 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     ortho?.widthM ?? 1,
     stack.masterWidthMm,
   );
+  opts.onStage?.(0.85, 'depth');
+  await nextStage(opts.signal);
   let engraveArt: MapSpec['engraveArt'];
   if (spec.engrave?.enabled) {
     try {
@@ -260,7 +284,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
   const filteredNotices = noticesWithoutStaleEngraveSkip(notices, hasEngraveArt);
   const stored: MapSpec = {
     ...spec,
-    buildKey: mapBuildKey(spec),
+    buildKey: mapBuildKey(spec, opts.stack),
     crs: metric.crs,
     fetchedAt: new Date().toISOString(),
     layerBudget: budgetMode,
@@ -275,6 +299,8 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
       hasEngraveArt ? ['Map features © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), ODbL'] : [],
     ),
   };
+  // a fresh build is local until the cloud job marks it
+  delete stored.cloudBuilt;
   if (engraveArt && hasEngraveArt) stored.engraveArt = engraveArt;
   else delete stored.engraveArt;
   if (!filteredNotices.length) delete stored.sourceWarnings;
@@ -284,6 +310,7 @@ export async function buildMapBundle(spec: MapSpec, opts: BuildMapImageOptions =
     map: stored,
     depth,
   };
+  opts.onStage?.(1, 'done');
   return { asset, elevation: elev, metric, depth };
 }
 
@@ -315,20 +342,5 @@ export function mapSpecFromCli(parts: {
   });
 }
 
-function numParam(raw: Record<string, RawValue>, id: string, fallback: number): number {
-  const n = Number(raw[id]);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-export function mapStackFromProject(project: Project, layerBudget?: LayerBudgetMode): MapStackContext {
-  const p = project.params;
-  return {
-    plateCount: Math.round(numParam(p, 'plateCount', 12)),
-    thicknessMm: numParam(p, 'thickness', 3),
-    masterWidthMm: Math.max(numParam(p, 'baseLength', 520), numParam(p, 'baseWidth', 380)),
-    layerBudget,
-    kerfMm: numParam(p, 'kerf', 0.2),
-  };
-}
-
-export type { DepthData };
+export type { DepthData, MapStackContext };
+export { mapStackFromProject, mapUsesLayerBudget };

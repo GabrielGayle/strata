@@ -12,6 +12,9 @@ import { randomTheme, themeTokens, THEME_PRESETS, type ThemeSeed } from './theme
 import { activeLibraryLinkId, CloudSyncMark, grabThumb, keepOpenedInLibrary, linkActive, ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
 import { recordLibrarySave } from '../state/recordLibrary';
 import { isProjectZipName, projectFromZip } from '../core/projectZip';
+import { busyThen } from './busy';
+import { clearSavedResults, resultsStored, savedResultsUsage } from '../state/results';
+import { BoostSettings, CloudHeroButton, CloudPackButton } from './CloudStatus';
 
 export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -122,6 +125,59 @@ function Swatch({ t }: { t: ThemeSeed }) {
       <i style={{ background: k['--accent'] }} />
       <i style={{ background: k['--svg-etch'] }} />
     </span>
+  );
+}
+
+/** Results the engine keeps so undo, compare and reopening are instant: how much there is, and one button to clear them. */
+function SavedResults() {
+  const [usage, setUsage] = useState<{ entries: number; bytes: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    savedResultsUsage()
+      .then((u) => alive && setUsage(u))
+      .catch(() => alive && setUsage({ entries: 0, bytes: 0 }));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const clear = async () => {
+    setBusy(true);
+    try {
+      await clearSavedResults();
+      setUsage({ entries: 0, bytes: 0 });
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!resultsStored()) return <p className="note">Finished designs are kept in memory for undo. Saving them in the browser is off here (development server).</p>;
+  return (
+    <>
+      <p className="note" data-testid="saved-results">
+        {usage ? `${usage.entries} finished design${usage.entries === 1 ? '' : 's'} kept, ${(usage.bytes / 1e6).toFixed(1)} MB` : 'Counting…'}
+      </p>
+      <div className="btnrow">
+        <button className="btn sm" onClick={clear} disabled={busy} title="Forget every kept result: the next undo, compare or reopen builds the design again">
+          Clear saved results
+        </button>
+      </div>
+    </>
+  );
+}
+
+function SettingsMenu() {
+  return (
+    <Menu label="Settings">
+      {() => (
+        <div style={{ width: 300 }}>
+          <div className="head">Saved results</div>
+          <p className="note">Undo, Compare and reopening a design show finished results straight from this browser instead of building them again.</p>
+          <SavedResults />
+          <div className="head">Boost</div>
+          <BoostSettings />
+        </div>
+      )}
+    </Menu>
   );
 }
 
@@ -243,9 +299,9 @@ export default function Toolbar() {
     const f = await pickFile('.json,.zip,application/json,application/zip');
     if (f) openProjectFile(f);
   };
-  const exportZip = () => {
+  const exportZip = async () => {
     try {
-      const ran = withExportLock(() => {
+      const ran = await busyThen({ scene: 'export', title: 'Exporting', detail: 'Slicing every plate, nesting cut sheets, drawing moulds and zipping the DXFs…' }, () => withExportLock(() => {
         const model = fullModel();
         const zip = buildZip(model, project, loadRates());
         download(`${(project.name || 'strata').replace(/[^\w-]+/g, '_')}-fabrication.zip`, zip, 'application/zip');
@@ -253,7 +309,7 @@ export default function Toolbar() {
           .then((meta) => linkActive(meta.id, project))
           .catch((e) => toast(`Exported, but Projects failed: ${(e as Error).message}`));
         return model;
-      });
+      }));
       if (!ran.ok) toast('Export already running');
       else
         toast(
@@ -265,11 +321,13 @@ export default function Toolbar() {
     }
   };
 
-  const buildPack = () => {
+  const buildPack = async () => {
     try {
-      const ran = withExportLock(() => {
-        openHtml(buildPackHtmlChecked(project, fullModel(), { rates: loadRates() }));
-      });
+      const ran = await busyThen({ scene: 'pack', title: 'Build pack', detail: 'Laying out the numbered plates, assembly order and pour plan…' }, () =>
+        withExportLock(() => {
+          openHtml(buildPackHtmlChecked(project, fullModel(), { rates: loadRates() }));
+        }),
+      );
       if (!ran.ok) toast('Build pack already opening');
     } catch (e) {
       const msg = exportFailureMessage(e);
@@ -301,6 +359,11 @@ export default function Toolbar() {
         </button>
         <button className="tb" onClick={redo} disabled={!future} title="Redo (Ctrl+Shift+Z)">
           Redo
+        </button>
+      </div>
+      <div className="group">
+        <button className="tb" data-testid="impress-open" onClick={() => setUi({ tab: 'impress' })} title="Press a picture into the top surface or the front face: click it into place, size, turn and set its depth in 3D, with an x-ray of the cut">
+          Impress image
         </button>
       </div>
       <div className="group">
@@ -500,11 +563,14 @@ export default function Toolbar() {
       </div>
       <div className="group">
         <AppearanceMenu />
+        <SettingsMenu />
       </div>
       <div className="spacer" />
       <button className="tb" onClick={buildPack} title="One printable page for the workshop wall: numbered plate layout, assembly order, rods and spacers, glue-up and pour plan">
         Build pack
       </button>
+      <CloudHeroButton project={() => useStore.getState().project} model={fullModel} setHero={useStore.getState().setHero} />
+      <CloudPackButton project={() => useStore.getState().project} model={fullModel} rates={loadRates} />
       <button className="tb default" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">
         Export ZIP
       </button>
