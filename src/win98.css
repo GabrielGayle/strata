@@ -261,6 +261,52 @@ ul.tree-view ul button:not(.btn).on {
   color: inherit;
 }
 
+/* Projects window actions menu: a silver Win98 menu in every theme, so its text never sits dark on a dark panel. */
+.lib-menu {
+  background: #c0c0c0;
+  color: #222;
+  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px #808080, inset 2px 2px #fff;
+}
+.lib-menu button {
+  background: transparent;
+  box-shadow: none;
+  color: #222;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 0;
+  min-width: 0;
+  padding: 3px 10px 3px 22px;
+  position: relative;
+  text-align: left;
+  text-shadow: none;
+  width: 100%;
+}
+.lib-menu button:hover,
+.lib-menu button:focus {
+  background: #000080;
+  color: #fff;
+  outline: none;
+  text-shadow: none;
+}
+.lib-menu-mark {
+  position: absolute;
+  left: 4px;
+  width: 16px;
+  text-align: center;
+}
+.lib-menu-head {
+  padding: 4px 6px 2px 20px;
+  color: #555;
+  font-size: 11px;
+}
+.lib-menu-sep {
+  border: none;
+  border-top: 1px solid #808080;
+  border-bottom: 1px solid #fff;
+  margin: 3px 2px;
+}
+
 /* Sunken fields. Strata's flat borders would cover 98.css. */
 input.numbox,
 input.inp,

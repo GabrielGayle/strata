@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newProject } from '../src/core/project';
-import { filterLibrary, foldersOf, libraryThumbFromProject, plateCountOf, projectKind, rebuildPlateCount, sortLibrary, sourceLabel } from '../src/state/libraryDescribe';
+import { filterLibrary, folderCounts, foldersOf, libraryThumbFromProject, plateCountOf, projectKind, rebuildPlateCount, sortLibrary, sourceLabel } from '../src/state/libraryDescribe';
 import { memoryLibrary, openEntry, saveAs, type LibraryMeta } from '../src/state/library';
 import { recordLibrarySave } from '../src/state/recordLibrary';
 
@@ -34,6 +34,8 @@ describe('library describe', () => {
     expect(filterLibrary(list, '', 'Show').map((m) => m.id)).toEqual(['a']);
     expect(sortLibrary(list, 'plates').map((m) => m.id)).toEqual(['a', 'b']);
     expect(foldersOf(list)).toEqual(['Show']);
+    expect(foldersOf(list, ['Candles', 'Show', ' '])).toEqual(['Candles', 'Show']);
+    expect([...folderCounts(list)]).toEqual([['Show', 1]]);
   });
 
   it('builds a distinct thumbnail from each project, not the live canvas', () => {

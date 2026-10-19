@@ -100,6 +100,13 @@ export function sortLibrary(list: LibraryMeta[], by: LibrarySort): LibraryMeta[]
   return out.sort((a, b) => (b.updatedAt ?? b.savedAt) - (a.updatedAt ?? a.savedAt));
 }
 
-export function foldersOf(list: LibraryMeta[]): string[] {
-  return [...new Set(list.map((m) => m.folder).filter((x): x is string => !!x?.trim()))].sort((a, b) => a.localeCompare(b));
+export function foldersOf(list: LibraryMeta[], extra: string[] = []): string[] {
+  return [...new Set([...list.map((m) => m.folder), ...extra].filter((x): x is string => !!x?.trim()))].sort((a, b) => a.localeCompare(b));
+}
+
+/** How many saves sit in each folder. */
+export function folderCounts(list: LibraryMeta[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const m of list) if (m.folder?.trim()) out.set(m.folder, (out.get(m.folder) ?? 0) + 1);
+  return out;
 }
