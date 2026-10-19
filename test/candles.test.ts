@@ -226,3 +226,37 @@ describe('candle placement', () => {
     expect(objs.map((o) => [o.x, o.z])).toEqual([[10, 20], [-40, 5]]);
   });
 });
+
+describe('candle shopping list', () => {
+  it('groups the candles by size with counts, holders and hole sizes', async () => {
+    const { candleShopping, candlesCsv } = await import('../src/core/candles');
+    const rows = candleShopping({ ...DEFAULT_CANDLES, candles: '5 taper\n4 tealight\n2 taper socket', slack: 0.5 });
+    expect(rows.map((r) => [r.name, r.d, r.h, r.qty, r.holder, r.hole])).toEqual([
+      ['Dinner candle (taper)', 22, 250, 5, 'target', 23],
+      ['Tealight', 38, 16, 4, 'socket', 39],
+      ['Dinner candle (taper)', 22, 250, 2, 'socket', 23],
+    ]);
+    const csv = candlesCsv(rows).trim().split('\n');
+    expect(csv[0]).toBe('candle,diameter_mm,height_mm,qty,kind,held_by,hole_mm');
+    expect(csv[1]).toBe('Dinner candle (taper),22,250,5,candlestick,target fins,23');
+    expect(csv.at(-1)).toBe('Total,,,11,,,');
+    expect(candleShopping({ ...DEFAULT_CANDLES, on: false })).toEqual([]);
+    expect(candleShopping(undefined)).toEqual([]);
+  });
+
+  it('puts candles.csv in the zip and the candles in the build pack', async () => {
+    const { buildZip, buildPackHtmlChecked } = await import('../src/core/exporters');
+    const { unzipSync, strFromU8 } = await import('fflate');
+    const p = { ...newProject(), candles: { ...DEFAULT_CANDLES } };
+    const m = createPipeline()(p, assets);
+    const files = unzipSync(buildZip(m, p));
+    const csv = strFromU8(files['candles.csv']);
+    expect(csv).toContain('Dinner candle (taper),22,250,5');
+    expect(csv).toContain('Tealight,38,16,4');
+    expect(strFromU8(files['README.txt'])).toContain('candles.csv');
+    const html = buildPackHtmlChecked(p, m);
+    expect(html).toContain('data-candle-total="9"');
+    const plain = { ...newProject() };
+    expect(unzipSync(buildZip(createPipeline()(plain, assets), plain))['candles.csv']).toBeUndefined();
+  });
+});

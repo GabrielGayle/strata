@@ -19,6 +19,10 @@ export interface CurveAudit {
   over20Share: number;
   /** Entities shorter than 0.2 mm. */
   stubs: number;
+  /** Of those, the ones more than 1 mm from either end of the plate (end corners may be tiny). */
+  midStubs: number;
+  /** Turns over 1° between entities on the top profiles (a kink the cutter has to stop for). */
+  over1Share: number;
   /** Highest point of any plate top (mm above the concrete) and the height field max. */
   topMm: number;
   hfMaxMm: number;
@@ -60,7 +64,7 @@ function quantile(xs: number[], q: number): number {
 export function curveAudit(model: Model): CurveAudit {
   const v = model.v;
   const turns: number[] = [];
-  let entities = 0, arcs = 0, arcLen = 0, len = 0, stubs = 0, topMm = 0;
+  let entities = 0, arcs = 0, arcLen = 0, len = 0, stubs = 0, midStubs = 0, topMm = 0;
   const plateTops: number[] = [];
   for (const plate of model.sliced.plates) {
     if (plate.def.family !== 'P') continue;
@@ -80,7 +84,10 @@ export function curveAudit(model: Model): CurveAudit {
           entities++;
           const l = segLen(s);
           len += l;
-          if (l < 0.2) stubs++;
+          if (l < 0.2) {
+            stubs++;
+            if ([s.a, s.b].every((p) => p[0] > bb.minX + 1 && p[0] < bb.maxX - 1)) midStubs++;
+          }
           if (s.kind === 'arc') {
             arcs++;
             arcLen += l;
@@ -103,6 +110,8 @@ export function curveAudit(model: Model): CurveAudit {
     p90TurnDeg: quantile(turns, 0.9),
     over20Share: turns.length ? turns.filter((t) => t > 20).length / turns.length : 0,
     stubs,
+    midStubs,
+    over1Share: turns.length ? turns.filter((t) => t > 1).length / turns.length : 0,
     // kerf offset adds half a kerf on top
     topMm: topMm - v.kerf / 2,
     hfMaxMm: model.hf?.max ?? 0,
@@ -115,8 +124,8 @@ export function formatCurveAudit(r: CurveAudit): string {
   return [
     `plates ${r.plates}, fit errors ${r.fitErrors}`,
     `top-profile entities ${r.entities} (${r.arcs} arcs = ${pct(r.entities ? r.arcs / r.entities : 0)}; ${pct(r.arcLengthShare)} of length)`,
-    `turn median ${r.medianTurnDeg.toFixed(1)}°, p90 ${r.p90TurnDeg.toFixed(1)}°, over 20° ${pct(r.over20Share)}`,
-    `entities under 0.2 mm ${r.stubs}`,
+    `turn median ${r.medianTurnDeg.toFixed(1)}°, p90 ${r.p90TurnDeg.toFixed(1)}°, over 1° ${pct(r.over1Share)}, over 20° ${pct(r.over20Share)}`,
+    `entities under 0.2 mm ${r.stubs} (${r.midStubs} away from the plate ends)`,
     `highest top ${r.topMm.toFixed(2)} mm (height field ${r.hfMaxMm.toFixed(2)} mm), plates within 0.5 mm of it ${r.platesAtTop}`,
   ].join('\n');
 }

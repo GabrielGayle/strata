@@ -600,6 +600,11 @@ export const PARAMS: ParamDef[] = [
   // Fabrication
   num('kerf', 'Kerf', 'Fabrication', 0.15, 0, 3, { step: 0.01, help: 'Laser beam width; outlines are offset by half', noScale: true }),
   num('arcTolerance', 'Arc fit tolerance', 'Fabrication', 0.05, 0.005, 2, { step: 0.005, noScale: true }),
+  num('minRadius', 'Smallest outside radius', 'Fabrication', 'min(0.75, max(0.5, thickness / 3))', 0, 5, {
+    step: 0.05,
+    noScale: true,
+    help: 'Every outside corner of a plate is rounded at least this much (inside corners half as much), so the laser never cuts a hairline stub or a needle point. Slots, holes and the insert cavity stay crisp. 0 keeps corners sharp.',
+  }),
   num('minFeature', 'Min feature', 'Fabrication', 2, 0, 50, { step: 0.1, help: 'Narrowest web of material the laser can leave', noScale: true }),
   num('minFragment', 'Min fragment', 'Fabrication', 'max(2 * thickness, 4 * kerf)', 0, 200, {
     step: 0.1,

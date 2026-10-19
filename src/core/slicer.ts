@@ -1127,6 +1127,15 @@ export function roundAll(shape: Shape, rOut: number, rIn = rOut): Shape {
   return morph(shape, [i, -i - o, o, c, -c].filter((d) => Math.abs(d) > 1e-9));
 }
 
+/**
+ * The cheap floor under Round all corners: an opening of radius rOut, then a closing of rIn that
+ * rounds the valleys and blunts the cusps the opening leaves where two rounded bumps meet.
+ */
+export function minimumRadius(shape: Shape, rOut: number, rIn: number): Shape {
+  if (!(rOut > 0.05) || !shape.length) return shape;
+  return morph(shape, rIn > 0.05 ? [-rOut, rOut, rIn, -rIn] : [-rOut, rOut]);
+}
+
 /** Where rounding moved a plate's edge the furthest, for the warning and the zoomed preview. */
 export interface RoundSpot {
   key: string;
@@ -1538,6 +1547,13 @@ export function slice(input: SliceInput): SliceResult {
       const label = partLabel(v, def.family, def.index, def.count);
       if (pieces(shape) > pieces(before)) roundSplits.push(label);
       if (move > 0.05) round.spots.push({ key: def.key, label, before, after: shape, at, move });
+    }
+    // a light opening so no outside corner is sharper than the laser cuts cleanly, and valleys keep half
+    // that radius once the kerf offset has eaten into them; no hairline stubs either way. When the
+    // user rounds corners themselves, their inside radius stands (0 keeps valleys crisp).
+    if (v.minRadius > Math.max(0.05, v.edgeRound)) {
+      const blunt = Math.min(0.3, v.minRadius / 2);
+      shape = minimumRadius(shape, v.minRadius, v.edgeRound > 0.05 ? blunt : Math.max(v.edgeRoundIn, blunt, v.minRadius / 2 + v.kerf / 2));
     }
 
     // 5. anchor holes in the embedded tab (any that would run into a rod hole are left out)
