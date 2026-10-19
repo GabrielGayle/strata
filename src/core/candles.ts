@@ -263,6 +263,46 @@ export function candleList(spec: CandleSpec): CandleSize[] {
     .map((x) => x.size);
 }
 
+/** One line of the candle shopping list: candles of one size, how many, and what they sit in. */
+export interface CandleBuy {
+  name: string;
+  d: number;
+  h: number;
+  tealight: boolean;
+  qty: number;
+  holder: Holder;
+  /** The hole they drop into (candle plus the gap all round), mm. */
+  hole: number;
+}
+
+/** What to buy: the candelabra's candles grouped by size, in the order they first appear in the list. */
+export function candleShopping(spec: CandleSpec | null | undefined): CandleBuy[] {
+  if (!spec?.on) return [];
+  const out = new Map<string, CandleBuy>();
+  for (const c of candleList(spec)) {
+    const holder: Holder = c.tealight ? c.holder ?? 'socket' : c.holder ?? spec.holder;
+    const key = `${c.name.toLowerCase()}|${c.d}|${c.h}|${holder}`;
+    const row = out.get(key);
+    if (row) row.qty++;
+    else out.set(key, { name: c.name, d: c.d, h: c.h, tealight: c.tealight, qty: 1, holder, hole: c.d + 2 * spec.slack });
+  }
+  return [...out.values()];
+}
+
+const HOLDER_SHORT: Record<Holder, string> = { target: 'target fins', slotted: 'slotted fins', socket: 'socket in the plates' };
+
+export function candleNote(b: CandleBuy): string {
+  return `${b.tealight ? 'cup' : HOLDER_SHORT[b.holder]}, hole Ø${+b.hole.toFixed(1)} mm`;
+}
+
+export function candlesCsv(rows: CandleBuy[]): string {
+  const q = (s: string) => (/[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  const lines = ['candle,diameter_mm,height_mm,qty,kind,held_by,hole_mm'];
+  for (const r of rows) lines.push([r.name, String(r.d), String(r.h), String(r.qty), r.tealight ? 'tealight' : 'candlestick', r.tealight ? 'cup' : HOLDER_SHORT[r.holder], String(+r.hole.toFixed(1))].map(q).join(','));
+  lines.push(['Total', '', '', String(rows.reduce((a, r) => a + r.qty, 0)), '', '', ''].join(','));
+  return lines.join('\n') + '\n';
+}
+
 const num = (x: unknown, def: number, lo = -Infinity, hi = Infinity) => (typeof x === 'number' && Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : def);
 
 export function cleanCandles(raw: unknown): CandleSpec | undefined {

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { candleList, CHOKE_NAMES, DEFAULT_CANDLES, SIT_NAMES, SNAP_NAMES, type Choke, type Sit, type Snap, HOLDER_NAMES, parseCandles, PATH_NAMES, PRESETS, type CandlePath, type CandleSpec, type Holder } from '../core/candles';
+import { candleList, candlesCsv, candleShopping, CHOKE_NAMES, DEFAULT_CANDLES, SIT_NAMES, SNAP_NAMES, type Choke, type Sit, type Snap, HOLDER_NAMES, parseCandles, PATH_NAMES, PRESETS, type CandlePath, type CandleSpec, type Holder } from '../core/candles';
 import type { Model } from '../core/pipeline';
 import type { RawValue } from '../core/params';
 import { baseTop } from '../core/slicer';
+import { download } from '../core/exporters';
 
 type NumKey = 'size' | 'bend' | 'lift' | 'crown' | 'ramp' | 'grip' | 'cup' | 'fins' | 'reach' | 'spin' | 'engage' | 'pad' | 'cols' | 'gapX' | 'gapZ' | 'every' | 'slack' | 'shoulder' | 'x' | 'z' | 'turn';
 
@@ -108,6 +109,7 @@ export default function CandlePanel() {
   const edit = (patch: Partial<CandleSpec>, key?: string) => setCandles({ ...s, ...patch }, key);
   const { bad } = parseCandles(s.candles);
   const list = candleList(s);
+  const buy = candleShopping(s);
   const help = (h: string) => ({
     onMouseEnter: () => setHint(h),
     onMouseLeave: () => setHint(null),
@@ -229,6 +231,16 @@ export default function CandlePanel() {
         })}
       </div>
       <div className="mp-info">{hint ?? (s.on ? `${summary}${s.path === "grid" || s.path === "free" ? "" : ` ${fmt(s.size / 10, 0)} cm path.`}` : 'The candelabra is off.')}</div>
+      {buy.length > 0 && (
+        <div className="mp-row candle-buy" data-testid="candle-buy">
+          <span className="ap-label">
+            To buy: {buy.map((b) => `${b.qty} × ${b.name} (Ø${fmt(b.d, 0)} × ${fmt(b.h, 0)} mm)`).join(', ')}
+          </span>
+          <button className="btn sm" onClick={() => download(`${(useStore.getState().project.name || 'strata').replace(/[^\w-]+/g, '-')}-candles.csv`, candlesCsv(buy), 'text/csv')} title="How many candles of each size to buy, what holds them and the hole each drops into">
+            Candle list
+          </button>
+        </div>
+      )}
     </>
   );
 }

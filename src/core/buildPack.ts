@@ -17,6 +17,7 @@ import { isIdentity } from './moves';
 import { DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from './price';
 import type { Rod, RodPlan } from './brace';
 import { formatFragment } from './fragments';
+import { candleNote, candleShopping } from './candles';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -1089,7 +1090,7 @@ function plateGallery(m: Model, names: Map<string, string>): string {
   return `<p class="note">One card per model plate, including empty or zero-area layers. Count must match the cover legend and <span class="mono">manifest.json</span>.</p><div class="plate-gallery" data-plate-count="${m.sliced.plates.length}">${cards.join('')}</div>`;
 }
 
-function cutListSection(m: Model, rates: PriceRates): string {
+function cutListSection(m: Model, rates: PriceRates, project?: Project): string {
   const v = m.v;
   const bom = m.bom;
   const out: string[] = [];
@@ -1107,6 +1108,8 @@ function cutListSection(m: Model, rates: PriceRates): string {
   }
   const bought: string[] = [];
   for (const r of bom.hardware) bought.push(`<tr><td class="id">${esc(r.item)}</td><td>${esc(r.spec)}</td><td class="n">${r.qty}</td><td>${esc(r.note ?? '')}</td></tr>`);
+  const candles = candleShopping(project?.candles);
+  for (const c of candles) bought.push(`<tr data-candle-qty="${c.qty}"><td class="id">${esc(c.name)}</td><td>Ø${mm(c.d)} × ${mm(c.h)} ${c.tealight ? 'tealight' : 'candle'}</td><td class="n">${c.qty}</td><td>${esc(candleNote(c))}</td></tr>`);
   const conc = bom.concreteBase + bom.concreteInsert;
   if (conc > 0) bought.push(`<tr><td class="id">Concrete (dry mix)</td><td>25 kg bags</td><td class="n">${bags(conc)}</td><td>${n1(conc)} L poured, ${bom.concreteMass.toFixed(0)} kg cured${bom.concreteInsert > 0 ? ` (insert ${n1(bom.concreteInsert)} L)` : ''}</td></tr>`);
   if (bom.plyParts) bought.push(`<tr><td class="id">Plywood</td><td>${mm(v.plyThickness)}, ${n1(v.plySheetW)} × ${n1(v.plySheetH)}</td><td class="n">${bom.plySheets}</td><td>${bom.plyParts} CNC parts, ${bom.plyArea.toFixed(2)} m²</td></tr>`);
@@ -1116,6 +1119,10 @@ function cutListSection(m: Model, rates: PriceRates): string {
   if (v.sliceMode === 'flat') bought.push(`<tr><td class="id">Adhesive</td><td>epoxy or construction adhesive</td><td class="n">—</td><td>for ${plural(m.sliced.plates.filter((p) => p.parts.length).length, 'layer')}</td></tr>`);
   if (v.baseOn) bought.push(`<tr><td class="id">Release agent</td><td>for the mould</td><td class="n">—</td><td></td></tr>`);
   if (bought.length) out.push(`<h3>Bought in</h3><table><thead><tr><th>Item</th><th>Spec</th><th>Qty</th><th>Note</th></tr></thead><tbody>${bought.join('')}</tbody></table>`);
+  if (candles.length) {
+    const n = candles.reduce((a, c) => a + c.qty, 0);
+    out.push(`<p class="note" data-candle-total="${n}">${plural(n, 'candle')} to fill the candelabra (candles.csv in the ZIP). Measure a candle before you buy a box: it should drop into its hole with a little play.</p>`);
+  }
   if (bom.partCount) {
     const est = withHardware(estimateMix(bom, v.thickness, rates), bom.hardware, rates);
     out.push(`<p class="note">Laser cutting${bom.hardware.length ? ' and rod hardware' : ''}: about £${est.total.toFixed(0)} including VAT (an estimate, not a quote; see price-estimate.txt).</p>`);
@@ -1198,7 +1205,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
       body: `<p class="note">Licence lines for the relief map (also etched on the back plate).</p><ul>${mapAttr.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>`,
     });
   }
-  sections.push({ id: 'parts', title: 'Cut list and bought-in parts', body: cutListSection(m, rates) });
+  sections.push({ id: 'parts', title: 'Cut list and bought-in parts', body: cutListSection(m, rates, project) });
 
   const facts: [string, string][] = [
     ['Design', modeText(m, mains)],
