@@ -92,7 +92,10 @@ describe('sheet DXF cut-only + LWPOLYLINE/CIRCLE', () => {
         return s + L;
       }, 0);
     }, 0);
-    expect(Math.abs(cutLen - kerfPerim)).toBeLessThan(2);
+    // each round hole is written as a CIRCLE at its fitted radius, which can sit ~0.01 mm off
+    // the polygon Clipper made of it (0.05 mm of perimeter)
+    const circles = ents.filter((e) => e.type === 'CIRCLE').length;
+    expect(Math.abs(cutLen - kerfPerim)).toBeLessThan(2 + 0.1 * circles);
   });
 
   it('each nested sheet outline set matches the parts list in count and area', () => {

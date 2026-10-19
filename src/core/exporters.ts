@@ -88,14 +88,23 @@ export interface FittedContour {
   hole: boolean;
 }
 
-/** Kerf-compensate a shape then fit lines + arcs to every contour. */
+const fitted = new WeakMap<Shape, { kerf: number; tol: number; out: FittedContour[] }>();
+
+/**
+ * Kerf-compensate a shape then fit lines + arcs to every contour. Remembered per shape
+ * (parts keep their identity across edits that don't touch them), so the sheet preview,
+ * the plate view and the exports fit each part once; treat the result as read-only.
+ */
 export function fitShape(shape: Shape, v: Values): FittedContour[] {
+  const hit = fitted.get(shape);
+  if (hit && hit.kerf === v.kerf && hit.tol === v.arcTolerance) return hit.out;
   const comp = offset(shape, v.kerf / 2);
   const out: FittedContour[] = [];
   for (const ex of comp) {
     out.push({ segs: fitArcs(ex.outer, v.arcTolerance), hole: false });
     for (const h of ex.holes) out.push({ segs: fitArcs(h, v.arcTolerance), hole: true });
   }
+  fitted.set(shape, { kerf: v.kerf, tol: v.arcTolerance, out });
   return out;
 }
 
@@ -105,18 +114,17 @@ export function segsAsCircle(segs: Seg[], tol: number): { cx: number; cy: number
   const arcs = segs.filter((s): s is Extract<Seg, { kind: 'arc' }> => s.kind === 'arc');
   const lines = segs.filter((s): s is Extract<Seg, { kind: 'line' }> => s.kind === 'line');
   if (arcs.length >= 2) {
-    const a0 = arcs[0];
+    const a0 = arcs.reduce((best, s) => (Math.abs(s.sweep) > Math.abs(best.sweep) ? s : best));
     const allow = Math.max(tol, a0.r * 0.02);
+    const onCircle = (s: Extract<Seg, { kind: 'arc' }>) => Math.abs(s.r - a0.r) <= allow && Math.hypot(s.c[0] - a0.c[0], s.c[1] - a0.c[1]) <= allow;
+    const main = arcs.filter(onCircle);
+    if (main.length < 2) return null;
     let sweep = 0;
-    for (const s of arcs) {
-      if (Math.abs(s.r - a0.r) > allow) return null;
-      if (Math.hypot(s.c[0] - a0.c[0], s.c[1] - a0.c[1]) > allow) return null;
-      sweep += s.sweep;
-    }
-    // Two 180° arcs plus a tiny closing chord is still a circle; a rounded
-    // rect has corner arcs on different centres and fails above.
+    for (const s of main) sweep += s.sweep;
+    // Two 180° arcs plus a tiny closing chord (or a nearly flat closing arc) is still a
+    // circle; a rounded rect has corner arcs on different centres and fails on the chords.
     if (Math.abs(Math.abs(sweep) - Math.PI * 2) > 0.6) return null;
-    for (const s of lines) {
+    for (const s of [...lines, ...arcs.filter((q) => !onCircle(q))]) {
       const d0 = Math.hypot(s.a[0] - a0.c[0], s.a[1] - a0.c[1]);
       const d1 = Math.hypot(s.b[0] - a0.c[0], s.b[1] - a0.c[1]);
       if (Math.abs(d0 - a0.r) > allow || Math.abs(d1 - a0.r) > allow) return null;
