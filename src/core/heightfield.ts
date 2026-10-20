@@ -63,6 +63,10 @@ export function buildHeightField(v: Values, sideImg: Gray | null): HeightField {
   const mix = mode === 'off' ? 0 : v.imgMix;
   const sil = mode === 'silhouette' && sideImg ? silhouetteProfile(sideImg) : null;
   const range = v.imgRange;
+  // relief in millimetres: background (darkest) at mmBase, brightest mmDepth above it, never below the floor
+  const mm = mode === 'heightmap' && v.imgReliefSet === 'mm';
+  const mmBase = Math.max(PLATE_FLOOR_MM, Number(v.imgReliefBase) || 0);
+  const mmDepth = Math.max(0, Number(v.imgReliefDepth) || 0);
 
   const smooth = (e0: number, e1: number, x: number) => {
     if (e1 <= e0) return x < e0 ? 0 : 1;
@@ -83,6 +87,7 @@ export function buildHeightField(v: Values, sideImg: Gray | null): HeightField {
       const terr = (fl + smooth(0.5 - w, 0.5 + w, r)) * band;
       e = e + (terr - e) * banding;
     }
+    if (mm && sideImg) return mmBase + sample(sideImg, sn, 1 - an) * mmDepth;
     let img = 0;
     if (mix > 0 && sideImg) {
       if (mode === 'heightmap') {
@@ -107,8 +112,8 @@ export function buildHeightField(v: Values, sideImg: Gray | null): HeightField {
       min = Math.min(min, h);
       max = Math.max(max, h);
     }
-  const cut = mix > 0 && mode === 'heightmap' && sideImg ? sideCutWindow(v) : null;
-  const floorClip = mix > 0 && mode === 'heightmap' && sideImg ? sideFloorClip(sideImg, (sn, an) => rawAt((sn - 0.5) * f.stackLen, (an - 0.5) * f.acrossLen), Math.min(0.45, Math.max(0, v.sideMargin) / Math.max(1, f.acrossLen)), cut) : undefined;
+  const cut = (mix > 0 || mm) && mode === 'heightmap' && sideImg ? sideCutWindow(v) : null;
+  const floorClip = mix > 0 && !mm && mode === 'heightmap' && sideImg ? sideFloorClip(sideImg, (sn, an) => rawAt((sn - 0.5) * f.stackLen, (an - 0.5) * f.acrossLen), Math.min(0.45, Math.max(0, v.sideMargin) / Math.max(1, f.acrossLen)), cut) : undefined;
   const sideCut = cut && sideImg
     ? {
         ...cut,
