@@ -40,6 +40,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'fix',
+    title: 'Candelabra Fit plates on a wall',
+    body: 'On a wall piece, Fit plates now makes the plates deep enough to wrap each candle and sizes the base to their feet. It used to flatten the plates so the candles floated above them.',
+    where: '3D view › sidebar › Candles › Fit plates',
+    target: candles('candle-fit'),
+  },
+  {
+    date: '2026-10-20',
     kind: 'new',
     title: 'Changelog',
     body: 'This list. Click any entry to see where it lives in the app. The old tour that popped up on load is gone.',

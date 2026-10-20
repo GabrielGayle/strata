@@ -5,6 +5,7 @@ import { addCandle, candleList, candlesCsv, candleShopping, CHOKE_NAMES, DEFAULT
 import type { Model } from '../core/pipeline';
 import type { RawValue } from '../core/params';
 import { baseTop } from '../core/slicer';
+import { isWall, mountFrame } from '../core/mount';
 import { download } from '../core/exporters';
 
 type NumKey = 'size' | 'bend' | 'lift' | 'crown' | 'ramp' | 'grip' | 'cup' | 'fins' | 'reach' | 'spin' | 'engage' | 'pad' | 'cols' | 'gapX' | 'gapZ' | 'every' | 'slack' | 'shoulder' | 'x' | 'z' | 'turn';
@@ -71,13 +72,30 @@ export function fitCandles(model: Model, s: CandleSpec): Record<string, RawValue
   let need = 0;
   let ext = 0;
   let depth = 0;
-  for (const b of held) {
-    const o = b.object;
-    const bb = b.geometry.boundingBox!;
-    if (o.seat !== undefined) need = Math.max(need, bb.min.y - top + o.seat + 2);
-    const r = o.w / 2 + (o.holder ? o.holder.reach + s.slack : 0) + s.shoulder;
-    ext = Math.max(ext, Math.abs(o.x) + r);
-    depth = Math.max(depth, Math.abs(o.z) + r);
+  if (isWall(v)) {
+    // on a wall a candle lies along the wall (model x/z) and stands out from it (model y):
+    // the plates stand tall enough to wrap it, and the base covers its foot, not its whole length
+    const up = mountFrame(v, mapDesign).up;
+    for (const b of held) {
+      const o = b.object;
+      const r = o.w / 2 + s.shoulder;
+      need = Math.max(need, o.y + o.w / 2 - top + s.shoulder);
+      // from the plate under its foot to a little way up it, where the plates grip it
+      for (const k of [-o.h / 2, -o.h / 2 + Math.min(o.h / 4, 15)]) {
+        const x = o.x + up[0] * k, z = o.z + up[2] * k;
+        ext = Math.max(ext, Math.abs(x) + r);
+        depth = Math.max(depth, Math.abs(z) + r);
+      }
+    }
+  } else {
+    for (const b of held) {
+      const o = b.object;
+      const bb = b.geometry.boundingBox!;
+      if (o.seat !== undefined) need = Math.max(need, bb.min.y - top + o.seat + 2);
+      const r = o.w / 2 + (o.holder ? o.holder.reach + s.slack : 0) + s.shoulder;
+      ext = Math.max(ext, Math.abs(o.x) + r);
+      depth = Math.max(depth, Math.abs(o.z) + r);
+    }
   }
   return {
     strataOn: false,
@@ -189,7 +207,7 @@ export default function CandlePanel() {
           <label className="ob-num" {...help('Step the plate tops up to the candles. Off leaves the plates as they are, with just the cups and holders cut.')}>
             <input type="checkbox" checked={s.trim} onChange={(e) => edit({ trim: e.target.checked })} /> <span>Step plates</span>
           </label>
-          <button className="btn sm" onClick={fit} {...help('Make the plates flat-topped and tall enough to meet every candle, the base big enough to hold them, and take the insert out of the way. Undo puts it all back.')}>
+          <button className="btn sm" data-hl="candle-fit" onClick={fit} {...help('Make the plates flat-topped and tall enough to meet every candle (on a wall, deep enough to wrap each one), the base big enough to hold them, and take the insert out of the way. Undo puts it all back.')}>
             Fit plates
           </button>
           <button className="btn sm" onClick={() => setCandles(undefined)} title="Take the candelabra away (undo brings it back)">
