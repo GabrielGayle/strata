@@ -15,7 +15,8 @@ import { baseChamfers, basePlan, baseRing, insetRing } from './base';
 import { bucketOf, finishOf, lookOf, METAL_NAMES } from './appearance';
 import { currentHero } from './hero';
 import { isIdentity } from './moves';
-import { DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from './price';
+import { DEFAULT_RATES, fullEstimate, type PriceRates } from './price';
+import { supplierOf } from './suppliers';
 import type { Rod, RodPlan } from './brace';
 import { formatFragment } from './fragments';
 import { candleNote, candleShopping } from './candles';
@@ -1194,8 +1195,10 @@ function cutListSection(m: Model, rates: PriceRates, project?: Project): string 
     out.push(`<p class="note" data-candle-total="${n}">${plural(n, 'candle')} to fill the candelabra (candles.csv in the ZIP). Measure a candle before you buy a box: it should drop into its hole with a little play.</p>`);
   }
   if (bom.partCount) {
-    const est = withHardware(estimateMix(bom, v.thickness, rates), bom.hardware, rates);
-    out.push(`<p class="note">Laser cutting${bom.hardware.length ? ' and rod hardware' : ''}: about £${est.total.toFixed(0)} including VAT (an estimate, not a quote; see price-estimate.txt).</p>`);
+    const est = fullEstimate(bom, v.thickness, rates);
+    const vatText = est.vat > 0 ? 'including VAT' : 'no VAT';
+    const labour = est.labour ? ` With ${est.labour.days} days’ labour at £${est.labour.dayRate.toFixed(0)}/day, about £${est.allIn.toFixed(0)} all in (est.).` : '';
+    out.push(`<p class="note">Laser cutting${bom.hardware.length ? ' and rod hardware' : ''} at ${supplierOf(est.supplier).name}: about £${est.total.toFixed(0)} ${vatText} (an estimate, not a quote; see price-estimate.txt).${labour}</p>`);
   }
   return out.join('\n');
 }

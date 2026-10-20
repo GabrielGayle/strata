@@ -30,7 +30,7 @@ export const INSPECTOR_PANELS = [
   { id: 'insp:fit', name: 'Fit checks' },
   { id: 'insp:poles', name: 'Support poles' },
   { id: 'insp:bracing', name: 'Bracing' },
-  { id: 'insp:price', name: 'Chop Chop price' },
+  { id: 'insp:price', name: 'Price estimate' },
   { id: 'insp:selected', name: 'Selected part' },
   { id: 'insp:export', name: 'Export' },
   { id: 'insp:pipeline', name: 'Pipeline' },
