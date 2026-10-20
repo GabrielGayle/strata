@@ -42,5 +42,7 @@ describe('placed objects', () => {
     expect(back.objects).toEqual(p.objects);
     expect(cleanObjects([{ kind: 'nope', w: -3 }, 7])).toEqual([expect.objectContaining({ kind: 'box', w: 0.1, on: true })]);
     expect(cleanObjects([])).toBeUndefined();
+    // a cutter-only box stays undrawn through a save and reload; unknown looks are dropped
+    expect(cleanObjects([{ kind: 'box', look: 'hidden' }, { kind: 'box', look: 'neon' }])!.map((o) => o.look)).toEqual(['hidden', undefined]);
   });
 });

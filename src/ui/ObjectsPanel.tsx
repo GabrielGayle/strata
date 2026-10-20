@@ -7,7 +7,7 @@ import ShelvesPanel, { SurfaceCandles } from './ShelvesPanel';
 import { Fold } from './Fold';
 import type { ObjectsView } from './sidebarState';
 import { isWall } from '../core/mount';
-import { KIND_NAMES, newObject, type CutObject, type ObjectKind } from '../core/objects';
+import { CARD_SIZES, KIND_NAMES, newObject, type CutObject, type ObjectKind } from '../core/objects';
 
 type NumKey = 'w' | 'h' | 'd' | 'x' | 'y' | 'z' | 'rx' | 'ry' | 'rz' | 'clearance';
 
@@ -125,6 +125,8 @@ function ShowRow({ view }: { view: ObjectsView }) {
   );
 }
 
+const DRAWN_HINT = 'Off draws nothing in the 3D view, renders or AR, but it still cuts the plates: use it for a box that only opens a pocket or a slot.';
+
 /** Placed objects: add postcards, boxes and so on, and set where each sits. */
 function ObjectList() {
   const model = useModel();
@@ -204,6 +206,30 @@ function ObjectList() {
           <label className="ob-num" title="Off keeps it in the list without cutting the plates" onMouseEnter={() => setHint('Off keeps it in the list without cutting the plates.')} onMouseLeave={() => setHint(null)}>
             <input type="checkbox" checked={cur.on} onChange={(e) => edit({ on: e.target.checked })} /> <span>Cuts</span>
           </label>
+          <label className="ob-num" data-hl="object-drawn" title={DRAWN_HINT} onMouseEnter={() => setHint(DRAWN_HINT)} onMouseLeave={() => setHint(null)}>
+            <input type="checkbox" checked={cur.look !== 'hidden'} onChange={(e) => edit(e.target.checked ? { look: undefined } : { look: 'hidden' })} /> <span>Drawn</span>
+          </label>
+          {cur.kind === 'card' && (
+            <select
+              data-hl="object-card-size"
+              aria-label="Card size"
+              title="Set a standard card size. It keeps the card standing the way it is (portrait or landscape)."
+              value=""
+              onChange={(e) => {
+                const c = CARD_SIZES.find((x) => x.name === e.target.value);
+                if (!c) return;
+                const landscape = cur.w > cur.h;
+                edit(landscape ? { w: c.h, h: c.w } : { w: c.w, h: c.h });
+              }}
+            >
+              <option value="">Card size…</option>
+              {CARD_SIZES.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name}, {c.w} × {c.h} mm
+                </option>
+              ))}
+            </select>
+          )}
           <span className="ob-group">Size {SIZE.map(num)}</span>
           <span className="ob-group">Place {(isWall(model.v) ? WALL_PLACE : PLACE).map(num)}</span>
           <span className="ob-group">Turn {(isWall(model.v) ? WALL_TURN : TURN).map(num)}</span>

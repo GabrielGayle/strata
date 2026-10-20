@@ -70,6 +70,14 @@ export const KIND_NAMES: Record<ObjectKind, string> = {
   sphere: 'Ball',
 };
 
+/** Card sizes to pick from (mm, width × height as it stands portrait). */
+export const CARD_SIZES: { name: string; w: number; h: number }[] = [
+  { name: 'Postcard A6', w: 105, h: 148 },
+  { name: 'Tarot (2¾ × 4¾ in)', w: 70, h: 121 },
+  { name: 'Poker', w: 63, h: 88 },
+  { name: 'Bridge', w: 57, h: 89 },
+];
+
 /** A sensible starting size for each kind (mm). Postcards start at A6. */
 export const KIND_SIZE: Record<ObjectKind, [number, number, number]> = {
   card: [148, 105, 0.4],
@@ -113,6 +121,8 @@ export function cleanObjects(raw: unknown): CutObject[] | undefined {
       rz: num(o.rz, 0),
       clearance: Math.max(0, num(o.clearance, 0.5)),
       on: o.on !== false,
+      // a cutter-only object (a pocket's opening, a slot) stays undrawn after a reload
+      ...(o.look === 'hidden' || o.look === 'candle' || o.look === 'tealight' ? { look: o.look } : {}),
     });
   }
   return out.length ? out : undefined;
