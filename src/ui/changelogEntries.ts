@@ -31,10 +31,11 @@ export interface ChangeEntry {
   target?: ChangeTarget;
 }
 
-/** Through the 3D view's sidebar: open its tab, unfold its panel, then the control. */
-const side = (tab: 'candles' | 'shelf' | 'objects' | 'materials' | 'move' | 'measure', ...rest: string[]): ChangeTarget => ({ tab: '3d', path: [`sidebar-tab-${tab}`, ...rest] });
-const candles = (...rest: string[]) => side('candles', ...(rest.length ? ['fold-candles:main', ...rest] : []));
-const shelf = (...rest: string[]) => side('shelf', ...(rest.length ? ['fold-shelf:main', ...rest] : []));
+/** Through the 3D view's sidebar: open its tab, then light its panel (or a control inside it). */
+const FOLD = { candles: 'candles:main', shelf: 'shelf:main', objects: 'objects:main', materials: 'materials', move: 'move', measure: 'measure' } as const;
+const side = (tab: keyof typeof FOLD, ...rest: string[]): ChangeTarget => ({ tab: '3d', path: [`sidebar-tab-${tab}`, `fold-${FOLD[tab]}`, ...rest] });
+const candles = (...rest: string[]) => side('candles', ...rest);
+const shelf = (...rest: string[]) => side('shelf', ...rest);
 
 export const CHANGELOG: ChangeEntry[] = [
   {

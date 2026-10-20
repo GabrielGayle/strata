@@ -74,9 +74,9 @@ test('Help › Changelog lists changes and Show me lights up where each lives', 
   await expectLit(page, '.section[data-group="Steel base"]');
   await page.getByRole('button', { name: 'Got it' }).click();
 
-  // the 3D view's sidebar: its Candles tab opens and is lit
+  // the 3D view's sidebar: its Candles tab opens and the Candelabra panel is lit
   await (await openChangelog(page)).getByRole('button', { name: /^New Candelabra Candlesticks/ }).click();
-  await expectLit(page, '[data-testid="sidebar-tab-candles"]');
+  await expectLit(page, '[data-hl="fold-candles:main"]');
   await expect(page.getByTestId('viewport-sidebar')).toHaveClass(/open/);
   await page.screenshot({ path: join(shotDir, 'candelabra.png') });
   await page.getByRole('button', { name: 'Got it' }).click();
