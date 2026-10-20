@@ -40,6 +40,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'new',
+    title: 'Candles centred in the cells',
+    body: 'Candelabra › Snap › Centre in the cells puts each candle in the middle of its own cell: centred between the plates either side, and in the middle of the shelf under it or between waffle cross plates. Works on wall pieces too.',
+    where: '3D view › sidebar › Candles › Snap',
+    target: candles('candle-snap'),
+  },
+  {
+    date: '2026-10-20',
     kind: 'fix',
     title: 'Candelabra Fit plates on a wall',
     body: 'On a wall piece, Fit plates now makes the plates deep enough to wrap each candle and sizes the base to their feet. It used to flatten the plates so the candles floated above them.',
