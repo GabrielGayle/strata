@@ -40,6 +40,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'new',
+    title: 'Candles centred in the cells',
+    body: 'Candelabra › Snap › Centre in the cells puts each candle in the middle of its own cell: centred between the plates either side, and in the middle of the shelf under it or between waffle cross plates. Works on wall pieces too.',
+    where: '3D view › sidebar › Candles › Snap',
+    target: candles('candle-snap'),
+  },
+  {
+    date: '2026-10-20',
     kind: 'fix',
     title: 'No more overlapping metal',
     body: 'Every pair of metal parts is now checked for steel in the same place, and any overlap is an error that stops export. Candle fins, angled spacer combs, slanted waffle crossings, the support ring and the steel base no longer overlap the plates.',

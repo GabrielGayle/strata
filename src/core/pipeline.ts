@@ -27,7 +27,8 @@ import { share } from './memo';
 import { carveShadow, isCandle, type CarveResult, type ShadowInput, type ShadowReport } from './shadow';
 import type { Project } from './project';
 import { buildObjects, type ObjectBuild } from './objects';
-import { candleObjects, chokeCircles, sitOnSurface, snapToPlates, surfaceTop } from './candles';
+import { candleObjects, chokeCircles, sitOnSurface, snapToCells, snapToPlates, surfaceTop } from './candles';
+import type { CutObject } from './objects';
 import { shelfCuts, shelfSlotObjects, type ShelfCut } from './shelfPlates';
 import { placedCandleObjects } from './surfaceCandles';
 import { intersection, rect, shapeBBox, type Shape } from './geom2d';
@@ -342,6 +343,7 @@ export function createFrontPipeline(options: FrontOptions = {}) {
     const onSurface = project.candles?.sit === 'surface' || (project.candles?.sit === 'auto' && !!mapTop);
     // the plates' planes, for candles that line up with them (they depend only on the settings)
     const stackPlanes = stage('Plate planes', [...pick(v, SLICE_KEYS)], () => plateDefs(v).filter((d) => d.family === 'P').map((d) => d.plane));
+    const crossPlanes = stage('Cross plate planes', [...pick(v, SLICE_KEYS)], () => plateDefs(v).filter((d) => d.family === 'X').map((d) => d.plane));
     const pitch = stackPlanes.length > 1 ? Math.abs((stackPlanes[1].origin[0] - stackPlanes[0].origin[0]) * stackPlanes[0].normal[0] + (stackPlanes[1].origin[2] - stackPlanes[0].origin[2]) * stackPlanes[0].normal[2]) : 0;
     const candles = stage('Candelabra', [project.candles, baseTop(v), onSurface, pitch, wall, embedOf(v)], () =>
       wall ? forWall(candleObjects(project.candles, baseTop(v), false, pitch)).map((o) => ({ ...o, y: baseTop(v) + (project.candles?.lift ?? 0) + o.w / 2 })) : candleObjects(project.candles, baseTop(v), onSurface, pitch, embedOf(v)),
@@ -370,18 +372,22 @@ export function createFrontPipeline(options: FrontOptions = {}) {
           return slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: mapTop ? null : topImg, topMask: mapTop ? null : topMask, moves: project.moves, materialFor, objects: b.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut })), mapTerrain: !!mapTop });
         })
       : null;
-    const placedCandles = stage('Candles placed', [candles, origin, bare, stackPlanes, wallBare], () => {
+    const snap = project.candles?.snap ?? 'off';
+    const placedCandles = stage('Candles placed', [candles, origin, bare, stackPlanes, crossPlanes, shelves, snap, wallBare], () => {
+      // lined up with the plates: onto or between them along the stack, or centred in their cells
+      const line = (objs: CutObject[], up: V3) =>
+        snap === 'cells'
+          ? snapToCells(objs, stackPlanes, crossPlanes, shelves.cuts, up)
+          : stackPlanes.length && Math.abs(stackPlanes[0].normal[0] * up[0] + stackPlanes[0].normal[2] * up[2]) < 0.5
+            ? snapToPlates(objs, stackPlanes, snap)
+            : objs;
       if (wall) {
         // each candle stands on its spot (its bottom there, not its middle), then drops onto the plate below
         const up = origin.room?.up ?? [0, 1, 0];
-        const w = candles.map((o) => toWorld(o, origin, true)).map((o) => ({ ...o, x: o.x + (up[0] * o.h) / 2, y: o.y + (up[1] * o.h) / 2, z: o.z + (up[2] * o.h) / 2 }));
+        const w = line(candles.map((o) => toWorld(o, origin, true)), up).map((o) => ({ ...o, x: o.x + (up[0] * o.h) / 2, y: o.y + (up[1] * o.h) / 2, z: o.z + (up[2] * o.h) / 2 }));
         return wallBare && origin.room ? restOnWall(w, wallBare.parts, origin.room) : w;
       }
-      const w = snapToPlates(
-        candles.map((o) => toWorld(o, origin, true)),
-        stackPlanes,
-        project.candles?.snap ?? 'off',
-      );
+      const w = line(candles.map((o) => toWorld(o, origin, true)), [0, 1, 0]);
       return bare ? sitOnSurface(w, (x, z, r) => surfaceTop(bare.parts, x, z, r, topWithin)) : w;
     });
     const surfaceCandles = stage('Candles on surfaces', [project.placedCandles, project.candles, shelves, baseTop(v), embedOf(v), v.minFeature, bare], () =>

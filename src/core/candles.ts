@@ -111,12 +111,13 @@ export const SIT_NAMES: Record<Sit, string> = {
   surface: 'Height: sit into the plates under it',
 };
 
-export type Snap = 'off' | 'on' | 'between';
+export type Snap = 'off' | 'on' | 'between' | 'cells';
 
 export const SNAP_NAMES: Record<Snap, string> = {
   off: 'Anywhere',
   on: 'Snap onto plates',
   between: 'Snap between plates',
+  cells: 'Centre in the cells',
 };
 
 export interface CandleSpec {
@@ -613,6 +614,95 @@ export function snapToPlates(objs: CutObject[], planes: { origin: [number, numbe
     const m = o.id.match(/^(candle|well|pad)(\d+)$/);
     const d = m ? shift.get(m[2]) : undefined;
     return d ? { ...o, x: o.x + d * n[0], z: o.z + d * n[2] } : o;
+  });
+}
+
+type PlaneLike = { origin: [number, number, number]; normal: [number, number, number] };
+
+/** Plan rectangle a candle can stand on (a shelf): centre and size in world x, z. */
+export interface CellSurface {
+  id: string;
+  x: number;
+  z: number;
+  sx: number;
+  sz: number;
+}
+
+/** Bay centres between neighbouring planes along their (plan) normal, and the normal. */
+function bays(planes: PlaneLike[]): { n: [number, number]; mids: number[] } | null {
+  if (planes.length < 2) return null;
+  const n: [number, number] = [planes[0].normal[0], planes[0].normal[2]];
+  const len = Math.hypot(n[0], n[1]);
+  if (len < 0.5) return null;
+  n[0] /= len;
+  n[1] /= len;
+  const offs = planes.map((p) => p.origin[0] * n[0] + p.origin[2] * n[1]).sort((a, b) => a - b).filter((o, i, all) => i === 0 || o - all[i - 1] > 1e-6);
+  const mids = offs.slice(1).map((o, i) => (o + offs[i]) / 2).filter((_, i) => offs[i + 1] - offs[i] > 1);
+  return mids.length ? { n, mids } : null;
+}
+
+/**
+ * Candles centred in the cells of the plates: each one moves to the middle of the
+ * bay between the two plates either side of it and, across them, to the middle
+ * between two cross plates (a waffle) or of the shelf it stands over. Each cell
+ * takes one candle, the nearest free one, so candles never pile into the same bay.
+ * `up` (model coordinates) leaves alone any direction that runs up a wall, where
+ * the candles come to rest on the plate below instead.
+ */
+export function snapToCells(objs: CutObject[], planes: PlaneLike[], cross: PlaneLike[], surfaces: CellSurface[], up: [number, number, number] = [0, 1, 0]): CutObject[] {
+  const level = (n: [number, number]) => Math.abs(n[0] * up[0] + n[1] * up[2]) < 0.5;
+  const a = bays(planes);
+  const b = bays(cross);
+  const A = a && level(a.n) ? a : null;
+  const B = b && level(b.n) && (!A || Math.abs(b.n[0] * A.n[0] + b.n[1] * A.n[1]) < 0.5) ? b : null;
+  if (!A && !B) return objs;
+  // the across direction: the cross plates' normal, else square to the stack
+  const m: [number, number] = B ? B.n : [-A!.n[1], A!.n[0]];
+  const cands = objs.filter((o) => o.id.startsWith('candle'));
+  type Cell = { key: string; x: number; z: number };
+  const at = (s: number, t: number, sn: [number, number], tn: [number, number]): [number, number] => [s * sn[0] + t * tn[0], s * sn[1] + t * tn[1]];
+  const options = cands.map((o) => {
+    const cells: Cell[] = [];
+    const sn: [number, number] = A ? A.n : [-m[1], m[0]];
+    const t0 = o.x * m[0] + o.z * m[1];
+    // across: between cross plates, else the middle of the shelf under it (on a table), else where it is
+    // (one candle a bay all the same)
+    const shelf = up[1] > 0.5 ? surfaces.find((c) => Math.abs(o.x - c.x) <= c.sx / 2 && Math.abs(o.z - c.z) <= c.sz / 2) : undefined;
+    const ts = B ? B.mids.map((t, j) => ({ t, key: `x${j}` })) : [{ t: shelf ? shelf.x * m[0] + shelf.z * m[1] : t0, key: shelf ? `s${shelf.id}` : 'bay' }];
+    const ss = A ? A.mids.map((s, i) => ({ s, key: `p${i}` })) : [{ s: o.x * sn[0] + o.z * sn[1], key: `c${o.id}` }];
+    for (const { s, key: ks } of ss) {
+      for (const { t, key: kt } of ts) {
+        const [x, z] = at(s, t, sn, m);
+        // on a shelf, only its own cells
+        if (shelf && (Math.abs(x - shelf.x) > shelf.sx / 2 || Math.abs(z - shelf.z) > shelf.sz / 2)) continue;
+        cells.push({ key: `${ks}|${kt}`, x, z });
+      }
+    }
+    cells.sort((p, q) => Math.hypot(p.x - o.x, p.z - o.z) - Math.hypot(q.x - o.x, q.z - o.z));
+    return { o, cells };
+  });
+  // nearest first: the candle closest to a free cell takes it
+  const taken = new Set<string>();
+  const move = new Map<string, [number, number]>();
+  const left = options.filter((p) => p.cells.length);
+  while (left.length) {
+    let bi = 0, bc: Cell | null = null, bd = Infinity;
+    left.forEach((p, i) => {
+      const c = p.cells.find((q) => !taken.has(q.key));
+      if (!c) return;
+      const d = Math.hypot(c.x - p.o.x, c.z - p.o.z);
+      if (d < bd) [bi, bc, bd] = [i, c, d];
+    });
+    const p = left.splice(bi, 1)[0];
+    // more candles than cells: the rest go to their nearest cell anyway
+    const c = bc ?? p.cells[0];
+    taken.add(c.key);
+    move.set(p.o.id.slice(6), [c.x - p.o.x, c.z - p.o.z]);
+  }
+  return objs.map((o) => {
+    const k = o.id.match(/^(candle|well|pad)(\d+)$/);
+    const d = k ? move.get(k[2]) : undefined;
+    return d && (d[0] || d[1]) ? { ...o, x: o.x + d[0], z: o.z + d[1] } : o;
   });
 }
 

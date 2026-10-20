@@ -180,7 +180,7 @@ export default function CandlePanel() {
               ))}
             </select>
           )}
-          <select aria-label="Snap" data-hl="candle-snap" value={s.snap} onChange={(e) => edit({ snap: e.target.value as Snap })} {...help('Line the candles up with the plates. Onto plates: each candle slides along the stack to stand centred on the nearest plate. Between plates: centred in the gap between two. A grid then spaces its columns by whole plates (see Every).')}>
+          <select aria-label="Snap" data-hl="candle-snap" value={s.snap} onChange={(e) => edit({ snap: e.target.value as Snap })} {...help('Line the candles up with the plates. Onto plates: each candle slides along the stack to stand centred on the nearest plate. Between plates: centred in the gap between two. Centre in the cells: each candle goes to the middle of its own cell, centred between the plates either side and, across them, in the middle of the shelf under it or between two waffle cross plates; one candle a cell, the nearest takes it. A grid then spaces its columns by whole plates (see Every).')}>
             {(Object.keys(SNAP_NAMES) as Snap[]).map((k) => (
               <option key={k} value={k}>
                 {SNAP_NAMES[k]}
