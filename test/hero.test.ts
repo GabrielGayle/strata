@@ -13,7 +13,7 @@ import { artifactPath, geoJobKey, heroPrice, inputPartPath, validateGeoJobReques
 import { main as cli } from '../src/cli';
 import { runHeroModel, runPackJob } from '../src/cloudJobs';
 import { buildZip } from '../src/core/exporters';
-import { currentHero, defaultHeroCamera, heroFingerprint, heroGlb, heroScene, readHeroPng, stampHeroPng, windOutward, type SavedHero } from '../src/core/hero';
+import { currentHero, defaultHeroCamera, heroFingerprint, heroFingerprintOf, heroGlb, heroScene, readHeroPng, stampHeroPng, windOutward, type HeroScene, type SavedHero } from '../src/core/hero';
 import { createPipeline } from '../src/core/pipeline';
 import { deserialize, serialize, type Project } from '../src/core/project';
 import { resultKey } from '../src/core/resultCache';
@@ -246,5 +246,15 @@ describe('windOutward', () => {
     const [p, n] = windOutward(new Float32Array([...ccw, ...cw]), new Float32Array([...up, ...up]));
     expect(Array.from(p)).toEqual([...ccw, ...ccw]);
     expect(Array.from(n)).toEqual([...up, ...up]);
+  });
+});
+
+describe('heroFingerprintOf', () => {
+  it('ignores last-digit noise in flame positions (browser and cloud trig differ there)', () => {
+    const scene: HeroScene = { meshes: [], flames: [{ p: [0.0142, 0.0955, -0.01994361264559773], size: 0.009 }], plates: 1, parts: 1, min: [0, 0, 0], max: [0, 0, 0] };
+    const cloud = { ...scene, flames: [{ p: [0.0142, 0.0955, -0.019943612645597752] as [number, number, number], size: 0.009000000000000001 }] };
+    expect(heroFingerprintOf(cloud)).toBe(heroFingerprintOf(scene));
+    const moved = { ...scene, flames: [{ p: [0.0142, 0.0955, -0.0201] as [number, number, number], size: 0.009 }] };
+    expect(heroFingerprintOf(moved)).not.toBe(heroFingerprintOf(scene));
   });
 });

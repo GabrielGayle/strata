@@ -40,6 +40,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'fix',
+    title: 'Hero renders of pieces with candles',
+    body: 'A hero render of a design with candles was refused as "a different design" and not saved, because the cloud worked out each flame a few billionths of a micrometre away from where your browser did. Flames now match to the micrometre, so candlelit renders land in the project and the build pack.',
+    where: 'Toolbar › Hero render (with Boost on)',
+    target: { path: ['hero-open'] },
+  },
+  {
+    date: '2026-10-20',
     kind: 'new',
     title: 'Candles centred in the cells',
     body: 'Candelabra › Snap › Centre in the cells puts each candle in the middle of its own cell: centred between the plates either side, and in the middle of the shelf under it or between waffle cross plates. Works on wall pieces too.',

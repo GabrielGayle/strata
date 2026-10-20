@@ -302,6 +302,20 @@ test('Hero render shows its price first, renders the 3D view and lands in the pr
   expect(sent.camera.aspect).toBeGreaterThan(0.25);
 });
 
+test('a hero render of a design with candles lands too (flame positions match the cloud)', async ({ page }) => {
+  await heroCloud(page);
+  await boostOn(page);
+  await openApp(page, { preset: null });
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('.topbar').getByRole('button', { name: 'Open', exact: true }).click();
+  await (await chooser).setFiles('test/fixtures/projects/lucky-horseshoe.strata.json');
+  await expect(page.locator('.topbar input').first()).toHaveValue('Lucky horseshoe');
+  await expect(page.getByTestId('cloud-status')).toHaveText('Cloud: ready');
+  await page.getByTestId('hero-open').click();
+  await page.getByTestId('hero-render').click();
+  await expect(page.getByTestId('hero-state')).toContainText('In the build pack', { timeout: 120_000 });
+});
+
 test('a hero render of a different design is refused and nothing is saved', async ({ page }) => {
   await heroCloud(page, { wrongPlates: true });
   await boostOn(page);
