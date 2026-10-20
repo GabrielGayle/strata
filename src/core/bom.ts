@@ -109,7 +109,7 @@ export function buildBom(
     if (e <= 0) return a;
     return a + (p.bbox.maxX - p.bbox.minX) * Math.min(e, Math.max(0, -p.bbox.minY)) * p.thickness;
   }, 0);
-  const baseVol = v.baseOn ? Math.max(0, baseVolumeBetween(v, 0, v.baseHeight) - embedVol) : 0;
+  const baseVol = v.baseOn ? Math.max(0, baseVolumeBetween(v, 0, v.baseHeight, sliced.baseOutline) - embedVol) : 0;
   const insVol = v.insShape !== 'none' && v.insMaterial === 'concrete' ? insertVolume : 0;
   const plyArea = moulds.parts.reduce((a, p) => a + p.area, 0) / 1e6;
   return {

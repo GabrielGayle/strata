@@ -10,8 +10,8 @@ import type { Part, PlateInfo } from './slicer';
 import { embedOf } from './slicer';
 import { stackFrame } from './heightfield';
 import { planeToWorld, type V3 } from './section';
-import { shapeBBox, type Shape } from './geom2d';
-import { baseChamfers, basePlan } from './base';
+import { shapeBBox, signedArea, type Shape } from './geom2d';
+import { baseChamfers, basePlan, baseRing, insetRing } from './base';
 import { bucketOf, finishOf, lookOf, METAL_NAMES } from './appearance';
 import { currentHero } from './hero';
 import { isIdentity } from './moves';
@@ -249,11 +249,17 @@ function positionText(m: Model, view: View, p: Part): string {
 
 // --- drawings --------------------------------------------------------------------
 
+/** +1 when a wall's normal points out of a counter-clockwise (in plan) base ring: its first edge runs along the ring. */
+function wallOut(f: V3[], n: V3): 1 | -1 {
+  const dx = f[1][0] - f[0][0], dz = f[1][2] - f[0][2];
+  return -dz * n[0] + dx * n[2] > 0 ? 1 : -1;
+}
+
 function planSvg(m: Model, view: View, names: Map<string, string>): string {
   const v = m.v;
   const flat = v.sliceMode === 'flat';
   const parts = m.sliced.parts;
-  const basePts: P2[] = v.baseOn ? basePlan(v).map(([x, pz]) => view.plan([x, 0, -pz])) : [];
+  const basePts: P2[] = v.baseOn ? baseRing(v, m.sliced.baseOutline).map(([x, pz]) => view.plan([x, 0, -pz])) : [];
   const foot = new Map(parts.map((p) => [p, footprint(p, view)]));
   const ins = insertPoints(m).map((w) => view.plan(w));
   const all = [...basePts, ...[...foot.values()].flat(2), ...ins];
@@ -368,7 +374,7 @@ function elevationSvg(m: Model, right: P2, title: string, opts: { labels?: boole
   const parts = m.sliced.parts;
   const outl = new Map(parts.map((p) => [p, elevation(p, right)]));
   const at = (w: V3): P2 => [w[0] * right[0] + w[2] * right[1], w[1]];
-  const basePts: P2[] = v.baseOn ? basePlan(v).map(([x, pz]) => at([x, 0, -pz])) : [];
+  const basePts: P2[] = v.baseOn ? baseRing(v, m.sliced.baseOutline).map(([x, pz]) => at([x, 0, -pz])) : [];
   const baseBox = basePts.length ? boxOf(basePts) : null;
   const ins = insertPoints(m).map(at);
   const all = [...[...outl.values()].flat(), ...(baseBox ? [[baseBox.minX, 0], [baseBox.maxX, v.baseHeight]] as P2[] : []), ...ins];
@@ -584,11 +590,14 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   const all: P2[] = [];
 
   // the base: a convex block, so faces turned towards us are all that shows
-  const baseFaces: { pts: P2[]; fill: string }[] = [];
+  const baseFaces: { pts: P2[]; fill: string; depth: number; soft?: boolean }[] = [];
   if (v.baseOn) {
     const { edge } = baseChamfers(v);
-    const lo = basePlan(v).map(([x, pz]) => [x, -pz] as P2);
-    const hi = basePlan(v, edge).map(([x, pz]) => [x, -pz] as P2);
+    // a base cut round the plates isn't convex: its walls face out by their winding instead
+    const ring = m.sliced.baseOutline ? baseRing(v, m.sliced.baseOutline) : null;
+    const ccw = ring && signedArea(ring) < 0 ? [...ring].reverse() : ring;
+    const lo = (ccw ?? basePlan(v)).map(([x, pz]) => [x, -pz] as P2);
+    const hi = (ccw ? insetRing(ccw, edge) : basePlan(v, edge)).map(([x, pz]) => [x, -pz] as P2);
     const h0 = v.baseHeight - edge, h1 = v.baseHeight;
     const faces: V3[][] = [];
     for (let i = 0; i < lo.length; i++) {
@@ -610,15 +619,20 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
       if (Math.hypot(...n) < 1e-9) continue;
       // outward: away from the block's middle
       const mid = f.reduce((s, q) => [s[0] + q[0] / f.length, s[1] + q[1] / f.length, s[2] + q[2] / f.length] as V3, [0, 0, 0] as V3);
-      const out = n[0] * mid[0] + n[1] * (mid[1] - v.baseHeight / 2) + n[2] * mid[2] > 0 ? 1 : -1;
+      const out = ccw
+        ? f === faces[faces.length - 1] ? (n[1] > 0 ? 1 : -1) : wallOut(f, n)
+        : n[0] * mid[0] + n[1] * (mid[1] - v.baseHeight / 2) + n[2] * mid[2] > 0 ? 1 : -1;
       const nr = nOf([n[0] * out, n[1] * out, n[2] * out]);
       const k = Math.hypot(...nr) || 1;
       const nn: V3 = [nr[0] / k, nr[1] / k, nr[2] / k];
       if (dot(nn, cam) <= 1e-6) continue;
       const pts = f.map(scr);
       all.push(...pts);
-      baseFaces.push({ pts, fill: shade(tint, 0.6 + 0.45 * Math.max(0, dot(nn, light))) });
+      const top = f === faces[faces.length - 1];
+      baseFaces.push({ pts, fill: shade(tint, 0.6 + 0.45 * Math.max(0, dot(nn, light))), depth: top ? Infinity : dot(mid, camWorld), soft: !!ccw && !top });
     }
+    // walls round the bends can hide one another: the far ones first, the top last
+    baseFaces.sort((a, b) => a.depth - b.depth);
   }
 
   // the parts: kept in world space, so the drawing order below can split them where they cross
@@ -688,7 +702,7 @@ function angledSvg(project: Project, m: Model, view: View, title: string, opts: 
   const bx = boxOf(all);
   const f = fitBox(bx, opts.maxW ?? 690, opts.maxH ?? 520, [16, 16, 16, 16]);
   const out: string[] = [];
-  for (const b of baseFaces) out.push(`<path d="${pathD(b.pts, f.X, f.Y)}" fill="${b.fill}" stroke="${shade(b.fill, 0.6)}" stroke-width="0.8" stroke-linejoin="round"/>`);
+  for (const b of baseFaces) out.push(`<path d="${pathD(b.pts, f.X, f.Y)}" fill="${b.fill}" stroke="${b.soft ? b.fill : shade(b.fill, 0.6)}" stroke-width="0.8" stroke-linejoin="round"/>`);
   // a little haze with distance, so plates standing one behind another read apart (per part, before any split)
   const solid = items.filter((it) => !it.tri);
   const d0 = Math.min(...solid.map((it) => it.d)), d1 = Math.max(...solid.map((it) => it.d));
@@ -1195,6 +1209,13 @@ function steelSize(m: Model): string {
   return `${n1(bb.maxX - bb.minX)} × ${n1(bb.maxY - bb.minY)}${m.sliced.steelBase!.spec.shape === 'rect' ? '' : ' (cut round the plates)'}`;
 }
 
+function concreteSize(m: Model): string {
+  const v = m.v;
+  if (!m.sliced.baseOutline) return `${n1(v.baseLength)} × ${n1(v.baseWidth)}`;
+  const bb = shapeBBox(m.sliced.baseOutline);
+  return `${n1(bb.maxX - bb.minX)} × ${n1(bb.maxY - bb.minY)} (cast round the plates)`;
+}
+
 function slotPlay(sb: NonNullable<Model['sliced']['steelBase']>): number {
   const depth = Math.min(sb.spec.tabDepth, sb.spec.thickness);
   return depth > 0 ? (Math.atan((2 * sb.spec.clearance) / depth) * 180) / Math.PI : 0;
@@ -1260,7 +1281,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
   const rates = opts.rates ?? DEFAULT_RATES;
 
   // overall size: the base (or the plates) in plan, and the highest point of anything
-  const planPts = [...(v.baseOn ? basePlan(v).map(([x, pz]) => view.plan([x, 0, -pz])) : []), ...parts.flatMap((p) => footprint(p, view).flat())];
+  const planPts = [...(v.baseOn ? baseRing(v, m.sliced.baseOutline).map(([x, pz]) => view.plan([x, 0, -pz])) : []), ...parts.flatMap((p) => footprint(p, view).flat())];
   const pb = planPts.length ? boxOf(planPts) : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
   let top = v.baseOn ? v.baseHeight : 0;
   for (const p of parts) for (const [a, b] of [[p.bbox.minX, p.bbox.maxY], [p.bbox.maxX, p.bbox.maxY], [p.bbox.minX, p.bbox.minY], [p.bbox.maxX, p.bbox.minY]]) top = Math.max(top, planeToWorld(p.plane, a, b)[1] + (upright(p) ? 0 : p.thickness / 2));
@@ -1327,7 +1348,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
     ['Overall size', `${n1(pb.maxX - pb.minX)} wide × ${n1(pb.maxY - pb.minY)} deep × ${n1(top)} high (mm)`],
     ['Plates', `${m.sliced.plates.length} plates · ${parts.length} laser-cut parts`],
     ['Weight', `about ${weight.toFixed(0)} kg${v.baseOn ? ` (steel ${m.bom.plateMass.toFixed(1)} kg, concrete ${m.bom.concreteMass.toFixed(0)} kg)` : ''}`],
-    ['Materials', `${parts.length ? `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet` : 'No sheet metal'}${m.sliced.steelBase ? `; steel base plate ${steelSize(m)} × ${mm(m.sliced.steelBase.spec.thickness)}, ${m.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welded from underneath'}` : ''}${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
+    ['Materials', `${parts.length ? `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet` : 'No sheet metal'}${m.sliced.steelBase ? `; steel base plate ${steelSize(m)} × ${mm(m.sliced.steelBase.spec.thickness)}, ${m.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welded from underneath'}` : ''}${v.baseOn ? `; cast concrete base ${concreteSize(m)} × ${mm(v.baseHeight)}` : ''}`],
     ['Date', `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`],
   ];
   // the cloud's hero render, while it still shows this design

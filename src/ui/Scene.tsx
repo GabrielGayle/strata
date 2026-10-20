@@ -159,8 +159,8 @@ function Base({ model, xray }: { model: Model; xray: boolean }) {
   const mat = useMemo(() => makeConcreteMaterial(), []);
   const frame = model.sunkenFrame;
   const geo = useMemo(
-    () => (frame ? extrudeSunkenFrame(frame) : baseGeometry(v)),
-    [frame, v.baseLength, v.baseHeight, v.baseWidth, v.baseCornerChamfer, v.baseEdgeChamfer],
+    () => (frame ? extrudeSunkenFrame(frame) : baseGeometry(v, model.sliced.baseOutline)),
+    [frame, model.sliced.baseOutline, v.baseLength, v.baseHeight, v.baseWidth, v.baseCornerChamfer, v.baseEdgeChamfer],
   ); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => geo.dispose(), [geo]);
   useEffect(() => () => mat.dispose(), [mat]);

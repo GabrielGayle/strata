@@ -2,8 +2,8 @@
 // gets tabs along its bottom edge that drop through matching slots, so the
 // plates stand square on their own; you weld them from underneath where the
 // tabs come through (or twist the tabs), never reaching between plates.
-import { basePlan, bottomSpans } from './base';
-import { BIG, circlePath, difference, intersection, offset, pointInShape, rect, shapeBBox, signedArea, simplifyShape, union, unionShapes, type Path, type Shape } from './geom2d';
+import { basePlan, bottomSpans, followOutline, outlineSpec, plateFeet } from './base';
+import { BIG, circlePath, difference, intersection, offset, pointInShape, rect, shapeBBox, signedArea, union, unionShapes, type Path, type Shape } from './geom2d';
 import type { Values } from './params';
 import type { Plane } from './section';
 
@@ -282,67 +282,14 @@ export function weldOrder(tabs: Omit<WeldTab, 'order' | 'pass'>[]): { tabs: Weld
   return { tabs: out, plates: order.map((p) => p.key) };
 }
 
-/** Each standing plate's foot in plan (x, -z): where it meets the base, as wide as the plate is thick. */
-export function plateFeet(parts: Standing[]): Path[] {
-  const out: Path[] = [];
-  for (const p of parts) {
-    if (Math.abs(p.plane.normal[1]) > 0.5 || Math.abs(p.plane.v[1]) < 0.99) continue;
-    const ux = p.plane.u[0], uy = -p.plane.u[2];
-    const nx = -uy * (p.thickness / 2), ny = ux * (p.thickness / 2);
-    for (const [u0, u1] of bottomSpans(p.shape, 0)) {
-      const at = (u: number): [number, number] => [p.plane.origin[0] + ux * u, -p.plane.origin[2] + uy * u];
-      const [a, b] = [at(u0), at(u1)];
-      const q: Path = [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]];
-      out.push(signedArea(q) < 0 ? q.reverse() : q);
-    }
-  }
-  return out;
-}
-
-function hull(pts: [number, number][]): Path {
-  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const half = (list: [number, number][]) => {
-    const h: [number, number][] = [];
-    for (const q of list) {
-      while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop();
-      h.push(q);
-    }
-    return h.slice(0, -1);
-  };
-  return [...half(p), ...half([...p].reverse())];
-}
-
 /**
- * The base plate's outline before slots and holes. Rectangle: Length × Width. Follow: every
- * plate's foot grown by the margin, gaps up to `bridge` filled, the middle filled, corners
- * rounded. Wrap: one convex outline round all the feet. Always keeps the edge margin round
- * every foot, so slots stay inside.
+ * The base plate's outline before slots and holes: Length × Width, or cut round the plates'
+ * feet (see `followOutline`), always keeping the edge margin round every foot so slots stay inside.
  */
 export function steelOutline(v: Values, s: SteelBaseSpec, parts: Standing[]): Shape {
   const feet = s.shape === 'rect' ? [] : plateFeet(parts);
   if (!feet.length) return union([basePlan(v)]);
-  const foot = union(feet);
-  const j = s.profile;
-  // 0.1 mm arcs: inside a laser's kerf, and quick to grow round many plates
-  const grow = (sh: Shape, d: number, jt: SteelBaseSpec['profile'] = j) => offset(sh, d, jt, ARC);
-  let shape: Shape;
-  if (s.shape === 'wrap') shape = grow(union([hull(foot.flatMap((e) => e.outer))]), s.margin);
-  else {
-    shape = grow(grow(foot, s.margin + s.bridge / 2), -s.bridge / 2);
-    if (s.fillMiddle) shape = shape.map((e) => ({ outer: e.outer, holes: [] }));
-  }
-  if (s.round > 0) {
-    // round the outside corners, then the inside ones
-    shape = grow(grow(shape, -s.round, 'round'), s.round, 'round');
-    shape = grow(grow(shape, s.round, 'round'), -s.round, 'round');
-  }
-  shape = unionShapes(shape, grow(foot, Math.max(s.edge, 1), 'round'));
-  // growing out and back can leave hairline spikes where two curves meet; shave off anything thinner than twice the least feature
-  const d = Math.max(0.5, Number(v.minFeature) || 0);
-  shape = grow(grow(shape, -d, 'round'), d, 'round');
-  // a smooth outline needs few points: keeps the cut file small and the fit checks quick
-  return simplifyShape(shape, 0.05);
+  return followOutline(feet, outlineSpec(v), Math.max(s.edge, 1), Number(v.minFeature) || 0);
 }
 
 const ARC = 0.1;

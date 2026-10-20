@@ -131,7 +131,7 @@ export function heroScene(model: Model, project: Project): HeroScene {
   const bands = model.pour.rows.map((r) => ({ y0: r.y0 * MM, y1: r.y1 * MM, color: r.color }));
   const concrete: Look = { color: bands[0]?.color ?? '#b8b4ab', metalness: 0, roughness: 0.92 };
   if (model.sunkenFrame) add('concrete', { name: 'concrete', kind: 'concrete', look: concrete, bands }, extrudeSunkenFrame(model.sunkenFrame));
-  else if (v.baseOn) add('concrete', { name: 'concrete', kind: 'concrete', look: concrete, bands }, baseGeometry(v));
+  else if (v.baseOn) add('concrete', { name: 'concrete', kind: 'concrete', look: concrete, bands }, baseGeometry(v, model.sliced.baseOutline));
   if (model.insert && v.insMaterial !== 'void') {
     const g = model.insert.form.geometry.clone();
     if (v.insMaterial === 'metal') add('insert-metal', { name: 'insert', kind: 'insert-metal', look: LOOKS['insert-metal'] }, g);
