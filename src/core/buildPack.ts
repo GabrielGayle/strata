@@ -242,6 +242,7 @@ function positionText(m: Model, view: View, p: Part): string {
     return `${n1(deg)}° clockwise from front`;
   }
   if (p.family === 'C' || p.family === 'T') return Math.abs(x) < 0.5 ? 'on the centre line' : `${mm(Math.abs(x))} ${x > 0 ? 'right' : 'left'} of centre`;
+  if (p.family === 'H') return `shelf, top ${mm(o[1] + p.thickness / 2)} above the floor, slid through the plates`;
   if (p.family === 'K') return `candle fin, ${mm(Math.abs(x))} ${x > 0 ? 'right' : 'left'} of centre, ${mm(b + view.stackLen / 2)} from front`;
   return 'cast in';
 }

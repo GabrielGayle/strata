@@ -34,7 +34,7 @@ export interface CutObject {
   /** How it is drawn: candles read as wax, tealights as a metal cup, a hidden cutter not at all. */
   look?: 'candle' | 'tealight' | 'hidden';
   /** Candlesticks held by a target: fins standing round it, gripping it from every side. */
-  holder?: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number; cross?: boolean };
+  holder?: HolderSpec;
   /**
    * Plates choked in to it (candles, shelf cards): how far round it the plates
    * reach, and whether they join to the next object of the same group (candles
@@ -45,6 +45,20 @@ export interface CutObject {
   sink?: number;
   /** Only shapes the plate tops (its seat), cutting nothing. */
   noCut?: boolean;
+}
+
+/** How a candlestick's fins hold it. */
+export interface HolderSpec {
+  fins: number;
+  reach: number;
+  grip: number;
+  spin: number;
+  slotted?: boolean;
+  engage?: number;
+  /** Two-piece cross fins (two halved plates) instead of separate fins. */
+  cross?: boolean;
+  /** Standing on a shelf: the fins drop tabs into slots in it (top face height and thickness, mm). */
+  shelf?: { id: string; top: number; t: number };
 }
 
 export const KIND_NAMES: Record<ObjectKind, string> = {

@@ -28,7 +28,8 @@ export interface MoveTarget {
 export function moveTarget(model: Model, partId: string | null): MoveTarget | null {
   if (!partId) return null;
   const part = model.sliced.parts.find((p) => p.id === partId);
-  if (!part || part.family === 'S' || part.family === 'B') return null;
+  // shelves move with their own arrows in Objects > Shelves, not as a hand move
+  if (!part || part.family === 'S' || part.family === 'B' || part.family === 'H') return null;
   const plate = model.sliced.plates.find((p) => p.def.key === part.plateKey);
   if (plate) return { key: plate.def.key, label: part.id.replace(/[a-z]$/, ''), pivot: platePivot(plate.def) };
   return part.pivot ? { key: part.plateKey, label: part.id, pivot: part.pivot } : null;

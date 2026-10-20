@@ -616,7 +616,8 @@ export function snapToPlates(objs: CutObject[], planes: { origin: [number, numbe
   });
 }
 
-export function candleObjects(spec0: CandleSpec | undefined, baseTop: number, onSurface = false, pitch = 0): CutObject[] {
+/** `embed`: how deep the plates sink into the concrete; a target's well clears them that far down too, where its fins stand. */
+export function candleObjects(spec0: CandleSpec | undefined, baseTop: number, onSurface = false, pitch = 0, embed = 0): CutObject[] {
   if (!spec0?.on) return [];
   // sitting on the plates: heights come later from the plates themselves, and the plates keep their own tops
   const spec = onSurface ? { ...spec0, trim: false } : spec0;
@@ -658,7 +659,7 @@ export function candleObjects(spec0: CandleSpec | undefined, baseTop: number, on
     }
     // the well: clears the plates for the fins (a little wider than they reach) from the concrete up past the candle
     const rw = c.d / 2 + spec.slack + spec.reach + Math.max(2, spec.slack * 2);
-    const bottom = baseTop + 0.2;
+    const bottom = baseTop - (embed > 0 ? embed + 0.5 : -0.2);
     const top = yb + c.h;
     out.push({ ...base, id: `well${i + 1}`, name: `${c.name} holder`, w: 2 * rw, h: top - bottom, d: 2 * rw, y: (bottom + top) / 2, clearance: 0, look: 'hidden', ...(spec.trim ? { seat: Math.max(0.5, yb - bottom), shoulder: spec.shoulder } : {}) });
   });
@@ -675,6 +676,8 @@ export interface CandleFin {
   labelMax: number;
   /** Two-piece cross: the halving slot (u0, y0, u1, y1) where this fin's partner passes through it. */
   notch?: [number, number, number, number];
+  /** Standing on a shelf: the tabs dropping through it, each from u0 to u1 along the fin. */
+  tabs?: [number, number][];
 }
 
 /**
@@ -685,7 +688,7 @@ export interface CandleFin {
  */
 export function targetFins(
   c: { x: number; z: number; r: number; bottom: number; ry: number },
-  h: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number; cross?: boolean },
+  h: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number; cross?: boolean; shelf?: { top: number; t: number } },
   o: { t: number; embed: number; baseTop: number; slack: number; minFeature: number; fit?: number },
   index: number,
 ): CandleFin[] {
@@ -702,10 +705,22 @@ export function targetFins(
   const tip = Math.min(uOut, rc + Math.max(o.minFeature, 3));
   // target fins stand in the concrete; slotted fins hang down into the plates by their engagement
   const y0 = h.slotted ? Math.max(0, yb - (h.engage ?? 16)) : -o.embed;
+  // on a shelf: each fin stands on it beside the candle and drops a tab through a slot in it
+  const shelf = h.shelf;
+  const span = uOut - rc;
+  const inset = span >= o.minFeature * 2 + 4 ? Math.max(1, span * 0.2) : 0;
+  const tab: [number, number] = [rc + inset, uOut - inset];
   for (let k = 0; k < n; k++) {
     const a = (h.spin + c.ry) * D + (k / n) * 2 * Math.PI;
     const d: P2 = [Math.cos(a), -Math.sin(a)];
     const plane: Plane = { origin: [c.x, o.baseTop, c.z], normal: [-d[1], 0, d[0]], u: [d[0], 0, d[1]], v: [0, 1, 0] };
+    if (shelf) {
+      const ys = shelf.top - o.baseTop;
+      const yt = ys - shelf.t;
+      const outer: P2[] = [[rc, ys], [tab[0], ys], [tab[0], yt], [tab[1], yt], [tab[1], ys], [uOut, ys], [tip, ys + h.grip], [rc, ys + h.grip]];
+      out.push({ holder: index, fin: k, plane, shape: [{ outer, holes: [] }], labelAt: [(rc + uOut) / 2, ys + h.grip / 3], labelMax: Math.max(2, Math.min(span, h.grip) * 0.5), tabs: [tab] });
+      continue;
+    }
     const outer: P2[] =
       yb - y0 > 0.5
         ? [[uIn, y0], [uOut, y0], [uOut, yb], [tip, yTop], [rc, yTop], [rc, yb], [uIn, yb]]
@@ -730,7 +745,7 @@ export function crossPedestal(minFeature: number): number {
  */
 function crossFins(
   c: { x: number; z: number; r: number; bottom: number; ry: number },
-  h: { reach: number; grip: number; spin: number; slotted?: boolean; engage?: number },
+  h: { reach: number; grip: number; spin: number; slotted?: boolean; engage?: number; shelf?: { top: number; t: number } },
   o: { t: number; embed: number; baseTop: number; slack: number; minFeature: number; fit?: number },
   index: number,
 ): CandleFin[] | null {
@@ -739,11 +754,17 @@ function crossFins(
   const yb = c.bottom - o.baseTop;
   const yTop = yb + h.grip;
   const tip = Math.min(uOut, rc + Math.max(o.minFeature, 3));
-  const y0 = h.slotted ? Math.max(0, yb - (h.engage ?? 16)) : -o.embed;
-  if (yb - y0 < crossPedestal(o.minFeature)) return null;
+  // on a shelf the pedestal stands on it (the candle is lifted onto it) and drops a tab through it under each arm
+  const y0 = h.shelf ? h.shelf.top - o.baseTop : h.slotted ? Math.max(0, yb - (h.engage ?? 16)) : -o.embed;
+  if (yb - y0 < crossPedestal(o.minFeature) - 1e-6) return null;
   const yMid = (y0 + yb) / 2;
   const w = o.t + (o.fit ?? 0.3);
-  const outer: P2[] = [[-uOut, y0], [uOut, y0], [uOut, yb], [tip, yTop], [rc, yTop], [rc, yb], [-rc, yb], [-rc, yTop], [-tip, yTop], [-uOut, yb]];
+  const span = uOut - rc;
+  const inset = span >= o.minFeature * 2 + 4 ? Math.max(1, span * 0.2) : 0;
+  const tabs: [number, number][] | undefined = h.shelf ? [[-(uOut - inset), -(rc + inset)], [rc + inset, uOut - inset]] : undefined;
+  const yt = h.shelf ? y0 - h.shelf.t : y0;
+  const bottom: P2[] = tabs ? tabs.flatMap(([a, b]): P2[] => [[a, y0], [a, yt], [b, yt], [b, y0]]) : [];
+  const outer: P2[] = [[-uOut, y0], ...bottom, [uOut, y0], [uOut, yb], [tip, yTop], [rc, yTop], [rc, yb], [-rc, yb], [-rc, yTop], [-tip, yTop], [-uOut, yb]];
   return [0, 1].map((k) => {
     const a = (h.spin + c.ry) * D + (k * Math.PI) / 2;
     const d: P2 = [Math.cos(a), -Math.sin(a)];
@@ -757,6 +778,7 @@ function crossFins(
       labelAt: h.slotted ? [(rc + uOut) / 2, yb + (yTop - yb) / 3] : [(rc + uOut) / 2, (y0 + Math.max(yb, 0)) / 2],
       labelMax: Math.max(2, (h.slotted ? Math.min(uOut - rc, yTop - yb) : Math.min(uOut - rc, Math.max(yb, 0) - y0)) * 0.5),
       notch: k === 0 ? [-w / 2, yMid, w / 2, yb + 1] : [-w / 2, y0 - 1, w / 2, yMid],
+      ...(tabs ? { tabs } : {}),
     };
   });
 }
@@ -792,7 +814,8 @@ export function finSlots(
     const dn = d[0] * n[0] + d[2] * n[2];
     if (Math.abs(dn) < 0.5) continue;
     const uf = ((p.plane.origin[0] - c[0]) * n[0] + (p.plane.origin[2] - c[2]) * n[2]) / dn;
-    const w = o.t / Math.abs(dn) + o.fit;
+    // crossing at a slant, the fin's slab sweeps sideways as it passes through the plate's: the slot takes both
+    const w = o.t / Math.abs(dn) + (o.t * Math.sqrt(Math.max(0, 1 - dn * dn))) / Math.abs(dn) + o.fit;
     if (uf < bb[0] - w / 2 || uf > bb[1] + w / 2) continue;
     const pu = p.plane.u;
     const up = (c[0] + uf * d[0] - p.plane.origin[0]) * pu[0] + (c[2] + uf * d[2] - p.plane.origin[2]) * pu[2];
@@ -800,6 +823,24 @@ export function finSlots(
     out.push({ plate: p.key, plateRect: [up - w / 2, yMid, up + w / 2, 20000], finRect: [uf - w / 2, -20000, uf + w / 2, yMid] });
   }
   return out;
+}
+
+/**
+ * The slot a shelf-standing fin's tab drops through, in the shelf's plane
+ * coordinates (world x, -z): the tab's footprint grown by `fit` all round.
+ */
+export function finTabSlots(fin: CandleFin, t: number, fit: number): P2[][] {
+  const c = fin.plane.origin;
+  const d = fin.plane.u;
+  const n = fin.plane.normal;
+  const w = t / 2 + fit;
+  const at = (u: number, s: number): P2 => [c[0] + u * d[0] + s * n[0], -(c[2] + u * d[2] + s * n[2])];
+  return (fin.tabs ?? []).map(([a, b]) => {
+    const pts = [at(a - fit, -w), at(b + fit, -w), at(b + fit, w), at(a - fit, w)];
+    // keep it counter-clockwise in the shelf plane
+    const area = pts.reduce((s2, p, i) => s2 + p[0] * pts[(i + 1) % 4][1] - pts[(i + 1) % 4][0] * p[1], 0);
+    return area < 0 ? pts.reverse() : pts;
+  });
 }
 
 /** A circle in plan (world x, z) the choked plates keep. */

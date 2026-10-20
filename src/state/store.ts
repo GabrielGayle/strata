@@ -19,6 +19,8 @@ import type { ShadowSpec } from '../core/shadow';
 import type { CutObject } from '../core/objects';
 import type { ShelfSpec } from '../core/shelf';
 import type { CandleSpec } from '../core/candles';
+import type { ShelfPlate } from '../core/shelfPlates';
+import type { PlacedCandle } from '../core/surfaceCandles';
 import type { WorldOrigin } from '../core/origin';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { loadViewportLayers, saveViewportLayers, type ViewportLayerId, type ViewportLayers } from '../ui/viewportLayers';
@@ -75,6 +77,8 @@ export interface UiState {
   /** Placed objects panel in the 3D view, and which object it is editing. */
   objectsMode: boolean;
   objectSel: string | null;
+  /** Waiting for a click in the 3D view: where to put a new shelf, or which surface a candle stands on. */
+  placing: null | { kind: 'shelf' } | { kind: 'candle'; size: string };
   /** Placed objects hidden one by one in the 3D view (view only: they still cut and export). */
   hiddenObjects: string[];
   /** Postcard shelf: Unobstructed view (dev) section is expanded. */
@@ -138,6 +142,10 @@ interface Store {
   setShelf: (shelf: ShelfSpec | undefined, key?: string) => void;
   /** The candelabra (undefined removes it). */
   setCandles: (candles: CandleSpec | undefined, key?: string) => void;
+  /** Shelves through the plates. */
+  setShelves: (shelves: ShelfPlate[], key?: string) => void;
+  /** Candles placed one by one on a surface. */
+  setPlacedCandles: (candles: PlacedCandle[], key?: string) => void;
   setOrigin: (origin: WorldOrigin | undefined, key?: string) => void;
   /** Persist the 3D View-from-point camera with the project (local + cloud saves). */
   setSavedView: (view: EarthView | undefined) => void;
@@ -321,6 +329,7 @@ export const useStore = create<Store>((set, get) => {
       measureMode: false,
       objectsMode: false,
       objectSel: null,
+      placing: null,
       hiddenObjects: [],
       shelfViewDevOpen: false,
       highlight: null,
@@ -394,6 +403,8 @@ export const useStore = create<Store>((set, get) => {
     setObjects: (objects, key = `objects:${performance.now()}`) => commit({ ...get().project, objects: objects.length ? objects : undefined }, key),
     setShelf: (shelf, key = `shelf:${performance.now()}`) => commit({ ...get().project, shelf }, key),
     setCandles: (candles, key = `candles:${performance.now()}`) => commit({ ...get().project, candles }, key),
+    setShelves: (shelves, key = `shelves:${performance.now()}`) => commit({ ...get().project, shelves: shelves.length ? shelves : undefined }, key),
+    setPlacedCandles: (placedCandles, key = `placed-candles:${performance.now()}`) => commit({ ...get().project, placedCandles: placedCandles.length ? placedCandles : undefined }, key),
     setOrigin: (origin, key = `origin:${performance.now()}`) => commit({ ...get().project, origin }, key),
     setSavedView: (view) => commit({ ...get().project, savedView: view }, `saved-view:${performance.now()}`),
     setName: (name) => commit({ ...get().project, name }, 'name'),

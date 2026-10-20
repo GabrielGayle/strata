@@ -22,6 +22,7 @@ import { objectMatrix, type CutObject } from '../core/objects';
 import type { CardSight } from '../core/shelfView';
 import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import CandleGizmo from './CandleGizmo';
+import { PlacedCandleGizmo, placeOnClick, ShelfGizmo } from './SurfaceGizmos';
 import { Candle3D, SunStudy3D } from './SunStudy';
 import { showBaseMesh, showInsertMesh, showObject, showPart, type ViewportLayers } from './viewportLayers';
 import { contourStep, makeHeightBandMaterial, outlineColor, outlineSegments, rakeDirection, reliefRange, spreadOffsets, tintColor, type ViewAids } from './viewAids';
@@ -238,6 +239,8 @@ function PlacedObjects({ model, layers }: { model: Model; layers: ViewportLayers
       <OriginMarker model={model} />
       <HiddenFaceTint model={model} />
       <CandleGizmo model={model} />
+      <ShelfGizmo model={model} />
+      <PlacedCandleGizmo model={model} />
     </>
   );
 }
@@ -576,7 +579,9 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
     return (c && tinted.get(c)) || base;
   };
   // spread is off while a plate is being moved by hand, so the gizmo sits on the real plate
-  const spread = opts.moveMode ? 1 : (aids?.spread ?? 1);
+  // placing a shelf or candle: clicks land on the plates where they really are
+  const placing = useStore((st) => !!st.ui.placing);
+  const spread = opts.moveMode || placing ? 1 : (aids?.spread ?? 1);
   const offsets = useMemo(() => spreadOffsets(parts, spread), [parts, spread]);
   // re-read theme colours whenever the window appearance changes
   const theme = useStore((st) => st.ui.theme);
@@ -601,7 +606,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const keyDir = useMemo(() => roomToModel(mount, rake ? rakeDirection(aids!.rakeTurn, aids!.rakeHeight) : [-0.75, 0.9, 0.35]), [mount, rake, aids?.rakeTurn, aids?.rakeHeight]); // eslint-disable-line react-hooks/exhaustive-deps
   const fillAt = useMemo(() => roomToModel(mount, [-900, 500, -600]), [mount]);
   return (
-    <>
+    <group onClick={placing ? (e) => placeOnClick(model, e) : undefined}>
       <Env intensity={candle ? 0.06 : rake ? 0.22 : 0.55} />
       <color attach="background" args={[cssVar('--viewport', '#e6e3dc')]} />
       <ambientLight intensity={candle ? 0.06 : rake ? 0.12 : v.sunOn ? 0.28 : 0.35} />
@@ -660,7 +665,7 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       </group>
       {opts.showMoulds && L.frame && <Moulds model={model} explode={opts.explode} />}
       {opts.showIssues && <IssueMarkers model={model} />}
-    </>
+    </group>
   );
 }
 

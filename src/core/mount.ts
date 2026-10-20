@@ -134,7 +134,7 @@ const info = (message: string): Issue => ({ partId: null, type: 'general', sever
  * that point up, and things that only work standing up (flames, shadow pictures,
  * level shelves). Empty for a table piece.
  */
-export function mountIssues(v: Values, has: { candles?: boolean; shelf?: boolean; map?: boolean }): Issue[] {
+export function mountIssues(v: Values, has: { candles?: boolean; shelf?: boolean; shelves?: boolean; map?: boolean }): Issue[] {
   if (!isWall(v)) return [];
   const out: Issue[] = [];
   if (v.steelBaseOn) {
@@ -154,6 +154,7 @@ export function mountIssues(v: Values, has: { candles?: boolean; shelf?: boolean
   if (has.candles) out.push(info('On a wall each candle stands upright on the plate below it, in a cup cut through the plates it passes, with a clear chimney above its flame. Fins, chokes and trimmed plate tops are for table pieces.'));
   if (v.shadowOn) out.push(info('Shadow pictures are worked out for a piece standing on a table; switch Display › Shown on to Table to design them.'));
   if (has.shelf) out.push(info('On a wall the postcards stand upright on the plate below each one, notched through the plates they pass. Seats and the unobstructed view are for table pieces.'));
+  if (has.shelves) out.push(warn('Shelves are level on a table piece; on the wall they stand straight out from it, so anything on them would lean. Switch Display › Shown on to Table, or leave shelves off.'));
   return out;
 }
 
