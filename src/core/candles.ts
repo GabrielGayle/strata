@@ -924,25 +924,39 @@ export function wallCheekFins(
  * Halving joints between a cheek fin and the level plates it crosses on a wall:
  * each plate is slotted from its front edge back to `yMid`, the fin from its back
  * edge out to the same line, so the fin slides on from the front and locks square.
+ * A plate that crosses near either end of the fin stretches the fin to keep
+ * `minFeature` of steel past the slot, rather than leaving a sliver there.
  */
-export function wallFinSlots(fin: CandleFin, plates: { key: string; plane: Plane; u0: number; u1: number }[], o: { t: number; fit: number; yMid: number }): FinSlot[] {
+export function wallFinSlots(fin: CandleFin, plates: { key: string; plane: Plane; u0: number; u1: number }[], o: { t: number; fit: number; yMid: number; minFeature?: number }, depth = 0): { fin: CandleFin; slots: FinSlot[] } {
   const c = fin.plane.origin;
   const d = fin.plane.u;
-  const bb = fin.shape[0].outer.reduce((a, [u]) => [Math.min(a[0], u), Math.max(a[1], u)], [Infinity, -Infinity]);
+  const [lo, hi] = fin.shape[0].outer.reduce((a, [u]) => [Math.min(a[0], u), Math.max(a[1], u)], [Infinity, -Infinity]);
   const w = o.t + o.fit;
-  const out: FinSlot[] = [];
+  const keep = Math.max(o.minFeature ?? 2, 2) + 0.5;
+  let a = lo;
+  let b = hi;
+  const slots: FinSlot[] = [];
   for (const p of plates) {
     const n = p.plane.normal;
     const dn = d[0] * n[0] + d[1] * n[1] + d[2] * n[2];
     if (Math.abs(dn) < 0.9) continue;
     const uf = ((p.plane.origin[0] - c[0]) * n[0] + (p.plane.origin[2] - c[2]) * n[2]) / dn;
-    if (uf < bb[0] + w / 2 || uf > bb[1] - w / 2) continue;
+    // the plate's steel must touch the fin's
+    if (uf + o.t / 2 <= lo || uf - o.t / 2 >= hi) continue;
     const pu = p.plane.u;
     const up = (c[0] + uf * d[0] - p.plane.origin[0]) * pu[0] + (c[2] + uf * d[2] - p.plane.origin[2]) * pu[2];
     if (up < p.u0 || up > p.u1) continue;
-    out.push({ plate: p.key, plateRect: [up - w / 2, o.yMid, up + w / 2, 20000], finRect: [uf - w / 2, -20000, uf + w / 2, o.yMid] });
+    a = Math.min(a, uf - w / 2 - keep);
+    b = Math.max(b, uf + w / 2 + keep);
+    slots.push({ plate: p.key, plateRect: [up - w / 2, o.yMid, up + w / 2, 20000], finRect: [uf - w / 2, -20000, uf + w / 2, o.yMid] });
   }
-  return out;
+  if (a === lo && b === hi) return { fin, slots };
+  // stretch the ends: points on the low end move with it, the rest (top end and its chamfer) with the top
+  const mid = (lo + hi) / 2;
+  const outer = fin.shape[0].outer.map(([u, y]): P2 => [u < mid ? u + (a - lo) : u + (b - hi), y]);
+  const stretched = { ...fin, shape: [{ outer, holes: [] }], labelAt: [(a + b) / 2, fin.labelAt[1]] as [number, number] };
+  // a longer fin can reach the next plate along, which then needs its own slot
+  return depth < 3 ? wallFinSlots(stretched, plates, o, depth + 1) : { fin: stretched, slots };
 }
 
 /** Where a slotted fin crosses a plate: the halving slot cut in each, in their own plate coordinates. */

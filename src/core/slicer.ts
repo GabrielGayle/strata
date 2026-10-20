@@ -1758,10 +1758,10 @@ export function slice(input: SliceInput): SliceResult {
   const fins = (input.candles ?? []).flatMap((c, i) =>
     c.wall
       ? // on a wall: cheek fins either side, slotted halfway into the level plates from their front edges
-        wallCheekFins({ r: c.r, wall: c.wall }, c.holder, { t, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i).map((f) => ({
-          f,
-          slots: wallFinSlots(f, defs, { t, fit: 2 * FIN_FIT, yMid: Math.min(c.wall!.front + c.holder.reach, v.stackHeight) / 2 }),
-        }))
+        wallCheekFins({ r: c.r, wall: c.wall }, c.holder, { t, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i).map((f0) => {
+          const { fin: f, slots } = wallFinSlots(f0, defs, { t, fit: 2 * FIN_FIT, yMid: Math.min(c.wall!.front + c.holder.reach, v.stackHeight) / 2, minFeature: v.minFeature });
+          return { f, slots };
+        })
       : targetFins(c, c.holder, { t, embed: e, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i).map((f) => ({
           f,
           slots: c.holder.slotted ? finSlots(f, defs, { t, candleBottom: c.bottom, baseTop: baseTop(v), engage: c.holder.engage ?? 16, fit: 2 * FIN_FIT }) : [],

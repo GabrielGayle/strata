@@ -30,6 +30,12 @@ describe('wall candelabra', () => {
     expect(m.sliced.warnings.join(' ')).not.toMatch(/hang loose/);
   });
 
+  it('keeps steel past the last slot at each end of a cheek fin (141 × 480 base, 12 plates at 1.5 mm)', () => {
+    const m = build(wall({ wallPlates: 'across', baseLength: '141', baseWidth: '480', thickness: '1.5', plateCount: '12' }, { candles: '4 taper', holder: 'slotted', snap: 'cells', size: 330 }));
+    expect(fins(m).length).toBe(8);
+    expect(m.issues.filter((i) => i.partId && /K-/.test(i.partId) && i.severity !== 'info')).toEqual([]);
+  });
+
   it('makes target fins cheek fins too on level plates', () => {
     const m = build(wall({ wallPlates: 'across' }, { candles: '2 taper', holder: 'target' }));
     expect(fins(m).length).toBe(4);
