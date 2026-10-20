@@ -895,7 +895,7 @@ function assemblySteps(project: Project, m: Model, view: View, names: Map<string
       steps.push(`<b>Turn it back over</b> and dress the end tacks with a file or flap disc so they blend in.`);
       steps.push(`<b>Safety.</b> Auto-darkening helmet, leather gloves, long cotton sleeves and a clear floor. Grind with the guard on, sparks away from you, and weld somewhere airy.`);
     }
-    const fixings = fixingHoles(v, sb.spec, sb.spec.shape === 'rect' ? undefined : sb.outline, v.minFeature);
+    const fixings = sb.fixings ?? fixingHoles(v, sb.spec, sb.spec.shape === 'rect' ? undefined : sb.outline, v.minFeature);
     if (fixings.length) {
       const sideName = { back: 'back end', front: 'front end', left: 'left side', right: 'right side' }[sb.spec.holeSide];
       if (sb.spec.holeStyle === 'keyhole')

@@ -294,10 +294,10 @@ export function steelOutline(v: Values, s: SteelBaseSpec, parts: Standing[]): Sh
 
 const ARC = 0.1;
 
-/** The base plate in plan (x, -z): its outline with a slot for every tab and any fixing holes. */
-export function steelBaseShape(v: Values, s: SteelBaseSpec, tabs: WeldTab[], thicknessOf: (plateKey: string) => number, outline: Shape = union([basePlan(v)])): Shape {
+/** The slot cut under every tab (plan x, -z), with the fit clearance round it. */
+export function tabSlots(s: SteelBaseSpec, tabs: WeldTab[], thicknessOf: (plateKey: string) => number): Path[] {
   const c = s.clearance;
-  const slots: Path[] = tabs.map((t) => {
+  return tabs.map((t) => {
     const hw = thicknessOf(t.plateKey) / 2 + c;
     const [dx, dy] = t.dir;
     const nx = -dy, ny = dx;
@@ -310,7 +310,12 @@ export function steelBaseShape(v: Values, s: SteelBaseSpec, tabs: WeldTab[], thi
       [x - dx * h + nx * hw, y - dy * h + ny * hw],
     ];
   });
-  const holes = fixingHoles(v, s, s.shape === 'rect' ? undefined : outline, v.minFeature).flatMap((h) => holePaths(h, s));
+}
+
+/** The base plate in plan (x, -z): its outline with a slot for every tab and any fixing holes. */
+export function steelBaseShape(v: Values, s: SteelBaseSpec, tabs: WeldTab[], thicknessOf: (plateKey: string) => number, outline: Shape = union([basePlan(v)]), fixings?: FixingHole[]): Shape {
+  const slots = tabSlots(s, tabs, thicknessOf);
+  const holes = (fixings ?? fixingHoles(v, s, s.shape === 'rect' ? undefined : outline, v.minFeature)).flatMap((h) => holePaths(h, s));
   const cut = [...slots, ...holes];
   // each cut on its own first: a slot wound against a hole it touches would otherwise cancel it
   return cut.length ? difference(outline, unionShapes(...cut.map((p) => union([p])))) : outline;
@@ -329,9 +334,11 @@ const SIDE: Record<SteelBaseSpec['holeSide'], [number, number]> = { back: [1, 0]
 /**
  * Where the fixing holes go, in plan (x, -z). On a base cut round the plates (`outline`) they
  * are laid out on its bounding box, then each slides inwards until it sits on steel; one
- * that can't is left out.
+ * that can't is left out. Given the plates' feet (`feet`, from `plateFeet`), each also slides
+ * on until no plate stands over it or the screw head it takes, so a screw can reach it (and a
+ * keyhole's head can drop in and slide); one that finds no such spot is left out too.
  */
-export function fixingHoles(v: Values, s: SteelBaseSpec, outline?: Shape, minFeature = 1): FixingHole[] {
+export function fixingHoles(v: Values, s: SteelBaseSpec, outline?: Shape, minFeature = 1, feet: Path[] = []): FixingHole[] {
   if (s.holes === 'none') return [];
   const bb = outline?.length ? shapeBBox(outline) : null;
   const cx = bb ? (bb.minX + bb.maxX) / 2 : 0, cy = bb ? (bb.minY + bb.maxY) / 2 : 0;
@@ -361,12 +368,17 @@ export function fixingHoles(v: Values, s: SteelBaseSpec, outline?: Shape, minFea
   // the round end sits below the screw point, away from the top edge
   const [ux, uy] = SIDE[s.holeSide];
   const make = (at: [number, number]): FixingHole => (s.holeStyle === 'keyhole' ? { at, head: [at[0] - ux * s.keyLength, at[1] - uy * s.keyLength] } : { at });
-  if (!outline?.length) return pts.map((p) => make(p.at));
+  const area = outline?.length ? outline : feet.length ? union([basePlan(v)]) : null;
+  if (!area) return pts.map((p) => make(p.at));
   // steel left once the hole and the least feature round it are taken off the edge
   const r = s.holeStyle === 'keyhole' ? s.keyHead / 2 : s.holeDia / 2;
-  const room = offset(outline, -(r + minFeature), 'round', ARC);
-  const fits = (h: FixingHole) => [h.at, h.head].every((q) => !q || pointInShape(q, room));
-  const reach = Math.max(bb!.maxX - bb!.minX, bb!.maxY - bb!.minY);
+  const room = offset(area, -(r + minFeature), 'round', ARC);
+  const plates = feet.length ? union(feet) : [];
+  // a rectangle keeps its holes where Distance from edge puts them unless a plate stands there
+  const onSteel = (h: FixingHole) => [h.at, h.head].every((q) => !q || pointInShape(q, outline?.length ? room : area));
+  const fits = (h: FixingHole) => onSteel(h) && (!plates.length || clearOfPlates(h, s, plates, minFeature));
+  const ab = shapeBBox(area);
+  const reach = Math.max(ab.maxX - ab.minX, ab.maxY - ab.minY);
   const out: FixingHole[] = [];
   for (const p of pts)
     for (let d = 0; d <= reach; d += 1) {
@@ -377,6 +389,22 @@ export function fixingHoles(v: Values, s: SteelBaseSpec, outline?: Shape, minFea
       }
     }
   return out;
+}
+
+/**
+ * No plate stands over the hole or the screw head it takes, with `gap` to spare: a keyhole's
+ * head drops in at the round end and hangs at the top of the slot, and a plain hole's screw
+ * head is taken as twice the hole.
+ */
+function clearOfPlates(h: FixingHole, s: SteelBaseSpec, plates: Shape, gap: number): boolean {
+  const head = h.head ? s.keyHead / 2 : s.holeDia;
+  const zone = union([...holePaths(h, s), circlePath(h.at[0], h.at[1], head)]);
+  const zb = shapeBBox(zone);
+  const near = plates.filter((ex) => {
+    const b = shapeBBox([ex]);
+    return b.minX < zb.maxX + gap && b.maxX > zb.minX - gap && b.minY < zb.maxY + gap && b.maxY > zb.minY - gap;
+  });
+  return !near.length || intersection(offset(zone, gap, 'round', ARC), near).every((ex) => Math.abs(signedArea(ex.outer)) < 1e-3);
 }
 
 /** Outline of one fixing hole: a circle, or one keyhole outline (round end, slot, rounded top). */

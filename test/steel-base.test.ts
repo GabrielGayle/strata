@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
 import { createPipeline, type Assets } from '../src/core/pipeline';
-import { newProject } from '../src/core/project';
+import { deserialize, newProject } from '../src/core/project';
+import { loadAssets } from '../src/packNode';
 import { buildZip, buildPackHtmlChecked } from '../src/core/exporters';
 import { cutListCsv } from '../src/core/bom';
 import { estimateMix } from '../src/core/price';
@@ -231,6 +233,45 @@ describe('steel base', () => {
     expect(filled.every((e) => e.holes.length === 0)).toBe(true);
     expect(pointInShape([0, 0], filled)).toBe(true);
     expect(pointInShape([0, 0], open)).toBe(false);
+  });
+
+  it('slides fixing holes clear of the plates, so a keyhole never hides under a plate', () => {
+    // a wall piece with level plates every 29 mm right out to the top edge and across the base: a 20 mm
+    // keyhole where Distance from edge puts it would have a plate standing over it
+    const wall = { ...steel, mount: 'wall', strataOn: false, thickness: '1.5', endMargin: '6', sideMargin: '0', plateCount: '11', baseLength: '300', steelHoles: 'edge', steelHoleCount: '2', steelHoleSide: 'back', steelHoleStyle: 'keyhole' };
+    for (const baseOutline of ['rect', 'follow']) {
+      const { m } = run({ ...wall, baseOutline });
+      const sb = m.sliced.steelBase!;
+      expect(sb.fixings).toHaveLength(2);
+      const plates = m.sliced.parts.filter((q) => q.family === 'P').map((q) => q.plane.origin[0]);
+      for (const h of sb.fixings) {
+        // the keyhole from the bottom of its round end to the top of its slot, and the head where it hangs
+        const lo = h.head![0] - sb.spec.keyHead / 2, hi = h.at[0] + sb.spec.keyHead / 2;
+        for (const x of plates) expect(x + m.v.thickness / 2 <= lo || x - m.v.thickness / 2 >= hi, `plate at ${x.toFixed(1)} over a hole ${lo.toFixed(1)}..${hi.toFixed(1)}`).toBe(true);
+      }
+      expect(m.sliced.warnings.filter((w) => /fixing hole/.test(w))).toEqual([]);
+      // the base cut and the build pack use the same holes
+      const base = m.sliced.parts.find((q) => q.family === 'B')!;
+      for (const h of sb.fixings) expect(pointInShape(h.at, base.shape)).toBe(false);
+    }
+    // plates too close together for a keyhole between them: the holes are left out, and it says why
+    const tight = run({ ...wall, plateCount: '22' }).m;
+    expect(tight.sliced.steelBase!.fixings).toHaveLength(0);
+    expect(tight.sliced.warnings.join(' ')).toMatch(/2 fixing holes found no steel clear of the plates/);
+  });
+
+  it('hangs a wall piece of level plates on keyholes between them, with no pinholes in its outline', async () => {
+    // a ribcage sconce: level plates every 13 mm, ribs and hose segments with gaps between, the base cut round them
+    const p = deserialize(readFileSync('test/fixtures/projects/vertebra-sconce.strata.json', 'utf8'));
+    const m = createPipeline()(p, await loadAssets(p));
+    const sb = m.sliced.steelBase!;
+    expect(sb.fixings).toHaveLength(2);
+    expect(m.sliced.warnings.filter((w) => /fixing hole/.test(w))).toEqual([]);
+    expect(errors(m)).toEqual([]);
+    // the outline's curves used to just miss each other and leave a 0.02 mm hole the checks flagged
+    expect(m.issues.filter((i) => i.partId === sb.partId && i.type === 'hole')).toEqual([]);
+    // the openings between the ribs stay open
+    expect(sb.outline.flatMap((ex) => ex.holes).length).toBeGreaterThan(0);
   });
 
   it('warns when a hole sits too close to the edge', () => {

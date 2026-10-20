@@ -40,6 +40,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'fix',
+    title: 'Fixing holes keep clear of the plates',
+    body: 'A fixing hole or keyhole on the steel base could land right under a plate, where no screw could reach it and a keyhole could never hang. Each one now slides on until no plate stands over it or its screw head, into a gap between plates. One that finds no gap is left out and the fit checks say so. A base cut round the plates also no longer keeps hairline pinholes that showed up as "Hole Ø0.0 mm" warnings.',
+    where: 'Parameters › Steel base › Fixing holes',
+    target: { param: 'steelHoles' },
+  },
+  {
+    date: '2026-10-20',
     kind: 'new',
     title: 'Cheek fins for wall candelabras',
     body: 'On a wall piece with Display › Plates run across, Slotted (or Target) fins become cheek fins: two upright fins either side of each candlestick, slotted onto the level plates from the front like a toast rack. With the plates hanging down, the Holder menu says fins can\'t key in and each candle gets a cup instead.',

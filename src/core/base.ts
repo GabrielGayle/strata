@@ -279,6 +279,8 @@ export function followOutline(feet: Path[], o: OutlineSpec, keep: number, minFea
   // growing out and back can leave hairline spikes where two curves meet; shave off anything thinner than twice the least feature
   const d = Math.max(0.5, minFeature);
   shape = grow(grow(shape, -d, 'round'), d, 'round');
+  // and pinholes where curves just fail to meet: nothing that small can be cut
+  shape = shape.map((e) => ({ ...e, holes: e.holes.filter((h) => Math.abs(signedArea(h)) > d * d) }));
   // a smooth outline needs few points: keeps the cut files small and the checks quick
   return simplifyShape(shape, 0.05);
 }
