@@ -11,6 +11,7 @@ import { loadRates } from './PriceEstimate';
 import { randomTheme, themeTokens, THEME_PRESETS, type ThemeSeed } from './theme';
 import { activeLibraryLinkId, CloudSyncMark, grabThumb, keepOpenedInLibrary, linkActive, ProjectsButton, ShareButton, SharedLinkPrompt, unlinkActive } from './LibraryPanel';
 import { recordLibrarySave } from '../state/recordLibrary';
+import { ProposalButton } from './ProposalDialog';
 import { isProjectZipName, projectFromZip } from '../core/projectZip';
 import { busyThen } from './busy';
 import { clearSavedResults, resultsStored, savedResultsUsage } from '../state/results';
@@ -703,6 +704,7 @@ export default function Toolbar() {
           Save
         </button>
         <ShareButton />
+        <ProposalButton />
         <Menu label="Import" hl="menu-import">
           {(close) => (
             <>

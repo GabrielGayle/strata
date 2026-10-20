@@ -40,6 +40,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'new',
+    title: 'Client proposal page',
+    body: 'Proposal makes a page to send a client: the place and a local quotation first, then the piece drawn in plan, front and side at one scale, then the price band, timeline, finish and upkeep, with the full spec folded into a technical sheet. Anything you have not filled in prints as [… to confirm], and a price can be marked est. Open it, download it as one HTML file, or copy a link that opens it.',
+    where: 'Toolbar › Proposal',
+    target: { path: ['proposal'] },
+  },
+  {
+    date: '2026-10-20',
     kind: 'fix',
     title: 'Wall pieces hang face out in phone AR',
     body: 'On the phone viewer, AR put a wall piece on the wall lying face down. It now hangs the way it does in the 3D view: upright, its back against the wall and its face towards you.',

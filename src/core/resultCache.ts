@@ -16,7 +16,7 @@ declare const __STRATA_ENGINE__: string | undefined;
 export const ENGINE_BUILD = typeof __STRATA_ENGINE__ === 'string' ? __STRATA_ENGINE__ : 'dev';
 
 /** Project fields the engine never reads: renaming, locking a value or saving a variant keeps the result. */
-export const UNKEYED_FIELDS: readonly string[] = ['name', 'locks', 'variants', 'composition', 'savedView', 'hero'];
+export const UNKEYED_FIELDS: readonly string[] = ['name', 'locks', 'variants', 'composition', 'savedView', 'hero', 'proposal'];
 
 // ---- a 128-bit hash (MurmurHash3 x86_128 over 32-bit words; not for secrets) ----
 
