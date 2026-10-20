@@ -18,6 +18,8 @@ export interface SteelBaseSpec {
   clearance: number;
   edge: number;
   stagger: boolean;
+  /** Zig-zag: alternate plates take their tabs in alternate halves of each cell, so neighbouring slots never sit side by side. */
+  zigzag: boolean;
   /** Fixing holes: none, four corners, a row along one edge, or rows along two opposite edges. */
   holes: 'none' | 'corners' | 'edge' | 'rows';
   holeStyle: 'round' | 'keyhole';
@@ -47,6 +49,7 @@ export function steelBaseSpec(v: Values): SteelBaseSpec | null {
     clearance: Math.max(0, Number(v.steelClearance) || 0),
     edge: Math.max(0, Number(v.steelEdge) || 0),
     stagger: v.steelStagger !== false,
+    zigzag: v.steelZigzag === true,
     holes: v.steelHoles === '4' ? 'corners' : v.steelHoles === 'edge' || v.steelHoles === 'rows' ? v.steelHoles : 'none',
     holeStyle: v.steelHoleStyle === 'keyhole' ? 'keyhole' : 'round',
     holeCount: Math.max(1, Math.round(Number(v.steelHoleCount) || 2)),
@@ -107,18 +110,30 @@ function subtractSpans(spans: [number, number][], cut: [number, number][]): [num
 /**
  * Tab centres and lengths along one plate's usable bottom spans. Each span gets a
  * tab about every `pitch`; a plate gets at least two where it has room. With
- * `shift`, the tabs sit half way between where a neighbour's would be.
+ * `shift`, the tabs sit half way between where a neighbour's would be. With `zig`
+ * (0 or 1), each span is cut into n cells and the tabs take the first (0) or second
+ * (1) half of every cell, so neighbouring plates' slots alternate along the edge.
  */
-export function tabLayout(spans: [number, number][], s: SteelBaseSpec, minLen: number, shift: boolean): { c: number; len: number }[] {
+export function tabLayout(spans: [number, number][], s: SteelBaseSpec, minLen: number, shift: boolean, zig?: 0 | 1): { c: number; len: number }[] {
   const out: { c: number; len: number }[] = [];
   const total = spans.reduce((a, [x, y]) => a + Math.max(0, y - x), 0);
   for (const [a, b] of spans) {
     const L = b - a;
     if (L < minLen) continue;
-    const len = Math.min(s.tabLength, L);
+    let len = Math.min(s.tabLength, L);
     let n = 1 + Math.floor((L - len) / s.pitch);
     // one long span alone: two tabs, one near each end, when they fit with a tab's gap between
     if (n === 1 && spans.length === 1 && L >= 3 * len && total === L) n = 2;
+    if (zig !== undefined) {
+      // each tab needs half a cell to itself, with a little steel between it and the neighbour's
+      while (n > 1 && L / (2 * n) < len + 2) n--;
+      const half = L / (2 * n);
+      if (half >= minLen) {
+        len = Math.min(len, half - 1);
+        for (let i = 0; i < n; i++) out.push({ c: a + (2 * i + zig + 0.5) * half, len });
+        continue;
+      }
+    }
     if (n === 1) {
       out.push({ c: (a + b) / 2, len });
       continue;
@@ -156,7 +171,7 @@ function thin(tabs: { c: number; len: number }[], pitch: number): { c: number; l
  * (waffle crossings); `free` is the outline with anything that will be cut out of
  * the bottom edge already removed, so tabs land on steel that stays.
  */
-export function addWeldTabs(outline: Shape, free: Shape, plane: Plane, s: SteelBaseSpec, v: Values, opts: { avoid: [number, number][]; shift: boolean }): { outline: Shape; tabs: { c: number; len: number }[] } {
+export function addWeldTabs(outline: Shape, free: Shape, plane: Plane, s: SteelBaseSpec, v: Values, opts: { avoid: [number, number][]; shift: boolean; zig?: 0 | 1 }): { outline: Shape; tabs: { c: number; len: number }[] } {
   if (!outline.length) return { outline, tabs: [] };
   const over = planInterval(plane, basePlan(v, s.edge));
   if (!over) return { outline, tabs: [] };
@@ -166,7 +181,7 @@ export function addWeldTabs(outline: Shape, free: Shape, plane: Plane, s: SteelB
     .map(([a, b]) => [Math.max(a, over[0]) + end, Math.min(b, over[1]) - end] as [number, number])
     .filter(([a, b]) => b - a >= minLen);
   spans = subtractSpans(spans, opts.avoid).filter(([a, b]) => b - a >= minLen);
-  const tabs = tabLayout(spans, s, minLen, opts.shift);
+  const tabs = tabLayout(spans, s, minLen, opts.shift, opts.zig);
   if (!tabs.length) return { outline, tabs };
   const shape = unionShapes(outline, ...tabs.map((t) => rect(t.c - t.len / 2, -s.tabDepth, t.c + t.len / 2, 0.15)));
   return { outline: shape, tabs };

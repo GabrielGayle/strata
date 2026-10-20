@@ -1669,7 +1669,7 @@ export function slice(input: SliceInput): SliceResult {
         const bb = shapeBBox([ex]);
         return [bb.minX - land, bb.maxX + land] as [number, number];
       });
-      const r = addWeldTabs(outlines[di], free, d.plane, steel, v, { avoid, shift: steel.stagger && d.index % 2 === 1 });
+      const r = addWeldTabs(outlines[di], free, d.plane, steel, v, { avoid, shift: steel.stagger && d.index % 2 === 1, zig: steel.zigzag ? ((d.index % 2) as 0 | 1) : undefined });
       outlines[di] = r.outline;
       if (!r.tabs.length)
         warnings.push(
@@ -2059,7 +2059,8 @@ export function slice(input: SliceInput): SliceResult {
     if (fixings.some((h) => (h.head ? near(h.head, steel.keyHead / 2) || near(h.at, steel.keySlot / 2) : near(h.at, steel.holeDia / 2))))
       warnings.push(`Steel base: a fixing hole is closer than ${v.minFeature} mm to the edge of the base. Raise Distance from edge.`);
     const web = v.sliceMode === 'parallel' ? v.pitch - t - 2 * steel.clearance : Infinity;
-    if (web < v.minFeature && !steel.stagger) warnings.push(`Steel base: only ${web.toFixed(1)} mm of steel between neighbouring slots. Turn on Stagger tabs or space the plates out.`);
+    if (web < v.minFeature && !steel.stagger && !steel.zigzag) warnings.push(`Steel base: only ${web.toFixed(1)} mm of steel between neighbouring slots. Turn on Zig-zag tabs or space the plates out.`);
+    else if (steel.zigzag && web + v.pitch < v.minFeature) warnings.push(`Steel base: only ${(web + v.pitch).toFixed(1)} mm of steel between slots two plates apart, even with zig-zag tabs. Space the plates out.`);
     const plane = steelPlane(steel);
     pieces.forEach((ex, pi) => {
       const id = pieces.length > 1 ? `${base}${String.fromCharCode(97 + (pi % 26))}` : base;

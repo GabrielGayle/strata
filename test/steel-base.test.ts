@@ -181,6 +181,23 @@ describe('steel base', () => {
     expect(buildPackHtmlChecked(p, m)).toContain('<b>Hang it.</b>');
   });
 
+  it('zig-zag tabs let tightly packed plates keep a whole base plate', () => {
+    const tight = { ...steel, thickness: '1.5', plateCount: '60', pitch: '3.4', steelStagger: false };
+    const off = run(tight).m;
+    expect(off.sliced.warnings.join(' ')).toMatch(/between neighbouring slots/);
+    const on = run({ ...tight, steelZigzag: true }).m;
+    expect(on.sliced.warnings.join(' ')).not.toMatch(/slots/);
+    const tabs = on.sliced.steelBase!.tabs;
+    const byPlate = new Map<string, number[]>();
+    for (const tb of tabs) byPlate.set(tb.plateKey, [...(byPlate.get(tb.plateKey) ?? []), tb.u0]);
+    expect(byPlate.size).toBeGreaterThan(50);
+    // the base is one piece and every slot is its own hole
+    const base = on.sliced.parts.find((q) => q.family === 'B')!;
+    expect(base.shape.filter((ex) => (ex.depth ?? 0) === 0)).toHaveLength(1);
+    expect(base.shape[0].holes).toHaveLength(tabs.length);
+    expect(buildPackHtmlChecked(project({ ...tight, steelZigzag: true }), on)).toContain('The tabs zig-zag');
+  });
+
   it('warns when a hole sits too close to the edge', () => {
     const { m } = run({ ...steel, steelHoles: '4', steelHoleInset: '2' });
     expect(m.sliced.warnings.join(' ')).toMatch(/closer than .* to the edge/);
@@ -221,6 +238,21 @@ describe('tab layout', () => {
     expect(a.length).toBe(5);
     expect(b.length).toBe(4);
     for (const c of b) expect(Math.min(...a.map((x) => Math.abs(x - c)))).toBeGreaterThan(30);
+  });
+  it('zig-zag: neighbouring plates take alternate halves, never side by side', () => {
+    for (const L of [60, 140, 400]) {
+      const a = tabLayout([[0, L]], s, 4, false, 0);
+      const b = tabLayout([[0, L]], s, 4, true, 1);
+      expect(a.length).toBe(b.length);
+      for (const x of a) for (const y of b) expect(Math.abs(x.c - y.c)).toBeGreaterThanOrEqual((x.len + y.len) / 2 + 2);
+      for (const x of [...a, ...b]) {
+        expect(x.c - x.len / 2).toBeGreaterThanOrEqual(0);
+        expect(x.c + x.len / 2).toBeLessThanOrEqual(L);
+      }
+    }
+    // a short plate: one tab each, one up and one down
+    expect(tabLayout([[0, 60]], s, 4, false, 0).map((x) => x.c)).toEqual([15]);
+    expect(tabLayout([[0, 60]], s, 4, false, 1).map((x) => x.c)).toEqual([45]);
   });
   it('orders every tab once', () => {
     const tabs = [0, 1, 2].flatMap((k) => [0, 1, 2].map((i) => ({ partId: `P${k}`, plateKey: `P${k}`, u0: i * 50, u1: i * 50 + 15, at: [k * 20, i * 50] as [number, number], dir: [0, 1] as [number, number], length: 15 })));
