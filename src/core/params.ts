@@ -30,6 +30,7 @@ export interface ParamDef {
 
 export const GROUPS = [
   'Master',
+  'Display',
   'Base',
   'Steel base',
   'Support',
@@ -138,6 +139,18 @@ export const PARAMS: ParamDef[] = [
 
   // Base
   { id: 'baseOn', label: 'Base', group: 'Base', kind: 'toggle', def: true },
+  // Display: how the finished piece is shown. Only the views change; the parts are the same.
+  choice('mount', 'Shown on', 'Display', 'table', [
+    { value: 'table', label: 'A table or shelf (stands on its base)' },
+    { value: 'wall', label: 'A wall (base flat on the wall)' },
+  ], { help: 'Table: the piece stands on its base and the plates rise up. Wall: the underside of the base hangs flat on the wall and the plates stand out into the room, so the top surface faces you like a picture. The 3D view, sun study and renders follow; the cut parts are the same.' }),
+  choice('wallTop', 'Top edge on the wall', 'Display', 'picture', [
+    { value: 'picture', label: 'Top of the top picture' },
+    { value: 'back', label: 'Back end' },
+    { value: 'front', label: 'Front end' },
+    { value: 'left', label: 'Left side' },
+    { value: 'right', label: 'Right side' },
+  ], { show: (v) => v.mount === 'wall', help: 'Which edge of the base is at the top when it hangs. Top of the top picture hangs a relief the right way up (north up for a map). Edges as in Steel base › Edge: the front end is the one the Front view looks at.' }),
   choice('baseMaterial', 'Base is', 'Base', 'concrete', [
     { value: 'concrete', label: 'Cast concrete' },
     { value: 'steel', label: 'Steel plate, plates welded on' },

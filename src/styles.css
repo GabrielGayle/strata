@@ -899,6 +899,11 @@ table.tbl {
   top: 8px;
   right: 8px;
 }
+/* Table | Wall: its own pair, set off from the camera buttons */
+.vp-mount {
+  display: inline-flex;
+  border-left: 1px solid var(--line);
+}
 /* Right tools + View from point stacked so Objects (top-left) cannot cover Look. */
 .vp-tr-column {
   position: absolute;

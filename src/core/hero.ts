@@ -15,6 +15,8 @@ import type { Model } from './pipeline';
 import type { Project } from './project';
 import { Hash128 } from './resultCache';
 import type { SavedHero } from './heroSaved';
+import { mountFrame, modelToRoomMatrix } from './mount';
+import { isMapDepth } from './mapPlateHeight';
 
 export { cleanSavedHero, HERO_LIGHTS, type HeroLight, type SavedHero } from './heroSaved';
 
@@ -30,7 +32,7 @@ export interface HeroCamera {
 }
 
 /** What a hero mesh is made of, for Blender's materials. */
-export type HeroKind = 'plate' | 'concrete' | 'insert-metal' | 'rod' | 'wax' | 'cup' | 'card';
+export type HeroKind = 'plate' | 'concrete' | 'insert-metal' | 'rod' | 'wax' | 'cup' | 'card' | 'wall';
 
 export interface HeroMesh {
   name: string;
@@ -54,6 +56,12 @@ export interface HeroScene {
   /** Plates in the model, which the worker reports back and the app checks. */
   plates: number;
   parts: number;
+  /**
+   * Wall pieces: the column-major matrix that turned the model into the room (y up).
+   * The meshes are already turned; a camera from the 3D view (model coordinates) is
+   * turned with it when the GLB is written.
+   */
+  room?: number[];
 }
 
 const MM = 0.001;
@@ -64,6 +72,7 @@ const LOOKS: Record<Exclude<HeroKind, 'plate' | 'concrete'>, Look> = {
   wax: { color: '#f1e8d6', metalness: 0, roughness: 0.6 },
   cup: { color: '#c9ccd1', metalness: 0.85, roughness: 0.35 },
   card: { color: '#f3eee2', metalness: 0, roughness: 0.85 },
+  wall: { color: '#ece8e1', metalness: 0, roughness: 0.95 },
 };
 
 function plain(g: THREE.BufferGeometry): THREE.BufferGeometry {
@@ -158,14 +167,30 @@ export function heroScene(model: Model, project: Project): HeroScene {
   }
   const meshes: HeroMesh[] = [];
   const box = new THREE.Box3();
+  // a wall piece is turned into the room (its base flat on the wall) before it goes to Blender
+  const frame = mountFrame(v, isMapDepth(project.images.top?.depth) && !!project.images.top?.map);
+  const room = frame.mount === 'wall' ? new THREE.Matrix4().fromArray(modelToRoomMatrix(frame)) : null;
   for (const { mesh, geos } of byLook.values()) {
     const g = mergeGeometries(geos.map(plain));
+    if (room) g.applyMatrix4(room);
     g.scale(MM, MM, MM);
     g.computeBoundingBox();
     box.union(g.boundingBox!);
     meshes.push({ ...mesh, geometry: g });
   }
   if (box.isEmpty()) box.set(new THREE.Vector3(), new THREE.Vector3());
+  if (room) {
+    for (const fl of flames) fl.p = new THREE.Vector3(...fl.p).applyMatrix4(room).toArray() as [number, number, number];
+    // the wall: the underside of the base sits on it (room z = 0); it reaches well past the
+    // piece and down towards the floor, which Blender lays at its foot
+    const size = box.getSize(new THREE.Vector3());
+    const reach = Math.max(size.x, size.y, 0.3);
+    const w = size.x + reach * 2.4;
+    const h = size.y + reach * 1.2 + 0.9;
+    const g = new THREE.BoxGeometry(w, h, 0.02).toNonIndexed();
+    g.translate((box.min.x + box.max.x) / 2, box.max.y + reach * 1.2 - h / 2, -0.0105);
+    meshes.push({ name: 'wall', kind: 'wall', look: LOOKS.wall, geometry: plain(g) });
+  }
   return {
     meshes,
     flames,
@@ -173,6 +198,7 @@ export function heroScene(model: Model, project: Project): HeroScene {
     max: box.max.toArray() as [number, number, number],
     plates: model.sliced.plates.length,
     parts: model.sliced.parts.length,
+    ...(room ? { room: modelToRoomMatrix(frame) } : {}),
   };
 }
 
@@ -225,7 +251,15 @@ export function defaultHeroCamera(scene: HeroScene): HeroCamera {
   const fov = 32;
   const dist = (size * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
   const pos = centre.clone().add(new THREE.Vector3(0.95, 0.75, 1.25).normalize().multiplyScalar(dist));
-  return { position: pos.toArray() as [number, number, number], target: centre.toArray() as [number, number, number], up: [0, 1, 0], fov, aspect: 3 / 2 };
+  const up = new THREE.Vector3(0, 1, 0);
+  // the bounds are in the room; heroGlb takes a camera in the model's coordinates
+  if (scene.room) {
+    const back = new THREE.Matrix4().fromArray(scene.room).invert();
+    pos.applyMatrix4(back);
+    centre.applyMatrix4(back);
+    up.transformDirection(back);
+  }
+  return { position: pos.toArray() as [number, number, number], target: centre.toArray() as [number, number, number], up: up.toArray() as [number, number, number], fov, aspect: 3 / 2 };
 }
 
 // ---- GLB writer ----------------------------------------------------------------
@@ -294,9 +328,18 @@ export function heroGlb(scene: HeroScene, camera?: HeroCamera): Uint8Array {
   scene.flames.forEach((f, i) => nodes.push({ name: `flame.${String(i + 1).padStart(3, '0')}`, translation: f.p.map(r6), extras: { strata: 'flame', size: r6(f.size) } }));
   const cameras: Record<string, unknown>[] = [];
   if (camera) {
-    const eye = new THREE.Vector3(...camera.position).multiplyScalar(MM);
-    const target = new THREE.Vector3(...camera.target).multiplyScalar(MM);
-    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(eye, target, new THREE.Vector3(...camera.up).normalize()));
+    const room = scene.room ? new THREE.Matrix4().fromArray(scene.room) : null;
+    const eye = new THREE.Vector3(...camera.position);
+    const target = new THREE.Vector3(...camera.target);
+    const up = new THREE.Vector3(...camera.up);
+    if (room) {
+      eye.applyMatrix4(room);
+      target.applyMatrix4(room);
+      up.transformDirection(room);
+    }
+    eye.multiplyScalar(MM);
+    target.multiplyScalar(MM);
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(eye, target, up.normalize()));
     cameras.push({ type: 'perspective', perspective: { yfov: r6((camera.fov * Math.PI) / 180), aspectRatio: r6(camera.aspect), znear: 0.001 } });
     nodes.push({ name: 'camera', camera: 0, translation: eye.toArray().map(r6), rotation: q.toArray().map(r6), extras: { strata: 'camera', target: target.toArray().map(r6) } });
   }
