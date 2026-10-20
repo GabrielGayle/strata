@@ -41,6 +41,14 @@ export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
     kind: 'fix',
+    title: 'No more overlapping metal',
+    body: 'Every pair of metal parts is now checked for steel in the same place, and any overlap is an error that stops export. Candle fins, angled spacer combs, slanted waffle crossings, the support ring and the steel base no longer overlap the plates.',
+    where: 'Plates › fit checks (red "overlap" errors)',
+    target: { tab: 'plates' },
+  },
+  {
+    date: '2026-10-20',
+    kind: 'fix',
     title: 'Candelabra Fit plates on a wall',
     body: 'On a wall piece, Fit plates now makes the plates deep enough to wrap each candle and sizes the base to their feet. It used to flatten the plates so the candles floated above them.',
     where: '3D view › sidebar › Candles › Fit plates',

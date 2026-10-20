@@ -59,6 +59,10 @@ import { MAP_WIDTH_AXIS_NOTE } from './mapStack';
 import { chokeSpans, crossPedestal, finSlots, finTabSlots, targetFins } from './candles';
 import type { HolderSpec } from './objects';
 import { shelfOutline, shelfPlane, type ShelfCut } from './shelfPlates';
+import { footprintBox } from './overlap';
+
+/** Gap left round a candle fin where it passes through a plate (mm). */
+const FIN_FIT = 0.15;
 
 export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T' | 'K' | 'B' | 'H';
 
@@ -1636,7 +1640,9 @@ export function slice(input: SliceInput): SliceResult {
         const c = crossingAt(p.plane, x.plane, baseTop(v));
         if (!c) return;
         const uP = c.ua, uX = c.ub;
-        if (uP < p.u0 || uP > p.u1 || uX < x.u0 || uX > x.u1) return;
+        // a crossing just past a plate's end still clips its corner when the plates cross at a slant
+        const near = sw / 2;
+        if (uP < p.u0 - near || uP > p.u1 + near || uX < x.u0 - near || uX > x.u1 + near) return;
         const colP = intersection(outlines[pi], rect(uP - sw / 2, -BIG, uP + sw / 2, BIG));
         const colX = intersection(outlines[xi], rect(uX - sw / 2, -BIG, uX + sw / 2, BIG));
         if (!colP.length || !colX.length) return;
@@ -1744,11 +1750,31 @@ export function slice(input: SliceInput): SliceResult {
   const fins = (input.candles ?? []).flatMap((c, i) =>
     targetFins(c, c.holder, { t, embed: e, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i).map((f) => ({
       f,
-      slots: c.holder.slotted ? finSlots(f, defs, { t, candleBottom: c.bottom, baseTop: baseTop(v), engage: c.holder.engage ?? 16, fit: 0.3 }) : [],
+      slots: c.holder.slotted ? finSlots(f, defs, { t, candleBottom: c.bottom, baseTop: baseTop(v), engage: c.holder.engage ?? 16, fit: 2 * FIN_FIT }) : [],
     })),
   );
   const finSlotsByPlate = new Map<string, Shape[]>();
   for (const { slots } of fins) for (const s of slots) finSlotsByPlate.set(s.plate, [...(finSlotsByPlate.get(s.plate) ?? []), rect(...s.plateRect)]);
+  // each fin as it is cut (its halving slots and two-piece notch out), keeping the biggest piece should a slot ever cut it through
+  const finShapes = fins.map(({ f, slots: fs }) => {
+    const holes = [...fs.map((s) => rect(...s.finRect)), ...(f.notch ? [rect(...f.notch)] : [])];
+    const cut = holes.length ? difference(f.shape, unionShapes(...holes)) : f.shape;
+    return cut.reduce((a, b) => (shapeArea([b]) > shapeArea([a]) ? b : a), cut[0] ?? f.shape[0]);
+  });
+  const finSlabs = fins.map(({ f }, j) => ({ plane: f.plane, thickness: t, shape: [finShapes[j]] }));
+  /**
+   * Room each plate leaves for the fins it meets: wherever a fin's steel would sit inside the plate,
+   * open the plate from there to the top so the fin drops in (target fins standing in the concrete
+   * pass through the plates' embedded tabs; a fin at a slant or along the plates misses its halving slot).
+   */
+  const finRoom = (def: PlateDef): Shape[] => {
+    const out: Shape[] = [];
+    for (const fin of finSlabs) {
+      const bb = footprintBox({ plane: def.plane, thickness: t }, fin);
+      if (bb) out.push(rect(bb.minX - FIN_FIT, bb.minY - FIN_FIT, bb.maxX + FIN_FIT, BIG));
+    }
+    return out;
+  };
 
   defs.forEach((def, di) => {
     let shape = outlines[di];
@@ -1912,6 +1938,7 @@ export function slice(input: SliceInput): SliceResult {
       const closed = offset(offset(unionShapes(slotsHere, ...cuts), r, 'miter'), -r, 'miter');
       cuts.push(slotsHere, intersection(closed, offset(slotsHere, v.minFeature + 0.1, 'miter')));
     }
+    if (finSlabs.length) cuts.push(...finRoom(def));
     if (cuts.length) shape = difference(shape, cuts.flat());
 
     // 7. split into physical pieces; islands inside holes would fall out
@@ -1945,6 +1972,7 @@ export function slice(input: SliceInput): SliceResult {
       below,
       isFlat,
       index: def.index,
+      keepOut: cuts.flat(),
     });
     fragmentEvents.push(...resolved.events);
     pieces = resolved.pieces;
@@ -2031,7 +2059,9 @@ export function slice(input: SliceInput): SliceResult {
     let pieces = ring.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
     const plane = supportPlane(support);
     const base = partLabel(v, 'S', 0, 1);
-    const resolved = finishPlatePieces(pieces, { v, plateKey: 'S0', plateId: base, anchored: () => true });
+    // the mortises are room for the plates' tenons: cleaning a thin web beside one must not close it up
+    const mortises = difference(ringShape(support, v, []), ring);
+    const resolved = finishPlatePieces(pieces, { v, plateKey: 'S0', plateId: base, anchored: () => true, keepOut: mortises });
     fragmentEvents.push(...resolved.events);
     pieces = resolved.pieces;
     if (pieces.length > 1) warnings.push(`Support ring falls apart into ${pieces.length} pieces: widen it or raise the slot end land.`);
@@ -2161,11 +2191,8 @@ export function slice(input: SliceInput): SliceResult {
   if (unslotted) warnings.push(`${unslotted} slotted candle fin${unslotted > 1 ? 's run' : ' runs'} along the plates, so ${unslotted > 1 ? 'they have' : 'it has'} nothing to slot into: turn the fins with Spin (45° crosses them all).`);
   const flat2 = (input.candles ?? []).filter((c, i) => c.holder.cross && !fins.some(({ f }) => f.holder === i && f.notch)).length;
   if (flat2) warnings.push(`${flat2} candlestick${flat2 > 1 ? 's sit' : ' sits'} too low for two-piece fins (the pieces need ${crossPedestal(v.minFeature)} mm under the candle to halve together), so ${flat2 > 1 ? 'they get' : 'it gets'} separate fins: raise Lift${(input.candles ?? []).some((c) => c.holder.slotted) ? ' or deepen Slot' : ''}.`);
-  fins.forEach(({ f, slots: fs }, j) => {
-    const holes = [...fs.map((s) => rect(...s.finRect)), ...(f.notch ? [rect(...f.notch)] : [])];
-    const cut = holes.length ? difference(f.shape, unionShapes(...holes)) : f.shape;
-    // keep the biggest piece should a slot ever cut a fin through
-    const ex = cut.reduce((a, b) => (shapeArea([b]) > shapeArea([a]) ? b : a), cut[0] ?? f.shape[0]);
+  fins.forEach(({ f }, j) => {
+    const ex = finShapes[j];
     const id = partLabel(v, 'K', j, fins.length);
     const lab = placeLabel(id, ex, f.labelAt, Math.min(v.labelHeight, f.labelMax));
     allParts.push({
