@@ -4,6 +4,7 @@
 // the metric depth too, it is kept on the image and turned into the grey grid
 // here, so near / far / curve / resolution can change without asking again.
 import type { Gray } from './image';
+import { basRelief, featherMatte } from './basRelief';
 import {
   fillFlatDefaults,
   flattenBackgroundToPlate,
@@ -32,6 +33,16 @@ export interface DepthSettings {
   curve: number;
   /** 0..1 bas-relief squash: flattens big shapes while keeping fine detail. */
   flatten: number;
+  /** 0..1 bas-relief: squashes big depth jumps into soft ramps (gradient-domain). Missing or 0 = off. */
+  squash?: number;
+  /** 1..3 gain on fine detail when bas-relief is on. */
+  detail?: number;
+  /** 0..0.3 incised outline depth along the edges where depth jumped, as a fraction of the relief. */
+  outline?: number;
+  /** Outline width, px at 512 px. */
+  outlineWidth?: number;
+  /** 0..10 % of the picture: the cut-out rolls down into the background over this distance. */
+  feather?: number;
   /** Use the service's subject cut-out (background left white). */
   matte: boolean;
   /** Longest side of the grid the pipeline sees, in pixels. */
@@ -342,7 +353,19 @@ function blur(src: Float32Array, w: number, h: number, r: number): Float32Array 
  * The depth map as Strata's brightness grid: near = dark (or light when
  * inverted), farther than `far`, no depth or cut out by the matte = white.
  */
+// bas-relief makes this a few hundred ms, and the UI asks for the same grid twice in a row
+let lastGray: { data: string; mask: string | undefined; key: string; gray: Gray } | null = null;
+
 export function depthToGray(d: DepthData, s: DepthSettings = d.settings): Gray {
+  if (!((s.squash ?? 0) > 0)) return depthToGrayUncached(d, s);
+  const key = `${d.w}x${d.h}:${d.minM}:${d.maxM}:${JSON.stringify(s)}`;
+  if (lastGray && lastGray.data === d.data && lastGray.mask === d.mask && lastGray.key === key) return lastGray.gray;
+  const gray = depthToGrayUncached(d, s);
+  lastGray = { data: d.data, mask: d.mask, key, gray };
+  return gray;
+}
+
+function depthToGrayUncached(d: DepthData, s: DepthSettings): Gray {
   const { metres, mask } = decodeDepthBuffers(d);
   const n = d.w * d.h;
   const near = Math.max(1e-3, Math.min(s.near, s.far - 1e-3));
@@ -384,6 +407,19 @@ export function depthToGray(d: DepthData, s: DepthSettings = d.settings): Gray {
     if (hi > 1e-6) for (let i = 0; i < out.length; i++) out[i] = Math.min(1, out[i] / hi);
     data = out;
   }
+  // bas-relief and feathered cut-out: image faces only
+  let keepK = K.data;
+  if (!isMapDepthFace(d)) {
+    const featherPx = ((s.feather ?? 0) / 100) * Math.max(w, h);
+    if (s.matte && mask && featherPx > 0.25) keepK = featherMatte(K.data, w, h, featherPx);
+    if ((s.squash ?? 0) > 0) {
+      const sub = new Float32Array(w * h);
+      for (let i = 0; i < sub.length; i++) sub[i] = data[i] * Math.min(1, keepK[i]);
+      data = basRelief(sub, w, h, { squash: s.squash ?? 0, detail: s.detail ?? 1, outline: s.outline ?? 0, outlineWidth: s.outlineWidth ?? 1.5 }, s.matte && mask ? K.data : null);
+      // the relief already settles onto the background, so the cut-out mustn't cut a wall back in
+      keepK = new Float32Array(w * h).fill(1);
+    }
+  }
   // IMAGE faces only. Map terrain keeps real metres × exaggeration and skips this.
   const flat = fillFlatDefaults(s);
   if (!isMapDepthFace(d) && isFlatEngaged(flat)) {
@@ -396,7 +432,7 @@ export function depthToGray(d: DepthData, s: DepthSettings = d.settings): Gray {
   }
   const grey = new Float32Array(w * h);
   for (let i = 0; i < grey.length; i++) {
-    const v = data[i] * Math.min(1, K.data[i]);
+    const v = data[i] * Math.min(1, keepK[i]);
     grey[i] = s.invert ? v : 1 - v;
   }
   return { w, h, data: grey };
