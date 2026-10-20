@@ -2055,7 +2055,8 @@ export function slice(input: SliceInput): SliceResult {
     const holes = fixings.map((h) => holeReach(h, steel));
     if (holes.length && tabs.some((tb) => holes.some(({ c, r }) => Math.hypot(c[0] - tb.at[0], c[1] - tb.at[1]) < r + tb.length / 2 + 2)))
       warnings.push('Steel base: a fixing hole runs into a tab slot. Move the holes (Distance from edge, Edge, Holes per row) or shrink the plates in from the edges.');
-    if (fixings.some((h) => [h.at, h.head].some((q) => q && planClearance(v, q[0], q[1]) < steel.holeDia / 2 + v.minFeature)))
+    const near = (q: [number, number], r: number) => planClearance(v, q[0], q[1]) < r + v.minFeature;
+    if (fixings.some((h) => (h.head ? near(h.head, steel.keyHead / 2) || near(h.at, steel.keySlot / 2) : near(h.at, steel.holeDia / 2))))
       warnings.push(`Steel base: a fixing hole is closer than ${v.minFeature} mm to the edge of the base. Raise Distance from edge.`);
     const web = v.sliceMode === 'parallel' ? v.pitch - t - 2 * steel.clearance : Infinity;
     if (web < v.minFeature && !steel.stagger) warnings.push(`Steel base: only ${web.toFixed(1)} mm of steel between neighbouring slots. Turn on Stagger tabs or space the plates out.`);

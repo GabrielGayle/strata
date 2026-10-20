@@ -885,7 +885,7 @@ function assemblySteps(project: Project, m: Model, view: View, names: Map<string
       const sideName = { back: 'back end', front: 'front end', left: 'left side', right: 'right side' }[sb.spec.holeSide];
       if (sb.spec.holeStyle === 'keyhole')
         steps.push(
-          `<b>Hang it.</b> The ${plural(fixings.length, 'keyhole')} point their slots at the ${sideName}, which goes at the top. Mark the screw points (the top of each slot, ${mm(sb.spec.holeInset)} in from the edges) on the wall, drive the screws in leaving the heads ${mm(Math.max(1, sb.spec.thickness + 1))} proud, then put the heads through the round ends (${mm(sb.spec.holeDia)}) and let the base slide down onto them.`,
+          `<b>Hang it.</b> The ${plural(fixings.length, 'keyhole')} point their slots at the ${sideName}, which goes at the top. Mark the screw points (the top of each slot, ${mm(sb.spec.holeInset)} in from the edges) on the wall, drive the screws in leaving the heads ${mm(Math.max(1, sb.spec.thickness + 1))} proud, then put the heads through the round ends (${mm(sb.spec.keyHead)}) and let the base slide down onto them.`,
         );
       else steps.push(`<b>Fix it down</b> through the ${plural(fixings.length, 'hole')} (${mm(sb.spec.holeDia)}, ${mm(sb.spec.holeInset)} in from the edge) to a plinth, shelf or wall.`);
     }

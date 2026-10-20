@@ -3,7 +3,7 @@
 // plates stand square on their own; you weld them from underneath where the
 // tabs come through (or twist the tabs), never reaching between plates.
 import { basePlan, bottomSpans } from './base';
-import { BIG, circlePath, difference, intersection, rect, shapeBBox, union, unionShapes, type Path, type Shape } from './geom2d';
+import { BIG, circlePath, difference, intersection, rect, shapeBBox, signedArea, union, unionShapes, type Path, type Shape } from './geom2d';
 import type { Values } from './params';
 import type { Plane } from './section';
 
@@ -27,6 +27,8 @@ export interface SteelBaseSpec {
   /** Edge of the base to a hole's middle (a keyhole's screw point). */
   holeInset: number;
   holeDia: number;
+  /** Keyholes: the round end the screw head goes through. */
+  keyHead: number;
   keySlot: number;
   keyLength: number;
 }
@@ -51,6 +53,7 @@ export function steelBaseSpec(v: Values): SteelBaseSpec | null {
     holeSide: (['back', 'front', 'left', 'right'] as const).find((x) => x === v.steelHoleSide) ?? 'back',
     holeInset: Math.max(0.5, Number(v.steelHoleInset) || 12),
     holeDia: Math.max(1, Number(v.steelHoleDia) || 6.5),
+    keyHead: Math.max(1, Number(v.steelKeyHead) || 10),
     keySlot: Math.max(0.5, Number(v.steelKeySlot) || 4.5),
     keyLength: Math.max(1, Number(v.steelKeyLength) || 10),
   };
@@ -265,7 +268,8 @@ export function steelBaseShape(v: Values, s: SteelBaseSpec, tabs: WeldTab[], thi
   });
   const holes = fixingHoles(v, s).flatMap((h) => holePaths(h, s));
   const cut = [...slots, ...holes];
-  return cut.length ? difference(outline, union(cut)) : outline;
+  // each cut on its own first: a slot wound against a hole it touches would otherwise cancel it
+  return cut.length ? difference(outline, unionShapes(...cut.map((p) => union([p])))) : outline;
 }
 
 /** One fixing hole: where the screw sits, and for a keyhole the round end it drops in through. */
@@ -308,21 +312,20 @@ export function fixingHoles(v: Values, s: SteelBaseSpec): FixingHole[] {
   return pts.map((at) => ({ at, head: [at[0] - ux * s.keyLength, at[1] - uy * s.keyLength] as [number, number] }));
 }
 
-/** Outline of one fixing hole: a circle, or a keyhole (round end, slot, rounded top). */
+/** Outline of one fixing hole: a circle, or one keyhole outline (round end, slot, rounded top). */
 export function holePaths(h: FixingHole, s: SteelBaseSpec): Path[] {
   if (!h.head) return [circlePath(h.at[0], h.at[1], s.holeDia / 2)];
   const [x0, y0] = h.head, [x1, y1] = h.at;
   const len = Math.hypot(x1 - x0, y1 - y0) || 1;
   const nx = (-(y1 - y0) / len) * (s.keySlot / 2), ny = ((x1 - x0) / len) * (s.keySlot / 2);
-  return [
-    circlePath(x0, y0, s.holeDia / 2),
-    [[x0 + nx, y0 + ny], [x1 + nx, y1 + ny], [x1 - nx, y1 - ny], [x0 - nx, y0 - ny]],
-    circlePath(x1, y1, s.keySlot / 2),
-  ];
+  const slot: Path = [[x0 + nx, y0 + ny], [x1 + nx, y1 + ny], [x1 - nx, y1 - ny], [x0 - nx, y0 - ny]];
+  // all three wound the same way, so the nonzero union fills the overlaps instead of cancelling them
+  const parts = [circlePath(x0, y0, s.keyHead / 2), signedArea(slot) < 0 ? slot.reverse() : slot, circlePath(x1, y1, s.keySlot / 2)];
+  return union(parts).map((p) => p.outer);
 }
 
 /** Middle and reach of a hole, for clearance checks. */
 export function holeReach(h: FixingHole, s: SteelBaseSpec): { c: [number, number]; r: number } {
   if (!h.head) return { c: h.at, r: s.holeDia / 2 };
-  return { c: [(h.at[0] + h.head[0]) / 2, (h.at[1] + h.head[1]) / 2], r: s.keyLength / 2 + s.holeDia / 2 };
+  return { c: [(h.at[0] + h.head[0]) / 2, (h.at[1] + h.head[1]) / 2], r: s.keyLength / 2 + s.keyHead / 2 };
 }
