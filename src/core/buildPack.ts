@@ -1150,7 +1150,7 @@ function cutListSection(m: Model, rates: PriceRates, project?: Project): string 
   out.push(`<h3>Laser-cut steel</h3><table><thead><tr><th>Metal</th><th>Thickness</th><th>Parts</th><th>Weight</th><th>Cut length</th><th>Pierces</th></tr></thead><tbody>${bom.byMaterial
     .filter((g) => g.partCount)
     .map((g) => `<tr><td class="id">${esc(METAL_NAMES[g.material] ?? g.material)}${g.thickness != null ? ' (base plate)' : ''}</td><td>${mm(g.thickness ?? v.thickness)}</td><td>${g.partCount}</td><td>${g.plateMass.toFixed(1)} kg</td><td>${g.cutLength.toFixed(1)} m</td><td>${g.pierces}</td></tr>`)
-    .join('')}</tbody></table><p class="note">${plural(bom.sheets, 'sheet')} of ${n1(v.sheetW)} × ${n1(v.sheetH)} mm, ${Math.round(bom.utilisation * 100)}% used. Part files: laser/parts and laser/sheets in the ZIP; the full cut list is cutlist.csv.</p>`);
+    .join('')}</tbody></table><p class="note">${plural(bom.sheets, 'sheet')} of ${n1(v.sheetW)} × ${n1(v.sheetH)} mm, ${Math.round(bom.utilisation * 100)}% used. Part files: laser/parts and laser/sheets in the ZIP, one folder per metal and thickness; the full cut list is cutlist.csv.</p>`);
   const poles = m.sliced.stackRods?.rods ?? [];
   if (poles.length) {
     out.push(

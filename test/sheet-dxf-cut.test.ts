@@ -119,7 +119,9 @@ describe('sheet DXF cut-only + LWPOLYLINE/CIRCLE', () => {
     const m = createPipeline()(newProject(), assets);
     const files = unzipSync(buildZip(m, newProject()));
     const names = Object.keys(files);
-    expect(names).toContain('laser/sheets/sheet-01-cut.dxf');
+    const dir = `laser/sheets/${m.v.plateMaterial}-${m.v.thickness}mm`;
+    expect(names).toContain(`${dir}/sheet-01-cut.dxf`);
+    expect(names.filter((n) => n.startsWith('laser/parts/')).every((n) => n.startsWith(`laser/parts/${m.v.plateMaterial}-${m.v.thickness}mm/`))).toBe(true);
     expect(names).toContain('manifest.json');
     const manifest = JSON.parse(strFromU8(files['manifest.json']));
     expect(manifest.plateCount).toBe(m.bom.plateCount);
@@ -133,7 +135,7 @@ describe('sheet DXF cut-only + LWPOLYLINE/CIRCLE', () => {
     expect(readme).toMatch(/no 1250×2500 sheet border/i);
     const etch = sheetEtchDxf(m, 0);
     if (etch) {
-      expect(names).toContain('laser/sheets/sheet-01-etch.dxf');
+      expect(names).toContain(`${dir}/sheet-01-etch.dxf`);
       const eSum = dxfEntitySummary(etch);
       expect(eSum.layers.CUT).toBeUndefined();
       expect(eSum.layers.ETCH || eSum.layers.ENGRAVE).toBeTruthy();

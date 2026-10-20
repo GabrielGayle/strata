@@ -79,14 +79,14 @@ describe('mixed metals through the pipeline', () => {
     const p = mixed(small);
     const m = createPipeline()(p, assets);
     const files = Object.keys(unzipSync(buildZip(m, p)));
-    expect(files.some((f) => f.startsWith('laser/parts/aluminium/'))).toBe(true);
-    expect(files.some((f) => f.startsWith('laser/parts/steel/'))).toBe(true);
-    expect(files).toContain('laser/sheets/aluminium/sheet-01-cut.dxf');
-    expect(files).toContain('laser/sheets/steel/sheet-01-cut.dxf');
-    // one metal keeps the old flat layout
+    expect(files.some((f) => f.startsWith('laser/parts/aluminium-3mm/'))).toBe(true);
+    expect(files.some((f) => f.startsWith('laser/parts/steel-3mm/'))).toBe(true);
+    expect(files).toContain('laser/sheets/aluminium-3mm/sheet-01-cut.dxf');
+    expect(files).toContain('laser/sheets/steel-3mm/sheet-01-cut.dxf');
+    // one metal still gets its labelled folder
     const plainP = slimProject();
     const plain = createPipeline()(plainP, assets);
-    expect(Object.keys(unzipSync(buildZip(plain, plainP)))).toContain('laser/sheets/sheet-01-cut.dxf');
+    expect(Object.keys(unzipSync(buildZip(plain, plainP)))).toContain(`laser/sheets/steel-${plain.v.thickness}mm/sheet-01-cut.dxf`);
   });
 
   it('prices each metal on its own rates with one order minimum', () => {

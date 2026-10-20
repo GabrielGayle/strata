@@ -48,6 +48,22 @@ export const CHANGELOG: ChangeEntry[] = [
   },
   {
     date: '2026-10-20',
+    kind: 'fix',
+    title: 'Waffle plates stay whole round candles',
+    body: 'When the plates of a waffle step down to meet candles (or shelf cards), the halving slots are now cut at the stepped-down height. Before, the slots were cut for the full height, so the cross plates fell apart into strips at every crossing and the long plates lost their slots.',
+    where: '3D view › Move plates (each plate is one piece again)',
+    target: side('move'),
+  },
+  {
+    date: '2026-10-20',
+    kind: 'new',
+    title: 'DXF folders say what to cut them from',
+    body: 'In the fabrication ZIP every laser folder is now named for its metal and sheet thickness, like laser/parts/steel-3mm and laser/sheets/steel-3mm, so each folder is one job for the laser cutter. A thicker steel base plate gets its own folder.',
+    where: 'Toolbar › Export ZIP › laser/parts and laser/sheets',
+    target: { path: ['export-zip'] },
+  },
+  {
+    date: '2026-10-20',
     kind: 'new',
     title: 'Candles centred in the cells',
     body: 'Candelabra › Snap › Centre in the cells puts each candle in the middle of its own cell: centred between the plates either side, and in the middle of the shelf under it or between waffle cross plates. Works on wall pieces too.',
