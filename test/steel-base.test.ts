@@ -154,7 +154,7 @@ describe('steel base', () => {
   });
 
   it('cuts keyholes with the slot pointing at the top edge', () => {
-    const { p, m } = run({ ...steel, steelHoles: 'edge', steelHoleCount: '2', steelHoleSide: 'back', steelHoleStyle: 'keyhole', steelHoleDia: '9', steelKeySlot: '4.5', steelKeyLength: '10' });
+    const { p, m } = run({ ...steel, steelHoles: 'edge', steelHoleCount: '2', steelHoleSide: 'back', steelHoleStyle: 'keyhole', steelKeyHead: '9', steelKeySlot: '4.5', steelKeyLength: '10' });
     const sb = m.sliced.steelBase!;
     const holes = fixingHoles(m.v, sb.spec);
     expect(holes).toHaveLength(2);
@@ -168,6 +168,15 @@ describe('steel base', () => {
     const xs = key.map((q) => q[0]);
     // round end Ø9 plus 10 mm of slot plus the slot's rounded top
     expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(4.5 + 10 + 2.25, 0);
+    // one clean opening: the head, the slot and the rounded top are all cut, overlaps included
+    expect(base.shape[0].holes.filter((ring) => ring.some(([x]) => x > 380))).toHaveLength(2);
+    for (const h of holes)
+      for (const f of [0, 0.25, 0.5, 0.75, 1]) {
+        const q: [number, number] = [h.head![0] + (h.at[0] - h.head![0]) * f, h.head![1]];
+        expect(pointInShape(q, base.shape)).toBe(false);
+      }
+    expect(pointInShape([holes[0].head![0] - 4, holes[0].head![1]], base.shape)).toBe(false);
+    expect(pointInShape([holes[0].at[0], holes[0].at[1] + 3], base.shape)).toBe(true);
     expect(m.sliced.warnings).toEqual([]);
     expect(buildPackHtmlChecked(p, m)).toContain('<b>Hang it.</b>');
   });
