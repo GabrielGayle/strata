@@ -62,5 +62,13 @@ test('candles stand upright on a wall piece', async ({ page }) => {
   await page.locator('.overlay.tl').getByRole('button', { name: 'Side', exact: true }).click();
   await page.waitForTimeout(2500);
   if (shot) await canvas.screenshot({ path: `${shot}/8-candles-wall-side.png` });
+  // plates hanging down the wall instead of across it
+  await page.getByLabel('Plates run').selectOption('down');
+  await page.locator('.overlay.tl').getByRole('button', { name: 'Front', exact: true }).click();
+  await page.waitForTimeout(4000);
+  if (shot) await canvas.screenshot({ path: `${shot}/9-plates-down-front.png` });
+  await page.locator('.overlay.tl').getByRole('button', { name: 'Side', exact: true }).click();
+  await page.waitForTimeout(2500);
+  if (shot) await canvas.screenshot({ path: `${shot}/10-plates-down-side.png` });
   expect(errors).toEqual([]);
 });

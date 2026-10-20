@@ -107,7 +107,7 @@ export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; sn
   const pointViewN = useStore((s) => s.ui.pointView?.n ?? 0);
   // a "follow" snap (preset load) frames again once the new model arrives a frame later
   const pending = useRef<{ n: number; model: Model } | null>(null);
-  const orbitUp = useMemo(() => new THREE.Vector3(...mountFrame(model.v, mapNorthUp).up), [model.v.mount, model.v.wallTop, model.v.sliceAxis, model.v.sliceMode, mapNorthUp]); // eslint-disable-line react-hooks/exhaustive-deps
+  const orbitUp = useMemo(() => new THREE.Vector3(...mountFrame(model.v, mapNorthUp).up), [model.v.mount, model.v.wallTop, model.v.wallPlates, model.v.sliceAxis, model.v.sliceMode, mapNorthUp]); // eslint-disable-line react-hooks/exhaustive-deps
   useOrbitUp(controls, orbitUp);
   const frame = (m: Model) => {
     const { center, size: s } = modelBounds(m);

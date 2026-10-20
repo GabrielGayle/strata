@@ -43,6 +43,26 @@ describe('mount frame', () => {
     close(mountFrame(values({ mount: 'wall' })).right, [0, 0, 1]);
   });
 
+  it('hangs the plates down the wall with the top picture turned a quarter so it still reads upright', () => {
+    for (const sliceAxis of ['length', 'width']) {
+      const across = mountFrame(values({ mount: 'wall', sliceAxis }));
+      const v = values({ mount: 'wall', sliceAxis, wallPlates: 'down' });
+      const f = mountFrame(v);
+      // up is now across the plates (the picture's old right), so each plate hangs straight down
+      close(f.up, across.right);
+      close(cross(f.up, f.toward), f.right);
+      // the picture takes a quarter turn: topUV puts its top on the old right, its right at the front end
+      expect(Number(v.topRotate)).toBe(90);
+      close(f.right, across.up.map((x) => -x));
+    }
+    expect(Number(values({ mount: 'wall', wallPlates: 'down', topRotate: '270' }).topRotate)).toBe(0);
+    // only with the top picture at the top, and never on a table
+    expect(Number(values({ wallPlates: 'down' }).topRotate)).toBe(0);
+    expect(Number(values({ mount: 'wall', wallTop: 'left', wallPlates: 'down' }).topRotate)).toBe(0);
+    // keyholes follow: the old right side is now the top edge
+    expect(wallTopEdge(values({ mount: 'wall', wallPlates: 'down' }))).toBe('right');
+  });
+
   it('names its top edge the way Steel base › Edge does', () => {
     for (const e of ['back', 'front', 'left', 'right']) expect(wallTopEdge(values({ mount: 'wall', wallTop: e }))).toBe(e);
     expect(wallTopEdge(values({ mount: 'wall' }))).toBe('back');
@@ -93,6 +113,8 @@ describe('wall checks', () => {
   it('explains wall candles, flags shadow pictures and heavy pieces', () => {
     expect(texts(values({ ...steel, steelHoleSide: 'back' }), { candles: true }).join()).toMatch(/each candle stands upright on the plate below it/);
     expect(texts(values({ ...steel, steelHoleSide: 'back', shadowOn: 'true' })).join()).toMatch(/Shadow pictures/);
+    expect(texts(values({ ...steel, wallPlates: 'down', steelHoleSide: 'right' }), { map: true }).join()).toMatch(/Set Plates run to Across/);
+    expect(texts(values({ ...steel, wallPlates: 'down', steelHoleSide: 'right' })).join()).toBe('');
     expect(mountWeightIssue(values({ mount: 'wall' }), 40)?.message).toMatch(/40 kg/);
     expect(mountWeightIssue(values({ mount: 'wall' }), 4)).toBeNull();
   });
@@ -158,6 +180,32 @@ describe('building on a wall', () => {
     // no fins, wells or pads on a wall
     expect(m.sliced.parts.some((p) => p.family === 'K')).toBe(false);
     expect(m.objects.some((b) => /^(well|pad)\d/.test(b.object.id))).toBe(false);
+  });
+
+  it('with the plates hanging down the wall, candles stand along the plates and the plate count holds', async () => {
+    const wall = deserialize(readFileSync(FIXTURE, 'utf8'));
+    wall.params = { ...wall.params, mount: 'wall' };
+    const table = deserialize(readFileSync(FIXTURE, 'utf8'));
+    // one pipeline, switched from across to down as in the app, so nothing stale is kept
+    const run = createPipeline();
+    run(wall, await loadAssets(wall));
+    wall.params = { ...wall.params, wallPlates: 'down' };
+    const m = run(wall, await loadAssets(wall));
+    const mt = createPipeline()(table, await loadAssets(table));
+    expect(m.sliced.plates.length).toBe(mt.sliced.plates.length);
+    const f = mountFrame(m.v);
+    // the plates hang: their faces are upright in the room
+    for (const p of m.sliced.parts.filter((q) => q.family === 'P')) expect(Math.abs(p.plane.normal[0] * f.up[0] + p.plane.normal[1] * f.up[1] + p.plane.normal[2] * f.up[2])).toBeLessThan(1e-6);
+    const T = await import('three');
+    // the plates' top ends, along up
+    const top = Math.max(...m.sliced.parts.filter((q) => q.family === 'P').flatMap((q) => q.shape.flatMap((e) => e.outer.map(([a, b]) => [0, 1, 2].reduce((t, i) => t + (q.plane.origin[i] + q.plane.u[i] * a + q.plane.v[i] * b) * f.up[i], 0)))));
+    for (const c of m.objects.filter((b) => b.object.id.startsWith('candle')).map((b) => b.object)) {
+      const axis = new T.Vector3(0, 1, 0).applyMatrix4(objectMatrix(c)).sub(new T.Vector3().applyMatrix4(objectMatrix(c)));
+      close(axis.toArray(), f.up);
+      // held in the seat it notches into the hanging plates, not pushed up off the top
+      const bottom = c.x * f.up[0] + c.y * f.up[1] + c.z * f.up[2] - c.h / 2;
+      expect(bottom).toBeLessThan(top - 1);
+    }
   });
 
   it('keeps placed objects where they are on the piece, stood upright in the room', async () => {

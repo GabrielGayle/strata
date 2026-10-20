@@ -1,7 +1,7 @@
 // Building on a wall: candles and postcards on a wall piece are laid out in the
 // room and stand upright for real. Each comes to rest on the plate below it
-// (a plate face when the plates run across the wall, a plate's top edge when they
-// hang down it), and a candle's flame keeps a clear chimney through any plate
+// (a plate face when the plates run across the wall; when they hang down it, the
+// seat it notches into them, or a plate's top edge), and a candle's flame keeps a clear chimney through any plate
 // above it.
 import type { CutObject } from './objects';
 import type { Shape, Vec2 } from './geom2d';
@@ -24,7 +24,8 @@ const STANDS_ON = new Set(['P', 'X', 'R']);
 
 /**
  * Heights (along `up`) of every plate surface a point could stand on: the top face
- * of a plate lying level under it, or the top edge of an upright plate it is over.
+ * of a plate lying level under it, the top edge of an upright plate it is over, or
+ * its own height where an upright plate runs through it (it notches a seat there).
  */
 function surfacesUnder(parts: RestPart[], p: V3, up: V3, r: number): number[] {
   const out: number[] = [];
@@ -42,6 +43,11 @@ function surfacesUnder(parts: RestPart[], p: V3, up: V3, r: number): number[] {
     if (Math.abs(nu) > 0.2) continue; // slanted plates hold nothing up
     // an upright plate: only if the point is within reach of it
     if (Math.abs(dot(rel, normal)) >= r + part.thickness / 2) continue;
+    // plate right under it: it cuts its own seat into the plate, whose floor holds it where it is
+    if (pointInShape(at, part.shape)) {
+      out.push(dot(p, up));
+      continue;
+    }
     // up and across within the plate's own (u, v) coordinates
     const a: Vec2 = [dot(up, u), dot(up, v)];
     const al = Math.hypot(a[0], a[1]) || 1;

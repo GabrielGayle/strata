@@ -391,7 +391,7 @@ function PhoneRig({ model, snap, mapNorthUp }: { model: Model; snap: { dir: Snap
   const modelRef = useRef(model);
   modelRef.current = model;
   const aspect = size.width / Math.max(1, size.height);
-  const orbitUp = useMemo(() => new THREE.Vector3(...mountFrame(model.v, mapNorthUp).up), [model.v.mount, model.v.wallTop, model.v.sliceAxis, model.v.sliceMode, mapNorthUp]); // eslint-disable-line react-hooks/exhaustive-deps
+  const orbitUp = useMemo(() => new THREE.Vector3(...mountFrame(model.v, mapNorthUp).up), [model.v.mount, model.v.wallTop, model.v.wallPlates, model.v.sliceAxis, model.v.sliceMode, mapNorthUp]); // eslint-disable-line react-hooks/exhaustive-deps
   useOrbitUp(controls, orbitUp);
   useEffect(() => {
     if (!controls) return;
