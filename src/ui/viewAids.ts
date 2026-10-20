@@ -16,9 +16,23 @@ export interface ViewAids {
   tint: PlateTint;
   /** Pull parallel plates apart along their normal (1 = as built). */
   spread: number;
+  /** Raking light: one low light skimming the surface, so a subtle relief shows its form. */
+  rake: boolean;
+  /** Where the raking light comes from, degrees round the piece (0 = from the front). */
+  rakeTurn: number;
+  /** How high the raking light is above the surface, degrees. */
+  rakeHeight: number;
 }
 
-export const DEFAULT_VIEW_AIDS: ViewAids = { outlines: false, tint: 'off', spread: 1 };
+export const DEFAULT_VIEW_AIDS: ViewAids = { outlines: false, tint: 'off', spread: 1, rake: false, rakeTurn: 270, rakeHeight: 15 };
+
+export const RAKE_HEIGHTS = [6, 10, 15, 25, 40];
+
+/** Unit vector toward the raking light (world: +Y up, front of the piece at +Z). */
+export function rakeDirection(turnDeg: number, heightDeg: number): [number, number, number] {
+  const t = (turnDeg * Math.PI) / 180, e = (heightDeg * Math.PI) / 180;
+  return [Math.sin(t) * Math.cos(e), Math.sin(e), Math.cos(t) * Math.cos(e)];
+}
 
 export const TINT_LABELS: Record<PlateTint, string> = {
   off: 'Metal',
@@ -40,6 +54,9 @@ export function loadViewAids(): ViewAids {
       outlines: typeof p.outlines === 'boolean' ? p.outlines : DEFAULT_VIEW_AIDS.outlines,
       tint: p.tint && p.tint in TINT_LABELS ? p.tint : DEFAULT_VIEW_AIDS.tint,
       spread: typeof p.spread === 'number' && SPREAD_STEPS.includes(p.spread) ? p.spread : DEFAULT_VIEW_AIDS.spread,
+      rake: typeof p.rake === 'boolean' ? p.rake : DEFAULT_VIEW_AIDS.rake,
+      rakeTurn: typeof p.rakeTurn === 'number' && Number.isFinite(p.rakeTurn) ? ((p.rakeTurn % 360) + 360) % 360 : DEFAULT_VIEW_AIDS.rakeTurn,
+      rakeHeight: typeof p.rakeHeight === 'number' && RAKE_HEIGHTS.includes(p.rakeHeight) ? p.rakeHeight : DEFAULT_VIEW_AIDS.rakeHeight,
     };
   } catch {
     return { ...DEFAULT_VIEW_AIDS };
