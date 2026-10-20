@@ -158,3 +158,12 @@ describe('slotted fins beside a candle socket', () => {
     expect(runChecks(m.v, m.sliced).filter((i) => i.type === 'collision')).toEqual([]);
   });
 });
+
+describe('shelves on a wall piece', () => {
+  it('warn that they stand out from the wall instead of level', () => {
+    const p = plain({ shelves: [shelf()] });
+    const m = createPipeline()({ ...p, params: { ...p.params, mount: 'wall' } }, assets);
+    expect((m.fieldIssues ?? []).some((i) => /Shelves are level on a table piece/.test(i.message))).toBe(true);
+    expect((build({ shelves: [shelf()] }).fieldIssues ?? []).some((i) => /Shelves/.test(i.message))).toBe(false);
+  });
+});
