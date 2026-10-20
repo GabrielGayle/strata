@@ -16,7 +16,8 @@ import { cloudSyncLabel, getCloudSync, subscribeCloudSync } from '../../state/cl
 import { readOwnerToken, writeOwnerToken } from '../../state/ownerToken';
 import { FullModelContext, ModelContext, fmt, fmtInt } from '../model';
 import Scene, { cssVar, modelBounds } from '../Scene';
-import { snapDirection } from '../Viewport';
+import { snapDirection, useOrbitUp } from '../Viewport';
+import { modelToRoomMatrix, mountFrame } from '../../core/mount';
 import { clipPlanesForBounds } from '../viewportClip';
 import { DEFAULT_VIEWPORT_LAYERS } from '../viewportLayers';
 import { VIEWPORT_CAM_POS, VIEWPORT_DPR, VIEWPORT_GL, VIEWPORT_RESIZE, VIEWPORT_STYLE } from '../viewportKeepAlive';
@@ -390,6 +391,8 @@ function PhoneRig({ model, snap, mapNorthUp }: { model: Model; snap: { dir: Snap
   const modelRef = useRef(model);
   modelRef.current = model;
   const aspect = size.width / Math.max(1, size.height);
+  const orbitUp = useMemo(() => new THREE.Vector3(...mountFrame(model.v, mapNorthUp).up), [model.v.mount, model.v.wallTop, model.v.sliceAxis, model.v.sliceMode, mapNorthUp]); // eslint-disable-line react-hooks/exhaustive-deps
+  useOrbitUp(controls, orbitUp);
   useEffect(() => {
     if (!controls) return;
     const m = modelRef.current;
@@ -402,7 +405,7 @@ function PhoneRig({ model, snap, mapNorthUp }: { model: Model; snap: { dir: Snap
     camera.position.copy(center).addScaledVector(dir, dist);
     controls.target.copy(center);
     controls.update();
-  }, [snap.n, snap.dir, controls, camera, aspect, mapNorthUp]);
+  }, [snap.n, snap.dir, controls, camera, aspect, mapNorthUp, orbitUp]);
   return null;
 }
 
@@ -421,10 +424,12 @@ function ArButton({ model, root, ready, name }: { model: Model; root: React.RefO
     const t = setTimeout(async () => {
       try {
         if (!root.current) throw new Error('The 3D view is not ready');
-        const scene = buildArScene(root.current);
+        const f = mountFrame(model.v, isMapDepth(useStore.getState().project.images.top?.depth) && !!useStore.getState().project.images.top?.map);
+        const wall = f.mount === 'wall';
+        const scene = buildArScene(root.current, 1, wall ? modelToRoomMatrix(f) : undefined);
         if (!scene.children.length) throw new Error('Nothing solid to place');
         const size = arSizeMm(scene);
-        const bytes = await exportUsdz(scene);
+        const bytes = await exportUsdz(scene, wall);
         if (!alive) return;
         url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'model/vnd.usdz+zip' }));
         setAr({ phase: 'ready', url, bytes: bytes.byteLength, size });

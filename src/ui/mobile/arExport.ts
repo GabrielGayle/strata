@@ -49,8 +49,10 @@ function usableGeometry(g: THREE.BufferGeometry): THREE.BufferGeometry | null {
 /**
  * A clean copy of `root`'s solid meshes, in metres, centred over the origin with
  * its lowest point on the floor. Empty when there is nothing solid to show.
+ * `room` (a wall piece's model-to-room matrix, column-major) stands it up the way it
+ * hangs, centred with its back on the origin, for Quick Look to put on a wall.
  */
-export function buildArScene(root: THREE.Object3D, mmPerUnit = 1): THREE.Scene {
+export function buildArScene(root: THREE.Object3D, mmPerUnit = 1, room?: number[]): THREE.Scene {
   root.updateWorldMatrix(true, true);
   const parts = new THREE.Group();
   const geoCache = new Map<THREE.BufferGeometry, THREE.BufferGeometry | null>();
@@ -73,7 +75,7 @@ export function buildArScene(root: THREE.Object3D, mmPerUnit = 1): THREE.Scene {
   const tmp = new THREE.Matrix4();
   root.traverse((o) => {
     const mesh = o as THREE.Mesh;
-    if (!mesh.isMesh || !visible(mesh)) return;
+    if (!mesh.isMesh || !visible(mesh) || o.userData.backdrop) return;
     if ((o as THREE.Points).isPoints || (o as THREE.Line).isLine || (o as unknown as THREE.Sprite).isSprite) return;
     const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
     if (!material) return;
@@ -96,13 +98,18 @@ export function buildArScene(root: THREE.Object3D, mmPerUnit = 1): THREE.Scene {
   });
   const scene = new THREE.Scene();
   if (!parts.children.length) return scene;
-  const box = new THREE.Box3().setFromObject(parts);
-  const centre = box.getCenter(new THREE.Vector3());
   const k = mmPerUnit / 1000;
   const holder = new THREE.Group();
   holder.scale.setScalar(k);
-  parts.position.set(-centre.x, -box.min.y, -centre.z);
-  holder.add(parts);
+  // a wall piece is turned to hang (y up, its back on the wall, facing +z)
+  const placed = new THREE.Group();
+  placed.add(parts);
+  if (room) placed.applyMatrix4(new THREE.Matrix4().fromArray(room));
+  const box = new THREE.Box3().setFromObject(placed);
+  const centre = box.getCenter(new THREE.Vector3());
+  if (room) placed.position.sub(new THREE.Vector3(centre.x, centre.y, box.min.z));
+  else placed.position.set(-centre.x, -box.min.y, -centre.z);
+  holder.add(placed);
   scene.add(holder);
   scene.updateMatrixWorld(true);
   return scene;
@@ -115,13 +122,13 @@ export function arSizeMm(scene: THREE.Scene): { x: number; y: number; z: number 
   return { x: s.x, y: s.y, z: s.z };
 }
 
-/** USDZ bytes for Quick Look: placed on a floor or table, at true size. */
-export async function exportUsdz(scene: THREE.Scene): Promise<Uint8Array> {
+/** USDZ bytes for Quick Look: placed on a floor or table (or hung on a wall), at true size. */
+export async function exportUsdz(scene: THREE.Scene, wall = false): Promise<Uint8Array> {
   const { USDZExporter } = await import('three/examples/jsm/exporters/USDZExporter.js');
   const exporter = new USDZExporter();
   const out = await exporter.parseAsync(scene, {
     quickLookCompatible: true,
-    ar: { anchoring: { type: 'plane' }, planeAnchoring: { alignment: 'horizontal' } },
+    ar: { anchoring: { type: 'plane' }, planeAnchoring: { alignment: wall ? 'vertical' : 'horizontal' } },
   });
   return out instanceof Uint8Array ? out : new Uint8Array(out as ArrayBuffer);
 }

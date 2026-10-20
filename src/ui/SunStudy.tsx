@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { Html } from '@react-three/drei';
 import type { Model } from '../core/pipeline';
-import { bearingToWorld, clock, siteOf, sunPosition, sunTimes, sunVector, type Site } from '../core/sun';
+import { clock, siteOf, sunPosition, sunTimes, type Site } from '../core/sun';
+import { bearingDir, sunBehindWall, sunDir, type MountFrame } from '../core/mount';
+import { useMountFrame } from './useMount';
 import { shadowGeom, wallPoint, type ShadowGeom } from '../core/shadow';
 import { useStore } from '../state/store';
 import { modelBounds } from './Scene';
@@ -13,13 +15,12 @@ const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 export const compassName = (bearing: number) => COMPASS[Math.round((((bearing % 360) + 360) % 360) / 45) % 8];
 
 /** Points of the sun's path for a date, every few minutes while it is up. */
-function pathPoints(model: Model, site: Site, center: THREE.Vector3, r: number): THREE.Vector3[] {
+function pathPoints(model: Model, f: MountFrame, site: Site, center: THREE.Vector3, r: number): THREE.Vector3[] {
   const pts: THREE.Vector3[] = [];
   for (let m = 0; m <= 24 * 60; m += 5) {
     const p = sunPosition(site, m / 60);
     if (p.elevation < 0) continue;
-    const [x, y, z] = sunVector(model.v, p);
-    pts.push(new THREE.Vector3(center.x + x * r, y * r, center.z + z * r));
+    pts.push(center.clone().addScaledVector(new THREE.Vector3(...sunDir(model.v, p.azimuth, p.elevation, f)), r));
   }
   return pts;
 }
@@ -267,19 +268,25 @@ export function Candle3D({ model }: { model: Model }) {
 export function SunStudy3D({ model }: { model: Model }) {
   const v = model.v;
   const time = useStore((s) => s.ui.sunTime);
+  // the sun is in the room: a wall piece is lit from above and in front, never through its wall
+  const f = useMountFrame(v);
+  const wall = f.mount === 'wall';
   const site = siteOf(v);
   const pos = sunPosition(site, time);
-  const dir = new THREE.Vector3(...sunVector(v, pos));
+  const dir = new THREE.Vector3(...sunDir(v, pos.azimuth, pos.elevation, f));
+  const behind = sunBehindWall(v, dir.toArray(), f);
   const { center, size } = modelBounds(model);
   const r = Math.max(size * 1.1, 300);
+  // the middle of the floor under a table piece, or of the wall behind a wall piece
   const ground = new THREE.Vector3(center.x, 0, center.z);
-  const siteKey = `${site.lat}|${site.lon}|${site.utc}|${site.month}|${site.day}|${v.sunFacing}|${v.sliceAxis}|${v.sliceMode}`;
+  const up = new THREE.Vector3(...f.up);
+  const siteKey = `${site.lat}|${site.lon}|${site.utc}|${site.month}|${site.day}|${v.sunFacing}|${v.sliceAxis}|${v.sliceMode}|${f.up.join(',')}|${f.facing.join(',')}`;
   const paths = useMemo(() => {
     if (!v.sunPath) return null;
     return {
-      today: pathPoints(model, site, ground, r),
-      summer: pathPoints(model, { ...site, month: 6, day: 21 }, ground, r),
-      winter: pathPoints(model, { ...site, month: 12, day: 21 }, ground, r),
+      today: pathPoints(model, f, site, ground, r),
+      summer: pathPoints(model, f, { ...site, month: 6, day: 21 }, ground, r),
+      winter: pathPoints(model, f, { ...site, month: 12, day: 21 }, ground, r),
     };
   }, [siteKey, v.sunPath, r, ground.x, ground.z]); // eslint-disable-line react-hooks/exhaustive-deps
   const hours = useMemo(() => {
@@ -288,36 +295,39 @@ export function SunStudy3D({ model }: { model: Model }) {
     for (let h = 0; h < 24; h++) {
       const sp = sunPosition(site, h);
       if (sp.elevation < 1) continue;
-      const [x, y, z] = sunVector(v, sp);
-      out.push({ h, p: new THREE.Vector3(ground.x + x * r, y * r, ground.z + z * r) });
+      out.push({ h, p: ground.clone().addScaledVector(new THREE.Vector3(...sunDir(v, sp.azimuth, sp.elevation, f)), r) });
     }
     return out;
   }, [siteKey, v.sunPath, r, ground.x, ground.z]); // eslint-disable-line react-hooks/exhaustive-deps
   const ring = useMemo(() => {
     const pts: THREE.Vector3[] = [];
+    const a0 = new THREE.Vector3(...f.right);
+    const b0 = new THREE.Vector3(...f.toward);
     for (let i = 0; i <= 96; i++) {
       const a = (i / 96) * Math.PI * 2;
-      pts.push(new THREE.Vector3(ground.x + Math.cos(a) * r, 0.5, ground.z + Math.sin(a) * r));
+      pts.push(ground.clone().addScaledVector(a0, Math.cos(a) * r).addScaledVector(b0, Math.sin(a) * r).addScaledVector(up, 0.5));
     }
     return pts;
-  }, [r, ground.x, ground.z]);
-  const up = pos.elevation > 0;
+  }, [r, ground.x, ground.z, siteKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lit = pos.elevation > 0 && !behind;
   return (
     <>
-      <SunLight model={model} dir={dir} elevation={pos.elevation} />
-      {/* catches the shadows on the ground around the base */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[ground.x, 0.3, ground.z]} receiveShadow>
-        <planeGeometry args={[r * 8, r * 8]} />
-        <shadowMaterial transparent opacity={0.32} depthWrite={false} />
-      </mesh>
-      {v.shadowOn && v.sliceMode === 'parallel' && <ShadowScreen model={model} />}
+      <SunLight model={model} dir={dir} elevation={behind ? -5 : pos.elevation} />
+      {/* catches the shadows on the ground around the base (a wall piece's wall catches its own) */}
+      {!wall && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[ground.x, 0.3, ground.z]} receiveShadow>
+          <planeGeometry args={[r * 8, r * 8]} />
+          <shadowMaterial transparent opacity={0.32} depthWrite={false} />
+        </mesh>
+      )}
+      {!wall && v.shadowOn && v.sliceMode === 'parallel' && <ShadowScreen model={model} />}
       {paths && (
         <>
           <PathLine points={ring} color="#8a8478" opacity={0.6} />
           {['N', 'E', 'S', 'W'].map((n, i) => {
-            const [x, z] = bearingToWorld(v, i * 90);
+            const p = ground.clone().addScaledVector(new THREE.Vector3(...bearingDir(v, i * 90, f)), r * 1.06).addScaledVector(up, 1);
             return (
-              <Html key={n} position={[ground.x + x * r * 1.06, 1, ground.z + z * r * 1.06]} center zIndexRange={[2, 0]}>
+              <Html key={n} position={p} center zIndexRange={[2, 0]}>
                 <span className={`sun-compass ${n === 'N' ? 'north' : ''}`}>{n}</span>
               </Html>
             );
@@ -331,15 +341,15 @@ export function SunStudy3D({ model }: { model: Model }) {
                 <sphereGeometry args={[r * 0.008, 10, 8]} />
                 <meshBasicMaterial color="#e0701c" />
               </mesh>
-              <Html center position={[0, r * 0.035, 0]} zIndexRange={[2, 0]}>
+              <Html center position={up.clone().multiplyScalar(r * 0.035)} zIndexRange={[2, 0]}>
                 <span className="sun-hour">{clock(h).slice(0, 2)}</span>
               </Html>
             </group>
           ))}
         </>
       )}
-      {up && (
-        <mesh position={[ground.x + dir.x * r, dir.y * r, ground.z + dir.z * r]}>
+      {lit && (
+        <mesh position={ground.clone().addScaledVector(dir, r)}>
           <sphereGeometry args={[r * 0.03, 20, 14]} />
           <meshBasicMaterial color="#ffc04a" />
         </mesh>
@@ -357,6 +367,8 @@ export function SunBar({ model }: { model: Model }) {
   const site = siteOf(v);
   const times = sunTimes(site);
   const pos = sunPosition(site, time);
+  const f = useMountFrame(v);
+  const behind = pos.elevation > 0 && sunBehindWall(v, sunDir(v, pos.azimuth, pos.elevation, f), f);
   const lo = times.rise ?? 0;
   const hi = times.set ?? 24;
   const raf = useRef(0);
@@ -395,7 +407,7 @@ export function SunBar({ model }: { model: Model }) {
       </div>
       <div className="sb-info">
         {site.day} {month} ·{' '}
-        {pos.elevation > 0 ? `sun ${pos.elevation.toFixed(0)}° up, from the ${compassName(pos.azimuth)} (${pos.azimuth.toFixed(0)}°)` : 'sun below the horizon'}
+        {pos.elevation > 0 ? `sun ${pos.elevation.toFixed(0)}° up, from the ${compassName(pos.azimuth)} (${pos.azimuth.toFixed(0)}°)${behind ? ', behind the wall' : ''}` : 'sun below the horizon'}
         {' · '}
         {times.rise !== null ? `rises ${clock(times.rise)}, sets ${clock(times.set!)}` : pos.elevation > 0 ? 'up all day' : 'down all day'}
       </div>

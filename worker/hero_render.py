@@ -271,7 +271,9 @@ def main(argv: list[str]) -> None:
     meshes = [o for o in sc.objects if o.type == "MESH"]
     for o in meshes:
         restyle(o)
-    pts = [o.matrix_world @ Vector(c) for o in meshes for c in o.bound_box]
+    # a wall piece brings the wall it hangs on: it frames the shot but not the lights
+    walls = [o for o in meshes if o.name.startswith("wall")]
+    pts = [o.matrix_world @ Vector(c) for o in meshes if o not in walls for c in o.bound_box]
     lo = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts))) if pts else Vector((0, 0, 0))
     hi = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts))) if pts else Vector((1, 1, 1))
     centre = (lo + hi) / 2
@@ -323,6 +325,8 @@ def main(argv: list[str]) -> None:
     if light == "candle" and not flames:
         light = "studio"
     ground = lo.z
+    if walls:
+        ground = min((o.matrix_world @ Vector(c)).z for o in walls for c in o.bound_box)
     view = (cam.location - centre)
     view.z = 0
     view = view.normalized() if view.length > 1e-6 else Vector((0, -1, 0))

@@ -25,6 +25,8 @@ import CandleGizmo from './CandleGizmo';
 import { Candle3D, SunStudy3D } from './SunStudy';
 import { showBaseMesh, showInsertMesh, showObject, showPart, type ViewportLayers } from './viewportLayers';
 import { contourStep, makeHeightBandMaterial, outlineColor, outlineSegments, rakeDirection, reliefRange, spreadOffsets, tintColor, type ViewAids } from './viewAids';
+import { roomToModel } from '../core/mount';
+import { useMountFrame } from './useMount';
 
 export interface SceneOpts {
   selected: string | null;
@@ -587,6 +589,10 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const candle = !!v.shadowOn && v.shadowLight === 'candle' && v.sliceMode === 'parallel';
   // raking light (view aid): everything else turned down so the one low light draws the form
   const rake = !!aids?.rake && !candle;
+  // lights are set in the room (y up) and turned onto the model, so a wall piece is lit from above
+  const mount = useMountFrame(v);
+  const keyDir = useMemo(() => roomToModel(mount, rake ? rakeDirection(aids!.rakeTurn, aids!.rakeHeight) : [-0.75, 0.9, 0.35]), [mount, rake, aids?.rakeTurn, aids?.rakeHeight]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fillAt = useMemo(() => roomToModel(mount, [-900, 500, -600]), [mount]);
   return (
     <>
       <Env intensity={candle ? 0.06 : rake ? 0.22 : 0.55} />
@@ -595,13 +601,14 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
       {candle ? (
         <Candle3D model={model} />
       ) : rake ? (
-        <ShadowSun model={model} dir={rakeDirection(aids!.rakeTurn, aids!.rakeHeight)} intensity={4.5} />
+        <ShadowSun model={model} dir={keyDir} intensity={4.5} />
       ) : v.sunOn ? (
         <SunStudy3D model={model} />
       ) : (
-        <ShadowSun model={model} />
+        <ShadowSun model={model} dir={keyDir} />
       )}
-      <directionalLight position={[-900, 500, -600]} intensity={candle ? 0.04 : rake ? 0.03 : v.sunOn ? 0.18 : 0.45} />
+      {mount.mount === 'wall' && <WallBackdrop model={model} y={gridY - 0.5} />}
+      <directionalLight position={fillAt} intensity={candle ? 0.04 : rake ? 0.03 : v.sunOn ? 0.18 : 0.45} />
       {L.grid && (
         <ViewportGrid
           args={[Math.max(bounds.size * 6, 1200), Math.max(bounds.size * 6, 1200)]}
@@ -656,6 +663,23 @@ export function bucketLooks(app: Appearance | undefined, main: string) {
   out[MAIN] = app ? lookOf(main, app.main?.finish, app.main?.color) : (METALS[main] ?? METALS.steel);
   for (const b of app?.buckets ?? []) out[b.id] = lookOf(b.material, b.finish, b.color);
   return out;
+}
+
+/**
+ * The wall a wall piece hangs on: the plane the underside of its base sits on, facing
+ * the room. One-sided, so orbiting round behind it shows the back of the piece.
+ */
+function WallBackdrop({ model, y }: { model: Model; y: number }) {
+  const { center, size } = modelBounds(model);
+  const theme = useStore((st) => st.ui.theme);
+  const color = useMemo(() => new THREE.Color(cssVar('--viewport', '#e6e3dc')).offsetHSL(0, -0.02, 0.05), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
+  const span = Math.max(size * 5, 1600);
+  return (
+    <mesh position={[center.x, y, center.z]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow name="wall-backdrop" userData={{ backdrop: true }}>
+      <planeGeometry args={[span, span]} />
+      <meshStandardMaterial color={color} roughness={0.95} metalness={0} polygonOffset polygonOffsetFactor={2} polygonOffsetUnits={2} />
+    </mesh>
+  );
 }
 
 /** Key light with a shadow camera fitted to the design, so carved recesses and cavities read. */

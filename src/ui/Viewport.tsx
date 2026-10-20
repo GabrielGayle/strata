@@ -4,6 +4,7 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
 import { useStore, type Snap } from '../state/store';
 import { stackFrame } from '../core/heightfield';
+import { isWall, mountFrame, roomToModel } from '../core/mount';
 import type { Model } from '../core/pipeline';
 import Scene, { cssVar, modelBounds } from './Scene';
 import CameraClipSync from './CameraClipSync';
@@ -33,6 +34,7 @@ import { setLiveCamera, setLiveViewFromOffset } from './liveView';
 import ViewFromPointPanel, { ViewFromPointRig } from './ViewFromPoint';
 
 export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { dir: THREE.Vector3; up: THREE.Vector3 } {
+  if (isWall(model.v)) return wallSnapDirection(model, dir, mapNorthUp);
   const f = stackFrame(model.v);
   const up = new THREE.Vector3(0, 1, 0);
   switch (dir) {
@@ -59,6 +61,39 @@ export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { di
   }
 }
 
+/**
+ * A wall piece's views, in the room: Front faces the wall, Side looks along it from
+ * the right, Top looks down on the piece with the wall at the top of the screen.
+ */
+function wallSnapDirection(model: Model, dir: Snap, map: boolean): { dir: THREE.Vector3; up: THREE.Vector3 } {
+  const f = mountFrame(model.v, map);
+  const room = (x: number, y: number, z: number) => new THREE.Vector3(...roomToModel(f, [x, y, z]));
+  const up = room(0, 1, 0);
+  switch (dir) {
+    case 'front':
+      return { dir: room(0, 0.04, 1).normalize(), up };
+    case 'side':
+      return { dir: room(1, 0.04, 0.02).normalize(), up };
+    case 'top':
+      return { dir: room(0, 1, 0.02).normalize(), up: room(0, 0, -1) };
+    case 'shelf':
+      if (model.shelfEye) return { dir: new THREE.Vector3(...model.shelfEye), up };
+      return { dir: room(0.95, 0.75, 1.25).normalize(), up };
+    default:
+      return { dir: room(0.95, 0.75, 1.25).normalize(), up };
+  }
+}
+
+/** Orbit about the real vertical: a wall piece turns about the wall's up, not the model's +Y. */
+export function useOrbitUp(controls: unknown, up: THREE.Vector3) {
+  useEffect(() => {
+    const c = controls as { _quat?: THREE.Quaternion; _quatInverse?: THREE.Quaternion } | null;
+    if (!c?._quat || !c._quatInverse) return;
+    c._quat.setFromUnitVectors(up, new THREE.Vector3(0, 1, 0));
+    c._quatInverse.copy(c._quat).invert();
+  }, [controls, up.x, up.y, up.z]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 function ResumeWhenVisible({ parked }: { parked: boolean }) {
   const invalidate = useThree((s) => s.invalidate);
   useEffect(() => {
@@ -72,6 +107,8 @@ export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; sn
   const pointViewN = useStore((s) => s.ui.pointView?.n ?? 0);
   // a "follow" snap (preset load) frames again once the new model arrives a frame later
   const pending = useRef<{ n: number; model: Model } | null>(null);
+  const orbitUp = useMemo(() => new THREE.Vector3(...mountFrame(model.v, mapNorthUp).up), [model.v.mount, model.v.wallTop, model.v.sliceAxis, model.v.sliceMode, mapNorthUp]); // eslint-disable-line react-hooks/exhaustive-deps
+  useOrbitUp(controls, orbitUp);
   const frame = (m: Model) => {
     const { center, size: s } = modelBounds(m);
     const { near, far, orthoSpan } = clipPlanesForBounds(s);
@@ -98,9 +135,9 @@ export function CameraRig({ model, snap, ortho, mapNorthUp }: { model: Model; sn
     if (pointViewN > 0 && !snap.follow) return;
     frame(model);
     pending.current = snap.follow ? { n: snap.n, model } : null;
-    // re-frame only on explicit snaps, camera type, or map north-up (top view flips)
+    // re-frame only on explicit snaps, camera type, map north-up (top view flips) or table / wall
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snap.n, snap.dir, ortho, controls, camera, mapNorthUp, pointViewN]);
+  }, [snap.n, snap.dir, ortho, controls, camera, mapNorthUp, pointViewN, orbitUp]);
   useEffect(() => {
     const p = pending.current;
     if (!controls || !p || p.n !== snap.n || p.model === model) return;
@@ -145,6 +182,7 @@ export default function Viewport() {
   const parked = useContext(ViewportParkedContext);
   const ui = useStore((s) => s.ui);
   const setUi = useStore((s) => s.setUi);
+  const setParam = useStore((s) => s.setParam);
   const v = model.v;
   const snapTo = (dir: Snap) => setUi({ snap: { dir, n: ui.snap.n + 1 }, pointViewFov: undefined, pointView: undefined });
   const [fromPoint, setFromPoint] = useState(false);
@@ -282,6 +320,26 @@ export default function Viewport() {
         >
           View from point
         </button>
+        <span className="vp-mount" role="group" aria-label="Shown on">
+          <button
+            className={`btn sm ${isWall(v) ? '' : 'on'}`}
+            aria-pressed={!isWall(v)}
+            data-testid="mount-table"
+            onClick={() => setParam('mount', 'table')}
+            title="Table piece: stands on its base, plates rising up (Display › Shown on)"
+          >
+            Table
+          </button>
+          <button
+            className={`btn sm ${isWall(v) ? 'on' : ''}`}
+            aria-pressed={isWall(v)}
+            data-testid="mount-wall"
+            onClick={() => setParam('mount', 'wall')}
+            title="Wall piece: the base hangs flat on the wall and the plates stand out into the room (Display › Shown on; pick the top edge there)"
+          >
+            Wall
+          </button>
+        </span>
       </div>
       <div className="vp-tr-column">
         <div className="overlay tr col">

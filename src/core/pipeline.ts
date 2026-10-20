@@ -12,6 +12,7 @@ import { mapFaceParams } from './mapStack';
 import { plateDefs, slice, type SliceResult } from './slicer';
 import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
+import { mountIssues, mountWeightIssue } from './mount';
 import { layoutShelfResult, type SolveResult } from './shelfSolve';
 import { reportShelfVisibility, shelfEye, shelfLayoutKey, shelfSight, shelfViewKey, type V3, type VisibilityReport } from './shelfView';
 import { nest, nestFingerprint, nestGroups, nestMismatch, type NestGroup, type NestOptions, type NestResult, type SavedNest } from './nest';
@@ -414,7 +415,9 @@ export function createFrontPipeline(options: FrontOptions = {}) {
           ? buildMapSunkenFrameLayout(finalSliced, { sunkenFrame: mapFrame }, v.thickness, baseTop(v), v.baseOn ? union([basePlan(v)]) : undefined)
           : null,
     );
-    const fieldIssues = hf?.floorClip ? [floorClipIssue(hf.floorClip, v, project)] : undefined;
+    const mounted = mountIssues(v, { candles: placedCandles.some((o) => o.look === 'candle' || o.look === 'tealight'), shelf: !!project.shelf?.on, map: !!mapTop });
+    const issuesHere = [...(hf?.floorClip ? [floorClipIssue(hf.floorClip, v, project)] : []), ...mounted];
+    const fieldIssues = issuesHere.length ? issuesHere : undefined;
     return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, ...(fieldIssues ? { fieldIssues } : {}), shelfSolve: laid.solve ?? undefined, shelfEye: project.shelf?.on ? shelfEye(project.shelf) : undefined, origin, shadow: carved?.report ?? null, ...(shadowPending ? { shadowPending } : {}), unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
   };
 }
@@ -511,7 +514,8 @@ export function createDeferredPipeline(opts: DeferredOptions = {}) {
       });
       return out.length ? out : null;
     }, true);
-    return { issues, nested, moulds, mouldNest, bom, sounding, stages: st.stages, totalMs: performance.now() - t0, stale: st.stale };
+    const heavy = mountWeightIssue(v, bom.plateMass + bom.concreteMass);
+    return { issues: heavy ? [...issues, heavy] : issues, nested, moulds, mouldNest, bom, sounding, stages: st.stages, totalMs: performance.now() - t0, stale: st.stale };
   };
 }
 
