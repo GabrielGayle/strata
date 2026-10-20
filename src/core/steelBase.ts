@@ -70,12 +70,12 @@ export function steelBaseSpec(v: Values): SteelBaseSpec | null {
     keyHead: Math.max(1, Number(v.steelKeyHead) || 10),
     keySlot: Math.max(0.5, Number(v.steelKeySlot) || 4.5),
     keyLength: Math.max(1, Number(v.steelKeyLength) || 10),
-    shape: v.steelShape === 'follow' || v.steelShape === 'wrap' ? v.steelShape : 'rect',
-    margin: Math.max(0, Number(v.steelReach) || 0),
-    bridge: Math.max(0, Number(v.steelBridge) || 0),
-    fillMiddle: v.steelFillMiddle !== false,
-    round: Math.max(0, Number(v.steelRound) || 0),
-    profile: v.steelProfile === 'straight' ? 'miter' : v.steelProfile === 'bevel' ? 'square' : 'round',
+    shape: v.baseOutline === 'follow' || v.baseOutline === 'wrap' ? v.baseOutline : 'rect',
+    margin: Math.max(0, Number(v.baseReach) || 0),
+    bridge: Math.max(0, Number(v.baseBridge) || 0),
+    fillMiddle: v.baseFillMiddle !== false,
+    round: Math.max(0, Number(v.baseRound) || 0),
+    profile: v.baseProfile === 'straight' ? 'miter' : v.baseProfile === 'bevel' ? 'square' : 'round',
   };
 }
 

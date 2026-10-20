@@ -202,8 +202,8 @@ describe('steel base', () => {
     const radial = { ...steel, sliceMode: 'radial', steelHoles: '4' };
     const area = (m: ReturnType<typeof run>['m']) => m.sliced.parts.filter((q) => q.family === 'B').reduce((a, q) => a + q.area, 0);
     const rect = run(radial).m;
-    const follow = run({ ...radial, steelShape: 'follow' }).m;
-    const wrap = run({ ...radial, steelShape: 'wrap' }).m;
+    const follow = run({ ...radial, baseOutline: 'follow' }).m;
+    const wrap = run({ ...radial, baseOutline: 'wrap' }).m;
     expect(area(follow)).toBeLessThan(area(wrap));
     expect(area(wrap)).toBeLessThan(area(rect));
     for (const m of [follow, wrap]) {
@@ -225,9 +225,9 @@ describe('steel base', () => {
       }
     }
     // a ring of plates: the middle is filled unless asked not to
-    const ring = { ...steel, sliceMode: 'radial', radialHub: '120', steelShape: 'follow', steelBridge: '40' };
+    const ring = { ...steel, sliceMode: 'radial', radialHub: '120', baseOutline: 'follow', baseBridge: '40' };
     const filled = run(ring).m.sliced.steelBase!.outline;
-    const open = run({ ...ring, steelFillMiddle: false }).m.sliced.steelBase!.outline;
+    const open = run({ ...ring, baseFillMiddle: false }).m.sliced.steelBase!.outline;
     expect(filled.every((e) => e.holes.length === 0)).toBe(true);
     expect(pointInShape([0, 0], filled)).toBe(true);
     expect(pointInShape([0, 0], open)).toBe(false);
