@@ -81,6 +81,14 @@ export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
     kind: 'new',
+    title: 'Move any panel or control, and save layouts',
+    body: 'Drag a panel by the grip on its caption to reorder it or move it to the other side column. Layout › Edit layout puts a grip on every control: drag it into another panel, or into a new panel of your own. Column edges drag wider, the 3D sidebar tabs drag into a new order, and it is all kept as you go. Layout › Save layout as… keeps named layouts to switch between, and Reset puts everything back.',
+    where: 'Toolbar › Layout',
+    target: { path: ['menu-layout', 'layout-edit'] },
+  },
+  {
+    date: '2026-10-20',
+    kind: 'new',
     title: 'Candles centred in the cells',
     body: 'Candelabra › Snap › Centre in the cells puts each candle in the middle of its own cell: centred between the plates either side, and in the middle of the shelf under it or between waffle cross plates. Works on wall pieces too.',
     where: '3D view › sidebar › Candles › Snap',

@@ -3,7 +3,7 @@
 // plates, measuring tape) dock here instead, one tab each. The view gets
 // narrower rather than covered. The tabs stand on the right edge even when the
 // sidebar is shut; N opens and shuts it, the left edge drags it wider.
-import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useStore } from '../state/store';
 import ObjectsPanel from './ObjectsPanel';
 import { DEFAULT_W, MIN_W, openSideTab, rememberSidebar, sidebarIsOpen, useSidebar, useSideTab, type SideTab } from './sidebarState';
@@ -11,6 +11,9 @@ import { UnobstructedDevDock } from './ShelfPanel';
 import AppearancePanel from './AppearancePanel';
 import { MeasurePanel } from './Measure';
 import { Fold } from './Fold';
+import { usePanels } from '../state/panelLayout';
+
+const TAB_MIME = 'text/x-strata-sidetab';
 
 interface TabDef {
   id: SideTab;
@@ -75,6 +78,11 @@ export default function ViewportSidebar({ move, parked, counts }: { move: ReactN
     { id: 'move', label: `Move plates${n(counts.moved)}`, title: 'Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)' },
     { id: 'measure', label: 'Measure', title: 'Measuring tape: point to point, edge to edge, point to edge or face (M; Esc leaves)' },
   ];
+  // tabs keep the order you dragged them into (Layout › Reset puts them back)
+  const order = usePanels((s) => s.layout.sideTabs);
+  tabs.sort((x, y) => order.indexOf(x.id) - order.indexOf(y.id));
+  const [dragTab, setDragTab] = useState<string | null>(null);
+  const [dropAt, setDropAt] = useState<string | null | undefined>(undefined);
   const cur = tabs.find((t) => t.id === tab);
 
   return (
@@ -111,16 +119,50 @@ export default function ViewportSidebar({ move, parked, counts }: { move: ReactN
           </div>
         </>
       )}
-      <div className="vs-tabs" role="tablist" aria-orientation="vertical" aria-label="Sidebar tabs (N)">
-        {tabs.map((t) => (
+      <div
+        className="vs-tabs"
+        role="tablist"
+        aria-orientation="vertical"
+        aria-label="Sidebar tabs (N)"
+        onDragOver={(e) => {
+          if (!dragTab) return;
+          e.preventDefault();
+          if (e.target === e.currentTarget) setDropAt(null);
+        }}
+        onDrop={(e) => {
+          if (!dragTab || dropAt === undefined) return;
+          e.preventDefault();
+          usePanels.getState().moveSideTab(dragTab, dropAt);
+          setDragTab(null);
+          setDropAt(undefined);
+        }}
+      >
+        {tabs.map((t, i) => (
           <button
             key={t.id}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(TAB_MIME, t.id);
+              e.dataTransfer.effectAllowed = 'move';
+              setDragTab(t.id);
+            }}
+            onDragEnd={() => {
+              setDragTab(null);
+              setDropAt(undefined);
+            }}
+            onDragOver={(e) => {
+              if (!dragTab) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const r = e.currentTarget.getBoundingClientRect();
+              setDropAt(e.clientY > r.top + r.height / 2 ? (tabs[i + 1]?.id ?? null) : t.id);
+            }}
             role="tab"
             aria-selected={tab === t.id}
-            className={`vs-tab${tab === t.id ? ' on' : ''}${(t.id === 'candles' && (candles || placed)) || (t.id === 'shelf' && shelf) || (t.id === 'shelves' && shelves) ? ' used' : ''}`}
+            className={`vs-tab${tab === t.id ? ' on' : ''}${dragTab && dropAt === t.id ? ' drop-before' : ''}${dragTab === t.id ? ' dragging' : ''}${(t.id === 'candles' && (candles || placed)) || (t.id === 'shelf' && shelf) || (t.id === 'shelves' && shelves) ? ' used' : ''}`}
             data-testid={`sidebar-tab-${t.id}`}
             onClick={() => openSideTab(tab === t.id ? null : t.id)}
-            title={`${t.title}. Click again to shut the sidebar (N).`}
+            title={`${t.title}. Click again to shut the sidebar (N). Drag to reorder the tabs.`}
           >
             {t.label}
           </button>

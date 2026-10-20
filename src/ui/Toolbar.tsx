@@ -17,6 +17,8 @@ import { clearSavedResults, resultsStored, savedResultsUsage } from '../state/re
 import { BoostSettings, CloudHeroButton, CloudPackButton } from './CloudStatus';
 import { openShortcuts } from './Help';
 import { openChangelog, useUnseenChanges } from './Changelog';
+import { usePanels } from '../state/panelLayout';
+import { changedControls } from '../core/panelLayout';
 
 export function Menu({ label, children, className = 'tb', hl }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string; /** `data-hl` name for the changelog's "show me" */ hl?: string }) {
   const [open, setOpen] = useState(false);
@@ -178,6 +180,140 @@ function SettingsMenu() {
           <SavedResults />
           <div className="head">Boost</div>
           <BoostSettings />
+        </div>
+      )}
+    </Menu>
+  );
+}
+
+function LayoutMenu() {
+  const editing = usePanels((s) => s.editing);
+  const layout = usePanels((s) => s.layout);
+  const saved = usePanels((s) => s.saved);
+  const current = usePanels((s) => s.current);
+  const toast = useStore((s) => s.toast);
+  const p = usePanels.getState;
+  const cur = saved.find((x) => x.id === current);
+  const moved = changedControls(layout);
+  return (
+    <Menu label="Layout" hl="menu-layout">
+      {(close) => (
+        <div style={{ width: 300 }}>
+          <button className="item" data-hl="layout-edit" aria-pressed={editing} onClick={() => (close(), p().setEditing(!editing))}>
+            <span>{editing ? '✓ ' : ''}Edit layout</span>
+            <small>grips on every control: drag them to reorder, or into another panel</small>
+          </button>
+          <button
+            className="item"
+            onClick={() => {
+              close();
+              const n = window.prompt('Name for the new panel', 'My favourites');
+              if (n) {
+                p().addPanel(n);
+                p().setEditing(true);
+              }
+            }}
+          >
+            <span>New panel…</span>
+            <small>an empty panel at the top of Parameters for the controls you use most</small>
+          </button>
+          <div className="head">Columns</div>
+          <button className="item" aria-pressed={!layout.hide.a} onClick={() => p().toggleHide('a')}>
+            <span>{layout.hide.a ? '' : '✓ '}Parameters column</span>
+          </button>
+          <button className="item" aria-pressed={!layout.hide.b} onClick={() => p().toggleHide('b')}>
+            <span>{layout.hide.b ? '' : '✓ '}Inspector column</span>
+          </button>
+          <button className="item" onClick={() => p().toggleSwap()}>
+            <span>Swap sides</span>
+            <small>{layout.swap ? 'Parameters back on the left' : 'Parameters on the right, Inspector on the left'}</small>
+          </button>
+          <div className="head">Saved layouts</div>
+          {saved.length === 0 && <p className="note">None yet. Your layout is kept as you go; save one to come back to it.</p>}
+          {saved.map((x) => (
+            <button key={x.id} className="item" data-hl="layout-saved" onClick={() => (close(), p().loadSaved(x.id), toast(`Layout "${x.name}"`))}>
+              <span>
+                {x.id === current ? '● ' : ''}
+                {x.name}
+              </span>
+              <small>panels, columns, sidebar and views</small>
+            </button>
+          ))}
+          <button
+            className="item"
+            data-hl="layout-save"
+            onClick={() => {
+              close();
+              const n = window.prompt('Save this layout as', cur?.name ?? 'My layout');
+              if (n) {
+                p().saveAs(n);
+                toast(`Saved layout "${n.trim()}"`);
+              }
+            }}
+          >
+            <span>Save layout as…</span>
+            <small>{cur ? `same name overwrites "${cur.name}"` : 'panels, controls, columns, the 3D sidebar and the views'}</small>
+          </button>
+          {cur && (
+            <>
+              <button
+                className="item"
+                onClick={() => {
+                  close();
+                  const n = window.prompt('Rename layout', cur.name);
+                  if (n) p().renameSaved(cur.id, n);
+                }}
+              >
+                <span>Rename "{cur.name}"…</span>
+              </button>
+              <button
+                className="item"
+                onClick={() => {
+                  close();
+                  if (window.confirm(`Delete the saved layout "${cur.name}"? What's on screen stays as it is.`)) p().removeSaved(cur.id);
+                }}
+              >
+                <span>Delete "{cur.name}"</span>
+              </button>
+            </>
+          )}
+          {saved.length > 0 && (
+            <button className="item" onClick={() => (close(), download('strata-layouts.json', p().exportText(), 'application/json'))}>
+              <span>Export layouts…</span>
+              <small>a file to take them to another browser</small>
+            </button>
+          )}
+          <button
+            className="item"
+            onClick={async () => {
+              close();
+              const f = await pickFile('.json,application/json');
+              if (!f) return;
+              try {
+                const n = p().importText(await f.text());
+                toast(`${n} layout${n === 1 ? '' : 's'} added to Layout`);
+              } catch (e) {
+                toast(`Couldn't read that file: ${(e as Error).message}`);
+              }
+            }}
+          >
+            <span>Import layouts…</span>
+          </button>
+          <div className="head">Reset</div>
+          <button
+            className="item"
+            data-hl="layout-reset"
+            onClick={() => {
+              close();
+              if (window.confirm('Put every panel, control, column, 3D sidebar tab and view back where they start? Saved layouts are kept, and your projects are not touched.')) {
+                p().resetAll();
+                toast('Layout back to the default');
+              }
+            }}
+          >
+            <span>Reset to default layout</span>
+            <small>{moved ? `${moved} change${moved === 1 ? '' : 's'} to controls, plus panels and columns` : 'panels, controls, columns, sidebar and views'}</small>
+          </button>
         </div>
       )}
     </Menu>
@@ -586,6 +722,7 @@ export default function Toolbar() {
       </div>
       <div className="group">
         <AppearanceMenu />
+        <LayoutMenu />
         <SettingsMenu />
         <HelpMenu />
       </div>
