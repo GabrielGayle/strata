@@ -123,6 +123,7 @@ function TabStrip({ p }: { p: Pane | Float }) {
         <TabItem
           key={t}
           draggable
+          data-tab={t}
           selected={p.active === t}
           onSelect={() => setUi({ tab: t as Tab })}
           onPointerEnter={() => preloadView(t)}
@@ -294,7 +295,7 @@ export function WorkspaceBar() {
   const missingPresets = PRESETS.some((p) => !list.some((w) => w.id === p.id));
   return (
     <div className="ws-bar">
-      <label className="ws-pick" title="Workspace: how the views are arranged. Changes are kept as you go.">
+      <label className="ws-pick" data-hl="workspace-pick" title="Workspace: how the views are arranged. Changes are kept as you go.">
         <span>Workspace</span>
         <select value={active} onChange={(e) => ws().switchTo(e.target.value)} aria-label="Workspace">
           {list.map((w) => (

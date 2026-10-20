@@ -154,7 +154,7 @@ export default function CandlePanel() {
             ))}
           </select>
           {hasTarget(s) && (
-            <select aria-label="Fin pieces" value={s.finJoin} onChange={(e) => edit({ finJoin: e.target.value as FinJoin })} {...help('How the fins are cut. Separate fins: one part per fin, as many as Fins says. Two-piece cross: two fins each run right across under the candle and slot together through a halving slot in the middle, one from the top and one from the bottom, so four arms come from two parts. Fewer parts to cut and weld, and the cross squares itself.')}>
+            <select aria-label="Fin pieces" data-hl="fin-pieces" value={s.finJoin} onChange={(e) => edit({ finJoin: e.target.value as FinJoin })} {...help('How the fins are cut. Separate fins: one part per fin, as many as Fins says. Two-piece cross: two fins each run right across under the candle and slot together through a halving slot in the middle, one from the top and one from the bottom, so four arms come from two parts. Fewer parts to cut and weld, and the cross squares itself.')}>
               {(Object.keys(FIN_JOIN_NAMES) as FinJoin[]).map((k) => (
                 <option key={k} value={k}>
                   {FIN_JOIN_NAMES[k]}
@@ -162,7 +162,7 @@ export default function CandlePanel() {
               ))}
             </select>
           )}
-          <select aria-label="Snap" value={s.snap} onChange={(e) => edit({ snap: e.target.value as Snap })} {...help('Line the candles up with the plates. Onto plates: each candle slides along the stack to stand centred on the nearest plate. Between plates: centred in the gap between two. A grid then spaces its columns by whole plates (see Every).')}>
+          <select aria-label="Snap" data-hl="candle-snap" value={s.snap} onChange={(e) => edit({ snap: e.target.value as Snap })} {...help('Line the candles up with the plates. Onto plates: each candle slides along the stack to stand centred on the nearest plate. Between plates: centred in the gap between two. A grid then spaces its columns by whole plates (see Every).')}>
             {(Object.keys(SNAP_NAMES) as Snap[]).map((k) => (
               <option key={k} value={k}>
                 {SNAP_NAMES[k]}

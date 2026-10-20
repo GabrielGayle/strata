@@ -15,8 +15,10 @@ import { isProjectZipName, projectFromZip } from '../core/projectZip';
 import { busyThen } from './busy';
 import { clearSavedResults, resultsStored, savedResultsUsage } from '../state/results';
 import { BoostSettings, CloudHeroButton, CloudPackButton } from './CloudStatus';
+import { openShortcuts } from './Help';
+import { openChangelog, useUnseenChanges } from './Changelog';
 
-export function Menu({ label, children, className = 'tb' }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string }) {
+export function Menu({ label, children, className = 'tb', hl }: { label: ReactNode; children: (close: () => void) => ReactNode; className?: string; /** `data-hl` name for the changelog's "show me" */ hl?: string }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const btn = useRef<HTMLButtonElement>(null);
@@ -40,6 +42,7 @@ export function Menu({ label, children, className = 'tb' }: { label: ReactNode; 
         ref={btn}
         className={className}
         aria-expanded={open}
+        data-hl={hl}
         onClick={() => {
           const r = btn.current!.getBoundingClientRect();
           setPos({ x: Math.min(r.left, window.innerWidth - 280), y: r.bottom });
@@ -157,7 +160,7 @@ function SavedResults() {
         {usage ? `${usage.entries} finished design${usage.entries === 1 ? '' : 's'} kept, ${(usage.bytes / 1e6).toFixed(1)} MB` : 'Counting…'}
       </p>
       <div className="btnrow">
-        <button className="btn sm" onClick={clear} disabled={busy} title="Forget every kept result: the next undo, compare or reopen builds the design again">
+        <button className="btn sm" data-hl="clear-saved-results" onClick={clear} disabled={busy} title="Forget every kept result: the next undo, compare or reopen builds the design again">
           Clear saved results
         </button>
       </div>
@@ -167,7 +170,7 @@ function SavedResults() {
 
 function SettingsMenu() {
   return (
-    <Menu label="Settings">
+    <Menu label="Settings" hl="menu-settings">
       {() => (
         <div style={{ width: 300 }}>
           <div className="head">Saved results</div>
@@ -181,17 +184,37 @@ function SettingsMenu() {
   );
 }
 
+function HelpMenu() {
+  const unseen = useUnseenChanges();
+  return (
+    <Menu label={unseen ? `Help (${unseen} new)` : 'Help'} hl="menu-help">
+      {(close) => (
+        <>
+          <button className="item" data-hl="help-changelog" onClick={() => (close(), openChangelog())}>
+            <span>Changelog…</span>
+            <small>{unseen ? `${unseen} new since you last looked` : 'what\'s new and fixed, and where it is'}</small>
+          </button>
+          <button className="item" onClick={() => (close(), openShortcuts())}>
+            <span>Keyboard shortcuts</span>
+            <small>?</small>
+          </button>
+        </>
+      )}
+    </Menu>
+  );
+}
+
 function AppearanceMenu() {
   const theme = useStore((s) => s.ui.theme);
   const setTheme = useStore((s) => s.setTheme);
   const current = theme.id === 'system' ? null : (theme as ThemeSeed);
   return (
-    <Menu label="Appearance">
+    <Menu label="Appearance" hl="menu-appearance">
       {() => (
         <div style={{ width: 300 }}>
           <div className="head">Plates</div>
           <div className="btnrow">
-            <button className="btn sm" onClick={() => useStore.getState().setUi({ tab: '3d', paintMode: true, moveMode: false })} title="Sort plates into material buckets (Corten, aluminium…) by clicking them in the 3D view">
+            <button className="btn sm" data-hl="plate-materials" onClick={() => useStore.getState().setUi({ tab: '3d', paintMode: true, moveMode: false })} title="Sort plates into material buckets (Corten, aluminium…) by clicking them in the 3D view">
               Plate materials…
             </button>
           </div>
@@ -367,7 +390,7 @@ export default function Toolbar() {
         </button>
       </div>
       <div className="group">
-        <Menu label="Presets">
+        <Menu label="Presets" hl="menu-presets">
           {(close) => (
             <ul className="tree-view">
               {[
@@ -440,7 +463,7 @@ export default function Toolbar() {
             </ul>
           )}
         </Menu>
-        <Menu label={`Variants${project.variants.length ? ` (${project.variants.length})` : ''}`}>
+        <Menu hl="menu-variants" label={`Variants${project.variants.length ? ` (${project.variants.length})` : ''}`}>
           {(close) => (
             <ul className="tree-view">
               <li>
@@ -473,7 +496,7 @@ export default function Toolbar() {
             </ul>
           )}
         </Menu>
-        <Menu label="Maps">
+        <Menu label="Maps" hl="menu-maps">
           {(close) => (
             <ul className="tree-view">
               <li>
@@ -521,14 +544,14 @@ export default function Toolbar() {
             </ul>
           )}
         </Menu>
-        <Menu label="Shuffle">
+        <Menu label="Shuffle" hl="menu-shuffle">
           {(close) => (
             <>
               <button className="item" onClick={() => (randomise(), close())}>
                 <span>Randomise</span>
                 <small>unlocked values, anything goes</small>
               </button>
-              <button className="item" onClick={() => (useStore.getState().shuffleGentle(), close())}>
+              <button className="item" data-hl="gentle-impression" onClick={() => (useStore.getState().shuffleGentle(), close())}>
                 <span>Gentle impression</span>
                 <small>soft, shallow, flowing relief</small>
               </button>
@@ -538,14 +561,14 @@ export default function Toolbar() {
       </div>
       <div className="group">
         <ProjectsButton />
-        <button className="tb" onClick={open}>
+        <button className="tb" data-hl="open-file" onClick={open}>
           Open
         </button>
-        <button className="tb" onClick={save} title="Save project JSON (parameters + images)">
+        <button className="tb" data-hl="save-file" onClick={save} title="Save project JSON (parameters + images)">
           Save
         </button>
         <ShareButton />
-        <Menu label="Import">
+        <Menu label="Import" hl="menu-import">
           {(close) => (
             <>
               <div className="head">STL / OBJ from Fusion (mm)</div>
@@ -564,14 +587,15 @@ export default function Toolbar() {
       <div className="group">
         <AppearanceMenu />
         <SettingsMenu />
+        <HelpMenu />
       </div>
       <div className="spacer" />
-      <button className="tb" onClick={buildPack} title="One printable page for the workshop wall: numbered plate layout, assembly order, rods and spacers, glue-up and pour plan">
+      <button className="tb" data-hl="build-pack" onClick={buildPack} title="One printable page for the workshop wall: numbered plate layout, assembly order, rods and spacers, glue-up and pour plan">
         Build pack
       </button>
       <CloudHeroButton project={() => useStore.getState().project} model={fullModel} setHero={useStore.getState().setHero} />
       <CloudPackButton project={() => useStore.getState().project} model={fullModel} rates={loadRates} />
-      <button className="tb default" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">
+      <button className="tb default" data-hl="export-zip" onClick={exportZip} title="All DXFs, sheets, moulds, STL, cut list and project file">
         Export ZIP
       </button>
       <SharedLinkPrompt />

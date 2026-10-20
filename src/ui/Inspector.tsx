@@ -32,8 +32,11 @@ function Section({
   collapsedSummary,
   children,
   open: initial = true,
+  hl,
 }: {
   title: string;
+  /** `data-hl` name for the changelog's "show me". */
+  hl?: string;
   count?: React.ReactNode;
   collapsedSummary?: string;
   children: React.ReactNode;
@@ -41,7 +44,7 @@ function Section({
 }) {
   const [open, setOpen] = useState(initial);
   return (
-    <fieldset className="section">
+    <fieldset className="section" data-hl={hl}>
       <legend>{title}</legend>
       <div className="field-row">
         <button className="section-head" onClick={() => setOpen(!open)} aria-expanded={open}>
@@ -255,7 +258,7 @@ export default function Inspector() {
       )}
 
       {model.sliced.brace && (b.hardware.length > 0 || (model.sliced.brace.spacers?.parts.length ?? 0) > 0) && (
-        <Section title="Bracing" count={b.hardware.length ? `${b.hardware.reduce((a, r) => a + r.qty, 0)} hardware` : 'spacers'}>
+        <Section title="Bracing" hl="inspector-bracing" count={b.hardware.length ? `${b.hardware.reduce((a, r) => a + r.qty, 0)} hardware` : 'spacers'}>
           {b.hardware.length > 0 && (
             <dl className="kv">
               {b.hardware.map((r) => (
@@ -292,7 +295,7 @@ export default function Inspector() {
         </Section>
       )}
 
-      <Section title="Chop Chop price" count="estimate" collapsedSummary={chopSummary}>
+      <Section title="Chop Chop price" hl="chop-chop-price" count="estimate" collapsedSummary={chopSummary}>
         <PriceEstimate bom={b} material={v.plateMaterial} thickness={v.thickness} />
       </Section>
 
@@ -329,7 +332,7 @@ export default function Inspector() {
         </Section>
       )}
 
-      <Section title="Export">
+      <Section title="Export" hl="inspector-export">
         <div className="btnrow">
           <button
             className="btn default"

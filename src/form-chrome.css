@@ -72,7 +72,9 @@ table.tbl,
 .appearance.overlay,
 menu[role='tablist'] > li,
 table.tbl,
-.list.sunken-panel {
+.list.sunken-panel,
+.changelog,
+.spot-card {
   --muted: var(--chrome-muted);
   --ok: #16521f;
   --warn: #644004;

@@ -195,7 +195,7 @@ function QualityStrip({ names }: { names: string[] }) {
   const best = mean ? Math.max(...mean) : 0;
   const good = mean ? STRIP_DAYS.filter((_, j) => mean[j] >= best / 2 && mean[j] >= 0.3) : [];
   return (
-    <div className="quality-strip">
+    <div className="quality-strip" data-hl="shadow-year">
       <div className="qs-head">
         <strong>Through the year</strong>
         <span className="note">

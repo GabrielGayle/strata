@@ -93,7 +93,7 @@ const NumberParam = memo(function NumberParam({
     const src = overrideBy ?? overrideSource(def.id);
     const by = src === 'spacing' ? 'Plates › Spacing' : src === 'grid' ? 'Slicer › Closed grid' : 'Image › Fit face to image';
     return (
-      <div className={`prow field-row-stacked ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
+      <div className={`prow field-row-stacked ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id} data-param={def.id}>
         <div className="field-row">
           <div className="plabel">
             <span>{def.label}</span>
@@ -112,7 +112,7 @@ const NumberParam = memo(function NumberParam({
     );
   }
   return (
-    <div className={`prow field-row-stacked ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id}>
+    <div className={`prow field-row-stacked ${focus ? 'focus' : ''}`} ref={row} title={def.help ?? def.id} data-param={def.id}>
       <div className="field-row">
         <div className="plabel">
           <span>{def.label}</span>
@@ -220,7 +220,7 @@ const NumberParam = memo(function NumberParam({
 function OtherParam({ def, value }: { def: ParamDef; value: any }) {
   const setParam = useStore((s) => s.setParam);
   return (
-    <div className="prow field-row" title={def.help ?? def.id}>
+    <div className="prow field-row" title={def.help ?? def.id} data-param={def.id}>
       <div className="plabel">
         <span>{def.label}</span>
       </div>
@@ -383,7 +383,7 @@ export default function ParamPanel() {
       ) : (
         <>
       <input className="search" type="search" placeholder="Filter parameters…" value={ui.filter} onChange={(e) => setUi({ filter: e.target.value })} aria-label="Filter parameters" />
-      <label className="changed-only" title="Show only the parameters that differ from their defaults">
+      <label className="changed-only" data-hl="changed-only" title="Show only the parameters that differ from their defaults">
         <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
         <span>Changed only</span>
         <span className="count">{totalChanged ? `${totalChanged} changed` : 'all at defaults'}</span>
