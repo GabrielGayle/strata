@@ -5,8 +5,7 @@ test('Unobstructed view on the postcard shelf shows in Fit checks', async ({ pag
   test.setTimeout(180_000);
   await openApp(page);
 
-  await page.getByTitle(/Place postcards, boxes and other objects/).click();
-  await page.getByRole('button', { name: 'Postcard shelf' }).click();
+  await page.getByTestId('sidebar-tab-shelf').click();
   await page.getByRole('button', { name: '+ Postcard shelf' }).click();
   await expect(page.getByLabel('Layout')).toBeVisible();
   await page.getByLabel('Layout').selectOption('arch');

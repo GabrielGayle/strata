@@ -4072,3 +4072,110 @@ kbd {
   gap: 4px;
   align-items: center;
 }
+
+/* 3D view sidebar (Blender's N panel): tool panels dock beside the view instead of over it */
+.vp-shell {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+.vp-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.vp-sidebar {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-shrink: 0;
+  height: 100%;
+  max-width: calc(100% - 160px);
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+}
+.vp-sidebar .vs-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.vp-sidebar .vs-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 3px 2px;
+}
+.vp-sidebar .vs-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+  cursor: ew-resize;
+  z-index: 5;
+}
+body.vs-resizing,
+body.vs-resizing * {
+  cursor: ew-resize !important;
+  user-select: none;
+}
+.vp-sidebar .vs-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 24px;
+  padding: 3px 1px;
+  overflow-y: auto;
+}
+.vp-sidebar .vs-tab {
+  writing-mode: vertical-rl;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 2px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.vp-sidebar .vs-tab.used:not(.on) {
+  font-weight: 700;
+}
+/* panels that used to float keep their insides; only the floating is taken off */
+.vp-sidebar .overlay {
+  position: static;
+  transform: none;
+  top: auto;
+  left: auto;
+  right: auto;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  box-shadow: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.vp-sidebar .mp-row {
+  flex-wrap: wrap;
+}
+.vs-fold {
+  margin-bottom: 4px;
+}
+.vs-fold-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  font-weight: 700;
+}
+.vs-fold-arrow {
+  display: inline-block;
+  width: 1em;
+}
+.vs-fold-body {
+  padding: 4px 2px 2px;
+}

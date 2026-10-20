@@ -60,6 +60,13 @@ const SHORTCUTS: { where: string; keys: [string[], string][] }[] = [
     ],
   },
   {
+    where: '3D view',
+    keys: [
+      [['N'], 'Show or hide the sidebar (Candles, Shelf, Objects, Materials, Move plates, Measure)'],
+      [['M'], 'Measuring tape'],
+    ],
+  },
+  {
     where: '3D view (view-only layers)',
     keys: [
       [['Alt', 'Shift', 'G'], 'Toggle grid'],
