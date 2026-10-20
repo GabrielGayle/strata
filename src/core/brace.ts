@@ -18,6 +18,7 @@ import {
   type Vec2,
 } from './geom2d';
 import { sectionShape, type Plane, type V3 } from './section';
+import { footprintBox } from './overlap';
 import { stackFrame } from './heightfield';
 import { planClearance } from './base';
 import type { IndexedMesh } from './forms';
@@ -566,18 +567,28 @@ export function buildSpacers(
       const reachF = halfReach(v, c, d, cover, 1);
       const reachB = halfReach(v, c, d, cover, -1);
       const land = Math.max(10, (v.pitch - t) / 2);
-      const s0 = Math.max(cr[0].s - hw - land, -reachB);
-      const s1 = Math.min(cr[cr.length - 1].s + hw + land, reachF);
+      let s0 = Math.max(cr[0].s - hw - land, -reachB);
+      let s1 = Math.min(cr[cr.length - 1].s + hw + land, reachF);
+      // where each plate's bottom comes down to over the comb, or null if it stays above it
+      const w = (t / 2 + clr) * Math.abs(sinA / cosA) + 0.5;
+      const reach = cr.map((x) => {
+        const bs = [x.u - w, x.u, x.u + w].map((u) => bottomAt(x.shape, u)).filter((b): b is number => b !== null);
+        const b = bs.length ? Math.min(...bs) : null;
+        return b !== null && b <= yT - 1 ? b : null;
+      });
+      // a plate too near an end of the comb for a slot with steel beyond it: the comb stops short of it instead
+      cr.forEach((x, i) => {
+        if (reach[i] === null) return;
+        if (x.s - hw < s0 + 2) s0 = Math.max(s0, x.s + hw);
+        if (x.s + hw > s1 - 2) s1 = Math.min(s1, x.s - hw);
+      });
+      if (s1 - s0 < 2 * v.minFeature) return;
       let shape: Shape = rect(s0, yB, s1, yT);
       const slots: Shape[] = [];
       const held: string[] = [];
-      for (const x of cr) {
-        if (x.s - hw < s0 + 2 || x.s + hw > s1 - 2) continue;
-        const w = (t / 2 + clr) * Math.abs(sinA / cosA) + 0.5;
-        const bs = [x.u - w, x.u, x.u + w].map((u) => bottomAt(x.shape, u)).filter((b): b is number => b !== null);
-        if (!bs.length) continue;
-        const b = Math.min(...bs);
-        if (b > yT - 1) continue; // plate doesn't reach down to the comb here
+      for (const [i, x] of cr.entries()) {
+        const b = reach[i];
+        if (b === null || x.s - hw < s0 || x.s + hw > s1) continue;
         slots.push(rect(x.s - hw, b, x.s + hw, BIG));
         held.push(x.key);
       }
@@ -588,6 +599,12 @@ export function buildSpacers(
           if (s < s0 || s > s1) continue;
           slots.push(rodSlot(s, r.y, rods.hole, t, sinA));
         }
+      }
+      // any other plate whose steel still reaches into the comb (an end corner it passes at a slant) gets room too
+      for (const pl of plates) {
+        if (held.includes(pl.key)) continue;
+        const bb = footprintBox({ plane, thickness: t }, { plane: pl.plane, thickness: t, shape: pl.shape });
+        if (bb && bb.minY < yT) slots.push(rect(bb.minX - clr, bb.minY - clr, bb.maxX + clr, BIG));
       }
       if (slots.length) shape = difference(shape, slots.flat());
       shape = keepLargest(clipInsert(shape, plane), `Cross piece ${j + 1}`, key);

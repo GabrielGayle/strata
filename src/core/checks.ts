@@ -1,13 +1,14 @@
 // Fabrication fit checks: everything that would make a part uncuttable or
 // make it not fit once it's cut.
-import { difference, offset, pointInShape, shapeArea, shapeBBox, signedArea, type Path, type Shape, type Vec2 } from './geom2d';
+import { difference, shapeArea, shapeBBox, signedArea, type Path, type Shape, type Vec2 } from './geom2d';
 import { cached } from './memo';
 import type { Values } from './params';
 import type { Part, SliceResult } from './slicer';
 import { formatFragment, kerfGapRegions, morphOpen } from './fragments';
 import { fastenerDisks, LABEL_HOLE_CLEAR_MM, pathsHitDisk, rodSteelOverlapIssues } from './stackRods';
-import { planeToWorld, type V3 } from './section';
+import { planeToWorld } from './section';
 import { baseChamfers, planClearance } from './base';
+import { findOverlaps } from './overlap';
 
 export type Severity = 'error' | 'warn' | 'info';
 
@@ -219,8 +220,8 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
       issues.push({ partId: missed[0].parts[0].id, plateKey: missed[0].def.key, type: 'general', severity: 'warn', message: `${missed.length} plate(s) don't cross the support ring, so it doesn't hold them. Widen the ring.` });
     if (v.embedMode === 'slot') issues.push({ partId: null, type: 'general', severity: 'warn', message: 'The support ring is cast in with the plates: set Concrete › Plate fixing to "Cast in".' });
   }
+  issues.push(...overlapChecks(sliced));
   issues.push(...moveChecks(v, sliced));
-  issues.push(...shelfChecks(sliced));
   // threaded rods and laser-cut spacers
   if (sliced.brace) {
     const byKey = new Map(sliced.parts.map((p) => [p.plateKey, p.id]));
@@ -249,139 +250,41 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
   return issues;
 }
 
-const dot3 = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+/** Most overlaps listed one by one; past that they are counted. */
+const OVERLAP_LIST = 12;
 
-const faceCache = new WeakMap<Part, Vec2[]>();
+/** What to change when a shelf or a candle fin is one of the pair. */
+const overlapHint = (a: Part, b: Part) =>
+  a.family === 'H' || b.family === 'H' ? ' Move the shelf or the candle on it.' : a.family === 'K' || b.family === 'K' ? ' Move the candle or turn its fins (Spin).' : '';
 
-/** Grid points across a part's face (plate coords), at most ~1200 of them. */
-function facePoints(p: Part): Vec2[] {
-  const hit = faceCache.get(p);
-  if (hit) return hit;
-  const pts = gridPoints(p);
-  faceCache.set(p, pts);
-  return pts;
-}
-
-function gridPoints(p: Part): Vec2[] {
-  const { minX, minY, maxX, maxY } = p.bbox;
-  const step = Math.max(2, Math.sqrt(((maxX - minX) * (maxY - minY)) / 1200));
-  const pts: Vec2[] = [];
-  for (let y = minY + step / 2; y < maxY; y += step) for (let x = minX + step / 2; x < maxX; x += step) if (pointInShape([x, y], p.shape)) pts.push([x, y]);
-  for (const [x, y] of p.shape[0].outer) pts.push([x, y]);
-  return pts;
-}
-
-/** First point of `a` (through its thickness) that sits inside the solid of `b`, in a's plate coords. */
-function overlapAt(a: Part, b: Part): Vec2 | null {
-  const P = b.plane;
-  const tol = b.thickness / 2 - 0.05;
-  const rel = (w: V3): V3 => [w[0] - P.origin[0], w[1] - P.origin[1], w[2] - P.origin[2]];
-  // quick reject: a's whole box on one side of b's slab
-  const { minX, minY, maxX, maxY } = a.bbox;
-  const ws: number[] = [];
-  for (const [x, y] of [[minX, minY], [maxX, minY], [minX, maxY], [maxX, maxY]])
-    for (const w of [-a.thickness / 2, a.thickness / 2]) ws.push(dot3(rel(planeToWorld(a.plane, x, y, w)), P.normal));
-  if (Math.min(...ws) > tol || Math.max(...ws) < -tol) return null;
-  for (const [x, y] of facePoints(a)) {
-    for (const w of [-a.thickness / 2 + 0.05, 0, a.thickness / 2 - 0.05]) {
-      const r = rel(planeToWorld(a.plane, x, y, w));
-      if (Math.abs(dot3(r, P.normal)) >= tol) continue;
-      if (pointInShape([dot3(r, P.u), dot3(r, P.v)], b.shape)) return [x, y];
-    }
-  }
-  return null;
-}
-
-/** Shelves and the candle fins standing on them: no steel of theirs may sit inside another part. */
-function shelfChecks(sliced: SliceResult): Issue[] {
-  const shelves = sliced.parts.filter((p) => p.family === 'H');
-  if (!shelves.length) return [];
-  const issues: Issue[] = [];
-  const fins = sliced.parts.filter((p) => p.family === 'K');
-  const rest = sliced.parts.filter((p) => p.family !== 'H' && p.family !== 'S');
-  const seen = new Set<string>();
-  // a part's box in the world, so pairs nowhere near each other are skipped at once
-  const boxes = new Map<Part, [V3, V3]>();
-  const box = (p: Part) => {
-    let b = boxes.get(p);
-    if (!b) {
-      const lo: V3 = [Infinity, Infinity, Infinity];
-      const hi: V3 = [-Infinity, -Infinity, -Infinity];
-      for (const [x, y] of [[p.bbox.minX, p.bbox.minY], [p.bbox.maxX, p.bbox.minY], [p.bbox.minX, p.bbox.maxY], [p.bbox.maxX, p.bbox.maxY]])
-        for (const w of [-p.thickness / 2, p.thickness / 2]) {
-          const q = planeToWorld(p.plane, x, y, w);
-          for (let i = 0; i < 3; i++) {
-            lo[i] = Math.min(lo[i], q[i]);
-            hi[i] = Math.max(hi[i], q[i]);
-          }
-        }
-      b = [lo, hi];
-      boxes.set(p, b);
-    }
-    return b;
-  };
-  const near = (a: Part, b: Part) => {
-    const [la, ha] = box(a);
-    const [lb, hb] = box(b);
-    return la.every((x, i) => x <= hb[i] && lb[i] <= ha[i]);
-  };
-  // parts that only touch along a slot's edge are fine: test each against the other eased in a hair
-  const eased = new Map<Part, Part>();
-  const ease = (p: Part) => eased.get(p) ?? (eased.set(p, { ...p, shape: offset(p.shape, -0.05) }), eased.get(p)!);
-  for (const a of [...shelves, ...fins]) {
-    for (const b of rest) {
-      if (b.plateKey === a.plateKey || (a.family === 'K' && b.family === 'K')) continue;
-      const pair = [a.id, b.id].sort().join('|');
-      if (seen.has(pair)) continue;
-      seen.add(pair);
-      if (!near(a, b)) continue;
-      const at = overlapAt(a, ease(b));
-      const back = at ? null : overlapAt(b, ease(a));
-      if (!at && !back) continue;
-      const shelf = a.family === 'H' ? a : b.family === 'H' ? b : null;
-      issues.push({
-        partId: at ? a.id : b.id,
-        plateKey: at ? a.plateKey : b.plateKey,
-        type: 'collision',
-        severity: 'error',
-        message: shelf ? `${a.id} runs into ${b.id}: their steel overlaps. Move the shelf or the candle on it.` : `Candle fin ${a.id} runs into ${b.id}: their steel overlaps. Move the candle or turn its fins (Spin).`,
-        at: at ?? back ?? undefined,
-      });
-    }
-  }
+/** Steel in the same place twice: any two laser-cut parts (plates, fins, spacers, base plates) that overlap. */
+export function overlapChecks(sliced: SliceResult): Issue[] {
+  const hits = findOverlaps(sliced.parts);
+  if (!hits.length) return [];
+  const movedKeys = new Set(sliced.plates.filter((p) => p.def.home).map((p) => p.def.key));
+  const moved = (p: Part) => !!p.home || movedKeys.has(p.plateKey);
+  const issues: Issue[] = hits.slice(0, OVERLAP_LIST).map((h) => {
+    const [m, o] = moved(h.b) && !moved(h.a) ? [h.b, h.a] : [h.a, h.b];
+    return {
+      partId: h.a.id,
+      plateKey: h.a.plateKey,
+      type: 'collision',
+      severity: 'error',
+      message: moved(m) ? `Moved part ${m.id} runs into ${o.id}.` : `${h.a.id} and ${h.b.id} overlap: ${h.area.toFixed(1)} mm² of steel in the same place.${overlapHint(h.a, h.b)}`,
+      at: h.at,
+      region: h.region,
+    };
+  });
+  if (hits.length > OVERLAP_LIST) issues.push({ partId: null, type: 'collision', severity: 'error', message: `${hits.length - OVERLAP_LIST} more pairs of parts overlap.` });
   return issues;
 }
 
-/** Plates moved by hand: they must not run into each other, and must still sit in the base. */
+/** Plates moved by hand must still sit in the base (running into other parts is `overlapChecks`). */
 function moveChecks(v: Values, sliced: SliceResult): Issue[] {
   const issues: Issue[] = [];
   const moved = sliced.plates.filter((p) => p.def.home && p.parts.length);
-  const loose = sliced.parts.filter((p) => p.home);
-  if (!moved.length && !loose.length) return issues;
-  const all = sliced.parts.filter((p) => p.family !== 'S' && p.family !== 'B');
-  const seen = new Set<string>();
-  const clashes = (a: Part) => {
-    for (const b of all) {
-      if (b.plateKey === a.plateKey) continue;
-      const pair = [a.id, b.id].sort().join('|');
-      if (seen.has(pair)) continue;
-      seen.add(pair);
-      const at = overlapAt(a, b);
-      const back = at ? null : overlapAt(b, a);
-      if (at || back)
-        issues.push({
-          partId: at ? a.id : b.id,
-          plateKey: at ? a.plateKey : b.plateKey,
-          type: 'collision',
-          severity: 'error',
-          message: `Moved part ${a.id} runs into ${b.id}.`,
-          at: at ?? back ?? undefined,
-        });
-    }
-  };
-  loose.forEach(clashes);
+  if (!moved.length) return issues;
   for (const plate of moved) {
-    plate.parts.forEach(clashes);
     if (v.steelBaseOn && sliced.steelBase && plate.parts.some((p) => Math.abs(p.plane.normal[1]) < 0.5)) {
       const keyed = sliced.steelBase.tabs.some((t) => t.plateKey === plate.def.key);
       const low = Math.min(...plate.parts.flatMap((p) => p.shape[0].outer.map(([x, y]) => planeToWorld(p.plane, x, y)[1])));

@@ -199,6 +199,11 @@ export function finishPlatePieces(
     below?: Shape;
     isFlat?: boolean;
     index?: number;
+    /**
+     * Room the plate was cut to leave for other parts (slots, holes, cavities). Widening a thin
+     * neck must not grow back into it, or the plate runs into the part that goes there.
+     */
+    keepOut?: Shape;
   },
 ): { pieces: ExPoly[]; events: FragmentEvent[] } {
   let pcs = pieces.filter((ex) => shapeArea([ex]) >= 0.5);
@@ -211,9 +216,11 @@ export function finishPlatePieces(
     plateId: opts.plateId,
     anchored: opts.anchored,
   });
-  const cleaned = resolved.pieces.flatMap((ex) =>
-    cleanupPlateShape([ex], opts.v).filter((p) => shapeArea([p]) >= 0.5),
-  );
+  const keepOut = opts.keepOut?.length ? opts.keepOut : null;
+  const cleaned = resolved.pieces.flatMap((ex) => {
+    const out = cleanupPlateShape([ex], opts.v);
+    return (keepOut ? difference(out, keepOut) : out).filter((p) => shapeArea([p]) >= 0.5);
+  });
   return { pieces: cleaned, events: resolved.events };
 }
 

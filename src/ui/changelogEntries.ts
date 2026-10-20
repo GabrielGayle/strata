@@ -40,6 +40,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'fix',
+    title: 'No more overlapping metal',
+    body: 'Every pair of metal parts is now checked for steel in the same place, and any overlap is an error that stops export. Candle fins, angled spacer combs, slanted waffle crossings, the support ring and the steel base no longer overlap the plates.',
+    where: 'Plates › fit checks (red "overlap" errors)',
+    target: { tab: 'plates' },
+  },
+  {
+    date: '2026-10-20',
     kind: 'new',
     title: 'Changelog',
     body: 'This list. Click any entry to see where it lives in the app. The old tour that popped up on load is gone.',

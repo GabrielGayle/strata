@@ -27,6 +27,10 @@ Gaps narrower than **Kerf** cannot be cut. **merge** / **auto** close them (weld
 
 Fabrication export (ZIP, build pack, plate/sheet DXFs, CLI) **refuses** while any fit-check error remains (`FitCheckExportError`). Enforced by `repairKerfGaps`, `repairOverhangs`, `assertExportable`, `test/fragments.test.ts`, and Neasden ×11/×21 tests.
 
+### Metal parts never overlap
+
+No two laser-cut parts (plates, cross plates, candle fins, spacer combs and templates, the support ring, the steel base plate) may have steel in the same place. `findOverlaps` (`src/core/overlap.ts`) tests every pair exactly (each part is its outline extruded through its thickness; touching faces within 0.02 mm don't count) and `overlapChecks` reports each as a fit-check **error**, so export refuses. Cuts that leave room for another part (slots, mortises, holes, fin room) are passed to `finishPlatePieces` as `keepOut`, so thin-neck repair never grows back into them. Slots for parts crossing at a slant must include the drift across the other part's thickness (`waffleSlotWidth`, `finSlots`, `footprintBox`). Audit with `npx tsx scripts/overlap-audit.ts --presets --scenarios [project files]`; `test/overlap.test.ts` holds the cases.
+
 ### Fabrication build pack contains every plate
 
 The fabrication build pack must contain **every plate** in the model (`sliced.plates`), including empty or zero-area layers. Zip `plates/*.dxf` count, `manifest.json` `plateCount`, the HTML cover legend (`data-plate-count`), and the Every plate gallery (`data-plate-key` per plate) must equal `sliced.plates.length`. Cuttable plates also have laser part DXFs. Filename sanitisation must not overwrite another plate. Enforced by `buildPackIntegrity` and `test/build-pack-integrity.test.ts`. On mismatch the UI shows an error and the CLI exits with code 1.
