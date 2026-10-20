@@ -193,8 +193,9 @@ export const PARAMS: ParamDef[] = [
     { value: 'left', label: 'Left side' },
     { value: 'right', label: 'Right side' },
   ], { show: (v) => hasSteelHoles(v) && (v.steelHoles === 'edge' || v.steelHoles === 'rows' || v.steelHoleStyle === 'keyhole'), help: 'Where the row goes (Rows: this edge and the one opposite). Keyholes point their slots at this edge: it is the top when the base hangs. Left and right are as seen from the front.' }),
-  num('steelHoleInset', 'Distance from edge', 'Steel base', 'max(steelEdge, 6) + steelHoleDia / 2', 1, 500, { show: hasSteelHoles, help: 'From the edge of the base to the middle of each hole (for a keyhole, to where the screw sits)' }),
-  num('steelHoleDia', 'Hole diameter', 'Steel base', 6.5, 2, 30, { step: 0.5, noScale: true, show: hasSteelHoles, help: 'Round holes: clearance for the screw. Keyholes: the round end, bigger than the screw head.' }),
+  num('steelHoleInset', 'Distance from edge', 'Steel base', 'max(steelEdge, 6) + max(steelHoleDia, steelKeySlot) / 2', 1, 500, { show: hasSteelHoles, help: 'From the edge of the base to the middle of each hole (for a keyhole, to where the screw sits)' }),
+  num('steelHoleDia', 'Hole diameter', 'Steel base', 6.5, 2, 30, { step: 0.5, noScale: true, show: (v) => hasSteelHoles(v) && v.steelHoleStyle !== 'keyhole', help: 'Clearance for the screw' }),
+  num('steelKeyHead', 'Keyhole head hole', 'Steel base', 10, 2, 30, { step: 0.5, noScale: true, show: (v) => hasSteelHoles(v) && v.steelHoleStyle === 'keyhole', help: 'The round end the screw head goes through: a little bigger than the head (10 mm suits a 4 to 4.5 mm screw with an 8 mm head)' }),
   num('steelKeySlot', 'Keyhole slot width', 'Steel base', 4.5, 1, 20, { step: 0.5, noScale: true, show: (v) => hasSteelHoles(v) && v.steelHoleStyle === 'keyhole', help: 'Narrow part the screw shank sits in: wider than the shank, narrower than the head' }),
   num('steelKeyLength', 'Keyhole slot length', 'Steel base', 10, 2, 60, { step: 0.5, show: (v) => hasSteelHoles(v) && v.steelHoleStyle === 'keyhole', help: 'From the middle of the round end to where the screw sits' }),
 
