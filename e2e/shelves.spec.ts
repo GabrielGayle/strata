@@ -24,8 +24,7 @@ test('place a shelf by clicking the plates, then stand a candle on it', async ({
   if (await tab3d.isVisible()) await tab3d.click();
   await settled(page);
 
-  await page.getByTitle(/Place postcards, boxes and other objects/).click();
-  await page.getByTestId('objects-tab-shelves').click();
+  await page.getByTestId('sidebar-tab-shelves').click();
   await page.getByTestId('shelf-add').click();
   await expect(page.getByTestId('placing-note')).toContainText('shelf');
 
@@ -37,7 +36,7 @@ test('place a shelf by clicking the plates, then stand a candle on it', async ({
   await page.screenshot({ path: test.info().outputPath('shelf.png') });
 
   // a dinner candle, clicked onto whatever is under the middle of the view
-  await page.getByRole('button', { name: 'Candelabra' }).click();
+  await page.getByTestId('sidebar-tab-candles').click();
   await page.getByTestId('candle-place').click();
   await expect(page.getByTestId('placing-note')).toContainText('candle');
   expect(await clickUntil(page, spots, async () => (await page.getByTestId('placed-pc1').count()) > 0)).toBe(true);

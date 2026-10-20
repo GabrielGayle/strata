@@ -53,7 +53,7 @@ const DEFAULT_HINT = 'Objects are cut out of every plate they pass through, so t
 export default function ObjectsPanel({ view }: { view: ObjectsView }) {
   return (
     <div className="objects" role="group" aria-label={view === 'candles' ? 'Candelabra' : view === 'shelf' ? 'Postcard shelf' : view === 'shelves' ? 'Shelves' : 'Objects'}>
-      <ShowRow view={view} />
+      {view !== 'shelves' && <ShowRow view={view} />}
       {view === 'shelves' ? (
         <Fold id="shelves:main" title="Shelves">
           <ShelvesPanel />
