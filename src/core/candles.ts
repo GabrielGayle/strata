@@ -678,7 +678,9 @@ export function snapToCells(objs: CutObject[], planes: PlaneLike[], cross: Plane
         cells.push({ key: `${ks}|${kt}`, x, z });
       }
     }
-    cells.sort((p, q) => Math.hypot(p.x - o.x, p.z - o.z) - Math.hypot(q.x - o.x, q.z - o.z));
+    // nearest first; a tie (a candle exactly between two cells) goes to the one nearer the middle, so layouts stay symmetric
+    const far = (c: Cell) => Math.round(Math.hypot(c.x - o.x, c.z - o.z) * 100);
+    cells.sort((p, q) => far(p) - far(q) || Math.hypot(p.x, p.z) - Math.hypot(q.x, q.z));
     return { o, cells };
   });
   // nearest first: the candle closest to a free cell takes it
@@ -871,6 +873,76 @@ function crossFins(
       ...(tabs ? { tabs } : {}),
     };
   });
+}
+
+/** A candlestick on a wall piece: where its foot is and which way is up and across the wall (model coordinates). */
+export interface WallHold {
+  foot: [number, number, number];
+  up: [number, number, number];
+  right: [number, number, number];
+  /** How far its front stands out from the base top (mm). */
+  front: number;
+}
+
+/**
+ * Cheek fins for a candlestick on a wall piece, like a toast rack: two upright
+ * plates standing out from the wall either side of the candle, square to it.
+ * Each runs from Slot below the candle's foot to Grip above it, and from the
+ * base out past the candle's front by Reach. They key onto the level plates the
+ * candle stands through (`wallFinSlots`), so the candle can't tip forward.
+ */
+export function wallCheekFins(
+  c: { r: number; wall: WallHold },
+  h: { reach: number; grip: number; engage?: number },
+  o: { t: number; baseTop: number; slack: number; minFeature: number },
+  index: number,
+): CandleFin[] {
+  const { foot, up, right } = c.wall;
+  // plate kept between the candle's cup and each fin's slot
+  const off = c.r + o.slack + Math.max(2 * o.minFeature, 4) + o.t / 2;
+  const below = Math.max(h.engage ?? 16, o.t + 2);
+  const above = Math.max(h.grip, 4);
+  const front = c.wall.front + Math.max(h.reach, o.minFeature);
+  const ch = Math.min(h.reach, above) / 2;
+  const outer: P2[] = [[-below, 0], [above, 0], [above, front - ch], [above - ch, front], [-below, front]];
+  return [-1, 1].map((side, k) => ({
+    holder: index,
+    fin: k,
+    plane: {
+      origin: [foot[0] + right[0] * side * off, o.baseTop, foot[2] + right[2] * side * off],
+      normal: [-up[2], 0, up[0]],
+      u: [up[0], 0, up[2]],
+      v: [0, 1, 0],
+    },
+    shape: [{ outer, holes: [] }],
+    labelAt: [(above - below) / 2, front * 0.7],
+    labelMax: Math.max(2, Math.min(above + below, front * 0.4) * 0.5),
+  }));
+}
+
+/**
+ * Halving joints between a cheek fin and the level plates it crosses on a wall:
+ * each plate is slotted from its front edge back to `yMid`, the fin from its back
+ * edge out to the same line, so the fin slides on from the front and locks square.
+ */
+export function wallFinSlots(fin: CandleFin, plates: { key: string; plane: Plane; u0: number; u1: number }[], o: { t: number; fit: number; yMid: number }): FinSlot[] {
+  const c = fin.plane.origin;
+  const d = fin.plane.u;
+  const bb = fin.shape[0].outer.reduce((a, [u]) => [Math.min(a[0], u), Math.max(a[1], u)], [Infinity, -Infinity]);
+  const w = o.t + o.fit;
+  const out: FinSlot[] = [];
+  for (const p of plates) {
+    const n = p.plane.normal;
+    const dn = d[0] * n[0] + d[1] * n[1] + d[2] * n[2];
+    if (Math.abs(dn) < 0.9) continue;
+    const uf = ((p.plane.origin[0] - c[0]) * n[0] + (p.plane.origin[2] - c[2]) * n[2]) / dn;
+    if (uf < bb[0] + w / 2 || uf > bb[1] - w / 2) continue;
+    const pu = p.plane.u;
+    const up = (c[0] + uf * d[0] - p.plane.origin[0]) * pu[0] + (c[2] + uf * d[2] - p.plane.origin[2]) * pu[2];
+    if (up < p.u0 || up > p.u1) continue;
+    out.push({ plate: p.key, plateRect: [up - w / 2, o.yMid, up + w / 2, 20000], finRect: [uf - w / 2, -20000, uf + w / 2, o.yMid] });
+  }
+  return out;
 }
 
 /** Where a slotted fin crosses a plate: the halving slot cut in each, in their own plate coordinates. */

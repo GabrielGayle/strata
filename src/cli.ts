@@ -529,10 +529,15 @@ export async function main(argv: string[], io: CliIo = defaultIo): Promise<numbe
       return 1;
     }
     const zip = buildZip(model, project, rates, { date: args.date ? new Date(`${args.date}T00:00:00Z`) : undefined });
-    if (args.zip) writeFileSync(args.zip, zip);
+    // the zip or model may go inside --out, which isn't made yet
+    const writeMaking = (path: string, data: Uint8Array) => {
+      mkdirSync(dirname(resolve(path)), { recursive: true });
+      writeFileSync(path, data);
+    };
+    if (args.zip) writeMaking(args.zip, zip);
     if (args.glb) {
       const scene = heroScene(model, project);
-      writeFileSync(args.glb, heroGlb(scene, defaultHeroCamera(scene)));
+      writeMaking(args.glb, heroGlb(scene, defaultHeroCamera(scene)));
     }
     const files = args.out ? writeBundle(args.out, zip) : unzipSync(zip);
     report(issues, io);
