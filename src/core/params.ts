@@ -164,6 +164,20 @@ export const PARAMS: ParamDef[] = [
   num('baseHeight', 'Height', 'Base', 120, 5, 600, { show: (v) => !v.steelBaseOn }),
   num('baseCornerChamfer', 'Corner chamfer', 'Base', 0, 0, 300, { show: (v) => v.baseOn || v.steelBaseOn, help: 'Cuts the four vertical corners of the base at 45° (leg length)' }),
   num('baseEdgeChamfer', 'Top edge chamfer', 'Base', 0, 0, 100, { show: (v) => v.baseOn, help: 'Bevels the top edge of the base at 45°. Formed by a chamfer strip fixed inside the top of the mould.' }),
+  choice('baseOutline', 'Outline', 'Base', 'rect', [
+    { value: 'rect', label: 'Rectangle (Length × Width)' },
+    { value: 'follow', label: 'Follow the plates' },
+    { value: 'wrap', label: 'Wrap round the plates' },
+  ], { show: (v) => !!v.steelBaseOn, help: 'Follow the plates: the base is cut round where the plates actually stand, so it is no bigger than it needs to be. Wrap: one smooth outline round all of them with no inward bends.' }),
+  num('baseReach', 'Margin round the plates', 'Base', 15, 0, 300, { show: (v) => !!v.steelBaseOn && v.baseOutline !== 'rect', help: 'Steel kept beyond every plate where it meets the base' }),
+  num('baseBridge', 'Fill gaps up to', 'Base', 40, 0, 1000, { show: (v) => !!v.steelBaseOn && v.baseOutline === 'follow', help: 'Gaps between plates narrower than this are filled with steel, so the base stays one piece. Bigger fills more.' }),
+  { id: 'baseFillMiddle', label: 'Fill the middle', group: 'Base', kind: 'toggle', def: true, show: (v) => !!v.steelBaseOn && v.baseOutline === 'follow', help: 'Fill any opening the plates close round (the middle of a ring). Off leaves it open.' },
+  num('baseRound', 'Corner rounding', 'Base', 10, 0, 300, { show: (v) => !!v.steelBaseOn && v.baseOutline !== 'rect', help: 'Softens the outline: every corner, in or out, is rounded to at least this radius' }),
+  choice('baseProfile', 'Curve profile', 'Base', 'round', [
+    { value: 'round', label: 'Rounded' },
+    { value: 'straight', label: 'Straight (sharp corners)' },
+    { value: 'bevel', label: 'Bevelled' },
+  ], { show: (v) => !!v.steelBaseOn && v.baseOutline !== 'rect', help: 'How the outline grows round the ends of the plates: rounded arcs, straight lines meeting in points, or straight with the points cut off. Corner rounding softens it after.' }),
 
   // Steel base: a laser-cut base plate; every plate drops tabs through slots in it and is welded from underneath
   { id: 'steelBaseOn', label: 'Steel base', group: 'Steel base', kind: 'toggle', def: false, show: () => false },

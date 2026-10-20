@@ -32,6 +32,15 @@ import ViewAidsToolbar from './ViewAidsToolbar';
 import { DEFAULT_VIEWPORT_LAYERS } from './viewportLayers';
 import { setLiveCamera, setLiveViewFromOffset } from './liveView';
 import ViewFromPointPanel, { ViewFromPointRig } from './ViewFromPoint';
+import { bboxOf, type Shape } from '../core/geom2d';
+import type { Values } from '../core/params';
+
+/** The steel base plate's overall size as cut: Length × Width, or round the plates when it follows them. */
+function steelSizeText(outline: Shape | undefined, v: Values): string {
+  if (!outline?.length) return `${fmt(v.baseLength, 0)} × ${fmt(v.baseWidth, 0)}`;
+  const bb = bboxOf(outline.map((e) => e.outer));
+  return `${fmt(bb.maxX - bb.minX, 0)} × ${fmt(bb.maxY - bb.minY, 0)}`;
+}
 
 export function snapDirection(model: Model, dir: Snap, mapNorthUp = false): { dir: THREE.Vector3; up: THREE.Vector3 } {
   if (isWall(model.v)) return wallSnapDirection(model, dir, mapNorthUp);
@@ -399,7 +408,7 @@ export default function Viewport() {
         <div className="overlay bl info">
           <span>
             {model.sliced.steelBase
-              ? `steel base ${fmt(v.baseLength, 0)} × ${fmt(v.baseWidth, 0)} × ${fmt(model.sliced.steelBase.spec.thickness, 1)} mm · ${model.sliced.steelBase.tabs.length} ${model.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welds'}`
+              ? `steel base ${steelSizeText(model.sliced.steelBase.outline, v)} × ${fmt(model.sliced.steelBase.spec.thickness, 1)} mm · ${model.sliced.steelBase.tabs.length} ${model.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welds'}`
               : `base ${fmt(v.baseLength, 0)} × ${fmt(v.baseWidth, 0)} × ${fmt(v.baseHeight, 0)} mm`}
           </span>
           <span>

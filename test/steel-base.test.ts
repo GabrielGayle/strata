@@ -198,6 +198,41 @@ describe('steel base', () => {
     expect(buildPackHtmlChecked(project({ ...tight, steelZigzag: true }), on)).toContain('The tabs zig-zag');
   });
 
+  it('cuts the base round the plates: follow, wrap and fill the middle', () => {
+    const radial = { ...steel, sliceMode: 'radial', steelHoles: '4' };
+    const area = (m: ReturnType<typeof run>['m']) => m.sliced.parts.filter((q) => q.family === 'B').reduce((a, q) => a + q.area, 0);
+    const rect = run(radial).m;
+    const follow = run({ ...radial, baseOutline: 'follow' }).m;
+    const wrap = run({ ...radial, baseOutline: 'wrap' }).m;
+    expect(area(follow)).toBeLessThan(area(wrap));
+    expect(area(wrap)).toBeLessThan(area(rect));
+    for (const m of [follow, wrap]) {
+      const sb = m.sliced.steelBase!;
+      const base = m.sliced.parts.filter((q) => q.family === 'B');
+      expect(base).toHaveLength(1);
+      expect(m.sliced.warnings.filter((w) => /Steel base/.test(w))).toEqual([]);
+      expect(errors(m)).toEqual([]);
+      // every slot is a hole inside the plate, with the edge margin kept round it
+      expect(base[0].shape[0].holes).toHaveLength(sb.tabs.length + 4);
+      for (const tb of sb.tabs) expect(pointInShape(tb.at, base[0].shape), tb.partId).toBe(false);
+      for (const tb of sb.tabs) expect(pointInShape(tb.at, sb.outline)).toBe(true);
+      // the four fixing holes slid in onto steel
+      const holes = fixingHoles(m.v, sb.spec, sb.outline, m.v.minFeature);
+      expect(holes).toHaveLength(4);
+      for (const h of holes) {
+        expect(pointInShape(h.at, sb.outline)).toBe(true);
+        expect(pointInShape(h.at, base[0].shape)).toBe(false);
+      }
+    }
+    // a ring of plates: the middle is filled unless asked not to
+    const ring = { ...steel, sliceMode: 'radial', radialHub: '120', baseOutline: 'follow', baseBridge: '40' };
+    const filled = run(ring).m.sliced.steelBase!.outline;
+    const open = run({ ...ring, baseFillMiddle: false }).m.sliced.steelBase!.outline;
+    expect(filled.every((e) => e.holes.length === 0)).toBe(true);
+    expect(pointInShape([0, 0], filled)).toBe(true);
+    expect(pointInShape([0, 0], open)).toBe(false);
+  });
+
   it('warns when a hole sits too close to the edge', () => {
     const { m } = run({ ...steel, steelHoles: '4', steelHoleInset: '2' });
     expect(m.sliced.warnings.join(' ')).toMatch(/closer than .* to the edge/);

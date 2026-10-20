@@ -3,7 +3,7 @@
 // plates stand square on their own; you weld them from underneath where the
 // tabs come through (or twist the tabs), never reaching between plates.
 import { basePlan, bottomSpans } from './base';
-import { BIG, circlePath, difference, intersection, rect, shapeBBox, signedArea, union, unionShapes, type Path, type Shape } from './geom2d';
+import { BIG, circlePath, difference, intersection, offset, pointInShape, rect, shapeBBox, signedArea, simplifyShape, union, unionShapes, type Path, type Shape } from './geom2d';
 import type { Values } from './params';
 import type { Plane } from './section';
 
@@ -33,6 +33,17 @@ export interface SteelBaseSpec {
   keyHead: number;
   keySlot: number;
   keyLength: number;
+  /** Outline: the Length × Width rectangle, or cut round the plates' feet. */
+  shape: 'rect' | 'follow' | 'wrap';
+  /** Follow / wrap: steel kept beyond every plate's foot (mm). */
+  margin: number;
+  /** Follow: gaps between feet narrower than this are filled (mm). */
+  bridge: number;
+  /** Follow: fill openings the plates enclose (the middle of a ring). */
+  fillMiddle: boolean;
+  /** Corner rounding radius (mm) and the profile the outline is grown with. */
+  round: number;
+  profile: 'round' | 'miter' | 'square';
 }
 
 export function steelBaseSpec(v: Values): SteelBaseSpec | null {
@@ -59,6 +70,12 @@ export function steelBaseSpec(v: Values): SteelBaseSpec | null {
     keyHead: Math.max(1, Number(v.steelKeyHead) || 10),
     keySlot: Math.max(0.5, Number(v.steelKeySlot) || 4.5),
     keyLength: Math.max(1, Number(v.steelKeyLength) || 10),
+    shape: v.baseOutline === 'follow' || v.baseOutline === 'wrap' ? v.baseOutline : 'rect',
+    margin: Math.max(0, Number(v.baseReach) || 0),
+    bridge: Math.max(0, Number(v.baseBridge) || 0),
+    fillMiddle: v.baseFillMiddle !== false,
+    round: Math.max(0, Number(v.baseRound) || 0),
+    profile: v.baseProfile === 'straight' ? 'miter' : v.baseProfile === 'bevel' ? 'square' : 'round',
   };
 }
 
@@ -173,7 +190,8 @@ function thin(tabs: { c: number; len: number }[], pitch: number): { c: number; l
  */
 export function addWeldTabs(outline: Shape, free: Shape, plane: Plane, s: SteelBaseSpec, v: Values, opts: { avoid: [number, number][]; shift: boolean; zig?: 0 | 1 }): { outline: Shape; tabs: { c: number; len: number }[] } {
   if (!outline.length) return { outline, tabs: [] };
-  const over = planInterval(plane, basePlan(v, s.edge));
+  // a base cut round the plates is under every plate wherever it stands
+  const over = s.shape === 'rect' ? planInterval(plane, basePlan(v, s.edge)) : [-BIG, BIG];
   if (!over) return { outline, tabs: [] };
   const end = Math.max(2, v.thickness);
   const minLen = Math.max(4, 2 * v.thickness);
@@ -264,9 +282,73 @@ export function weldOrder(tabs: Omit<WeldTab, 'order' | 'pass'>[]): { tabs: Weld
   return { tabs: out, plates: order.map((p) => p.key) };
 }
 
-/** The base plate in plan (x, -z): the base outline with a slot for every tab and any fixing holes. */
-export function steelBaseShape(v: Values, s: SteelBaseSpec, tabs: WeldTab[], thicknessOf: (plateKey: string) => number): Shape {
-  const outline = union([basePlan(v)]);
+/** Each standing plate's foot in plan (x, -z): where it meets the base, as wide as the plate is thick. */
+export function plateFeet(parts: Standing[]): Path[] {
+  const out: Path[] = [];
+  for (const p of parts) {
+    if (Math.abs(p.plane.normal[1]) > 0.5 || Math.abs(p.plane.v[1]) < 0.99) continue;
+    const ux = p.plane.u[0], uy = -p.plane.u[2];
+    const nx = -uy * (p.thickness / 2), ny = ux * (p.thickness / 2);
+    for (const [u0, u1] of bottomSpans(p.shape, 0)) {
+      const at = (u: number): [number, number] => [p.plane.origin[0] + ux * u, -p.plane.origin[2] + uy * u];
+      const [a, b] = [at(u0), at(u1)];
+      const q: Path = [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]];
+      out.push(signedArea(q) < 0 ? q.reverse() : q);
+    }
+  }
+  return out;
+}
+
+function hull(pts: [number, number][]): Path {
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list: [number, number][]) => {
+    const h: [number, number][] = [];
+    for (const q of list) {
+      while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop();
+      h.push(q);
+    }
+    return h.slice(0, -1);
+  };
+  return [...half(p), ...half([...p].reverse())];
+}
+
+/**
+ * The base plate's outline before slots and holes. Rectangle: Length × Width. Follow: every
+ * plate's foot grown by the margin, gaps up to `bridge` filled, the middle filled, corners
+ * rounded. Wrap: one convex outline round all the feet. Always keeps the edge margin round
+ * every foot, so slots stay inside.
+ */
+export function steelOutline(v: Values, s: SteelBaseSpec, parts: Standing[]): Shape {
+  const feet = s.shape === 'rect' ? [] : plateFeet(parts);
+  if (!feet.length) return union([basePlan(v)]);
+  const foot = union(feet);
+  const j = s.profile;
+  // 0.1 mm arcs: inside a laser's kerf, and quick to grow round many plates
+  const grow = (sh: Shape, d: number, jt: SteelBaseSpec['profile'] = j) => offset(sh, d, jt, ARC);
+  let shape: Shape;
+  if (s.shape === 'wrap') shape = grow(union([hull(foot.flatMap((e) => e.outer))]), s.margin);
+  else {
+    shape = grow(grow(foot, s.margin + s.bridge / 2), -s.bridge / 2);
+    if (s.fillMiddle) shape = shape.map((e) => ({ outer: e.outer, holes: [] }));
+  }
+  if (s.round > 0) {
+    // round the outside corners, then the inside ones
+    shape = grow(grow(shape, -s.round, 'round'), s.round, 'round');
+    shape = grow(grow(shape, s.round, 'round'), -s.round, 'round');
+  }
+  shape = unionShapes(shape, grow(foot, Math.max(s.edge, 1), 'round'));
+  // growing out and back can leave hairline spikes where two curves meet; shave off anything thinner than twice the least feature
+  const d = Math.max(0.5, Number(v.minFeature) || 0);
+  shape = grow(grow(shape, -d, 'round'), d, 'round');
+  // a smooth outline needs few points: keeps the cut file small and the fit checks quick
+  return simplifyShape(shape, 0.05);
+}
+
+const ARC = 0.1;
+
+/** The base plate in plan (x, -z): its outline with a slot for every tab and any fixing holes. */
+export function steelBaseShape(v: Values, s: SteelBaseSpec, tabs: WeldTab[], thicknessOf: (plateKey: string) => number, outline: Shape = union([basePlan(v)])): Shape {
   const c = s.clearance;
   const slots: Path[] = tabs.map((t) => {
     const hw = thicknessOf(t.plateKey) / 2 + c;
@@ -281,7 +363,7 @@ export function steelBaseShape(v: Values, s: SteelBaseSpec, tabs: WeldTab[], thi
       [x - dx * h + nx * hw, y - dy * h + ny * hw],
     ];
   });
-  const holes = fixingHoles(v, s).flatMap((h) => holePaths(h, s));
+  const holes = fixingHoles(v, s, s.shape === 'rect' ? undefined : outline, v.minFeature).flatMap((h) => holePaths(h, s));
   const cut = [...slots, ...holes];
   // each cut on its own first: a slot wound against a hole it touches would otherwise cancel it
   return cut.length ? difference(outline, unionShapes(...cut.map((p) => union([p])))) : outline;
@@ -297,16 +379,23 @@ export interface FixingHole {
 /** Plan direction (x, -z) towards an edge of the base. Front is −x; left and right are as seen from the front. */
 const SIDE: Record<SteelBaseSpec['holeSide'], [number, number]> = { back: [1, 0], front: [-1, 0], left: [0, 1], right: [0, -1] };
 
-/** Where the fixing holes go, in plan (x, -z). */
-export function fixingHoles(v: Values, s: SteelBaseSpec): FixingHole[] {
+/**
+ * Where the fixing holes go, in plan (x, -z). On a base cut round the plates (`outline`) they
+ * are laid out on its bounding box, then each slides inwards until it sits on steel; one
+ * that can't is left out.
+ */
+export function fixingHoles(v: Values, s: SteelBaseSpec, outline?: Shape, minFeature = 1): FixingHole[] {
   if (s.holes === 'none') return [];
-  const corner = Math.max(0, Number(v.baseCornerChamfer) || 0);
-  const a = v.baseLength / 2 - s.holeInset, b = v.baseWidth / 2 - s.holeInset;
+  const bb = outline?.length ? shapeBBox(outline) : null;
+  const cx = bb ? (bb.minX + bb.maxX) / 2 : 0, cy = bb ? (bb.minY + bb.maxY) / 2 : 0;
+  const corner = bb ? 0 : Math.max(0, Number(v.baseCornerChamfer) || 0);
+  const a = (bb ? (bb.maxX - bb.minX) / 2 : v.baseLength / 2) - s.holeInset, b = (bb ? (bb.maxY - bb.minY) / 2 : v.baseWidth / 2) - s.holeInset;
   if (a <= 0 || b <= 0) return [];
   // corner positions keep clear of a corner chamfer
   const ca = a - corner / 2, cb = b - corner / 2;
-  let pts: [number, number][] = [];
-  if (s.holes === 'corners') pts = [[-ca, -cb], [ca, -cb], [ca, cb], [-ca, cb]];
+  // each point with the way it slides in when it misses the steel
+  let pts: { at: [number, number]; inward: [number, number] }[] = [];
+  if (s.holes === 'corners') pts = ([[-ca, -cb], [ca, -cb], [ca, cb], [-ca, cb]] as [number, number][]).map(([x, y]) => ({ at: [cx + x, cy + y], inward: [-x / Math.hypot(x, y), -y / Math.hypot(x, y)] }));
   else {
     const row = (side: SteelBaseSpec['holeSide']) => {
       const [dx, dy] = SIDE[side];
@@ -315,16 +404,32 @@ export function fixingHoles(v: Values, s: SteelBaseSpec): FixingHole[] {
       const n = s.holeCount;
       return Array.from({ length: n }, (_, i) => {
         const t = n === 1 ? 0 : -half + (2 * half * i) / (n - 1);
-        return (dx !== 0 ? [dx * a, t] : [t, dy * b]) as [number, number];
+        const [x, y] = dx !== 0 ? [dx * a, t] : [t, dy * b];
+        return { at: [cx + x, cy + y] as [number, number], inward: [-dx, -dy] as [number, number] };
       });
     };
     const opposite = { back: 'front', front: 'back', left: 'right', right: 'left' } as const;
     pts = s.holes === 'rows' ? [...row(s.holeSide), ...row(opposite[s.holeSide])] : row(s.holeSide);
   }
-  if (s.holeStyle !== 'keyhole') return pts.map((at) => ({ at }));
   // the round end sits below the screw point, away from the top edge
   const [ux, uy] = SIDE[s.holeSide];
-  return pts.map((at) => ({ at, head: [at[0] - ux * s.keyLength, at[1] - uy * s.keyLength] as [number, number] }));
+  const make = (at: [number, number]): FixingHole => (s.holeStyle === 'keyhole' ? { at, head: [at[0] - ux * s.keyLength, at[1] - uy * s.keyLength] } : { at });
+  if (!outline?.length) return pts.map((p) => make(p.at));
+  // steel left once the hole and the least feature round it are taken off the edge
+  const r = s.holeStyle === 'keyhole' ? s.keyHead / 2 : s.holeDia / 2;
+  const room = offset(outline, -(r + minFeature), 'round', ARC);
+  const fits = (h: FixingHole) => [h.at, h.head].every((q) => !q || pointInShape(q, room));
+  const reach = Math.max(bb!.maxX - bb!.minX, bb!.maxY - bb!.minY);
+  const out: FixingHole[] = [];
+  for (const p of pts)
+    for (let d = 0; d <= reach; d += 1) {
+      const h = make([p.at[0] + p.inward[0] * d, p.at[1] + p.inward[1] * d]);
+      if (fits(h)) {
+        out.push(h);
+        break;
+      }
+    }
+  return out;
 }
 
 /** Outline of one fixing hole: a circle, or one keyhole outline (round end, slot, rounded top). */
