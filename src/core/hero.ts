@@ -214,7 +214,9 @@ export function heroFingerprintOf(scene: HeroScene): string {
     h.str(`${m.kind}|${m.name}|${m.look.color}|${m.look.metalness}|${m.look.roughness}|${m.metal ?? ''}|${m.finish ?? ''}|${JSON.stringify(m.bands ?? [])}`);
     h.bytes(m.geometry.getAttribute('position').array as Float32Array);
   }
-  h.str(JSON.stringify(scene.flames));
+  // flames are doubles worked out with trig, whose last digit differs between the browser and
+  // the cloud's Node: a micrometre is plenty to say they stand in the same place
+  h.str(JSON.stringify(scene.flames.length ? scene.flames.map((f) => ({ p: f.p.map(r6), size: r6(f.size) })) : scene.flames));
   return h.digest();
 }
 

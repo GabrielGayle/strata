@@ -41,6 +41,14 @@ export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
     kind: 'fix',
+    title: 'Hero renders of pieces with candles',
+    body: 'A hero render of a design with candles was refused as "a different design" and not saved, because the cloud worked out each flame a few billionths of a micrometre away from where your browser did. Flames now match to the micrometre, so candlelit renders land in the project and the build pack.',
+    where: 'Toolbar › Hero render (with Boost on)',
+    target: { path: ['hero-open'] },
+  },
+  {
+    date: '2026-10-20',
+    kind: 'fix',
     title: 'Waffle plates stay whole round candles',
     body: 'When the plates of a waffle step down to meet candles (or shelf cards), the halving slots are now cut at the stepped-down height. Before, the slots were cut for the full height, so the cross plates fell apart into strips at every crossing and the long plates lost their slots.',
     where: '3D view › Move plates (each plate is one piece again)',
