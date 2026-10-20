@@ -1628,10 +1628,16 @@ export function slice(input: SliceInput): SliceResult {
     return { plane: d.plane, spans: r.spans };
   });
 
+  // shelf cards: each plate is trimmed down to just above the bottom edge of the cards it holds
+  const seats = seatTops(input.objects, defs, t);
+
   // 2. waffle slots (computed from the shared intersection line, so both halves agree)
   const slots: Shape[] = defs.map(() => []);
   if (v.sliceMode === 'waffle') {
     const sw = waffleSlotWidth(v);
+    // plates stepped down to candle or card seats are halved at their stepped-down height: halved at the
+    // full height, the slot from below would run past the new top and cut the plate into pieces
+    const seated = defs.map((_, di) => (seats ? difference(outlines[di], seatTrim(seats.plates[di], seats.floor)) : outlines[di]));
     defs.forEach((p, pi) => {
       if (p.family !== 'P') return;
       defs.forEach((x, xi) => {
@@ -1643,8 +1649,8 @@ export function slice(input: SliceInput): SliceResult {
         // a crossing just past a plate's end still clips its corner when the plates cross at a slant
         const near = sw / 2;
         if (uP < p.u0 - near || uP > p.u1 + near || uX < x.u0 - near || uX > x.u1 + near) return;
-        const colP = intersection(outlines[pi], rect(uP - sw / 2, -BIG, uP + sw / 2, BIG));
-        const colX = intersection(outlines[xi], rect(uX - sw / 2, -BIG, uX + sw / 2, BIG));
+        const colP = intersection(seated[pi], rect(uP - sw / 2, -BIG, uP + sw / 2, BIG));
+        const colX = intersection(seated[xi], rect(uX - sw / 2, -BIG, uX + sw / 2, BIG));
         if (!colP.length || !colX.length) return;
         const top = Math.min(shapeBBox(colP).maxY, shapeBBox(colX).maxY);
         const half = top / 2;
@@ -1655,8 +1661,8 @@ export function slice(input: SliceInput): SliceResult {
           pointInShape([u - reach, y], o) ? u - sw / 2 : u - reach - 1,
           pointInShape([u + reach, y], o) ? u + sw / 2 : u + reach + 1,
         ];
-        const [pa, pb] = widen(outlines[pi], uP, (half + top) / 2);
-        const [xa, xb] = widen(outlines[xi], uX, half / 2);
+        const [pa, pb] = widen(seated[pi], uP, (half + top) / 2);
+        const [xa, xb] = widen(seated[xi], uX, half / 2);
         slots[pi].push(...rect(pa, half, pb, BIG));
         slots[xi].push(...rect(xa, -BIG, xb, half));
       });
@@ -1743,8 +1749,6 @@ export function slice(input: SliceInput): SliceResult {
   let pinTop: number[] = [];
   let below: Shape = []; // material of the layer underneath, for support and guides
 
-  // shelf cards: each plate is trimmed down to just above the bottom edge of the cards it holds
-  const seats = seatTops(input.objects, defs, t);
 
   // candle holders: target fins round each candlestick; slotted ones key into the plates with halving slots
   const fins = (input.candles ?? []).flatMap((c, i) =>

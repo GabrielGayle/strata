@@ -162,6 +162,19 @@ describe('candelabra', () => {
     expect(candleNote(candleShopping(DEFAULT_CANDLES).find((b) => !b.tealight)!)).not.toContain('cross');
   });
 
+  it('a waffle stepped down to its candles keeps every plate whole, halved at the new height', () => {
+    const compute = createPipeline();
+    const p = newProject();
+    const params = { ...p.params, sliceMode: 'waffle', insShape: 'none', plateCount: '14', crossCount: '5', stackHeight: '160', strataOn: false, thickness: '6' };
+    for (const candles of ['4 tealight', '3 pillar']) {
+      const m = compute({ ...p, params, candles: { ...DEFAULT_CANDLES, candles, holder: 'socket' as const, path: 'line' as const, size: 400, crown: 0 } }, assets);
+      // the cross plates used to be slotted up to half the full 160 mm, past their stepped-down tops, and fell apart
+      for (const pl of m.sliced.plates) if (pl.parts.length) expect(pl.parts.length, pl.def.key).toBe(1);
+      // and both sets are still slotted where they cross (a plain plate is a handful of corners; each slot adds four)
+      for (const q of m.sliced.parts.filter((q) => q.family === 'X' || q.family === 'P')) expect(q.shape[0].outer.length, q.id).toBeGreaterThan(12);
+    }
+  });
+
   it('reads cup and slotted on a line', () => {
     const { lines } = parseCandles('2 taper cup\n24 x 300 slotted');
     expect(lines.map((l) => l.size.holder)).toEqual(['socket', 'slotted']);
