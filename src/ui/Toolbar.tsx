@@ -201,7 +201,7 @@ function LayoutMenu() {
         <div style={{ width: 300 }}>
           <button className="item" data-hl="layout-edit" aria-pressed={editing} onClick={() => (close(), p().setEditing(!editing))}>
             <span>{editing ? '✓ ' : ''}Edit layout</span>
-            <small>grips on every control: drag them to reorder, or into another panel</small>
+            <small>drag controls</small>
           </button>
           <button
             className="item"
@@ -215,7 +215,7 @@ function LayoutMenu() {
             }}
           >
             <span>New panel…</span>
-            <small>an empty panel at the top of Parameters for the controls you use most</small>
+            <small>for favourites</small>
           </button>
           <div className="head">Columns</div>
           <button className="item" aria-pressed={!layout.hide.a} onClick={() => p().toggleHide('a')}>
@@ -226,17 +226,16 @@ function LayoutMenu() {
           </button>
           <button className="item" onClick={() => p().toggleSwap()}>
             <span>Swap sides</span>
-            <small>{layout.swap ? 'Parameters back on the left' : 'Parameters on the right, Inspector on the left'}</small>
+            <small>{layout.swap ? 'Parameters left' : 'Parameters right'}</small>
           </button>
           <div className="head">Saved layouts</div>
-          {saved.length === 0 && <p className="note">None yet. Your layout is kept as you go; save one to come back to it.</p>}
+          {saved.length === 0 && <p className="note" style={{ padding: '6px 10px', margin: 0 }}>None yet. The layout is kept as you go; save one to come back to.</p>}
           {saved.map((x) => (
             <button key={x.id} className="item" data-hl="layout-saved" onClick={() => (close(), p().loadSaved(x.id), toast(`Layout "${x.name}"`))}>
               <span>
                 {x.id === current ? '● ' : ''}
                 {x.name}
               </span>
-              <small>panels, columns, sidebar and views</small>
             </button>
           ))}
           <button
@@ -252,7 +251,7 @@ function LayoutMenu() {
             }}
           >
             <span>Save layout as…</span>
-            <small>{cur ? `same name overwrites "${cur.name}"` : 'panels, controls, columns, the 3D sidebar and the views'}</small>
+            <small>the whole screen</small>
           </button>
           {cur && (
             <>
@@ -280,7 +279,7 @@ function LayoutMenu() {
           {saved.length > 0 && (
             <button className="item" onClick={() => (close(), download('strata-layouts.json', p().exportText(), 'application/json'))}>
               <span>Export layouts…</span>
-              <small>a file to take them to another browser</small>
+              <small>as a file</small>
             </button>
           )}
           <button
@@ -312,7 +311,7 @@ function LayoutMenu() {
             }}
           >
             <span>Reset to default layout</span>
-            <small>{moved ? `${moved} change${moved === 1 ? '' : 's'} to controls, plus panels and columns` : 'panels, controls, columns, sidebar and views'}</small>
+            <small>{moved ? `${moved} moved` : 'everything'}</small>
           </button>
         </div>
       )}
