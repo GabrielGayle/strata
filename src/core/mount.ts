@@ -151,9 +151,9 @@ export function mountIssues(v: Values, has: { candles?: boolean; shelf?: boolean
   } else {
     out.push(warn('Wall piece with no base: the plates need something to hang from. Turn the Base on (a steel plate gets keyholes).'));
   }
-  if (has.candles) out.push(warn('Candles on a wall piece point sideways: flames burn upwards, so they would scorch the plates. Use them on a table piece.'));
+  if (has.candles) out.push(info('On a wall each candle stands upright on the plate below it, in a cup cut through the plates it passes, with a clear chimney above its flame. Fins, chokes and trimmed plate tops are for table pieces.'));
   if (v.shadowOn) out.push(info('Shadow pictures are worked out for a piece standing on a table; switch Display › Shown on to Table to design them.'));
-  if (has.shelf) out.push(info('The postcard shelf is laid out for a table piece; on the wall its cards stand out sideways.'));
+  if (has.shelf) out.push(info('On a wall the postcards stand upright on the plate below each one, notched through the plates they pass. Seats and the unobstructed view are for table pieces.'));
   return out;
 }
 

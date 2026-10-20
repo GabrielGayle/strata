@@ -26,6 +26,7 @@ import { Candle3D, SunStudy3D } from './SunStudy';
 import { showBaseMesh, showInsertMesh, showObject, showPart, type ViewportLayers } from './viewportLayers';
 import { contourStep, makeHeightBandMaterial, outlineColor, outlineSegments, rakeDirection, reliefRange, spreadOffsets, tintColor, type ViewAids } from './viewAids';
 import { roomToModel } from '../core/mount';
+import { framePose } from '../core/origin';
 import { useMountFrame } from './useMount';
 
 export interface SceneOpts {
@@ -293,7 +294,8 @@ function HiddenFaceTint({ model }: { model: Model }) {
 function Candle({ o, geometry, picked, onPick }: { o: CutObject; geometry: THREE.BufferGeometry; picked: boolean; onPick: () => void }) {
   const accent = cssVar('--accent', '#d4521c');
   const tea = o.look === 'tealight';
-  const top = o.y + o.h / 2;
+  const half = o.h / 2;
+  const pose = useMemo(() => objectMatrix(o), [o]);
   const flame = Math.min(22, Math.max(9, o.w * 0.45));
   return (
     <group>
@@ -311,20 +313,23 @@ function Candle({ o, geometry, picked, onPick }: { o: CutObject; geometry: THREE
         {tea ? <meshStandardMaterial color="#c9ccd1" metalness={0.85} roughness={0.35} /> : <meshStandardMaterial color="#f1e8d6" roughness={0.6} />}
         {picked && <Edges color={accent} threshold={20} />}
       </mesh>
-      {tea && (
-        <mesh position={[o.x, top + 0.01, o.z]} rotation={[-Math.PI / 2, 0, 0]}>
-          <circleGeometry args={[o.w / 2 - 1, 40]} />
-          <meshStandardMaterial color="#f6f1e6" roughness={0.7} />
+      {/* wax, wick and flame in the candle's own frame, so they stand up the way it does (on a wall too) */}
+      <group matrix={pose} matrixAutoUpdate={false}>
+        {tea && (
+          <mesh position={[0, half + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <circleGeometry args={[o.w / 2 - 1, 40]} />
+            <meshStandardMaterial color="#f6f1e6" roughness={0.7} />
+          </mesh>
+        )}
+        <mesh position={[0, half + 2.5, 0]}>
+          <cylinderGeometry args={[0.5, 0.5, 5, 6]} />
+          <meshStandardMaterial color="#2a2420" />
         </mesh>
-      )}
-      <mesh position={[o.x, top + 2.5, o.z]}>
-        <cylinderGeometry args={[0.5, 0.5, 5, 6]} />
-        <meshStandardMaterial color="#2a2420" />
-      </mesh>
-      <mesh position={[o.x, top + 5 + flame / 2, o.z]} scale={[1, 1.9, 1]}>
-        <sphereGeometry args={[flame / 3.8, 16, 12]} />
-        <meshBasicMaterial color="#ffc35a" transparent opacity={0.9} />
-      </mesh>
+        <mesh position={[0, half + 5 + flame / 2, 0]} scale={[1, 1.9, 1]}>
+          <sphereGeometry args={[flame / 3.8, 16, 12]} />
+          <meshBasicMaterial color="#ffc35a" transparent opacity={0.9} />
+        </mesh>
+      </group>
     </group>
   );
 }
@@ -336,9 +341,11 @@ function OriginMarker({ model }: { model: Model }) {
   if (!placing && hl !== 'origin') return null;
   const big = hl === 'origin';
   const len = big ? 220 : 120;
+  // on a wall its y axis points really up, the way placed things stand
+  const pose = framePose(model.origin);
   return (
     // drawn over everything, so it shows even inside the concrete
-    <group position={model.origin.p} rotation={[0, model.origin.turn, 0]}>
+    <group position={pose.position} quaternion={pose.quaternion}>
       <axesHelper args={[len]} renderOrder={999} onUpdate={(a) => ((a.material as THREE.Material).depthTest = false)} />
       <mesh renderOrder={999}>
         <sphereGeometry args={[big ? 12 : 7, 20, 12]} />
