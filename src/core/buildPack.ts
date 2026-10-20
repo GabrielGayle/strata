@@ -948,6 +948,9 @@ function assemblySteps(project: Project, m: Model, view: View, names: Map<string
       steps.push(`<b>After the cure, pull the formers</b> and fit the plates back to front, ${nm(back ?? R[R.length - 1])} first, bedding each in resin or grout.`);
     }
   }
+  const finParts = parts.filter((p) => p.family === 'K');
+  if (finParts.length && project.candles?.finJoin === 'cross')
+    steps.push(`<b>Pair up the candle fins.</b> Each candlestick's two fins are a two-piece cross: drop the one slotted from the bottom onto the one slotted from the top so the middle slots meet and the arms sit square, then tack the joint before you set the holder.`);
   const moved = [...new Set(parts.filter((p) => moveText(project, view, p.plateKey)).map((p) => names.get(p.plateKey) ?? p.id))];
   if (moved.length) steps.push(`<b>Hand-placed plates:</b> ${moved.map((s) => `<b>${esc(s)}</b>`).join(', ')} ${moved.length > 1 ? 'were' : 'was'} moved by hand in the design. Set ${moved.length > 1 ? 'them' : 'it'} where the layout drawing shows, not at the regular spacing.`);
   if (v.baseOn && !flat) {

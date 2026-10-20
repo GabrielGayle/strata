@@ -34,7 +34,7 @@ export interface CutObject {
   /** How it is drawn: candles read as wax, tealights as a metal cup, a hidden cutter not at all. */
   look?: 'candle' | 'tealight' | 'hidden';
   /** Candlesticks held by a target: fins standing round it, gripping it from every side. */
-  holder?: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number };
+  holder?: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number; cross?: boolean };
   /**
    * Plates choked in to it (candles, shelf cards): how far round it the plates
    * reach, and whether they join to the next object of the same group (candles

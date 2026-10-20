@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { newProject, deserialize, serialize } from '../src/core/project';
-import { addCandle, candleList, candleObjects, DEFAULT_CANDLES, parseCandles, pathPolyline, spreadAlong, writeCandles, type CandlePath } from '../src/core/candles';
+import { addCandle, candleList, candleNote, candleObjects, candleShopping, cleanCandles, DEFAULT_CANDLES, parseCandles, pathPolyline, spreadAlong, writeCandles, type CandlePath } from '../src/core/candles';
 import { projectFromShare, shareState } from '../src/core/share';
 
 const assets: Assets = { sideImg: null, frontImg: null, insMesh: null, srcMesh: null };
@@ -89,6 +89,77 @@ describe('candelabra', () => {
     // fins running along the plates can't slot, and say so
     const along = compute({ ...p, params: { ...p.params, strataOn: false, stackHeight: '200' }, candles: { ...candles, spin: 0 } }, assets);
     expect(along.sliced.warnings.some((w) => w.includes('slotted candle fin'))).toBe(true);
+  });
+
+  it('two-piece fins: two full-width fins per candlestick that halve into a cross without overlapping', () => {
+    const compute = createPipeline();
+    const p = newProject();
+    const params = { ...p.params, strataOn: false, stackHeight: '200' };
+    const candles = { ...DEFAULT_CANDLES, candles: '3 taper', crown: 0, finJoin: 'cross' as const };
+    const m = compute({ ...p, params, candles }, assets);
+    const fins = m.sliced.parts.filter((q) => q.family === 'K');
+    expect(fins.length).toBe(3 * 2);
+    expect(m.sliced.warnings.some((w) => w.includes('two-piece'))).toBe(false);
+    const inside = (outer: [number, number][], [x, y]: [number, number]) => {
+      let c = false;
+      for (let i = 0, j = outer.length - 1; i < outer.length; j = i++) {
+        const [xi, yi] = outer[i], [xj, yj] = outer[j];
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+      }
+      return c;
+    };
+    const t = Number(m.v.thickness);
+    for (let i = 0; i < 3; i++) {
+      const [a, b] = [fins[2 * i], fins[2 * i + 1]];
+      // both run right across the candle, the same width as a separate pair end to end
+      for (const f of [a, b]) {
+        expect(f.bbox.minX).toBeLessThan(-11);
+        expect(f.bbox.maxX).toBeGreaterThan(11);
+        expect(f.bbox.maxY).toBeCloseTo(DEFAULT_CANDLES.lift + DEFAULT_CANDLES.grip, 0);
+      }
+      // at right angles
+      const dot = a.plane.u[0] * b.plane.u[0] + a.plane.u[2] * b.plane.u[2];
+      expect(Math.abs(dot)).toBeLessThan(1e-6);
+      // in the middle the first keeps the bottom half and the second the top half: no metal in the same place
+      const y0 = -Number(m.v.embedDepth), yb = DEFAULT_CANDLES.lift;
+      const lo: [number, number] = [0, y0 + (yb - y0) * 0.25];
+      const hi: [number, number] = [0, y0 + (yb - y0) * 0.75];
+      expect(inside(a.shape[0].outer, lo)).toBe(true);
+      expect(inside(a.shape[0].outer, hi)).toBe(false);
+      expect(inside(b.shape[0].outer, lo)).toBe(false);
+      expect(inside(b.shape[0].outer, hi)).toBe(true);
+      // the slots are just wider than the metal
+      expect(inside(a.shape[0].outer, [t / 2 + 0.2, hi[1]])).toBe(true);
+    }
+    // a plain separate set is twice the parts
+    const sep = compute({ ...p, params, candles: { ...candles, finJoin: 'separate' } }, assets);
+    expect(sep.sliced.parts.filter((q) => q.family === 'K').length).toBe(3 * 4);
+  });
+
+  it('two-piece fins slot onto the plates too, and fall back to separate fins with no room to halve', () => {
+    const compute = createPipeline();
+    const p = newProject();
+    const params = { ...p.params, strataOn: false, stackHeight: '200' };
+    const candles = { ...DEFAULT_CANDLES, candles: '2 taper', crown: 0, holder: 'slotted' as const, finJoin: 'cross' as const };
+    const m = compute({ ...p, params, candles }, assets);
+    const fins = m.sliced.parts.filter((q) => q.family === 'K');
+    expect(fins.length).toBe(2 * 2);
+    for (const f of fins) expect(f.bbox.minY).toBeCloseTo(DEFAULT_CANDLES.lift - DEFAULT_CANDLES.engage, 0);
+    expect(m.sliced.warnings.some((w) => w.includes('slotted candle fin'))).toBe(false);
+    // slotted with a 4 mm Slot leaves no pedestal to halve: separate fins and a warning
+    const low = compute({ ...p, params, candles: { ...candles, engage: 4 } }, assets);
+    expect(low.sliced.parts.filter((q) => q.family === 'K').length).toBe(2 * DEFAULT_CANDLES.fins);
+    expect(low.sliced.warnings.some((w) => w.includes('two-piece'))).toBe(true);
+  });
+
+  it('keeps the fin style through save and the candle list', () => {
+    expect(cleanCandles({ ...DEFAULT_CANDLES, finJoin: 'cross' })!.finJoin).toBe('cross');
+    expect(cleanCandles({ ...DEFAULT_CANDLES, finJoin: 'nonsense' })!.finJoin).toBe('separate');
+    expect(cleanCandles({ candles: '1 taper' })!.finJoin).toBe('separate');
+    const buy = candleShopping({ ...DEFAULT_CANDLES, finJoin: 'cross' });
+    expect(candleNote(buy.find((b) => !b.tealight)!)).toContain('2-piece cross');
+    expect(candleNote(buy.find((b) => b.tealight)!)).not.toContain('cross');
+    expect(candleNote(candleShopping(DEFAULT_CANDLES).find((b) => !b.tealight)!)).not.toContain('cross');
   });
 
   it('reads cup and slotted on a line', () => {
@@ -277,7 +348,22 @@ describe('candle shopping list', () => {
     expect(html).toContain('data-candle-total="9"');
     const plain = { ...newProject() };
     expect(unzipSync(buildZip(createPipeline()(plain, assets), plain))['candles.csv']).toBeUndefined();
-  });
+    }, 60000);
+
+  it('carries two-piece fins into the laser files, the candle list and the build pack', async () => {
+    const { buildZip, buildPackHtmlChecked } = await import('../src/core/exporters');
+    const { unzipSync, strFromU8 } = await import('fflate');
+    const p = { ...newProject(), candles: { ...DEFAULT_CANDLES, finJoin: 'cross' as const } };
+    const m = createPipeline()(p, assets);
+    const fins = m.sliced.parts.filter((q) => q.family === 'K');
+    expect(fins.length).toBe(5 * 2);
+    const files = unzipSync(buildZip(m, p));
+    const names = Object.keys(files);
+    for (const f of fins) expect(names.some((n) => n.endsWith('.dxf') && n.includes(f.id))).toBe(true);
+    expect(strFromU8(files['candles.csv'])).toContain('target fins (2-piece cross)');
+    const html = buildPackHtmlChecked(p, m);
+    expect(html).toContain('Pair up the candle fins');
+  }, 60000);
 });
 
 describe('candle picker', () => {
