@@ -40,6 +40,13 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'fix',
+    title: 'Wall pieces hang face out in phone AR',
+    body: 'On the phone viewer, AR put a wall piece on the wall lying face down. It now hangs the way it does in the 3D view: upright, its back against the wall and its face towards you.',
+    where: 'Phone viewer (/m) › View in AR',
+  },
+  {
+    date: '2026-10-20',
     kind: 'new',
     title: 'Cutter-only objects and card sizes',
     body: 'A placed object can now be a cutter only: untick Drawn and it still cuts the plates but is not drawn in the 3D view, renders or AR, so a box can open a pocket in front of a card without hiding it. It stays that way after saving and reopening. Cards get a size menu with postcard, tarot, poker and bridge sizes.',

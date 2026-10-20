@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { unzipSync, strFromU8 } from 'fflate';
 import { isViewerPath, phoneRedirect } from '../src/ui/mobile/route';
 import { arSizeMm, buildArScene, exportUsdz } from '../src/ui/mobile/arExport';
+import { modelToRoomMatrix, mountFrame } from '../src/core/mount';
+import { newProject } from '../src/core/project';
 
 describe('phone viewer route', () => {
   it('knows its own address', () => {
@@ -79,6 +81,22 @@ describe('AR export', () => {
     expect(usda).toContain('preliminary:anchoring:type = "plane"');
     expect(usda).toContain('preliminary:planeAnchoring:alignment = "horizontal"');
     expect(names.filter((n) => n.startsWith('geometries/'))).toHaveLength(2);
+  });
+
+  it('tips a wall piece so Quick Look hangs it face out, not face down', async () => {
+    // a wall piece: model +Y comes out of the wall; the room turn stands it up facing +z
+    const room = modelToRoomMatrix(mountFrame({ ...newProject().params, mount: 'wall' } as never));
+    const scene = buildArScene(sculpture(), 1, room);
+    const before = new THREE.Box3().setFromObject(scene);
+    const usda = strFromU8(unzipSync(await exportUsdz(scene, true))['model.usda']);
+    expect(usda).toContain('preliminary:planeAnchoring:alignment = "vertical"');
+    // the outermost transform is a quarter turn about x: +z (facing) → +y (the wall's normal in Quick Look), +y (up) → −z
+    const first = usda.match(/matrix4d xformOp:transform = \(([^\n]+)\)/)![1];
+    const rows = [...first.matchAll(/\(([^()]+)\)/g)].map((m) => m[1].split(',').map(Number));
+    expect(rows[1].map((x) => Math.round(x))).toEqual([0, 0, -1, 0]);
+    expect(rows[2].map((x) => Math.round(x))).toEqual([0, 1, 0, 0]);
+    // the scene itself is left as it was (its size label still reads width × height × depth)
+    expect(new THREE.Box3().setFromObject(scene).equals(before)).toBe(true);
   });
 
   it('has nothing to place when nothing is solid', () => {
