@@ -250,7 +250,7 @@ describe('cli validation', () => {
     const io = capture();
     expect(await main([project, '--out', out], io)).toBe(0);
     expect(io.err).toMatch(/warning: labelHeight was clamped to 50 \(range 2\.\.50\)/);
-    expect(walk(out)).toContain('laser/sheets/sheet-01-cut.dxf');
+    expect(walk(out).some((n) => /^laser\/sheets\/[a-z]+-[\d.]+mm\/sheet-01-cut\.dxf$/.test(n))).toBe(true);
     const back = deserialize(readFileSync(join(out, 'project.strata.json'), 'utf8'));
     expect(back.params.labelHeight).toBe('999');
   });

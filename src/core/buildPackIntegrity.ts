@@ -62,19 +62,19 @@ export interface BuildPackManifest {
 }
 
 /** The laser job a part belongs to: its metal, plus the sheet thickness when it isn't the plates' (the steel base plate). */
+/** Folder name for one cutting job: metal and thickness, e.g. "corten-3mm". */
+export function cutFolder(metal: string, thickness: number): string {
+  return `${metal}-${Math.round(thickness * 100) / 100}mm`;
+}
+
+/** The metal and thickness a part is cut from; every part DXF sits in a folder named for it. */
 export function partSheetKey(model: Model, project: Project | undefined, part: Part): string {
-  const metal = materialOf(project?.appearance, part.plateKey, String(model.v.plateMaterial));
-  return Math.abs(part.thickness - model.v.thickness) > 1e-9 ? `${metal}-${part.thickness}mm` : metal;
+  return cutFolder(materialOf(project?.appearance, part.plateKey, String(model.v.plateMaterial)), part.thickness);
 }
 
-function mixedMetals(model: Model, project?: Project): boolean {
-  return new Set(model.sliced.parts.map((p) => partSheetKey(model, project, p))).size > 1;
-}
-
-/** Relative zip path for a laser-cut part DXF. With mixed metals or thicknesses each job gets its own folder. */
+/** Relative zip path for a laser-cut part DXF, in its metal-and-thickness folder. */
 export function laserPartPath(model: Model, project: Project | undefined, part: Part): string {
-  const mixed = mixedMetals(model, project);
-  return `laser/parts/${mixed ? `${safeZipName(partSheetKey(model, project, part))}/` : ''}${safeZipName(part.id)}.dxf`;
+  return `laser/parts/${safeZipName(partSheetKey(model, project, part))}/${safeZipName(part.id)}.dxf`;
 }
 
 function plateBBox(parts: Part[]): BBox {

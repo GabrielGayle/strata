@@ -19,10 +19,10 @@ describe('fabrication zip carries every feature', () => {
   const text = (n: string) => strFromU8(files[n]);
 
   it('splits laser parts and sheets into a folder per metal', () => {
-    expect(names.some((n) => n.startsWith('laser/parts/aluminium/'))).toBe(true);
-    expect(names.some((n) => n.startsWith('laser/parts/steel/'))).toBe(true);
-    expect(names.some((n) => n.startsWith('laser/sheets/aluminium/sheet-01'))).toBe(true);
-    expect(names.some((n) => n.startsWith('laser/sheets/steel/sheet-01'))).toBe(true);
+    expect(names.some((n) => n.startsWith('laser/parts/aluminium-3mm/'))).toBe(true);
+    expect(names.some((n) => n.startsWith('laser/parts/steel-3mm/'))).toBe(true);
+    expect(names.some((n) => n.startsWith('laser/sheets/aluminium-3mm/sheet-01'))).toBe(true);
+    expect(names.some((n) => n.startsWith('laser/sheets/steel-3mm/sheet-01'))).toBe(true);
     const laser = names.filter((n) => n.startsWith('laser/parts/'));
     expect(laser.length).toBe(model.sliced.parts.length);
   });

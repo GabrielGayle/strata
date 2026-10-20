@@ -44,7 +44,8 @@ test('Help › Changelog lists changes and Show me lights up where each lives', 
   await mkdir(shotDir, { recursive: true });
 
   const win = await openChangelog(page);
-  await expect(win.locator('.cl-entry').first()).toContainText('Changelog');
+  // newest first; the changelog's own entry is somewhere in the list
+  await expect(win.locator('.cl-entry', { hasText: 'Changelog' }).first()).toBeVisible();
   await win.screenshot({ path: join(shotDir, 'window.png') });
 
   // a 3D view toolbar button

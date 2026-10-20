@@ -35,6 +35,7 @@ import {
   buildPlateManifest,
   BuildPackIntegrityError,
   partSheetKey,
+  cutFolder,
 } from './buildPackIntegrity';
 
 let exportBusy = false;
@@ -357,11 +358,10 @@ const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, '_');
 /** Laser sheet DXFs by file name. With mixed metals each metal gets its own folder, numbered from 1. */
 export function sheetFiles(model: Model): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
-  const keyOf = (s: { material?: string; thickness?: number }) => `${s.material ?? ''}${s.thickness != null ? `-${s.thickness}mm` : ''}`;
-  const mixed = new Set(model.nested.sheets.map(keyOf)).size > 1;
   const counts: Record<string, number> = {};
   model.nested.sheets.forEach((s, i) => {
-    const dir = mixed && (s.material || s.thickness != null) ? `${safe(keyOf(s) || 'sheet')}/` : '';
+    // every sheet sits in a folder saying what to cut it from, e.g. corten-3mm/
+    const dir = `${safe(cutFolder(s.material || String(model.v.plateMaterial), s.thickness ?? model.v.thickness))}/`;
     counts[dir] = (counts[dir] ?? 0) + 1;
     const nn = String(counts[dir]).padStart(2, '0');
     files[`${dir}sheet-${nn}-cut.dxf`] = strToU8(sheetCutDxf(model, i));
@@ -377,16 +377,17 @@ export function packReadme(model: Model, project?: Project): string {
     'Strata fabrication pack',
     '=======================',
     '',
-    'laser/parts/*.dxf',
+    'laser/parts/<metal>-<thickness>mm/*.dxf',
+    '  Each folder is one cutting job: the metal and sheet thickness to cut it from.',
     '  One file per laser-cut part (outlines, holes, and etch). Round holes are CIRCLE;',
     '  other outlines are LWPOLYLINE. Layers: CUT (cut this), ETCH / ENGRAVE (optional).',
     '',
-    'laser/sheets/sheet-NN-cut.dxf',
+    'laser/sheets/<metal>-<thickness>mm/sheet-NN-cut.dxf',
     '  Nested sheet, CUT ONLY. Closed LWPOLYLINE outlines (CIRCLE for round holes) on',
     '  the CUT layer — the same structure Commissary quotes: no 1250×2500 sheet border',
     '  and no etch. That rectangle is not a cut; quoting it as one inflates the price.',
     '',
-    'laser/sheets/sheet-NN-etch.dxf',
+    'laser/sheets/<metal>-<thickness>mm/sheet-NN-etch.dxf',
     '  Optional sidecar: part numbers and artwork on ETCH / ENGRAVE. Omit this file',
     '  if you do not want etching. Never merge it into the cut file for a cut quote.',
     '',
@@ -416,16 +417,13 @@ export function packReadme(model: Model, project?: Project): string {
   return lines.join('\n') + '\n';
 }
 
-/** One DXF per laser part. With mixed metals each metal gets its own folder. */
+/** One DXF per laser part, in a folder per metal and thickness (e.g. corten-3mm/). */
 export function partFiles(model: Model, project?: Project): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
-  // one folder per metal, and per thickness for a thicker steel base plate
-  const sheet = (p: Part) => partSheetKey(model, project, p);
-  const mixed = new Set(model.sliced.parts.map(sheet)).size > 1;
   for (const p of model.sliced.parts) {
     const engrave = mapEngraveForPart(p, project, model);
     const backEtch = mapBackEtchForPart(p, project, model);
-    const rel = `${mixed ? `${safe(sheet(p))}/` : ''}${safe(p.id)}.dxf`;
+    const rel = `${safe(partSheetKey(model, project, p))}/${safe(p.id)}.dxf`;
     if (files[rel]) {
       throw new BuildPackIntegrityError(`Duplicate laser part path laser/parts/${rel} (part ${p.id})`);
     }
