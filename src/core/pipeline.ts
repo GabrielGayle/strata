@@ -453,7 +453,7 @@ export function createFrontPipeline(options: FrontOptions = {}) {
           });
     const unfolded = stage('Unfold', [...pick(v, UNFOLD_KEYS), insert, source], () => unfold(v.unfoldTarget === 'source' ? source?.form ?? null : insert?.form ?? null, v));
     const numScope = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'number')) as Record<string, number>;
-    const pour = stage('Pour plan', [project.pour, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope));
+    const pour = stage('Pour plan', [project.pour, sliced.baseOutline, ...pick(v, BASE_KEYS)], () => pourPlan(v, project.pour, numScope, sliced.baseOutline));
     const finalSliced = carved?.sliced ?? sliced;
     const mapFrame = project.images.top?.map?.sunkenFrame;
     const sunkenFrame = stage(

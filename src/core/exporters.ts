@@ -341,7 +341,7 @@ export function modelStl(model: Model): Uint8Array {
   const v = model.v;
   const geos: THREE.BufferGeometry[] = model.sliced.parts.map((p) => extrudeOnPlane(p.shape, p.thickness, p.plane));
   if (model.sunkenFrame) geos.push(extrudeSunkenFrame(model.sunkenFrame));
-  else if (v.baseOn) geos.push(baseGeometry(v));
+  else if (v.baseOn) geos.push(baseGeometry(v, model.sliced.baseOutline));
   if (model.insert) geos.push(model.insert.form.geometry.clone());
   return geomToStl(mergeGeometries(geos));
 }

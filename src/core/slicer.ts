@@ -36,7 +36,7 @@ import { sightCut, type SightCard } from './sightLine';
 import { boxBlur, distanceInside, marchingSquares, sample, type Gray } from './image';
 import { strokeTextCentered, textWidth } from './strokefont';
 import { MAX_TUNED, MIN_TUNED, tunePlates, tuningActive, type PlateTune } from './tuning';
-import { addTenons, baseChamfers, planClearance, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
+import { addTenons, baseChamfers, followOutline, outlineSpec, plateFeet, planClearance, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
 import { addWeldTabs, fixingHoles, holeReach, steelBaseShape, steelBaseSpec, steelOutline, steelPlane, tabsOf, weldOrder, type SteelBaseSpec, type WeldTab } from './steelBase';
 import { buildSpacers, planRods, rodHardware, rodHoles, type BraceIssue, type HardwareRow, type RodPlan, type SpacerResult } from './brace';
 import { finishPlatePieces, type FragmentEvent } from './fragments';
@@ -197,6 +197,8 @@ export interface SliceResult {
   candleMaster?: MasterSummary | null;
   /** The steel base plate and its weld tabs, when Base is a steel plate. */
   steelBase?: SteelBaseResult | null;
+  /** The concrete base in plan (x, -z) when Base › Outline cuts it round the plates; null for the rectangle. */
+  baseOutline?: Shape | null;
 }
 
 /** The steel base plate and the tabs welded through it (null unless Base is a steel plate). */
@@ -2282,5 +2284,23 @@ export function slice(input: SliceInput): SliceResult {
     const ring = v.cmFrame > 0 ? candleMaster.inner.w : Infinity;
     for (const p of allParts) if (p.index === top && p.bbox.maxX - p.bbox.minX < ring) p.labelPaths = [];
   }
-  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, areas, support, tuning, brace, stackRods, roundSpots: spots, candleMaster, steelBase };
+  // a concrete base cut round the plates: every foot, the support ring and the cast-in rods
+  let baseOutline: Shape | null = null;
+  const outlineSpecV = outlineSpec(v);
+  if (v.baseOn && !isFlat && outlineSpecV.shape !== 'rect') {
+    const feet = plateFeet(allParts.filter((p) => p.family !== 'T'));
+    if (support) feet.push(circlePath(0, 0, support.outer));
+    for (const r of brace?.rods?.rods ?? []) {
+      if (!r.embedded) continue;
+      const a: [number, number] = [r.a[0], -r.a[2]], b: [number, number] = [r.b[0], -r.b[2]];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      const hw = (brace!.rods!.hole || 6) / 2;
+      const nx = (-(b[1] - a[1]) / len) * hw, ny = ((b[0] - a[0]) / len) * hw;
+      const q: Path = [[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]];
+      feet.push(signedArea(q) < 0 ? q.reverse() : q);
+    }
+    // concrete round every plate: past the top edge chamfer, and never less than 10 mm
+    if (feet.length) baseOutline = followOutline(feet, outlineSpecV, baseChamfers(v).edge + 10, v.minFeature);
+  }
+  return { plates, parts: allParts, fragments: fragmentEvents, warnings, front: front ? front.win : null, top: topWin, areas, support, tuning, brace, stackRods, roundSpots: spots, candleMaster, steelBase, baseOutline };
 }

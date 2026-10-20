@@ -41,6 +41,14 @@ export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
     kind: 'new',
+    title: 'Concrete base cast round the plates',
+    body: 'Base › Outline now works on a concrete base too: Follow the plates or Wrap round them, with the same margin, gap fill, corner rounding and curve profile. The 3D view, mould rings, pour plan, concrete weight, price and build pack drawings all follow the new shape.',
+    where: 'Parameters › Base › Outline',
+    target: { param: 'baseOutline' },
+  },
+  {
+    date: '2026-10-20',
+    kind: 'new',
     title: 'Steel base cut round the plates',
     body: 'Base › Outline can now follow the plates, so the base is cut round where they stand instead of filling the whole Length × Width, or wrap them in one smooth outline. Set the margin round the plates, how big a gap gets filled, whether the middle is filled, the corner rounding and the curve profile. Slots and fixing holes stay on the steel.',
     where: 'Parameters › Base › Outline (steel base)',

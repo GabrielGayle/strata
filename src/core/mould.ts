@@ -171,7 +171,7 @@ export function buildMoulds(v: Values, sliced: SliceResult, insert: IndexedMesh 
     for (let k = 0; k < n; k++) {
       const yTop = Math.min(H, (k + 1) * ply);
       const d = tanD * yTop;
-      cavities.push({ y0: k * ply, shape: union([basePlan(v, -d)]) });
+      cavities.push({ y0: k * ply, shape: sliced.baseOutline ? offset(sliced.baseOutline, -d, 'round', 0.1) : union([basePlan(v, -d)]) });
     }
     const ch = baseChamfers(v);
     if (ch.corner > 0) notes.push(`Base corners chamfered ${ch.corner.toFixed(0)} mm: cut into every ring.`);
@@ -260,7 +260,7 @@ export function buildMoulds(v: Values, sliced: SliceResult, insert: IndexedMesh 
   return { parts, notes, dowels, bolts };
 }
 
-export function pourPlan(v: Values, layers: PourLayer[], scope: Record<string, number>): { rows: PourPlanRow[]; total: number; mismatch: number } {
+export function pourPlan(v: Values, layers: PourLayer[], scope: Record<string, number>, outline?: Shape | null): { rows: PourPlanRow[]; total: number; mismatch: number } {
   const rows: PourPlanRow[] = [];
   let y = 0;
   for (const l of layers) {
@@ -273,7 +273,7 @@ export function pourPlan(v: Values, layers: PourLayer[], scope: Record<string, n
       error = (e as Error).message;
       h = 0;
     }
-    const vol = baseVolumeBetween(v, y, y + h) / 1e9; // m³
+    const vol = baseVolumeBetween(v, y, y + h, outline) / 1e9; // m³
     rows.push({ id: l.id, name: l.name, color: l.color, y0: y, y1: y + h, height: h, volume: vol * 1000, mass: vol * CONCRETE_DENSITY, error });
     y += h;
   }

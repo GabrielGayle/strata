@@ -67,7 +67,7 @@ function clearances(model: Model, setup: ReturnType<typeof clearanceSetup>, m: T
     return [v.x, v.y, v.z];
   });
   const out: Clearance[] = setup.neighbours.map((n) => ({ label: n.key, mm: slabGap(pts, n.plane.origin, n.plane.normal, n.t) }));
-  if (model.v.baseOn && pts.length) out.push({ label: 'base edge', mm: Math.min(...pts.map((p) => planClearance(model.v, p[0], -p[2]))) });
+  if (model.v.baseOn && !model.sliced.baseOutline && pts.length) out.push({ label: 'base edge', mm: Math.min(...pts.map((p) => planClearance(model.v, p[0], -p[2]))) });
   return out;
 }
 

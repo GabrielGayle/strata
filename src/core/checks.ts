@@ -181,7 +181,8 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     if (v.radialHub < minHub) issues.push({ partId: null, type: 'collision', severity: 'error', message: `Radial plates touch at the hub: hub radius must be ≥ ${minHub.toFixed(1)} mm.` });
   }
   // chamfered base: plates must stay inside the footprint where they enter the concrete
-  if (v.baseOn) {
+  // (a base that follows the plates is drawn round them, so they always do)
+  if (v.baseOn && !sliced.baseOutline) {
     const ch = baseChamfers(v);
     if (ch.corner > 0 || ch.edge > 0) {
       for (const plate of sliced.plates) {
@@ -213,7 +214,7 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     const sideMin = Math.max(MIN_FLOOR, Math.min(10, Math.min(v.baseLength, v.baseWidth) / 10));
     if (cover <= 0) issues.push({ partId: null, type: 'general', severity: 'error', message: `Support ring and tenons reach ${(-cover).toFixed(1)} mm out of the bottom of the base.` });
     else if (cover < underMin) issues.push({ partId: null, type: 'general', severity: 'warn', message: `Only ${cover.toFixed(1)} mm of concrete under the support ring tenons (min ${underMin.toFixed(1)}).` });
-    const side = planClearance(v, 0, 0, 0) - sup.outer;
+    const side = sliced.baseOutline ? Infinity : planClearance(v, 0, 0, 0) - sup.outer;
     if (side < sideMin) issues.push({ partId: null, type: 'general', severity: side < 0 ? 'error' : 'warn', message: side < 0 ? 'Support ring is wider than the base.' : `Only ${side.toFixed(1)} mm of concrete beside the support ring.` });
     const missed = sliced.plates.filter((p) => p.parts.length && p.tenons === 0);
     if (missed.length)
