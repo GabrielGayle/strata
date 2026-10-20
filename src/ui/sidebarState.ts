@@ -4,6 +4,7 @@
 // and the width are kept here and across reloads.
 import { create } from 'zustand';
 import { useStore, type UiState } from '../state/store';
+import { connectSidebar } from '../state/panelLayout';
 
 export type ObjectsView = 'objects' | 'shelf' | 'shelves' | 'candles';
 export type SideTab = ObjectsView | 'materials' | 'move' | 'measure';
@@ -69,3 +70,6 @@ export function openSideTab(tab: SideTab | null) {
 }
 
 export const sidebarIsOpen = (ui: UiState) => ui.paintMode || ui.moveMode || ui.objectsMode || ui.measureMode;
+
+// saved layouts keep the sidebar's width too
+connectSidebar({ width: () => useSidebar.getState().width, setWidth: (w) => rememberSidebar({ width: Math.max(MIN_W, Math.round(w)) }) });

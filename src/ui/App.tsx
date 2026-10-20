@@ -9,8 +9,7 @@ import { findTab, visibleTabs } from '../core/workspace';
 import { useAssets } from '../state/assets';
 import { FullModelContext, ModelContext, fmt } from './model';
 import Toolbar from './Toolbar';
-import ParamPanel from './ParamPanel';
-import Inspector from './Inspector';
+import SideColumn, { ColumnEdge, useColumnStyle } from './SideColumn';
 import SetupTabs from './SetupTabs';
 import WorkspaceArea, { WorkspaceBar } from './Workspace';
 import DropOverlay from './DropOverlay';
@@ -303,13 +302,15 @@ export default function App() {
   const mapZMaxM = topDepth?.mapOrtho?.zMaxM;
   const platesAtMax = mapFace ? countPlatesAtMaxHeight(model.sliced.plates) : 0;
   // the model on screen is the full one for the current project (it lags edits while the engine works)
+  const cols = useColumnStyle();
   const modelCurrent = !!shown.current?.complete && shown.current.project === project && shown.current.assets === assets && !model.stale;
 
   return (
     <FullModelContext.Provider value={getFull}>
     <ModelContext.Provider value={model}>
       <div
-        className="app window"
+        className={`app window${cols.cls}`}
+        style={cols.style as React.CSSProperties}
         data-strata-map-phase={mapTerrain.phase}
         data-strata-map-error={mapTerrain.phase === 'error' ? (mapTerrain.error || mapTerrain.message || 'map terrain error') : undefined}
         data-strata-map-relief-m={mapFace && mapRelief != null ? String(mapRelief) : undefined}
@@ -339,9 +340,8 @@ export default function App() {
           </div>
         </div>
         <Toolbar />
-        <aside className="left window">
-          <ParamPanel />
-        </aside>
+        <SideColumn side="a" />
+        <ColumnEdge side="a" />
         <main className="main">
           <div className="main-head">
             <SetupTabs />
@@ -349,9 +349,8 @@ export default function App() {
           </div>
           <WorkspaceArea />
         </main>
-        <aside className="right window">
-          <Inspector />
-        </aside>
+        <SideColumn side="b" />
+        <ColumnEdge side="b" />
         <footer className="statusbar status-bar">
           <p className="status-bar-field" data-testid="status-counts">
             {model.sliced.plates.length} plates · {model.sliced.parts.length} parts

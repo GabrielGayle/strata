@@ -40,6 +40,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'new',
+    title: 'Move any panel or control, and save layouts',
+    body: 'Drag a panel by the grip on its caption to reorder it or move it to the other side column. Layout › Edit layout puts a grip on every control: drag it into another panel, or into a new panel of your own. Column edges drag wider, the 3D sidebar tabs drag into a new order, and it is all kept as you go. Layout › Save layout as… keeps named layouts to switch between, and Reset puts everything back.',
+    where: 'Toolbar › Layout',
+    target: { path: ['menu-layout', 'layout-edit'] },
+  },
+  {
+    date: '2026-10-20',
     kind: 'fix',
     title: 'Hero renders of pieces with candles',
     body: 'A hero render of a design with candles was refused as "a different design" and not saved, because the cloud worked out each flame a few billionths of a micrometre away from where your browser did. Flames now match to the micrometre, so candlelit renders land in the project and the build pack.',

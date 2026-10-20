@@ -145,7 +145,7 @@ input[type='number'],
 .app {
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  grid-template-columns: 300px 1fr 300px;
+  grid-template-columns: var(--col-left, 300px) 1fr var(--col-right, 300px);
   grid-template-areas:
     'title title title'
     'top top top'
@@ -188,6 +188,160 @@ input[type='number'],
   overflow: auto;
   min-height: 0;
 }
+/* side columns as docks (src/ui/SideColumn.tsx): swap sides, hide, resize */
+.app.swap > .left {
+  grid-area: right;
+  border-right: 0;
+  border-left: 1px solid var(--line);
+}
+.app.swap > .right {
+  grid-area: left;
+  border-left: 0;
+  border-right: 1px solid var(--line);
+}
+.left.col-hidden,
+.right.col-hidden {
+  display: none !important;
+}
+.col-edge {
+  grid-row: 3;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 6;
+  position: relative;
+}
+.col-edge.in-left {
+  grid-column: 1;
+  justify-self: end;
+  margin-right: -3px;
+}
+.col-edge.in-right {
+  grid-column: 3;
+  justify-self: start;
+  margin-left: -3px;
+}
+.col-edge:hover,
+body.col-resizing .col-edge {
+  background: var(--accent);
+  opacity: 0.35;
+}
+body.col-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.left,
+.right {
+  display: flex;
+  flex-direction: column;
+}
+.left > *,
+.right > * {
+  flex-shrink: 0;
+}
+.dock-end {
+  flex: 1 0 40px;
+  margin: 0 6px 6px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+.col-dragging .dock-end {
+  border: 1px dashed var(--line);
+  padding-top: 8px;
+}
+/* grips and drop marks for moving panels and controls (src/ui/panelDrag.ts) */
+.grip {
+  cursor: grab;
+  user-select: none;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+}
+.grip:active {
+  cursor: grabbing;
+}
+.panel-grip {
+  display: inline-block;
+  margin-right: 4px;
+  opacity: 0.55;
+  padding: 0 1px;
+}
+.section:hover > legend .panel-grip,
+.panel-grip:focus-visible {
+  opacity: 1;
+}
+.section.drop-before,
+.dock-end.drop-before {
+  box-shadow: 0 -3px 0 0 var(--accent);
+}
+.section.drop-into {
+  outline: 2px dashed var(--accent);
+  outline-offset: 1px;
+}
+.section.dragging,
+.ctl.dragging {
+  opacity: 0.4;
+}
+.ctl {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+.ctl-body {
+  flex: 1;
+  min-width: 0;
+}
+.ctl.drop-before {
+  box-shadow: inset 0 3px 0 0 var(--accent);
+}
+.ctl-grip {
+  border: 0;
+  background: transparent;
+  min-width: 0;
+  min-height: 0;
+  width: 16px;
+  padding: 0;
+  box-shadow: none;
+  flex: 0 0 16px;
+}
+.ctl.editing {
+  border-bottom: 1px dotted var(--line-soft);
+}
+.ctl.editing:hover {
+  background: var(--panel-2);
+}
+.ctl-from {
+  font-size: 10px;
+  color: var(--muted);
+  padding: 2px 10px 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ctl.home-off .ctl-body > .prow {
+  opacity: 0.55;
+}
+.ctl-home {
+  min-width: 0;
+  min-height: 0;
+  padding: 0 4px;
+  font-size: 10px;
+}
+.edit-layout-bar {
+  margin: 6px;
+  padding: 6px;
+  border: 1px dashed var(--accent);
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.edit-layout-btn {
+  margin-left: auto;
+}
+
 .statusbar {
   grid-area: status;
   border-top: 1px solid var(--line);
@@ -217,6 +371,9 @@ input[type='number'],
     border: 0;
     border-top: 1px solid var(--line);
     overflow: visible;
+  }
+  .col-edge {
+    display: none;
   }
   .main {
     height: 72vh;
@@ -4306,4 +4463,10 @@ body.vs-resizing * {
   padding: 3px 10px;
   pointer-events: none;
   white-space: nowrap;
+}
+.vs-tab.drop-before {
+  box-shadow: inset 0 3px 0 0 var(--accent);
+}
+.vs-tab.dragging {
+  opacity: 0.4;
 }

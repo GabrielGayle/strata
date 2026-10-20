@@ -25,6 +25,58 @@ import { chopChopCollapsedSummary } from './chopChopSummary';
 import { formatFragment } from '../core/fragments';
 import { activeLibraryLinkId, grabThumb, linkActive } from './LibraryPanel';
 import { recordLibrarySave } from '../state/recordLibrary';
+import { PanelGrip, usePanelFrame } from './ParamPanel';
+import type { Side } from '../core/panelLayout';
+
+/** A panel's place in its column: which panel, which column, and the panel below it. */
+export interface PanelPlace {
+  id: string;
+  side: Side;
+  next: string | null;
+}
+
+/** An Inspector panel that can be dragged by the grip on its caption. */
+function Framed({
+  panel,
+  title,
+  hl,
+  count,
+  collapsedSummary,
+  open,
+  setOpen,
+  children,
+}: {
+  panel: PanelPlace;
+  title: string;
+  hl?: string;
+  count?: React.ReactNode;
+  collapsedSummary?: string;
+  open: boolean;
+  setOpen: (o: boolean) => void;
+  children: React.ReactNode;
+}) {
+  const frame = usePanelFrame(panel.id, panel.side, panel.next);
+  return (
+    <fieldset className={`section${frame.cls}`} data-hl={hl} {...frame.props}>
+      <legend>
+        <PanelGrip id={panel.id} label={title} />
+        {title}
+      </legend>
+      <div className="field-row">
+        <button className="section-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+          <span className="section-head-main">
+            {open ? 'Hide' : 'Show'}
+            {open && count !== undefined && <span className="count"> {count}</span>}
+          </span>
+          {!open && collapsedSummary && (
+            <span className="section-collapsed-summary" title={collapsedSummary}>{collapsedSummary}</span>
+          )}
+        </button>
+      </div>
+      {open && children}
+    </fieldset>
+  );
+}
 
 function Section({
   title,
@@ -33,7 +85,10 @@ function Section({
   children,
   open: initial = true,
   hl,
+  panel,
 }: {
+  /** Where the panel sits in its column, so it can be dragged. */
+  panel?: PanelPlace;
   title: string;
   /** `data-hl` name for the changelog's "show me". */
   hl?: string;
@@ -43,7 +98,11 @@ function Section({
   open?: boolean;
 }) {
   const [open, setOpen] = useState(initial);
-  return (
+  return panel ? (
+    <Framed panel={panel} title={title} hl={hl} count={count} collapsedSummary={collapsedSummary} open={open} setOpen={setOpen}>
+      {children}
+    </Framed>
+  ) : (
     <fieldset className="section" data-hl={hl}>
       <legend>{title}</legend>
       <div className="field-row">
@@ -89,51 +148,23 @@ export function IssueList({ issues, limit = 60 }: { issues: Issue[]; limit?: num
   );
 }
 
-export default function Inspector() {
-  const model = useModel();
-  const fullModel = useFullModel();
-  const project = useStore((s) => s.project);
-  const ui = useStore((s) => s.ui);
-  const toast = useStore((s) => s.toast);
-  const b = model.bom;
-  const v = model.v;
-  const errors = model.issues.filter((i) => i.severity === 'error');
-  const warns = model.issues.filter((i) => i.severity === 'warn');
-  const infos = model.issues.filter((i) => i.severity === 'info');
-  const stackUnsupported = stackRodsUnsupported(model.sliced.stackRods);
-  const base = (project.name || 'strata').replace(/[^\w-]+/g, '_');
-  const sel = model.sliced.parts.find((p) => p.id === ui.selected);
-  const bevelMax = Math.max(0, ...model.sliced.plates.map((p) => p.bevel));
-  const chopSummary = useMemo(
-    () => chopChopCollapsedSummary(b, v.thickness, loadRates()),
-    [b, v.thickness],
-  );
-
-  const plateZip = () => {
-    try {
-      const m = fullModel();
-      assertExportable(m);
-      download(`${base}-plates.zip`, zipSync(partFiles(m, useStore.getState().project)), 'application/zip');
-    } catch (e) {
-      toast(exportFailureMessage(e));
-    }
-  };
-  const sheetZip = () => {
-    try {
-      const m = fullModel();
-      assertExportable(m);
-      download(`${base}-sheets.zip`, zipSync(sheetFiles(m)), 'application/zip');
-    } catch (e) {
-      toast(exportFailureMessage(e));
-    }
-  };
-
+/** The top of the Inspector column. */
+export function InspectorHead() {
+  const stale = useModel().stale;
   return (
-    <div>
-      <div className="title-bar panel-title">
-        <span>Inspector</span>
-        {model.stale && <span className="pill stale">updating</span>}
-      </div>
+    <div className="title-bar panel-title">
+      <span>Inspector</span>
+      {stale && <span className="pill stale">updating</span>}
+    </div>
+  );
+}
+
+function SummaryPanel({ panel }: { panel: PanelPlace }) {
+  const model = useModel();
+  const b = model.bom;
+  return (
+    <>
+      <Section panel={panel} title="Summary">
       <div className="stats">
         <div className="stat" data-testid="inspector-plates">
           <div className="k">Plates</div>
@@ -192,7 +223,21 @@ export default function Inspector() {
         </div>
       )}
 
-      <Section title="Fit checks" count={<span style={{ color: errors.length ? 'var(--err)' : 'var(--ok)' }}>{errors.length} err · {warns.length} warn</span>}>
+      </Section>
+    </>
+  );
+}
+
+function FitPanel({ panel }: { panel: PanelPlace }) {
+  const model = useModel();
+  const v = model.v;
+  const errors = model.issues.filter((i) => i.severity === 'error');
+  const warns = model.issues.filter((i) => i.severity === 'warn');
+  const infos = model.issues.filter((i) => i.severity === 'info');
+  const bevelMax = Math.max(0, ...model.sliced.plates.map((p) => p.bevel));
+  return (
+    <>
+      <Section panel={panel} title="Fit checks" count={<span style={{ color: errors.length ? 'var(--err)' : 'var(--ok)' }}>{errors.length} err · {warns.length} warn</span>}>
         <div data-testid="fit-checks">
           <IssueList issues={[...errors, ...warns, ...infos.filter((i) => i.type === 'fragment' || i.type === 'hidden')]} />
         </div>
@@ -203,9 +248,21 @@ export default function Inspector() {
         </div>
       </Section>
 
+    </>
+  );
+}
+
+function PolesPanel({ panel }: { panel: PanelPlace }) {
+  const model = useModel();
+  const fullModel = useFullModel();
+  const project = useStore((s) => s.project);
+  const base = (project.name || 'strata').replace(/[^\w-]+/g, '_');
+  const stackUnsupported = stackRodsUnsupported(model.sliced.stackRods);
+  return (
+    <>
       {model.sliced.stackRods && (
         <div data-testid="inspector-support-poles">
-          <Section title="Support poles" count={`${model.sliced.stackRods.rods.length} rod${model.sliced.stackRods.rods.length === 1 ? '' : 's'}`}>
+          <Section panel={panel} title="Support poles" count={`${model.sliced.stackRods.rods.length} rod${model.sliced.stackRods.rods.length === 1 ? '' : 's'}`}>
             {model.sliced.stackRods.rods.length > 0 && (
               <dl className="kv">
                 {model.sliced.stackRods.rods.map((r) => (
@@ -257,8 +314,20 @@ export default function Inspector() {
         </div>
       )}
 
+    </>
+  );
+}
+
+function BracingPanel({ panel }: { panel: PanelPlace }) {
+  const model = useModel();
+  const fullModel = useFullModel();
+  const project = useStore((s) => s.project);
+  const b = model.bom;
+  const base = (project.name || 'strata').replace(/[^\w-]+/g, '_');
+  return (
+    <>
       {model.sliced.brace && (b.hardware.length > 0 || (model.sliced.brace.spacers?.parts.length ?? 0) > 0) && (
-        <Section title="Bracing" hl="inspector-bracing" count={b.hardware.length ? `${b.hardware.reduce((a, r) => a + r.qty, 0)} hardware` : 'spacers'}>
+        <Section panel={panel} title="Bracing" hl="inspector-bracing" count={b.hardware.length ? `${b.hardware.reduce((a, r) => a + r.qty, 0)} hardware` : 'spacers'}>
           {b.hardware.length > 0 && (
             <dl className="kv">
               {b.hardware.map((r) => (
@@ -295,12 +364,38 @@ export default function Inspector() {
         </Section>
       )}
 
-      <Section title="Chop Chop price" hl="chop-chop-price" count="estimate" collapsedSummary={chopSummary}>
+    </>
+  );
+}
+
+function PricePanel({ panel }: { panel: PanelPlace }) {
+  const model = useModel();
+  const b = model.bom;
+  const v = model.v;
+  const chopSummary = useMemo(
+    () => chopChopCollapsedSummary(b, v.thickness, loadRates()),
+    [b, v.thickness],
+  );
+  return (
+    <>
+      <Section panel={panel} title="Chop Chop price" hl="chop-chop-price" count="estimate" collapsedSummary={chopSummary}>
         <PriceEstimate bom={b} material={v.plateMaterial} thickness={v.thickness} />
       </Section>
 
+    </>
+  );
+}
+
+function SelectedPanel({ panel }: { panel: PanelPlace }) {
+  const model = useModel();
+  const b = model.bom;
+  const v = model.v;
+  const selected = useStore((s) => s.ui.selected);
+  const sel = model.sliced.parts.find((p) => p.id === selected);
+  return (
+    <>
       {sel && (
-        <Section title={`Selected ${sel.id}`}>
+        <Section panel={panel} title={`Selected ${sel.id}`}>
           <dl className="kv">
             <dt>Size</dt>
             <dd>
@@ -332,7 +427,40 @@ export default function Inspector() {
         </Section>
       )}
 
-      <Section title="Export" hl="inspector-export">
+    </>
+  );
+}
+
+function ExportPanel({ panel }: { panel: PanelPlace }) {
+  const model = useModel();
+  const fullModel = useFullModel();
+  const project = useStore((s) => s.project);
+  const b = model.bom;
+  const v = model.v;
+  const base = (project.name || 'strata').replace(/[^\w-]+/g, '_');
+  const toast = useStore((s) => s.toast);
+  const plateZip = () => {
+    try {
+      const m = fullModel();
+      assertExportable(m);
+      download(`${base}-plates.zip`, zipSync(partFiles(m, useStore.getState().project)), 'application/zip');
+    } catch (e) {
+      toast(exportFailureMessage(e));
+    }
+  };
+  const sheetZip = () => {
+    try {
+      const m = fullModel();
+      assertExportable(m);
+      download(`${base}-sheets.zip`, zipSync(sheetFiles(m)), 'application/zip');
+    } catch (e) {
+      toast(exportFailureMessage(e));
+    }
+  };
+
+  return (
+    <>
+      <Section panel={panel} title="Export" hl="inspector-export">
         <div className="btnrow">
           <button
             className="btn default"
@@ -396,7 +524,15 @@ export default function Inspector() {
         </div>
       </Section>
 
-      <Section title="Pipeline" count={`${model.stages.filter((s) => !s.cached).length} rebuilt`} open={false}>
+    </>
+  );
+}
+
+function PipelinePanel({ panel }: { panel: PanelPlace }) {
+  const model = useModel();
+  return (
+    <>
+      <Section panel={panel} title="Pipeline" count={`${model.stages.filter((s) => !s.cached).length} rebuilt`} open={false}>
         {model.stages.map((s) => (
           <div key={s.name} className={`stage ${!s.cached ? 'fresh' : ''}`}>
             <span>{s.name}</span>
@@ -406,6 +542,23 @@ export default function Inspector() {
         ))}
         <div className="note">Each stage re-runs only when one of its inputs changes. Exports are always regenerated from parameters.</div>
       </Section>
-    </div>
+    </>
   );
+}
+
+const PANELS: Record<string, (p: { panel: PanelPlace }) => React.ReactNode> = {
+  'insp:summary': SummaryPanel,
+  'insp:fit': FitPanel,
+  'insp:poles': PolesPanel,
+  'insp:bracing': BracingPanel,
+  'insp:price': PricePanel,
+  'insp:selected': SelectedPanel,
+  'insp:export': ExportPanel,
+  'insp:pipeline': PipelinePanel,
+};
+
+/** One Inspector panel by id, in whichever column it sits. */
+export function InspectorPanel({ panel }: { panel: PanelPlace }) {
+  const P = PANELS[panel.id];
+  return P ? <P panel={panel} /> : null;
 }

@@ -5,6 +5,8 @@ import { create } from 'zustand';
 import { useStore } from '../state/store';
 import { PARAMS } from '../core/params';
 import { CHANGELOG, type ChangeEntry, type ChangeTarget } from './changelogEntries';
+import { openPanel, panelOfParam } from './panelDrag';
+import { groupPanel } from '../state/panelLayout';
 
 const SEEN_KEY = 'strata:changelog-seen';
 const entryKey = (e: ChangeEntry) => `${e.date}|${e.title}`;
@@ -86,6 +88,9 @@ export async function revealTarget(t: ChangeTarget, alive: () => boolean = () =>
   if (t.tab) st.setUi({ tab: t.tab });
   if (t.ui) st.setUi(t.ui);
   if (group) st.setUi({ leftPane: 'params', filter: '', collapsed: { ...useStore.getState().ui.collapsed, [group]: false } });
+  // the control (or panel) may have been moved: unfold wherever it sits now, and show its column
+  if (t.param) openPanel(panelOfParam(t.param));
+  else if (group) openPanel(groupPanel(group));
   for (const name of (t.path ?? []).slice(0, -1)) {
     const el = await waitFor(() => byName(name), 3000, alive);
     if (!el) return null;

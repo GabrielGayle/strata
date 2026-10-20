@@ -3,6 +3,7 @@ import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import { GROUPS, PARAMS, PARAM_MAP, FLAG_NAMES } from '../core/params';
 import { FUNC_NAMES } from '../core/expr';
+import { openPanel, panelOfParam } from './panelDrag';
 
 const NODE_W = 168;
 const NODE_H = 36;
@@ -66,6 +67,7 @@ export default function GraphView() {
   const focus = (id: string) => {
     const g = PARAM_MAP[id].group;
     setUi({ focusParam: id, collapsed: { ...ui.collapsed, [g]: false }, filter: '' });
+    openPanel(panelOfParam(id));
   };
   const hi = ui.focusParam;
   const hiSet = new Set<string>();
