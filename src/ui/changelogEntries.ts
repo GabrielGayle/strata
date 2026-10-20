@@ -41,6 +41,14 @@ export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
     kind: 'new',
+    title: 'Steel base cut round the plates',
+    body: 'Steel base › Plate outline can now follow the plates, so the base is cut round where they stand instead of filling the whole Length × Width, or wrap them in one smooth outline. Set the margin round the plates, how big a gap gets filled, whether the middle is filled, the corner rounding and the curve profile. Slots and fixing holes stay on the steel.',
+    where: 'Parameters › Steel base › Plate outline',
+    target: { param: 'steelShape' },
+  },
+  {
+    date: '2026-10-20',
+    kind: 'new',
     title: 'Candles centred in the cells',
     body: 'Candelabra › Snap › Centre in the cells puts each candle in the middle of its own cell: centred between the plates either side, and in the middle of the shelf under it or between waffle cross plates. Works on wall pieces too.',
     where: '3D view › sidebar › Candles › Snap',

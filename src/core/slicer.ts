@@ -37,7 +37,7 @@ import { boxBlur, distanceInside, marchingSquares, sample, type Gray } from './i
 import { strokeTextCentered, textWidth } from './strokefont';
 import { MAX_TUNED, MIN_TUNED, tunePlates, tuningActive, type PlateTune } from './tuning';
 import { addTenons, baseChamfers, planClearance, ringShape, supportPlane, supportSpec, type SupportSpec } from './base';
-import { addWeldTabs, fixingHoles, holeReach, steelBaseShape, steelBaseSpec, steelPlane, tabsOf, weldOrder, type SteelBaseSpec, type WeldTab } from './steelBase';
+import { addWeldTabs, fixingHoles, holeReach, steelBaseShape, steelBaseSpec, steelOutline, steelPlane, tabsOf, weldOrder, type SteelBaseSpec, type WeldTab } from './steelBase';
 import { buildSpacers, planRods, rodHardware, rodHoles, type BraceIssue, type HardwareRow, type RodPlan, type SpacerResult } from './brace';
 import { finishPlatePieces, type FragmentEvent } from './fragments';
 import { movePlane, type PartMoves } from './moves';
@@ -209,6 +209,8 @@ export interface SteelBaseResult {
   partId: string;
   /** Upright plates left with no tab in the base. */
   bare: string[];
+  /** The plate's outline before slots and holes (plan x, -z): the rectangle, or cut round the plates. */
+  outline: Shape;
 }
 
 export interface BraceResult {
@@ -2099,16 +2101,26 @@ export function slice(input: SliceInput): SliceResult {
     const standing = allParts.filter((p) => p.family !== 'B' && p.family !== 'S' && p.family !== 'C' && p.family !== 'T');
     const { tabs, plates: tackOrder } = weldOrder(tabsOf(standing));
     const thick = new Map(standing.map((p) => [p.plateKey, p.thickness]));
-    const shape = steelBaseShape(v, steel, tabs, (k) => thick.get(k) ?? t);
+    const outline = steelOutline(v, steel, standing);
+    const shape = steelBaseShape(v, steel, tabs, (k) => thick.get(k) ?? t, outline);
     const base = partLabel(v, 'B', 0, 1);
     const pieces = shape.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
-    if (pieces.length > 1) warnings.push(`Steel base falls apart into ${pieces.length} pieces: the slots cut right across it. Raise the edge margin or space the plates out.`);
-    const fixings = fixingHoles(v, steel);
+    if (pieces.length > 1)
+      warnings.push(
+        steel.shape === 'follow' && outline.length > 1
+          ? `Steel base falls apart into ${pieces.length} pieces: the plates stand further apart than Fill gaps up to. Raise it, or choose Wrap round the plates.`
+          : `Steel base falls apart into ${pieces.length} pieces: the slots cut right across it. Raise the edge margin or space the plates out.`,
+      );
+    const follow = steel.shape !== 'rect';
+    const fixings = fixingHoles(v, steel, follow ? outline : undefined, v.minFeature);
+    const wanted = fixingHoles(v, steel).length;
+    if (follow && fixings.length < wanted)
+      warnings.push(`Steel base: ${wanted - fixings.length === 1 ? '1 fixing hole' : `${wanted - fixings.length} fixing holes`} found no steel to sit on and ${wanted - fixings.length === 1 ? 'was' : 'were'} left out. Raise Margin round the plates or Fill gaps up to, or choose fewer holes.`);
     const holes = fixings.map((h) => holeReach(h, steel));
     if (holes.length && tabs.some((tb) => holes.some(({ c, r }) => Math.hypot(c[0] - tb.at[0], c[1] - tb.at[1]) < r + tb.length / 2 + 2)))
       warnings.push('Steel base: a fixing hole runs into a tab slot. Move the holes (Distance from edge, Edge, Holes per row) or shrink the plates in from the edges.');
     const near = (q: [number, number], r: number) => planClearance(v, q[0], q[1]) < r + v.minFeature;
-    if (fixings.some((h) => (h.head ? near(h.head, steel.keyHead / 2) || near(h.at, steel.keySlot / 2) : near(h.at, steel.holeDia / 2))))
+    if (!follow && fixings.some((h) => (h.head ? near(h.head, steel.keyHead / 2) || near(h.at, steel.keySlot / 2) : near(h.at, steel.holeDia / 2))))
       warnings.push(`Steel base: a fixing hole is closer than ${v.minFeature} mm to the edge of the base. Raise Distance from edge.`);
     const web = v.sliceMode === 'parallel' ? v.pitch - t - 2 * steel.clearance : Infinity;
     if (web < v.minFeature && !steel.stagger && !steel.zigzag) warnings.push(`Steel base: only ${web.toFixed(1)} mm of steel between neighbouring slots. Turn on Zig-zag tabs or space the plates out.`);
@@ -2140,7 +2152,7 @@ export function slice(input: SliceInput): SliceResult {
     });
     const keyed = new Set(tabs.map((tb) => tb.plateKey));
     const bare = plates.filter((pl) => pl.parts.length && Math.abs(pl.def.plane.normal[1]) < 0.5 && !keyed.has(pl.def.key));
-    steelBase = { spec: steel, tabs, tackOrder, partId: base, bare: bare.map((pl) => pl.def.key) };
+    steelBase = { spec: steel, tabs, tackOrder, partId: base, bare: bare.map((pl) => pl.def.key), outline };
   }
 
   // 9. laser-cut spacers: cross pieces cast in under the plates and the lift-off spacing template

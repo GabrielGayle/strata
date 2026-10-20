@@ -10,7 +10,7 @@ import type { Part, PlateInfo } from './slicer';
 import { embedOf } from './slicer';
 import { stackFrame } from './heightfield';
 import { planeToWorld, type V3 } from './section';
-import type { Shape } from './geom2d';
+import { shapeBBox, type Shape } from './geom2d';
 import { baseChamfers, basePlan } from './base';
 import { bucketOf, finishOf, lookOf, METAL_NAMES } from './appearance';
 import { currentHero } from './hero';
@@ -881,7 +881,7 @@ function assemblySteps(project: Project, m: Model, view: View, names: Map<string
       steps.push(`<b>Turn it back over</b> and dress the end tacks with a file or flap disc so they blend in.`);
       steps.push(`<b>Safety.</b> Auto-darkening helmet, leather gloves, long cotton sleeves and a clear floor. Grind with the guard on, sparks away from you, and weld somewhere airy.`);
     }
-    const fixings = fixingHoles(v, sb.spec);
+    const fixings = fixingHoles(v, sb.spec, sb.spec.shape === 'rect' ? undefined : sb.outline, v.minFeature);
     if (fixings.length) {
       const sideName = { back: 'back end', front: 'front end', left: 'left side', right: 'right side' }[sb.spec.holeSide];
       if (sb.spec.holeStyle === 'keyhole')
@@ -1189,6 +1189,12 @@ function cutListSection(m: Model, rates: PriceRates, project?: Project): string 
 // --- steel base: weld map ----------------------------------------------------------
 
 /** How far a plate can lean in its slots before it is tacked (degrees). */
+/** Overall size of the steel base plate as cut (it may follow the plates rather than fill Length × Width). */
+function steelSize(m: Model): string {
+  const bb = shapeBBox(m.sliced.steelBase!.outline);
+  return `${n1(bb.maxX - bb.minX)} × ${n1(bb.maxY - bb.minY)}${m.sliced.steelBase!.spec.shape === 'rect' ? '' : ' (cut round the plates)'}`;
+}
+
 function slotPlay(sb: NonNullable<Model['sliced']['steelBase']>): number {
   const depth = Math.min(sb.spec.tabDepth, sb.spec.thickness);
   return depth > 0 ? (Math.atan((2 * sb.spec.clearance) / depth) * 180) / Math.PI : 0;
@@ -1321,7 +1327,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
     ['Overall size', `${n1(pb.maxX - pb.minX)} wide × ${n1(pb.maxY - pb.minY)} deep × ${n1(top)} high (mm)`],
     ['Plates', `${m.sliced.plates.length} plates · ${parts.length} laser-cut parts`],
     ['Weight', `about ${weight.toFixed(0)} kg${v.baseOn ? ` (steel ${m.bom.plateMass.toFixed(1)} kg, concrete ${m.bom.concreteMass.toFixed(0)} kg)` : ''}`],
-    ['Materials', `${parts.length ? `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet` : 'No sheet metal'}${m.sliced.steelBase ? `; steel base plate ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(m.sliced.steelBase.spec.thickness)}, ${m.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welded from underneath'}` : ''}${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
+    ['Materials', `${parts.length ? `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet` : 'No sheet metal'}${m.sliced.steelBase ? `; steel base plate ${steelSize(m)} × ${mm(m.sliced.steelBase.spec.thickness)}, ${m.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welded from underneath'}` : ''}${v.baseOn ? `; cast concrete base ${n1(v.baseLength)} × ${n1(v.baseWidth)} × ${mm(v.baseHeight)}` : ''}`],
     ['Date', `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`],
   ];
   // the cloud's hero render, while it still shows this design

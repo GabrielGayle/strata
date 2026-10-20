@@ -178,6 +178,20 @@ export const PARAMS: ParamDef[] = [
   num('steelTwist', 'Twist tail', 'Steel base', 8, 3, 40, { step: 0.5, noScale: true, show: (v) => v.steelFixing === 'twist', help: 'How far each tab pokes out under the base to grip and twist' }),
   num('steelClearance', 'Slot clearance', 'Steel base', 0.15, 0, 2, { step: 0.05, noScale: true, help: 'Added round each tab in its slot. Small keeps the plates square on their own; 0.1 to 0.2 mm suits a laser cut.' }),
   num('steelEdge', 'Edge margin', 'Steel base', 8, 0, 200, { help: 'Least steel kept between a slot and the edge of the base' }),
+  choice('steelShape', 'Plate outline', 'Steel base', 'rect', [
+    { value: 'rect', label: 'Rectangle (Length × Width)' },
+    { value: 'follow', label: 'Follow the plates' },
+    { value: 'wrap', label: 'Wrap round the plates' },
+  ], { help: 'Follow the plates: the base is cut round where the plates actually stand, so it is no bigger than it needs to be. Wrap: one smooth outline round all of them with no inward bends.' }),
+  num('steelReach', 'Margin round the plates', 'Steel base', 15, 0, 300, { show: (v) => v.steelShape !== 'rect', help: 'Steel kept beyond every plate where it meets the base' }),
+  num('steelBridge', 'Fill gaps up to', 'Steel base', 40, 0, 1000, { show: (v) => v.steelShape === 'follow', help: 'Gaps between plates narrower than this are filled with steel, so the base stays one piece. Bigger fills more.' }),
+  { id: 'steelFillMiddle', label: 'Fill the middle', group: 'Steel base', kind: 'toggle', def: true, show: (v) => v.steelShape === 'follow', help: 'Fill any opening the plates close round (the middle of a ring). Off leaves it open.' },
+  num('steelRound', 'Corner rounding', 'Steel base', 10, 0, 300, { show: (v) => v.steelShape !== 'rect', help: 'Softens the outline: every corner, in or out, is rounded to at least this radius' }),
+  choice('steelProfile', 'Curve profile', 'Steel base', 'round', [
+    { value: 'round', label: 'Rounded' },
+    { value: 'straight', label: 'Straight (sharp corners)' },
+    { value: 'bevel', label: 'Bevelled' },
+  ], { show: (v) => v.steelShape !== 'rect', help: 'How the outline grows round the ends of the plates: rounded arcs, straight lines meeting in points, or straight with the points cut off. Corner rounding softens it after.' }),
   { id: 'steelStagger', label: 'Stagger tabs', group: 'Steel base', kind: 'toggle', def: true, help: 'Neighbouring plates take their tabs at alternate spots, so slots never line up into a weak line and the heat is spread' },
   { id: 'steelZigzag', label: 'Zig-zag tabs', group: 'Steel base', kind: 'toggle', def: false, help: 'For plates packed tight: every other plate takes its tabs in the other half of its edge (one up, the next down), so no two slots sit side by side and the plates can go closer together. Tabs get shorter or fewer to fit.' },
   choice('steelHoles', 'Fixing holes', 'Steel base', '0', [
