@@ -31,6 +31,11 @@ const FUNCS: Record<string, (...a: number[]) => number> = {
 
 const CONSTS: Record<string, number> = { pi: Math.PI, PI: Math.PI, e: Math.E };
 
+/** Every function a formula may call. */
+export const FUNC_NAMES = Object.keys(FUNCS);
+/** Every named constant a formula may use (pi and PI are the same). */
+export const CONST_VALUES: Readonly<Record<string, number>> = CONSTS;
+
 type Tok = { k: 'num' | 'id' | 'op'; v: string; pos: number };
 
 function tokenize(src: string): Tok[] {

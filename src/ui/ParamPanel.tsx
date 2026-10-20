@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { GROUPS, GROUP_IDLE, GROUP_SWITCHES, PARAMS, PARAM_MAP, SWITCH_IDS, overrideSource, scaleFactorFor, type ParamDef, type Values } from '../core/params';
 import TuningTable from './TuningTable';
+import FormulaBox from './FormulaBox';
 import { isLiteral } from '../core/expr';
 import { useStore } from '../state/store';
 import { useModel } from './model';
@@ -52,6 +53,7 @@ const NumberParam = memo(function NumberParam({
   const literal = isLiteral(raw);
   const [exprMode, setExprMode] = useState(!literal);
   const [text, setText] = useState(raw);
+  const [fxOpen, setFxOpen] = useState(0);
   const editing = useRef(false);
   const row = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -119,7 +121,11 @@ const NumberParam = memo(function NumberParam({
           <span className="pid">{def.id}</span>
         </div>
         <div className="ctrls">
-        <button className={`ibtn ${exprMode ? 'on' : ''}`} title="Edit as expression (link to other parameters)" onClick={() => setExprMode(!exprMode)} aria-pressed={exprMode}>
+        <button className={`ibtn ${exprMode ? 'on' : ''}`} title="Edit as expression (link to other parameters)" onClick={() => {
+            // into formula mode: focus the box and list what it can use
+            if (!exprMode) setFxOpen((n) => n + 1);
+            setExprMode(!exprMode);
+          }} aria-pressed={exprMode}>
           ƒ
         </button>
         <button className={`ibtn ${locked ? 'on' : ''}`} title={locked ? 'Locked: Randomise skips it' : 'Lock (Randomise skips it)'} onClick={() => toggleLock(def.id)} aria-pressed={locked}>
@@ -130,21 +136,21 @@ const NumberParam = memo(function NumberParam({
       <div className="field-row">
         {exprMode ? (
           <>
-            <input
-              className={`exprbox ${error ? 'err' : ''}`}
-              value={text}
-              spellCheck={false}
+            <FormulaBox
+              def={def}
+              text={text}
+              error={error}
+              openSignal={fxOpen}
               onFocus={() => (editing.current = true)}
-              onChange={(e) => setText(e.target.value)}
-              onBlur={(e) => commitText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                if (e.key === 'Escape') {
-                  editing.current = false;
-                  setText(raw);
-                }
+              onEdit={(t) => {
+                editing.current = true;
+                setText(t);
               }}
-              aria-label={`${def.label} expression`}
+              onCommit={commitText}
+              onRevert={() => {
+                editing.current = false;
+                setText(raw);
+              }}
             />
             <span className="evald">= {fmtVal(value, step)}</span>
           </>

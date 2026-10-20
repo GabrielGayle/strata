@@ -750,3 +750,68 @@ button.card.sel {
   min-width: 0;
   padding: 1px 4px;
 }
+
+/* Formula names list under a parameter's ƒ box: a silver Win98 drop-down in every theme */
+.ibtn.fx-open {
+  min-width: 18px;
+  padding: 0 2px;
+  margin-left: 2px;
+}
+.fx-menu {
+  position: fixed;
+  z-index: 1000;
+  overflow-y: auto;
+  background: #c0c0c0;
+  color: #222;
+  color-scheme: light;
+  font-size: 11px;
+  padding: 2px;
+  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px #808080, inset 2px 2px #fff;
+}
+.fx-head {
+  position: sticky;
+  top: -2px;
+  background: #808080;
+  color: #fff;
+  font-weight: bold;
+  padding: 1px 4px;
+}
+.fx-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 4px;
+  cursor: default;
+  white-space: nowrap;
+}
+.fx-row .fx-name {
+  font-family: var(--mono);
+}
+.fx-row .fx-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #444;
+}
+.fx-row .fx-val {
+  font-family: var(--mono);
+  color: #444;
+  text-align: right;
+}
+.fx-row.on {
+  background: #000080;
+  color: #fff;
+}
+.fx-row.on .fx-label,
+.fx-row.on .fx-val {
+  color: #fff;
+}
+.fx-row.blocked {
+  color: #444;
+  font-style: italic;
+  text-decoration: line-through;
+}
+.fx-none {
+  padding: 4px;
+  color: #444;
+}
