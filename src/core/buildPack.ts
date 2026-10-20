@@ -857,7 +857,7 @@ function assemblySteps(project: Project, m: Model, view: View, names: Map<string
     const baseId = `<b>${esc(sb.partId)}</b>`;
     const tmplNote = tmpl.length ? ` Drop the spacing template${tmpl.length > 1 ? 's' : ''} ${ids(tmpl)} over the plate tops: ${tmpl.length > 1 ? 'they hold' : 'it holds'} every plate upright at its pitch while you work.` : ' (Bracing › Spacing template in Strata cuts a comb that holds them all upright for you.)';
     steps.push(
-      `<b>Dry-fit on the base plate.</b> Lay ${baseId} on a flat bench, top face up, and drop every plate's tabs into its slots (${plural(sb.tabs.length, 'tab')} in all). Each should go in by hand and stand on its own. If one is tight, run a flat file through the slot; never hammer a plate in, it bends the base.`,
+      `<b>Dry-fit on the base plate.</b> Lay ${baseId} on a flat bench, top face up, and drop every plate's tabs into its slots (${plural(sb.tabs.length, 'tab')} in all).${sb.spec.zigzag ? ' The tabs zig-zag (every other plate has them further along its edge), so check each plate against the numbered slots before it goes in.' : ''} Each should go in by hand and stand on its own. If one is tight, run a flat file through the slot; never hammer a plate in, it bends the base.`,
     );
     if (v.sliceMode === 'waffle')
       steps.push(`<b>Build the grid on the base.</b> Stand the ${P.length} long plates in their slots first, then lower the ${X.length} cross plates over them from above so each pair of halving slots meets and the cross plates' tabs find their own slots.`);

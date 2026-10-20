@@ -175,6 +175,7 @@ export const PARAMS: ParamDef[] = [
   num('steelClearance', 'Slot clearance', 'Steel base', 0.15, 0, 2, { step: 0.05, noScale: true, help: 'Added round each tab in its slot. Small keeps the plates square on their own; 0.1 to 0.2 mm suits a laser cut.' }),
   num('steelEdge', 'Edge margin', 'Steel base', 8, 0, 200, { help: 'Least steel kept between a slot and the edge of the base' }),
   { id: 'steelStagger', label: 'Stagger tabs', group: 'Steel base', kind: 'toggle', def: true, help: 'Neighbouring plates take their tabs at alternate spots, so slots never line up into a weak line and the heat is spread' },
+  { id: 'steelZigzag', label: 'Zig-zag tabs', group: 'Steel base', kind: 'toggle', def: false, help: 'For plates packed tight: every other plate takes its tabs in the other half of its edge (one up, the next down), so no two slots sit side by side and the plates can go closer together. Tabs get shorter or fewer to fit.' },
   choice('steelHoles', 'Fixing holes', 'Steel base', '0', [
     { value: '0', label: 'None' },
     { value: '4', label: 'Four corners' },
