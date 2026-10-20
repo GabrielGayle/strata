@@ -46,6 +46,9 @@ export function wallUp(v: Values, map = false): V3 {
   if (top === 'left') return [0, 0, -1];
   if (top === 'right') return [0, 0, 1];
   const f = stackFrame(v);
+  // plates hanging down the wall: the picture is turned a quarter, its top now on the right as
+  // seen from above with the front at the bottom (a map can't turn, so it hangs sideways)
+  if (v.wallPlates === 'down') return [-f.stack[1], 0, f.stack[0]];
   // the top image's top is the far end of the stack; a map's top (north) is the front end
   const s = map ? -1 : 1;
   return [s * f.stack[0], 0, s * f.stack[1]];
@@ -151,6 +154,7 @@ export function mountIssues(v: Values, has: { candles?: boolean; shelf?: boolean
   } else {
     out.push(warn('Wall piece with no base: the plates need something to hang from. Turn the Base on (a steel plate gets keyholes).'));
   }
+  if (has.map && v.wallPlates === 'down' && (v.wallTop ?? 'picture') === 'picture') out.push(info('A map stays north along the stack, so with the plates hanging down the wall it hangs on its side. Set Plates run to Across for north up.'));
   if (has.candles) out.push(info('On a wall each candle stands upright on the plate below it, in a cup cut through the plates it passes, with a clear chimney above its flame. Fins, chokes and trimmed plate tops are for table pieces.'));
   if (v.shadowOn) out.push(info('Shadow pictures are worked out for a piece standing on a table; switch Display › Shown on to Table to design them.'));
   if (has.shelf) out.push(info('On a wall the postcards stand upright on the plate below each one, notched through the plates they pass. Seats and the unobstructed view are for table pieces.'));

@@ -2,7 +2,7 @@
 // re-runs when one of them changes, so editing a value regenerates exactly
 // the stages downstream of it.
 import type * as THREE from 'three';
-import { evaluateParams, PARAMS, scaleFactorFor, type EvalResult, type Values } from './params';
+import { evaluateParams, PARAMS, pictureTurn, scaleFactorFor, type EvalResult, type Values } from './params';
 import { buildForm, formSpec, meshVolume, toIndexedMesh, type Form, type IndexedMesh } from './forms';
 import { blurSpec } from './blur';
 import { processImage, rotate, silhouetteMask, type Gray } from './image';
@@ -250,8 +250,8 @@ export function createFrontPipeline(options: FrontOptions = {}) {
     const imgAspect = (() => {
       const g = assets.topImg;
       if (!g) return 1;
-      const q = (id: string) => (((Math.round(Number(project.params[id] ?? 0) / 90) % 2) + 2) % 2);
-      const swap = (q('imgRotate') + q('topRotate')) % 2 === 1;
+      const q = (id: string, extra = 0) => (((Math.round((Number(project.params[id] ?? 0) + extra) / 90) % 2) + 2) % 2);
+      const swap = (q('imgRotate') + q('topRotate', pictureTurn(project.params))) % 2 === 1;
       return swap ? g.h / g.w : g.w / g.h;
     })();
     // front and side faces, for their "Fit face to image" options (Image rotate turns both)
@@ -323,7 +323,7 @@ export function createFrontPipeline(options: FrontOptions = {}) {
     // tuned plates ring by their own metal, so only then does the metal change the cut
     // a wall piece is built in the room: the origin carries the turn onto the model
     const wall = isWall(v);
-    const origin = stage('World origin', [project.origin, v.baseLength, v.baseWidth, baseTop(v), v.mount, v.wallTop, v.sliceAxis, v.sliceMode, !!mapTop], () => originFrame(project.origin, v, !!mapTop));
+    const origin = stage('World origin', [project.origin, v.baseLength, v.baseWidth, baseTop(v), v.mount, v.wallTop, v.wallPlates, v.sliceAxis, v.sliceMode, !!mapTop], () => originFrame(project.origin, v, !!mapTop));
     // (the unobstructed-view solver looks from a table-height eye, so a wall shelf is laid plainly)
     const unobstructed = !wall && !!project.shelf?.unobstructed;
     const laid = stage('Postcard shelf', [shelfLayoutKey(project.shelf), baseTop(v), unobstructed ? origin : 0, wall], () =>

@@ -151,6 +151,10 @@ export const PARAMS: ParamDef[] = [
     { value: 'left', label: 'Left side' },
     { value: 'right', label: 'Right side' },
   ], { show: (v) => v.mount === 'wall', help: 'Which edge of the base is at the top when it hangs. Top of the top picture hangs a relief the right way up (north up for a map). Edges as in Steel base › Edge: the front end is the one the Front view looks at.' }),
+  choice('wallPlates', 'Plates run', 'Display', 'across', [
+    { value: 'across', label: 'Across the wall (stacked up it, like shelves)' },
+    { value: 'down', label: 'Down the wall (hanging, like louvres)' },
+  ], { show: (v) => v.mount === 'wall' && (v.wallTop ?? 'picture') === 'picture', help: 'With the top picture upright, the plates either lie level and stack up the wall, or hang straight down it. Down turns the top picture a quarter turn on the surface so it still reads upright, and suits long plates: gravity pulls along them, not across.' }),
   choice('baseMaterial', 'Base is', 'Base', 'concrete', [
     { value: 'concrete', label: 'Cast concrete' },
     { value: 'steel', label: 'Steel plate, plates welded on' },
@@ -791,11 +795,20 @@ for (const g of ['Support', 'Bracing', 'Slicer', 'Strata', 'Edges', 'Tuning', 'M
 
 export const SWITCH_IDS = new Set(Object.values(GROUP_SWITCHES).map((s) => s!.id));
 
+/** A wall piece whose plates hang down it: the top picture is turned a quarter so it stays upright. */
+export const platesHangDown = (raw: Record<string, RawValue>) =>
+  String(raw.mount) === 'wall' && String(raw.wallTop ?? 'picture') === 'picture' && String(raw.wallPlates) === 'down';
+
+/** Extra turn (degrees) the top picture takes on the surface: a quarter for plates hanging down a wall. */
+export const pictureTurn = (raw: Record<string, RawValue>) => (platesHangDown(raw) ? 90 : 0);
+
 /** The raw values with every switched-off group's forced values laid over them. */
 export function applySwitches(raw: Record<string, RawValue>): Record<string, RawValue> {
   // a steel base stands in for the concrete: everything cast (ring, pours, moulds) sees no concrete base
   const steel = isOn(raw, 'baseOn') && String(raw.baseMaterial ?? 'concrete') === 'steel';
   let out = steel || raw.steelBaseOn ? { ...raw, steelBaseOn: steel, ...(steel ? { baseOn: false } : {}) } : raw;
+  // plates hanging down a wall: the top picture turns a quarter (clockwise from above) so its top is up
+  if (platesHangDown(raw)) out = { ...out, topRotate: String((((Number(raw.topRotate ?? 0) + 90) % 360) + 360) % 360) };
   for (const sw of Object.values(GROUP_SWITCHES)) {
     if (!sw!.forces || isOn(raw, sw!.id)) continue;
     if (out === raw) out = { ...raw };

@@ -11,7 +11,7 @@ export const useMapTop = () => useStore((s) => isMapDepth(s.project.images.top?.
 /** Table or wall: which way is really up for this design, in model coordinates. */
 export function useMountFrame(v: Values): MountFrame {
   const map = useMapTop();
-  return useMemo(() => mountFrame(v, map), [v.mount, v.wallTop, v.sliceAxis, v.sliceMode, map]); // eslint-disable-line react-hooks/exhaustive-deps
+  return useMemo(() => mountFrame(v, map), [v.mount, v.wallTop, v.wallPlates, v.sliceAxis, v.sliceMode, map]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** A room direction (x right, y up, z towards the viewer) as a model-space vector. */
