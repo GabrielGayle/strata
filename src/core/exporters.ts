@@ -29,6 +29,7 @@ import { mapEngravePathsForPart, type MapEngravePlateContext } from './mapEngrav
 import type { UnfoldPiece } from './unfold';
 import { currentHero, heroPngBytes } from './hero';
 import { packManifest } from './counts';
+import { steelBaseSpec } from './steelBase';
 import {
   assertHtmlBuildPackIntegrity,
   assertZipBuildPackIntegrity,
@@ -514,7 +515,8 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   files['cutlist.csv'] = strToU8(cutListCsv(v, model.bom));
   if (model.sliced.stackRods) files['rods.csv'] = strToU8(stackRodsCsv(model.sliced.stackRods));
   if (model.bom.hardware.length) files['hardware.csv'] = strToU8(hardwareCsv(model.bom));
-  files['pour-plan.txt'] = strToU8(pourPlanText(model));
+  // a steel base plate has nothing to pour
+  if (!steelBaseSpec(v)) files['pour-plan.txt'] = strToU8(pourPlanText(model));
   if (model.bom.partCount) {
     const estimate = withHardware(estimateMix(model.bom, v.thickness, rates), model.bom.hardware, rates);
     files['price-estimate.txt'] = strToU8(priceText(estimate, rates));

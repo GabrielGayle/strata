@@ -12,8 +12,8 @@ import { mapFaceParams } from './mapStack';
 import { plateDefs, slice, type SliceResult } from './slicer';
 import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
-import { isWall, mountIssues, mountWeightIssue } from './mount';
-import { forWall, restOnWall } from './wallBuild';
+import { isWall, mountFrame, mountIssues, mountWeightIssue } from './mount';
+import { forWall, onWallFace, restOnWall, wallCandleIssues } from './wallBuild';
 import { layoutShelfResult, type SolveResult } from './shelfSolve';
 import { reportShelfVisibility, shelfEye, shelfLayoutKey, shelfSight, shelfViewKey, type V3, type VisibilityReport } from './shelfView';
 import { nest, nestFingerprint, nestGroups, nestMismatch, type NestGroup, type NestOptions, type NestResult, type SavedNest } from './nest';
@@ -95,6 +95,8 @@ export interface Model {
   shelfCuts?: ShelfCut[];
   /** Placed candles that have nothing to stand on (their shelf is gone or off, or no plate under them). */
   lostCandles?: string[];
+  /** A wall piece whose plates lie level (Plates run across): candle fins can key onto them. */
+  wallLevel?: boolean;
   /** The world origin objects and the shelf are measured from. */
   origin: Frame;
   /** Shadow carving: the wall, carved plate grids and how well each frame comes out (null when off). */
@@ -345,8 +347,16 @@ export function createFrontPipeline(options: FrontOptions = {}) {
     const stackPlanes = stage('Plate planes', [...pick(v, SLICE_KEYS)], () => plateDefs(v).filter((d) => d.family === 'P').map((d) => d.plane));
     const crossPlanes = stage('Cross plate planes', [...pick(v, SLICE_KEYS)], () => plateDefs(v).filter((d) => d.family === 'X').map((d) => d.plane));
     const pitch = stackPlanes.length > 1 ? Math.abs((stackPlanes[1].origin[0] - stackPlanes[0].origin[0]) * stackPlanes[0].normal[0] + (stackPlanes[1].origin[2] - stackPlanes[0].origin[2]) * stackPlanes[0].normal[2]) : 0;
-    const candles = stage('Candelabra', [project.candles, baseTop(v), onSurface, pitch, wall, embedOf(v)], () =>
-      wall ? forWall(candleObjects(project.candles, baseTop(v), false, pitch)).map((o) => ({ ...o, y: baseTop(v) + (project.candles?.lift ?? 0) + o.w / 2 })) : candleObjects(project.candles, baseTop(v), onSurface, pitch, embedOf(v)),
+    // a wall piece whose plates lie level (they run across the wall): fins can key onto them
+    const levelPlates = wall && stackPlanes.length > 0 && (() => {
+      const up = mountFrame(v, !!mapTop).up;
+      const n = stackPlanes[0].normal;
+      return Math.abs(n[0] * up[0] + n[1] * up[1] + n[2] * up[2]) > 0.9;
+    })();
+    const candles = stage('Candelabra', [project.candles, baseTop(v), onSurface, pitch, wall, embedOf(v), v.wallTop, v.wallPlates, v.sliceAxis, !!mapTop, levelPlates], () =>
+      wall
+        ? onWallFace(forWall(candleObjects(project.candles, baseTop(v), false, pitch), levelPlates), mountFrame(v, !!mapTop), baseTop(v), project.candles?.lift ?? 0)
+        : candleObjects(project.candles, baseTop(v), onSurface, pitch, embedOf(v)),
     );
     // shelves: each slots the plates it crosses with a hidden cutter its own size
     const shelves = stage('Shelves', [project.shelves, v.thickness, v.sliceMode, v.sliceAxis], () => ({ cuts: shelfCuts(project.shelves, v), slots: shelfSlotObjects(project.shelves, v) }));
@@ -397,7 +407,20 @@ export function createFrontPipeline(options: FrontOptions = {}) {
     const sight = stage('Sight lines', [objects, shelfViewKey(project.shelf), project.shelf?.seat], () => shelfSight(objects, project.shelf));
     const cutters = objects.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut }));
     const choke = chokeCircles(objects.map((o) => o.object));
-    const holders = objects.flatMap(({ object: o }) => (o.holder ? [{ x: o.x, z: o.z, r: o.w / 2, bottom: o.y - o.h / 2, ry: o.ry, slack: o.clearance, holder: o.holder }] : []));
+    const room = origin.room;
+    const holders = objects.flatMap(({ object: o }) =>
+      o.holder
+        ? [
+            {
+              x: o.x, z: o.z, r: o.w / 2, bottom: o.y - o.h / 2, ry: o.ry, slack: o.clearance, holder: o.holder,
+              // on a wall: the candle's foot, and which way is up and across, for its cheek fins
+              ...(o.holder.wall && room
+                ? { wall: { foot: [o.x - (room.up[0] * o.h) / 2, o.y, o.z - (room.up[2] * o.h) / 2] as V3, up: room.up, right: room.right, front: o.y + o.w / 2 - baseTop(v) } }
+                : {}),
+            },
+          ]
+        : [],
+    );
     const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, sight, !!mapTop, mapParams.forced, shelves], () =>
       share(
         cache.get('Slice plates')?.value as SliceResult | undefined,
@@ -465,9 +488,10 @@ export function createFrontPipeline(options: FrontOptions = {}) {
           : null,
     );
     const mounted = mountIssues(v, { candles: [...placedCandles, ...surfaceCandles.objects].some((o) => o.look === 'candle' || o.look === 'tealight'), shelf: !!project.shelf?.on, shelves: shelves.cuts.length > 0, map: !!mapTop });
-    const issuesHere = [...(hf?.floorClip ? [floorClipIssue(hf.floorClip, v, project)] : []), ...mounted];
+    const onWall = wall ? wallCandleIssues(objects.filter((o) => o.object.look === 'candle' || o.object.look === 'tealight'), finalSliced.parts) : [];
+    const issuesHere = [...(hf?.floorClip ? [floorClipIssue(hf.floorClip, v, project)] : []), ...mounted, ...onWall];
     const fieldIssues = issuesHere.length ? issuesHere : undefined;
-    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, ...(fieldIssues ? { fieldIssues } : {}), shelfSolve: laid.solve ?? undefined, shelfEye: project.shelf?.on ? shelfEye(project.shelf) : undefined, shelfCuts: shelves.cuts, ...(surfaceCandles.lost.length ? { lostCandles: surfaceCandles.lost } : {}), origin, shadow: carved?.report ?? null, ...(shadowPending ? { shadowPending } : {}), unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
+    return { ev, v, insert, source, sideImg, frontImg, topImg, hf, sliced: finalSliced, objects, cardVisibility: cardVisibility ?? undefined, ...(fieldIssues ? { fieldIssues } : {}), shelfSolve: laid.solve ?? undefined, shelfEye: project.shelf?.on ? shelfEye(project.shelf) : undefined, shelfCuts: shelves.cuts, ...(surfaceCandles.lost.length ? { lostCandles: surfaceCandles.lost } : {}), ...(levelPlates ? { wallLevel: true } : {}), origin, shadow: carved?.report ?? null, ...(shadowPending ? { shadowPending } : {}), unfolded, pour, sunkenFrame, stages, totalMs: performance.now() - t0 };
   };
 }
 

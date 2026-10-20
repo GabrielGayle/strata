@@ -56,7 +56,7 @@ import {
 } from './stackRods';
 import { orientMapPlatePlane } from './mapPlateHeight';
 import { MAP_WIDTH_AXIS_NOTE } from './mapStack';
-import { chokeSpans, crossPedestal, finSlots, finTabSlots, targetFins } from './candles';
+import { chokeSpans, crossPedestal, finSlots, finTabSlots, targetFins, wallCheekFins, wallFinSlots, type WallHold } from './candles';
 import type { HolderSpec } from './objects';
 import { shelfOutline, shelfPlane, type ShelfCut } from './shelfPlates';
 import { footprintBox } from './overlap';
@@ -246,7 +246,7 @@ export interface SliceInput {
   /** The project asked for sliceAxis 'width' on a map face, which was evaluated as 'length'. */
   mapAxisForced?: boolean;
   /** Candlesticks held by target fins: where each stands and how its fins grip it. */
-  candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: HolderSpec }[];
+  candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: HolderSpec; wall?: WallHold }[];
   /** Shelves across the plates (the plates are already slotted for them by their hidden cutters in `objects`). */
   shelves?: ShelfCut[];
 }
@@ -1756,10 +1756,16 @@ export function slice(input: SliceInput): SliceResult {
 
   // candle holders: target fins round each candlestick; slotted ones key into the plates with halving slots
   const fins = (input.candles ?? []).flatMap((c, i) =>
-    targetFins(c, c.holder, { t, embed: e, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i).map((f) => ({
-      f,
-      slots: c.holder.slotted ? finSlots(f, defs, { t, candleBottom: c.bottom, baseTop: baseTop(v), engage: c.holder.engage ?? 16, fit: 2 * FIN_FIT }) : [],
-    })),
+    c.wall
+      ? // on a wall: cheek fins either side, slotted halfway into the level plates from their front edges
+        wallCheekFins({ r: c.r, wall: c.wall }, c.holder, { t, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i).map((f0) => {
+          const { fin: f, slots } = wallFinSlots(f0, defs, { t, fit: 2 * FIN_FIT, yMid: Math.min(c.wall!.front + c.holder.reach, v.stackHeight) / 2, minFeature: v.minFeature });
+          return { f, slots };
+        })
+      : targetFins(c, c.holder, { t, embed: e, baseTop: baseTop(v), slack: c.slack, minFeature: v.minFeature }, i).map((f) => ({
+          f,
+          slots: c.holder.slotted ? finSlots(f, defs, { t, candleBottom: c.bottom, baseTop: baseTop(v), engage: c.holder.engage ?? 16, fit: 2 * FIN_FIT }) : [],
+        })),
   );
   const finSlotsByPlate = new Map<string, Shape[]>();
   for (const { slots } of fins) for (const s of slots) finSlotsByPlate.set(s.plate, [...(finSlotsByPlate.get(s.plate) ?? []), rect(...s.plateRect)]);
@@ -2205,7 +2211,9 @@ export function slice(input: SliceInput): SliceResult {
     }
   }
   // 10. candle holders: target fins standing in the concrete round each candlestick
-  const unslotted = fins.filter(({ f, slots: fs }) => input.candles![f.holder].holder.slotted && !fs.length).length;
+  const unslotted = fins.filter(({ f, slots: fs }) => input.candles![f.holder].holder.slotted && !input.candles![f.holder].wall && !fs.length).length;
+  const wallLoose = fins.filter(({ f, slots: fs }) => input.candles![f.holder].wall && !fs.length).length;
+  if (wallLoose) warnings.push(`${wallLoose} cheek fin${wallLoose > 1 ? 's cross' : ' crosses'} no plate to slot onto, so ${wallLoose > 1 ? 'they' : 'it'} would hang loose: deepen Slot so ${wallLoose > 1 ? 'they reach' : 'it reaches'} the plate under the candle, or a deeper Grip.`);
   if (unslotted) warnings.push(`${unslotted} slotted candle fin${unslotted > 1 ? 's run' : ' runs'} along the plates, so ${unslotted > 1 ? 'they have' : 'it has'} nothing to slot into: turn the fins with Spin (45° crosses them all).`);
   const flat2 = (input.candles ?? []).filter((c, i) => c.holder.cross && !fins.some(({ f }) => f.holder === i && f.notch)).length;
   if (flat2) warnings.push(`${flat2} candlestick${flat2 > 1 ? 's sit' : ' sits'} too low for two-piece fins (the pieces need ${crossPedestal(v.minFeature)} mm under the candle to halve together), so ${flat2 > 1 ? 'they get' : 'it gets'} separate fins: raise Lift${(input.candles ?? []).some((c) => c.holder.slotted) ? ' or deepen Slot' : ''}.`);

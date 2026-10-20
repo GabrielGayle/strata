@@ -59,6 +59,8 @@ export interface HolderSpec {
   cross?: boolean;
   /** Standing on a shelf: the fins drop tabs into slots in it (top face height and thickness, mm). */
   shelf?: { id: string; top: number; t: number };
+  /** On a wall piece: cheek fins either side, keyed onto the level plates (see `wallCheekFins`). */
+  wall?: boolean;
 }
 
 export const KIND_NAMES: Record<ObjectKind, string> = {
