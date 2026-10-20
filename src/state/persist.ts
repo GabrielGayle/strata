@@ -8,6 +8,8 @@
 // (src/state/library.ts, database `strata-library`) and this autosave
 // (`strata`) do not appear on another build. Cloud copy: api/projects.ts.
 
+import { reopeningDb } from './idb';
+
 export interface KV {
   get(key: string): Promise<string | undefined>;
   set(key: string, value: string): Promise<void>;
@@ -24,30 +26,28 @@ function req<T>(r: IDBRequest<T>): Promise<T> {
 }
 
 export function indexedDbKV(idb: IDBFactory): KV {
-  let db: Promise<IDBDatabase> | null = null;
-  const open = () =>
-    (db ??= new Promise((res, rej) => {
-      const r = idb.open(DB, 1);
-      r.onupgradeneeded = () => r.result.createObjectStore(STORE);
-      r.onsuccess = () => res(r.result);
-      r.onerror = () => rej(r.error);
-      r.onblocked = () => rej(new Error('Storage is blocked by another Strata tab'));
-    }));
+  const withDb = reopeningDb(
+    () =>
+      new Promise((res, rej) => {
+        const r = idb.open(DB, 1);
+        r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+        r.onblocked = () => rej(new Error('Storage is blocked by another Strata tab'));
+      }),
+  );
   return {
-    async get(key) {
-      const d = await open();
-      return (await req(d.transaction(STORE).objectStore(STORE).get(key))) as string | undefined;
-    },
-    async set(key, value) {
-      const d = await open();
-      const tx = d.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(value, key);
-      await new Promise<void>((res, rej) => {
-        tx.oncomplete = () => res();
-        tx.onerror = () => rej(tx.error);
-        tx.onabort = () => rej(tx.error ?? new Error('Save was aborted (browser storage may be full)'));
-      });
-    },
+    get: (key) => withDb(async (d) => (await req(d.transaction(STORE).objectStore(STORE).get(key))) as string | undefined),
+    set: (key, value) =>
+      withDb(async (d) => {
+        const tx = d.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put(value, key);
+        await new Promise<void>((res, rej) => {
+          tx.oncomplete = () => res();
+          tx.onerror = () => rej(tx.error);
+          tx.onabort = () => rej(tx.error ?? new Error('Save was aborted (browser storage may be full)'));
+        });
+      }),
   };
 }
 
