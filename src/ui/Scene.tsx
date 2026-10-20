@@ -24,7 +24,7 @@ import PlateGizmo, { gizmoIsBusy, moveTarget } from './PlateGizmo';
 import CandleGizmo from './CandleGizmo';
 import { Candle3D, SunStudy3D } from './SunStudy';
 import { showBaseMesh, showInsertMesh, showObject, showPart, type ViewportLayers } from './viewportLayers';
-import { contourStep, makeHeightBandMaterial, outlineColor, outlineSegments, reliefRange, spreadOffsets, tintColor, type ViewAids } from './viewAids';
+import { contourStep, makeHeightBandMaterial, outlineColor, outlineSegments, rakeDirection, reliefRange, spreadOffsets, tintColor, type ViewAids } from './viewAids';
 
 export interface SceneOpts {
   selected: string | null;
@@ -585,13 +585,23 @@ export default function Scene({ model, opts }: { model: Model; opts: SceneOpts }
   const showEngrave = L.engraving || (L.water && !!topMap);
   // a candle-lit shadow design is seen at night, by the candle
   const candle = !!v.shadowOn && v.shadowLight === 'candle' && v.sliceMode === 'parallel';
+  // raking light (view aid): everything else turned down so the one low light draws the form
+  const rake = !!aids?.rake && !candle;
   return (
     <>
-      <Env intensity={candle ? 0.06 : 0.55} />
+      <Env intensity={candle ? 0.06 : rake ? 0.22 : 0.55} />
       <color attach="background" args={[cssVar('--viewport', '#e6e3dc')]} />
-      <ambientLight intensity={candle ? 0.06 : v.sunOn ? 0.28 : 0.35} />
-      {candle ? <Candle3D model={model} /> : v.sunOn ? <SunStudy3D model={model} /> : <ShadowSun model={model} />}
-      <directionalLight position={[-900, 500, -600]} intensity={candle ? 0.04 : v.sunOn ? 0.18 : 0.45} />
+      <ambientLight intensity={candle ? 0.06 : rake ? 0.12 : v.sunOn ? 0.28 : 0.35} />
+      {candle ? (
+        <Candle3D model={model} />
+      ) : rake ? (
+        <ShadowSun model={model} dir={rakeDirection(aids!.rakeTurn, aids!.rakeHeight)} intensity={4.5} />
+      ) : v.sunOn ? (
+        <SunStudy3D model={model} />
+      ) : (
+        <ShadowSun model={model} />
+      )}
+      <directionalLight position={[-900, 500, -600]} intensity={candle ? 0.04 : rake ? 0.03 : v.sunOn ? 0.18 : 0.45} />
       {L.grid && (
         <ViewportGrid
           args={[Math.max(bounds.size * 6, 1200), Math.max(bounds.size * 6, 1200)]}
@@ -649,16 +659,17 @@ export function bucketLooks(app: Appearance | undefined, main: string) {
 }
 
 /** Key light with a shadow camera fitted to the design, so carved recesses and cavities read. */
-function ShadowSun({ model }: { model: Model }) {
+function ShadowSun({ model, dir: towards, intensity = 1.7 }: { model: Model; dir?: [number, number, number]; intensity?: number }) {
   const { center, size } = modelBounds(model);
-  const dir = new THREE.Vector3(-0.75, 0.9, 0.35).normalize(); // rakes across from the far side so recesses cast visible shadows
+  // by default it rakes across from the far side so recesses cast visible shadows
+  const dir = (towards ? new THREE.Vector3(...towards) : new THREE.Vector3(-0.75, 0.9, 0.35)).normalize();
   // the light aims at the origin (its default target); the frustum is sized to cover the whole piece around it
   const pos = dir.multiplyScalar(size * 1.6);
   const r = size * 0.75 + center.length();
   return (
     <directionalLight
       position={pos}
-      intensity={1.7}
+      intensity={intensity}
       castShadow
       shadow-mapSize={[2048, 2048]}
       shadow-bias={-0.0004}

@@ -49,3 +49,30 @@ describe('view aids', () => {
     expect(contourStep(180)).toBe(10);
   });
 });
+
+describe('raking light', () => {
+  it('points at the turn and height asked for', async () => {
+    const { rakeDirection } = await import('../src/ui/viewAids');
+    const [x, y, z] = rakeDirection(0, 15);
+    expect(x).toBeCloseTo(0, 6);
+    expect(y).toBeCloseTo(Math.sin((15 * Math.PI) / 180), 6);
+    expect(z).toBeGreaterThan(0.9);
+    const side = rakeDirection(90, 10);
+    expect(side[0]).toBeGreaterThan(0.95);
+    expect(Math.hypot(...side)).toBeCloseTo(1, 6);
+  });
+
+  it('loads off by default and keeps a saved setting', async () => {
+    const store = new Map<string, string>();
+    (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) };
+    const { loadViewAids, saveViewAids, DEFAULT_VIEW_AIDS } = await import('../src/ui/viewAids');
+    expect(loadViewAids().rake).toBe(false);
+    saveViewAids({ ...DEFAULT_VIEW_AIDS, rake: true, rakeTurn: 405, rakeHeight: 10 });
+    store.set('strata.viewAids.v1', store.get('strata.viewAids.v1')!);
+    const a = loadViewAids();
+    expect(a.rake).toBe(true);
+    expect(a.rakeTurn).toBe(45);
+    expect(a.rakeHeight).toBe(10);
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+});

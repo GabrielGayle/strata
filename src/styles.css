@@ -3906,8 +3906,10 @@ kbd {
   align-items: center;
   gap: 6px;
   padding: 2px 6px;
-  background: var(--surface);
+  background: var(--panel);
   white-space: nowrap;
+  /* left: 50% would otherwise cap it at half the viewport and let the Rake controls spill out */
+  width: max-content;
   box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
 }
 .view-aids .btn {
@@ -3923,6 +3925,14 @@ kbd {
 .view-aids select {
   font-size: 11px;
   height: 20px;
+}
+.view-aids > * {
+  flex-shrink: 0;
+}
+.view-aids.overlay input[type='range'] {
+  width: 84px;
+  min-width: 84px;
+  flex: 0 0 84px;
 }
 
 /* the last cloud pack: a download link, or why it was refused */
