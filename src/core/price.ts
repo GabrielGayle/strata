@@ -149,6 +149,8 @@ function estimatedWarning(material: string, thickness: number, rate: ChopRate): 
   const list = rate.gauges.map(mmText).join(', ');
   if (rate.gauges.length === 1)
     return `${mmText(thickness)} mm ${name} isn’t a fitted gauge (only ${list} mm was quoted on ${CHOPCHOP_CALIBRATED}). The rate is held at that gauge and marked as an estimate.`;
+  if (rate.how === 'held')
+    return `${mmText(thickness)} mm ${name} is thinner than the fitted gauges (${list} mm). It is priced at the ${mmText(rate.gauges[0])} mm rate, as an estimate.`;
   if (rate.how === 'extrapolated')
     return `${mmText(thickness)} mm ${name} is outside the fitted gauges (${list} mm). The rate is a linear extrapolation and only an estimate.`;
   return `${mmText(thickness)} mm ${name} is between the fitted gauges (${list} mm). The rate is a linear estimate.`;
