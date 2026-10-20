@@ -14,11 +14,10 @@ import { useModel, fmt } from './model';
 import { isMapDepth } from '../core/mapPlateHeight';
 import { plateOutlineYRangeMm } from '../core/slicer';
 import { flatStackIsCapped, formatMapHeightCaption } from '../core/mapGeometryReadout';
-import AppearancePanel, { paintClick } from './AppearancePanel';
-import ObjectsPanel from './ObjectsPanel';
-import { UnobstructedDevDock } from './ShelfPanel';
+import { paintClick } from './AppearancePanel';
 import { SunBar } from './SunStudy';
-import { MeasurePanel, MeasureTool, useMeasure } from './Measure';
+import { MeasureTool, useMeasure } from './Measure';
+import ViewportSidebar from './ViewportSidebar';
 import {
   VIEWPORT_CAM_POS,
   VIEWPORT_DPR,
@@ -270,169 +269,155 @@ export default function Viewport() {
   const stackCapped =
     mapFace && v.sliceMode === 'flat' && flatStackIsCapped(model.hf?.max, model.sliced.plates.length, v.thickness);
   return (
-    <>
-      {/* Linear clip + ViewportGrid depthWrite. logarithmicDepthBuffer writes gl_FragDepth (kills early-Z) and drei Grid has no logdepthbuf chunks. */}
-      <Canvas
-        shadows="percentage"
-        dpr={VIEWPORT_DPR}
-        gl={VIEWPORT_GL}
-        frameloop={parked ? 'never' : 'always'}
-        resize={VIEWPORT_RESIZE}
-        onCreated={({ gl }) => {
-          gl.setClearColor(cssVar('--viewport', '#e6e3dc'), 1);
-        }}
-        onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })}
-        style={VIEWPORT_STYLE}
-      >
-        <ResumeWhenVisible parked={parked} />
-        <PerspectiveCamera
-          makeDefault={!ui.ortho}
-          fov={ui.pointViewFov ?? 32}
-          near={clip.near}
-          far={ui.pointView ? Math.max(clip.far, 50_000) : clip.far}
-          position={VIEWPORT_CAM_POS}
-        />
-        <OrthographicCamera makeDefault={ui.ortho} near={-clip.orthoSpan} far={clip.orthoSpan} position={VIEWPORT_CAM_POS} zoom={0.6} />
-        <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
-        <LiveViewTracker />
-        <CameraClipSync boundSize={boundSize} />
-        <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} mapNorthUp={mapFace} />
-        <ViewFromPointRig />
-        <Scene model={model} opts={opts} />
-        <MeasureTool active={ui.measureMode} showDimensions={ui.viewportLayers.labels} />
-      </Canvas>
-      <ViewportLayersToolbar />
-      <ViewAidsToolbar />
-      <div className="overlay tl">
-        {(['iso', 'front', 'side', 'top'] as Snap[]).map((d) => (
-          <button key={d} className={`btn sm ${ui.snap.dir === d ? 'on' : ''}`} onClick={() => snapTo(d)} title={d === 'front' ? 'Look through the stack (front-view image)' : d === 'side' ? 'Look at the plate faces edge-on (profile)' : undefined}>
-            {d === 'iso' ? 'Iso' : d === 'front' ? 'Front' : d === 'side' ? 'Side' : 'Top'}
-          </button>
-        ))}
-        <button className={`btn sm ${ui.ortho ? 'on' : ''}`} onClick={() => setUi({ ortho: !ui.ortho })} title="Orthographic camera">
-          Ortho
-        </button>
-        <button
-          className={`btn sm ${fromPoint ? 'on' : ''}`}
-          data-testid="view-from-point-toggle"
-          onClick={() => setFromPoint((on) => !on)}
-          title="Paste a Google Earth URL or type lat, lon, altitude, heading and tilt"
+    <div className="vp-shell">
+      <div className="vp-main">
+        {/* Linear clip + ViewportGrid depthWrite. logarithmicDepthBuffer writes gl_FragDepth (kills early-Z) and drei Grid has no logdepthbuf chunks. */}
+        <Canvas
+          shadows="percentage"
+          dpr={VIEWPORT_DPR}
+          gl={VIEWPORT_GL}
+          frameloop={parked ? 'never' : 'always'}
+          resize={VIEWPORT_RESIZE}
+          onCreated={({ gl }) => {
+            gl.setClearColor(cssVar('--viewport', '#e6e3dc'), 1);
+          }}
+          onPointerMissed={() => !gizmoIsBusy() && !ui.paintMode && !ui.measureMode && setUi({ selected: null })}
+          style={VIEWPORT_STYLE}
         >
-          View from point
-        </button>
-        <span className="vp-mount" role="group" aria-label="Shown on">
-          <button
-            className={`btn sm ${isWall(v) ? '' : 'on'}`}
-            aria-pressed={!isWall(v)}
-            data-testid="mount-table"
-            onClick={() => setParam('mount', 'table')}
-            title="Table piece: stands on its base, plates rising up (Display › Shown on)"
-          >
-            Table
-          </button>
-          <button
-            className={`btn sm ${isWall(v) ? 'on' : ''}`}
-            aria-pressed={isWall(v)}
-            data-testid="mount-wall"
-            onClick={() => setParam('mount', 'wall')}
-            title="Wall piece: the base hangs flat on the wall and the plates stand out into the room (Display › Shown on; pick the top edge there)"
-          >
-            Wall
-          </button>
-        </span>
-      </div>
-      <div className="vp-tr-column">
-        <div className="overlay tr col">
-          <button className={`btn sm ${ui.paintMode ? 'on' : ''}`} onClick={() => setUi({ paintMode: !ui.paintMode, moveMode: false, objectsMode: false, measureMode: false })} title="Material buckets: click plates to choose what each is cut from (shift-click a run)">
-            Materials{bucketed ? ` (${bucketed})` : ''}
-          </button>
-          <button className={`btn sm ${ui.moveMode ? 'on' : ''}`} onClick={() => setUi({ moveMode: !ui.moveMode, paintMode: false, objectsMode: false, measureMode: false })} title="Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)">
-            Move plates{movedCount ? ` (${movedCount})` : ''}
-          </button>
-          <button className={`btn sm ${ui.objectsMode ? 'on' : ''}`} onClick={() => setUi({ objectsMode: !ui.objectsMode, paintMode: false, moveMode: false, measureMode: false })} title="Place postcards, boxes and other objects; each is cut out of the plates it passes through">
-            Objects{objectCount ? ` (${objectCount})` : ''}
-          </button>
-          <button className={`btn sm ${ui.measureMode ? 'on' : ''}`} onClick={() => setUi({ measureMode: !ui.measureMode, moveMode: false, paintMode: false, objectsMode: false })} title="Measuring tape: point to point, edge to edge, point to edge or face (M; Esc leaves)">
-            Measure
-          </button>
-          <button className="btn sm" onClick={() => setUi({ tab: 'impress' })} title="Press a picture into the top surface or the front face, placed by hand with an x-ray of the cut">
-            Impress image
-          </button>
-          <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
-            X-ray concrete
-          </button>
-          <button className={`btn sm ${ui.showMoulds ? 'on' : ''}`} onClick={() => setUi({ showMoulds: !ui.showMoulds })}>
-            Moulds
-          </button>
-          {ui.showMoulds && (
-            <button className={`btn sm ${ui.explode ? 'on' : ''}`} onClick={() => setUi({ explode: !ui.explode })}>
-              Exploded
+          <ResumeWhenVisible parked={parked} />
+          <PerspectiveCamera
+            makeDefault={!ui.ortho}
+            fov={ui.pointViewFov ?? 32}
+            near={clip.near}
+            far={ui.pointView ? Math.max(clip.far, 50_000) : clip.far}
+            position={VIEWPORT_CAM_POS}
+          />
+          <OrthographicCamera makeDefault={ui.ortho} near={-clip.orthoSpan} far={clip.orthoSpan} position={VIEWPORT_CAM_POS} zoom={0.6} />
+          <OrbitControls makeDefault enableDamping dampingFactor={0.12} />
+          <LiveViewTracker />
+          <CameraClipSync boundSize={boundSize} />
+          <CameraRig model={model} snap={ui.snap} ortho={ui.ortho} mapNorthUp={mapFace} />
+          <ViewFromPointRig />
+          <Scene model={model} opts={opts} />
+          <MeasureTool active={ui.measureMode} showDimensions={ui.viewportLayers.labels} />
+        </Canvas>
+        <ViewportLayersToolbar />
+        <ViewAidsToolbar />
+        <div className="overlay tl">
+          {(['iso', 'front', 'side', 'top'] as Snap[]).map((d) => (
+            <button key={d} className={`btn sm ${ui.snap.dir === d ? 'on' : ''}`} onClick={() => snapTo(d)} title={d === 'front' ? 'Look through the stack (front-view image)' : d === 'side' ? 'Look at the plate faces edge-on (profile)' : undefined}>
+              {d === 'iso' ? 'Iso' : d === 'front' ? 'Front' : d === 'side' ? 'Side' : 'Top'}
             </button>
-          )}
-          <button className={`btn sm ${ui.showIssues ? 'on' : ''}`} onClick={() => setUi({ showIssues: !ui.showIssues })}>
-            Issue markers
-          </button>
-          {v.stackSource === 'form' && (
-            <button className={`btn sm ${ui.showSource ? 'on' : ''}`} onClick={() => setUi({ showSource: !ui.showSource })}>
-              Source ghost
-            </button>
-          )}
-        </div>
-        {fromPoint && <ViewFromPointPanel />}
-      </div>
-      <div className="overlay bl info">
-        <span>
-          {model.sliced.steelBase
-            ? `steel base ${fmt(v.baseLength, 0)} × ${fmt(v.baseWidth, 0)} × ${fmt(model.sliced.steelBase.spec.thickness, 1)} mm · ${model.sliced.steelBase.tabs.length} ${model.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welds'}`
-            : `base ${fmt(v.baseLength, 0)} × ${fmt(v.baseWidth, 0)} × ${fmt(v.baseHeight, 0)} mm`}
-        </span>
-        <span>
-          {!model.sliced.plates.length ? (
-            'no plates'
-          ) : (
-            <>
-              {model.bom.plateCount} {v.sliceMode === 'flat' ? 'layers' : 'plates'} · {model.sliced.parts.length} parts × {fmt(v.thickness, 1)} mm {v.sliceMode === 'flat' ? 'face to face' : v.sliceMode !== 'radial' ? `@ ${fmt(v.pitch, 2)} pitch` : 'radial'}
-            </>
-          )}
-        </span>
-        <span
-          data-testid="plate-height-range"
-          title={
-            stackCapped
-              ? 'Layer count × thickness. Terrain millimetres exceed the stack — raise Plate count to keep the top. Exaggeration still changes how many layers each area gets.'
-              : terrainY
-                ? 'Lowest to highest terrain on the cut outlines, above the concrete. A plate’s bounding-box top can sit higher than a valley on the same plate.'
-                : undefined
-          }
-        >
-          {formatMapHeightCaption({
-            sliceMode: v.sliceMode,
-            plates: model.sliced.plates,
-            thicknessMm: v.thickness,
-            mapFace,
-            bboxMin: hMin,
-            bboxMax: hMax,
-            terrainTopMm: model.hf?.max,
-          })}
-        </span>
-        {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
-      </div>
-      {ui.moveMode && !ui.paintMode && !ui.measureMode && <MovePanel />}
-      {ui.paintMode && !ui.measureMode && <AppearancePanel />}
-      {ui.objectsMode && !ui.measureMode && <ObjectsPanel />}
-      {ui.objectsMode && !ui.measureMode && <UnobstructedDevDock />}
-      {ui.measureMode && <MeasurePanel />}
-      {v.sunOn && <SunBar model={model} />}
-      {v.pourView !== 'plain' && model.pour.rows.length > 0 && (
-        <div className="overlay br info">
-          {[...model.pour.rows].reverse().map((r) => (
-            <span key={r.id} className="legend">
-              <i style={{ background: r.color }} /> {r.name} {fmt(r.height, 0)} mm
-            </span>
           ))}
+          <button className={`btn sm ${ui.ortho ? 'on' : ''}`} onClick={() => setUi({ ortho: !ui.ortho })} title="Orthographic camera">
+            Ortho
+          </button>
+          <button
+            className={`btn sm ${fromPoint ? 'on' : ''}`}
+            data-testid="view-from-point-toggle"
+            onClick={() => setFromPoint((on) => !on)}
+            title="Paste a Google Earth URL or type lat, lon, altitude, heading and tilt"
+          >
+            View from point
+          </button>
+          <span className="vp-mount" role="group" aria-label="Shown on">
+            <button
+              className={`btn sm ${isWall(v) ? '' : 'on'}`}
+              aria-pressed={!isWall(v)}
+              data-testid="mount-table"
+              onClick={() => setParam('mount', 'table')}
+              title="Table piece: stands on its base, plates rising up (Display › Shown on)"
+            >
+              Table
+            </button>
+            <button
+              className={`btn sm ${isWall(v) ? 'on' : ''}`}
+              aria-pressed={isWall(v)}
+              data-testid="mount-wall"
+              onClick={() => setParam('mount', 'wall')}
+              title="Wall piece: the base hangs flat on the wall and the plates stand out into the room (Display › Shown on; pick the top edge there)"
+            >
+              Wall
+            </button>
+          </span>
         </div>
-      )}
-    </>
+        <div className="vp-tr-column">
+          <div className="overlay tr col">
+            <button className="btn sm" onClick={() => setUi({ tab: 'impress' })} title="Press a picture into the top surface or the front face, placed by hand with an x-ray of the cut">
+              Impress image
+            </button>
+            <button className={`btn sm ${ui.xray ? 'on' : ''}`} onClick={() => setUi({ xray: !ui.xray })} title="See the plates' embedded tabs through the concrete">
+              X-ray concrete
+            </button>
+            <button className={`btn sm ${ui.showMoulds ? 'on' : ''}`} onClick={() => setUi({ showMoulds: !ui.showMoulds })}>
+              Moulds
+            </button>
+            {ui.showMoulds && (
+              <button className={`btn sm ${ui.explode ? 'on' : ''}`} onClick={() => setUi({ explode: !ui.explode })}>
+                Exploded
+              </button>
+            )}
+            <button className={`btn sm ${ui.showIssues ? 'on' : ''}`} onClick={() => setUi({ showIssues: !ui.showIssues })}>
+              Issue markers
+            </button>
+            {v.stackSource === 'form' && (
+              <button className={`btn sm ${ui.showSource ? 'on' : ''}`} onClick={() => setUi({ showSource: !ui.showSource })}>
+                Source ghost
+              </button>
+            )}
+          </div>
+          {fromPoint && <ViewFromPointPanel />}
+        </div>
+        <div className="overlay bl info">
+          <span>
+            {model.sliced.steelBase
+              ? `steel base ${fmt(v.baseLength, 0)} × ${fmt(v.baseWidth, 0)} × ${fmt(model.sliced.steelBase.spec.thickness, 1)} mm · ${model.sliced.steelBase.tabs.length} ${model.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welds'}`
+              : `base ${fmt(v.baseLength, 0)} × ${fmt(v.baseWidth, 0)} × ${fmt(v.baseHeight, 0)} mm`}
+          </span>
+          <span>
+            {!model.sliced.plates.length ? (
+              'no plates'
+            ) : (
+              <>
+                {model.bom.plateCount} {v.sliceMode === 'flat' ? 'layers' : 'plates'} · {model.sliced.parts.length} parts × {fmt(v.thickness, 1)} mm {v.sliceMode === 'flat' ? 'face to face' : v.sliceMode !== 'radial' ? `@ ${fmt(v.pitch, 2)} pitch` : 'radial'}
+              </>
+            )}
+          </span>
+          <span
+            data-testid="plate-height-range"
+            title={
+              stackCapped
+                ? 'Layer count × thickness. Terrain millimetres exceed the stack — raise Plate count to keep the top. Exaggeration still changes how many layers each area gets.'
+                : terrainY
+                  ? 'Lowest to highest terrain on the cut outlines, above the concrete. A plate’s bounding-box top can sit higher than a valley on the same plate.'
+                  : undefined
+            }
+          >
+            {formatMapHeightCaption({
+              sliceMode: v.sliceMode,
+              plates: model.sliced.plates,
+              thicknessMm: v.thickness,
+              mapFace,
+              bboxMin: hMin,
+              bboxMax: hMax,
+              terrainTopMm: model.hf?.max,
+            })}
+          </span>
+          {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
+        </div>
+        {v.sunOn && <SunBar model={model} />}
+        {v.pourView !== 'plain' && model.pour.rows.length > 0 && (
+          <div className="overlay br info">
+            {[...model.pour.rows].reverse().map((r) => (
+              <span key={r.id} className="legend">
+                <i style={{ background: r.color }} /> {r.name} {fmt(r.height, 0)} mm
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <ViewportSidebar move={<MovePanel />} parked={parked} counts={{ objects: objectCount, moved: movedCount, bucketed }} />
+    </div>
   );
 }
 

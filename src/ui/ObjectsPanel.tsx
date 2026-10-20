@@ -3,7 +3,8 @@ import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import ShelfPanel from './ShelfPanel';
 import CandlePanel from './CandlePanel';
-import { useDragWindow } from './dragWindow';
+import { Fold } from './Fold';
+import type { ObjectsView } from './sidebarState';
 import { KIND_NAMES, newObject, type CutObject, type ObjectKind } from '../core/objects';
 
 type NumKey = 'w' | 'h' | 'd' | 'x' | 'y' | 'z' | 'rx' | 'ry' | 'rz' | 'clearance';
@@ -35,41 +36,20 @@ const GAP: Field = { key: 'clearance', label: 'Gap', step: 0.1, hint: 'Space lef
 
 const DEFAULT_HINT = 'Objects are cut out of every plate they pass through, so the plates end up shaped to hold them. Hover any value to see what it does.';
 
-/** Placed objects and the postcard shelf, in the 3D view. */
-export default function ObjectsPanel() {
-  const [view, setView] = useState<'objects' | 'shelf' | 'candles'>(() => {
-    const p = useStore.getState().project;
-    return p.candles ? 'candles' : p.shelf ? 'shelf' : 'objects';
-  });
-  const setUi = useStore((s) => s.setUi);
-  const drag = useDragWindow('objects');
+/** Placed objects, the postcard shelf or the candelabra: one sidebar tab each in the 3D view. */
+export default function ObjectsPanel({ view }: { view: ObjectsView }) {
   return (
-    <section className="overlay movepanel appearance objects" ref={(el) => void (drag.ref.current = el)} style={drag.style} aria-label="Objects">
-      <header {...drag.bind} title="Drag to move this window. Double-click to put it back.">
-        <div className="title-bar-text">Objects</div>
-        <div className="title-bar-controls">
-          <button aria-label="Close" onClick={() => setUi({ objectsMode: false })} title="Close (the objects stay; Objects on the right opens this again)"></button>
-        </div>
-      </header>
-      <div className="mp-row">
-        <button className={`btn sm ${view === 'objects' ? 'on' : ''}`} onClick={() => setView('objects')} title="Single objects you place one by one">
-          Objects
-        </button>
-        <button className={`btn sm ${view === 'shelf' ? 'on' : ''}`} onClick={() => setView('shelf')} title="A list of postcards laid along an arc, each held in a notch">
-          Postcard shelf
-        </button>
-        <button className={`btn sm ${view === 'candles' ? 'on' : ''}`} onClick={() => setView('candles')} title="Candlesticks and tealights along a curve, a path or a shape, the plates rising to hold them">
-          Candelabra
-        </button>
-      </div>
+    <div className="objects" role="group" aria-label={view === 'candles' ? 'Candelabra' : view === 'shelf' ? 'Postcard shelf' : 'Objects'}>
       <ShowRow view={view} />
-      {view === 'shelf' ? <ShelfPanel /> : view === 'candles' ? <CandlePanel /> : <ObjectList />}
-    </section>
+      <Fold id={`${view}:main`} title={view === 'candles' ? 'Candelabra' : view === 'shelf' ? 'Postcard shelf' : 'Placed objects'}>
+        {view === 'shelf' ? <ShelfPanel /> : view === 'candles' ? <CandlePanel /> : <ObjectList />}
+      </Fold>
+    </div>
   );
 }
 
 /** Which objects each tab owns, by id: placed ones are o1, o2…, cards shelf1…, candles candle1… */
-export function tabOwns(view: 'objects' | 'shelf' | 'candles', o: CutObject): boolean {
+export function tabOwns(view: ObjectsView, o: CutObject): boolean {
   if (o.look === 'hidden') return false; // a candle holder's well: never drawn
   if (view === 'shelf') return o.id.startsWith('shelf');
   if (view === 'candles') return o.id.startsWith('candle');
@@ -77,7 +57,7 @@ export function tabOwns(view: 'objects' | 'shelf' | 'candles', o: CutObject): bo
 }
 
 /** Show or hide objects in the 3D view: all at once, or one by one. View only. */
-function ShowRow({ view }: { view: 'objects' | 'shelf' | 'candles' }) {
+function ShowRow({ view }: { view: ObjectsView }) {
   const model = useModel();
   const allOn = useStore((s) => s.ui.viewportLayers.objects !== false);
   const hidden = useStore((s) => s.ui.hiddenObjects);
@@ -89,27 +69,29 @@ function ShowRow({ view }: { view: 'objects' | 'shelf' | 'candles' }) {
   const ids = mine.map((o) => o.id);
   const someHidden = ids.some((id) => hidden.includes(id));
   return (
-    <div className="mp-row ob-show" data-testid="objects-show">
-      <span title="Hiding only changes the 3D view: the object still cuts the plates and goes in exports.">Show</span>
-      <button className={`btn sm ${allOn ? 'on' : ''}`} data-testid="objects-show-all" onClick={() => toggleLayer('objects')} title="Show or hide every object, card and candle in the 3D view (they still cut the plates)">
-        All objects
-      </button>
-      {mine.map((o, i) => {
-        const on = !hidden.includes(o.id);
-        // candles and cards often share a name, so number them in path order
-        const label = mine.some((x) => x !== o && x.name === o.name) ? `${i + 1} ${o.name}` : o.name;
-        return (
-          <button key={o.id} className={`btn sm ${on && allOn ? 'on' : ''}`} data-testid={`object-show-${o.id}`} disabled={!allOn} aria-pressed={on} onClick={() => flip(o.id)} title={`${on ? 'Hide' : 'Show'} ${o.name} in the 3D view (it still cuts the plates)`}>
-            {on ? '●' : '○'} {label}
-          </button>
-        );
-      })}
-      {someHidden && (
-        <button className="btn sm" onClick={() => setUi({ hiddenObjects: hidden.filter((x) => !ids.includes(x)) })} title="Show every one in this tab again">
-          Show all
+    <Fold id={`${view}:show`} title="Show in 3D">
+      <div className="mp-row ob-show" data-testid="objects-show">
+        <span title="Hiding only changes the 3D view: the object still cuts the plates and goes in exports.">Show</span>
+        <button className={`btn sm ${allOn ? 'on' : ''}`} data-testid="objects-show-all" onClick={() => toggleLayer('objects')} title="Show or hide every object, card and candle in the 3D view (they still cut the plates)">
+          All objects
         </button>
-      )}
-    </div>
+        {mine.map((o, i) => {
+          const on = !hidden.includes(o.id);
+          // candles and cards often share a name, so number them in path order
+          const label = mine.some((x) => x !== o && x.name === o.name) ? `${i + 1} ${o.name}` : o.name;
+          return (
+            <button key={o.id} className={`btn sm ${on && allOn ? 'on' : ''}`} data-testid={`object-show-${o.id}`} disabled={!allOn} aria-pressed={on} onClick={() => flip(o.id)} title={`${on ? 'Hide' : 'Show'} ${o.name} in the 3D view (it still cuts the plates)`}>
+              {on ? '●' : '○'} {label}
+            </button>
+          );
+        })}
+        {someHidden && (
+          <button className="btn sm" onClick={() => setUi({ hiddenObjects: hidden.filter((x) => !ids.includes(x)) })} title="Show every one in this tab again">
+            Show all
+          </button>
+        )}
+      </div>
+    </Fold>
   );
 }
 

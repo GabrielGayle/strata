@@ -121,6 +121,7 @@ button.ibtn.on,
 button.tb.on,
 button.tab.active,
 button.theme-swatch.on,
+button.vs-tab.on,
 button.card.sel,
 button[aria-pressed='true'] {
   background: silver;
@@ -730,4 +731,22 @@ button.card.sel {
 }
 .title-bar.left-panes button:focus-visible {
   outline: 1px dotted #fff;
+}
+
+/* 3D view sidebar: silver chrome like the panels it replaced floating over the view */
+.vp-sidebar {
+  background: #c0c0c0;
+  border-left: none;
+  box-shadow: inset 1px 0 #fff, inset 2px 0 #dfdfdf;
+}
+.vp-sidebar .vs-main.window {
+  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
+}
+.vp-sidebar .vs-body {
+  color: #222;
+  --muted: #444;
+}
+.vs-fold-head {
+  min-width: 0;
+  padding: 1px 4px;
 }

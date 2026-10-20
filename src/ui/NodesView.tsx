@@ -3,6 +3,7 @@ import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import { DEFAULT_SHELF, LAYOUT_NAMES, parseCards, type ShelfLayout, type ShelfSpec } from '../core/shelf';
 import { DEFAULT_ORIGIN, ORIGIN_NAMES, type OriginRef, type WorldOrigin } from '../core/origin';
+import { openSideTab } from './sidebarState';
 import { FIELDS, fitShelf, rainbowPlates, ShelfFieldControl, type NumKey } from './ShelfPanel';
 
 /**
@@ -229,7 +230,7 @@ export default function NodesView() {
     objects: (
       <>
         <div className="nd-out">{objects.length ? objects.map((o) => o.name).join(', ') : 'None placed yet'}</div>
-        <button className="btn sm" onClick={() => setUi({ tab: '3d', objectsMode: true })} {...help('Add and place objects in the 3D view.')}>
+        <button className="btn sm" onClick={() => (setUi({ tab: '3d' }), openSideTab('objects'))} {...help('Add and place objects in the 3D view.')}>
           Place in 3D
         </button>
       </>

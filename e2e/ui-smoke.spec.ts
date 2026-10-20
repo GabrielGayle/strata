@@ -86,14 +86,16 @@ test('picking a preset rebuilds the plates without errors', async ({ page }) => 
   expect(errors).toEqual([]);
 });
 
-test('the candelabra picker adds candles, the Objects window drags and both pass an accessibility check', async ({ page }) => {
+test('the candelabra picker adds candles in the docked sidebar, which shrinks the 3D view and passes an accessibility check', async ({ page }) => {
   test.setTimeout(180_000);
   const errors = watchErrors(page);
   await openApp(page);
   await tab(page, '3D').click();
-  await page.getByRole('button', { name: /^Objects/ }).click();
-  const win = page.locator('.objects');
-  await win.getByRole('button', { name: 'Candelabra', exact: true }).click();
+  const main = page.locator('.vp-main');
+  await expect(main.locator('canvas')).toBeVisible({ timeout: 120_000 });
+  const full = (await main.boundingBox())!.width;
+  await page.getByTestId('sidebar-tab-candles').click();
+  const win = page.locator('.vp-sidebar .objects');
   await page.getByRole('button', { name: '+ Candelabra' }).click();
   await expect(page.getByTestId('candle-row')).toHaveCount(2);
   await page.getByTestId('candle-add-maxi').click();
@@ -103,19 +105,32 @@ test('the candelabra picker adds candles, the Objects window drags and both pass
   await win.getByRole('button', { name: 'Remove Maxi tealight' }).click();
   await expect(page.getByTestId('candle-row')).toHaveCount(2);
 
-  const r = await new AxeBuilder({ page }).include('.objects').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).disableRules(['target-size']).analyze();
+  const r = await new AxeBuilder({ page }).include('.vp-sidebar').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).disableRules(['target-size']).analyze();
   expect(r.violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`))).toEqual([]);
 
-  const before = (await win.boundingBox())!;
-  const bar = (await win.locator('.title-bar').boundingBox())!;
-  await page.mouse.move(bar.x + 80, bar.y + 8);
+  // docked, not floating: the 3D view gets narrower by the sidebar's width
+  const side = (await page.locator('.vp-sidebar').boundingBox())!;
+  const view = (await main.boundingBox())!;
+  expect(Math.round(view.x + view.width)).toBeLessThanOrEqual(Math.round(side.x) + 1);
+  expect(view.width).toBeLessThan(full - 200);
+
+  // the left edge drags it wider
+  const edge = (await page.locator('.vs-edge').boundingBox())!;
+  await page.mouse.move(edge.x + 3, edge.y + 200);
   await page.mouse.down();
-  await page.mouse.move(bar.x + 180, bar.y + 68, { steps: 6 });
+  await page.mouse.move(edge.x - 97, edge.y + 200, { steps: 6 });
   await page.mouse.up();
-  const after = (await win.boundingBox())!;
-  expect(Math.round(after.x - before.x)).toBe(100);
-  expect(Math.round(after.y - before.y)).toBe(60);
-  await win.locator('.title-bar').dblclick({ position: { x: 80, y: 8 } });
-  await expect.poll(async () => Math.round((await win.boundingBox())!.x)).toBe(Math.round(before.x));
+  await expect.poll(async () => Math.round((await page.locator('.vp-sidebar').boundingBox())!.width - side.width)).toBe(100);
+
+  // a panel folds away, and N shuts and reopens the sidebar on the same tab
+  await page.getByRole('button', { name: 'Candelabra', exact: true }).click();
+  await expect(page.getByTestId('candle-row')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Candelabra', exact: true }).click();
+  await page.locator('.vp-main canvas').hover();
+  await page.keyboard.press('n');
+  await expect(win).toHaveCount(0);
+  expect((await main.boundingBox())!.width).toBeGreaterThan(full - 40);
+  await page.keyboard.press('n');
+  await expect(page.getByTestId('candle-row')).toHaveCount(2);
   expect(errors).toEqual([]);
 });
