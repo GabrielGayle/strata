@@ -40,3 +40,27 @@ test('Table / Wall switch hangs the piece on a wall', async ({ page }) => {
   await page.waitForTimeout(1500);
   expect(errors).toEqual([]);
 });
+
+test('candles stand upright on a wall piece', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const errors = watchErrors(page);
+  await openApp(page, { preset: null });
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('.topbar').getByRole('button', { name: 'Open', exact: true }).click();
+  await (await chooser).setFiles('test/fixtures/projects/lucky-horseshoe.strata.json');
+  await expect(page.locator('.topbar input').first()).toHaveValue('Lucky horseshoe');
+  const canvas = page.locator('.ws-pane canvas').first();
+  await page.waitForTimeout(2500);
+  if (shot) await canvas.screenshot({ path: `${shot}/5-candles-table.png` });
+  await page.getByTestId('mount-wall').click();
+  await page.waitForTimeout(3000);
+  if (shot) await canvas.screenshot({ path: `${shot}/6-candles-wall-iso.png` });
+  await page.locator('.overlay.tl').getByRole('button', { name: 'Front', exact: true }).click();
+  await page.waitForTimeout(2500);
+  if (shot) await canvas.screenshot({ path: `${shot}/7-candles-wall-front.png` });
+  await page.locator('.overlay.tl').getByRole('button', { name: 'Side', exact: true }).click();
+  await page.waitForTimeout(2500);
+  if (shot) await canvas.screenshot({ path: `${shot}/8-candles-wall-side.png` });
+  expect(errors).toEqual([]);
+});

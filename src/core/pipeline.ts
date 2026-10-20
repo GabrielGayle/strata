@@ -12,7 +12,8 @@ import { mapFaceParams } from './mapStack';
 import { plateDefs, slice, type SliceResult } from './slicer';
 import { attachMapPartEtch } from './mapPartEtch';
 import { runChecks, type Issue } from './checks';
-import { mountIssues, mountWeightIssue } from './mount';
+import { isWall, mountIssues, mountWeightIssue } from './mount';
+import { forWall, restOnWall } from './wallBuild';
 import { layoutShelfResult, type SolveResult } from './shelfSolve';
 import { reportShelfVisibility, shelfEye, shelfLayoutKey, shelfSight, shelfViewKey, type V3, type VisibilityReport } from './shelfView';
 import { nest, nestFingerprint, nestGroups, nestMismatch, type NestGroup, type NestOptions, type NestResult, type SavedNest } from './nest';
@@ -320,24 +321,52 @@ export function createFrontPipeline(options: FrontOptions = {}) {
     const mats = materialKey(project.appearance, String(v.plateMaterial));
     const materialFor = (key: string) => materialOf(project.appearance, key, String(v.plateMaterial));
     // tuned plates ring by their own metal, so only then does the metal change the cut
-    const origin = stage('World origin', [project.origin, v.baseLength, v.baseWidth, baseTop(v)], () => originFrame(project.origin, v));
-    const laid = stage('Postcard shelf', [shelfLayoutKey(project.shelf), baseTop(v), project.shelf?.unobstructed ? origin : 0], () =>
-      layoutShelfResult(project.shelf, baseTop(v), project.shelf?.unobstructed ? origin : undefined),
+    // a wall piece is built in the room: the origin carries the turn onto the model
+    const wall = isWall(v);
+    const origin = stage('World origin', [project.origin, v.baseLength, v.baseWidth, baseTop(v), v.mount, v.wallTop, v.sliceAxis, v.sliceMode, !!mapTop], () => originFrame(project.origin, v, !!mapTop));
+    // (the unobstructed-view solver looks from a table-height eye, so a wall shelf is laid plainly)
+    const unobstructed = !wall && !!project.shelf?.unobstructed;
+    const laid = stage('Postcard shelf', [shelfLayoutKey(project.shelf), baseTop(v), unobstructed ? origin : 0, wall], () =>
+      layoutShelfResult(unobstructed || !project.shelf ? project.shelf : { ...project.shelf, unobstructed: false }, baseTop(v), unobstructed ? origin : undefined),
     );
+    // on a wall the candles and cards keep their spots on the face; out from the wall, a
+    // candle stands Lift clear of the base and a card halfway along the plates, and each then
+    // drops onto the plate below it
+    const wallCardOut = baseTop(v) + (Number(v.stackHeight) || 0) / 2;
     const onSurface = project.candles?.sit === 'surface' || (project.candles?.sit === 'auto' && !!mapTop);
     // the plates' planes, for candles that line up with them (they depend only on the settings)
     const stackPlanes = stage('Plate planes', [...pick(v, SLICE_KEYS)], () => plateDefs(v).filter((d) => d.family === 'P').map((d) => d.plane));
     const pitch = stackPlanes.length > 1 ? Math.abs((stackPlanes[1].origin[0] - stackPlanes[0].origin[0]) * stackPlanes[0].normal[0] + (stackPlanes[1].origin[2] - stackPlanes[0].origin[2]) * stackPlanes[0].normal[2]) : 0;
-    const candles = stage('Candelabra', [project.candles, baseTop(v), onSurface, pitch], () => candleObjects(project.candles, baseTop(v), onSurface, pitch));
-    const others = stage('Placed objects', [project.objects, laid, origin], () => [...(project.objects ?? []).map((o) => toWorld(o, origin)), ...laid.cards.map((o) => toWorld(o, origin, true))]);
+    const candles = stage('Candelabra', [project.candles, baseTop(v), onSurface, pitch, wall], () =>
+      wall ? forWall(candleObjects(project.candles, baseTop(v), false, pitch)).map((o) => ({ ...o, y: baseTop(v) + (project.candles?.lift ?? 0) + o.w / 2 })) : candleObjects(project.candles, baseTop(v), onSurface, pitch),
+    );
+    const others0 = stage('Placed objects', [project.objects, laid, origin, wall, wallCardOut], () => [
+      ...(project.objects ?? []).map((o) => toWorld(o, origin)),
+      ...laid.cards.map((o) => toWorld(wall ? forWall([{ ...o, y: wallCardOut }])[0] : o, origin, true)),
+    ]);
+    // wall pieces: candles and cards come to rest on the plates as they are without them
+    const wallBare =
+      wall && (candles.length || laid.cards.length)
+        ? stage('Plates to stand on', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, project.objects, origin, !!mapTop], () => {
+            const b = buildObjects((project.objects ?? []).map((o) => toWorld(o, origin)));
+            return slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: mapTop ? null : topImg, topMask: mapTop ? null : topMask, moves: project.moves, materialFor, objects: b.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut })), mapTerrain: !!mapTop });
+          })
+        : null;
+    const others = wallBare && origin.room ? stage('Cards on the wall', [others0, wallBare], () => restOnWall(others0, wallBare.parts, origin.room!)) : others0;
     // candles sitting into the plates need the plates as they are without them first
-    const bare = onSurface
+    const bare = onSurface && !wall
       ? stage('Plate surface', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, others, !!mapTop], () => {
           const b = buildObjects(others);
           return slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: mapTop ? null : topImg, topMask: mapTop ? null : topMask, moves: project.moves, materialFor, objects: b.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut })), mapTerrain: !!mapTop });
         })
       : null;
-    const placedCandles = stage('Candles placed', [candles, origin, bare, stackPlanes], () => {
+    const placedCandles = stage('Candles placed', [candles, origin, bare, stackPlanes, wallBare], () => {
+      if (wall) {
+        // each candle stands on its spot (its bottom there, not its middle), then drops onto the plate below
+        const up = origin.room?.up ?? [0, 1, 0];
+        const w = candles.map((o) => toWorld(o, origin, true)).map((o) => ({ ...o, x: o.x + (up[0] * o.h) / 2, y: o.y + (up[1] * o.h) / 2, z: o.z + (up[2] * o.h) / 2 }));
+        return wallBare && origin.room ? restOnWall(w, wallBare.parts, origin.room) : w;
+      }
       const w = snapToPlates(
         candles.map((o) => toWorld(o, origin, true)),
         stackPlanes,

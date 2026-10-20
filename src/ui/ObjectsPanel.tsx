@@ -5,6 +5,7 @@ import ShelfPanel from './ShelfPanel';
 import CandlePanel from './CandlePanel';
 import { Fold } from './Fold';
 import type { ObjectsView } from './sidebarState';
+import { isWall } from '../core/mount';
 import { KIND_NAMES, newObject, type CutObject, type ObjectKind } from '../core/objects';
 
 type NumKey = 'w' | 'h' | 'd' | 'x' | 'y' | 'z' | 'rx' | 'ry' | 'rz' | 'clearance';
@@ -21,6 +22,17 @@ const SIZE: Field[] = [
   { key: 'w', label: 'W', step: 1, hint: 'Width across (mm). For a postcard, its long side if it stands landscape.' },
   { key: 'h', label: 'H', step: 1, hint: 'Height (mm). The part below the plate tops is what gets notched out.' },
   { key: 'd', label: 'D', step: 0.1, hint: 'Depth (mm). For a postcard, its thickness: about 0.3 to 0.5 mm.' },
+];
+/** On a wall the numbers are still spots on the piece, but its height runs out from the wall. */
+const WALL_PLACE: Field[] = [
+  { key: 'x', label: 'X', step: 1, hint: 'Along the base, across the face of the piece as it hangs (mm from the middle).' },
+  { key: 'y', label: 'Out', step: 1, hint: 'How far out from the wall the object\'s centre is (mm). The base front is at the base thickness.' },
+  { key: 'z', label: 'Z', step: 1, hint: 'Across the base, the other way over the face of the piece as it hangs (mm from the middle).' },
+];
+const WALL_TURN: Field[] = [
+  { key: 'rx', label: '↻X', step: 1, hint: 'Tip forward or back (degrees), as it stands on the wall.' },
+  { key: 'ry', label: '↻Y', step: 1, hint: 'Turn about the real vertical (degrees): it stays upright on the wall.' },
+  { key: 'rz', label: '↻Z', step: 1, hint: 'Roll sideways (degrees), as it stands on the wall.' },
 ];
 const PLACE: Field[] = [
   { key: 'x', label: 'X', step: 1, hint: 'Left and right from the centre of the base (mm).' },
@@ -175,8 +187,8 @@ function ObjectList() {
             <input type="checkbox" checked={cur.on} onChange={(e) => edit({ on: e.target.checked })} /> <span>Cuts</span>
           </label>
           <span className="ob-group">Size {SIZE.map(num)}</span>
-          <span className="ob-group">Place {PLACE.map(num)}</span>
-          <span className="ob-group">Turn {TURN.map(num)}</span>
+          <span className="ob-group">Place {(isWall(model.v) ? WALL_PLACE : PLACE).map(num)}</span>
+          <span className="ob-group">Turn {(isWall(model.v) ? WALL_TURN : TURN).map(num)}</span>
           {num(GAP)}
           <button className="btn sm" onClick={duplicate} title="Copy it, placed just to the right">
             Duplicate

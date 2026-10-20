@@ -10,6 +10,7 @@ import { bearingToWorld, sunVector } from '../src/core/sun';
 import { defaultHeroCamera, heroGlb, heroScene } from '../src/core/hero';
 import { createPipeline } from '../src/core/pipeline';
 import { deserialize } from '../src/core/project';
+import { objectMatrix } from '../src/core/objects';
 import { loadAssets } from '../src/packNode';
 
 const values = (over: Record<string, string> = {}): Values => evaluateParams({ ...defaultRaw(), ...over }).values;
@@ -89,8 +90,8 @@ describe('wall checks', () => {
     expect(texts(values({ mount: 'wall' })).join()).toMatch(/concrete base/);
   });
 
-  it('flags candles, shadow pictures and heavy pieces', () => {
-    expect(texts(values({ ...steel, steelHoleSide: 'back' }), { candles: true }).join()).toMatch(/Candles on a wall piece/);
+  it('explains wall candles, flags shadow pictures and heavy pieces', () => {
+    expect(texts(values({ ...steel, steelHoleSide: 'back' }), { candles: true }).join()).toMatch(/each candle stands upright on the plate below it/);
     expect(texts(values({ ...steel, steelHoleSide: 'back', shadowOn: 'true' })).join()).toMatch(/Shadow pictures/);
     expect(mountWeightIssue(values({ mount: 'wall' }), 40)?.message).toMatch(/40 kg/);
     expect(mountWeightIssue(values({ mount: 'wall' }), 4)).toBeNull();
@@ -101,8 +102,9 @@ describe('hero render of a wall piece', () => {
   const FIXTURE = 'test/fixtures/projects/lucky-horseshoe.strata.json';
 
   it('turns the piece into the room, adds its wall, and keeps the table piece as it was', async () => {
-    const table = deserialize(readFileSync(FIXTURE, 'utf8'));
-    const wall = deserialize(readFileSync(FIXTURE, 'utf8'));
+    // without its candles: on a wall they stand in cups rather than on fins, so the parts differ
+    const table = { ...deserialize(readFileSync(FIXTURE, 'utf8')), candles: undefined };
+    const wall = { ...deserialize(readFileSync(FIXTURE, 'utf8')), candles: undefined };
     wall.params = { ...wall.params, mount: 'wall' };
     const mt = createPipeline()(table, await loadAssets(table));
     const mw = createPipeline()(wall, await loadAssets(wall));
@@ -127,5 +129,51 @@ describe('hero render of a wall piece', () => {
     const node = json.nodes.find((n: { name: string }) => n.name === 'camera');
     expect(node.translation[2]).toBeGreaterThan(sw.max[2]);
     expect(node.translation[1]).toBeGreaterThan((sw.min[1] + sw.max[1]) / 2);
+  });
+});
+
+describe('building on a wall', () => {
+  const FIXTURE = 'test/fixtures/projects/lucky-horseshoe.strata.json';
+
+  it('stands candles upright in the room, each on the plate below it, with a chimney above', async () => {
+    const wall = deserialize(readFileSync(FIXTURE, 'utf8'));
+    wall.params = { ...wall.params, mount: 'wall' };
+    const table = deserialize(readFileSync(FIXTURE, 'utf8'));
+    const m = createPipeline()(wall, await loadAssets(wall));
+    const mt = createPipeline()(table, await loadAssets(table));
+    expect(m.sliced.plates.length).toBe(mt.sliced.plates.length);
+    const f = mountFrame(m.v);
+    const candles = m.objects.filter((b) => b.object.id.startsWith('candle')).map((b) => b.object);
+    expect(candles.length).toBe(7);
+    // plate top faces along up (the plates lie level on this wall: picture top is up)
+    const faces = m.sliced.parts.filter((p) => p.family === 'P').map((p) => p.plane.origin[0] * f.up[0] + p.plane.origin[1] * f.up[1] + p.plane.origin[2] * f.up[2] + p.thickness / 2);
+    for (const c of candles) {
+      expect(c.holder).toBeUndefined();
+      const axis = new (await import('three')).Vector3(0, 1, 0).applyMatrix4(objectMatrix(c)).sub(new (await import('three')).Vector3().applyMatrix4(objectMatrix(c)));
+      close(axis.toArray(), f.up);
+      const bottom = c.x * f.up[0] + c.y * f.up[1] + c.z * f.up[2] - c.h / 2;
+      expect(faces.some((h) => Math.abs(h - bottom) < 1e-6)).toBe(true);
+      expect(m.objects.some((b) => b.object.id === `flame${c.id.slice(6)}` && b.object.look === 'hidden')).toBe(true);
+    }
+    // no fins, wells or pads on a wall
+    expect(m.sliced.parts.some((p) => p.family === 'K')).toBe(false);
+    expect(m.objects.some((b) => /^(well|pad)\d/.test(b.object.id))).toBe(false);
+  });
+
+  it('keeps placed objects where they are on the piece, stood upright in the room', async () => {
+    const wall = deserialize(readFileSync(FIXTURE, 'utf8'));
+    wall.params = { ...wall.params, mount: 'wall' };
+    wall.candles = undefined;
+    wall.objects = [{ id: 'o1', name: 'Box', kind: 'box', w: 10, h: 20, d: 10, x: 5, y: 7, z: 40, rx: 0, ry: 0, rz: 0, clearance: 0.5, on: true }];
+    const m = createPipeline()(wall, await loadAssets(wall));
+    const f = mountFrame(m.v);
+    const o = m.objects.find((b) => b.object.id === 'o1')!.object;
+    // same spot on the piece as on the table
+    close([o.x, o.y, o.z], [5, 7, 40]);
+    // and its height (h) runs up the wall
+    const g = m.objects.find((b) => b.object.id === 'o1')!.geometry;
+    g.computeBoundingBox();
+    const size = g.boundingBox!.getSize(new (await import('three')).Vector3()).toArray() as V3;
+    expect(Math.abs(size[0] * f.up[0] + size[1] * f.up[1] + size[2] * f.up[2])).toBeCloseTo(20, 4);
   });
 });

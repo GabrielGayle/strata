@@ -12,6 +12,7 @@ import { bucketOf, lookOf, type Look } from './appearance';
 import { baseGeometry } from './base';
 import { extrudeOnPlane, extrudeSunkenFrame, mergeGeometries } from './geometry3d';
 import type { Model } from './pipeline';
+import { objectMatrix } from './objects';
 import type { Project } from './project';
 import { Hash128 } from './resultCache';
 import type { SavedHero } from './heroSaved';
@@ -151,16 +152,19 @@ export function heroScene(model: Model, project: Project): HeroScene {
     if (o.look === 'candle' || o.look === 'tealight') {
       const kind = o.look === 'tealight' ? 'cup' : 'wax';
       add(kind, { name: o.look === 'tealight' ? 'tealight cups' : 'candles', kind, look: LOOKS[kind] }, geometry.clone());
-      const top = o.y + o.h / 2;
+      // in the candle's own frame, so wax and flame stand up the way it does
+      const pose = objectMatrix(o);
       if (kind === 'cup') {
         // the wax in the cup, as the 3D view draws it
         const disc = new THREE.CircleGeometry(Math.max(0.5, o.w / 2 - 1), 40);
         disc.rotateX(-Math.PI / 2);
-        disc.translate(o.x, top + 0.01, o.z);
+        disc.translate(0, o.h / 2 + 0.01, 0);
+        disc.applyMatrix4(pose);
         add('wax', { name: 'candles', kind: 'wax', look: LOOKS.wax }, disc);
       }
       const flame = Math.min(22, Math.max(9, o.w * 0.45));
-      flames.push({ p: [o.x * MM, (top + 5 + flame / 2) * MM, o.z * MM], size: flame * MM });
+      const fp = new THREE.Vector3(0, o.h / 2 + 5 + flame / 2, 0).applyMatrix4(pose);
+      flames.push({ p: [fp.x * MM, fp.y * MM, fp.z * MM], size: flame * MM });
     } else if (o.kind === 'card') {
       add('card', { name: 'cards', kind: 'card', look: LOOKS.card }, geometry.clone());
     }
