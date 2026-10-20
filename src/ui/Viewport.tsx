@@ -17,6 +17,7 @@ import { flatStackIsCapped, formatMapHeightCaption } from '../core/mapGeometryRe
 import { paintClick } from './AppearancePanel';
 import { SunBar } from './SunStudy';
 import { MeasureTool, useMeasure } from './Measure';
+import { openSideTab } from './sidebarState';
 import ViewportSidebar from './ViewportSidebar';
 import {
   VIEWPORT_CAM_POS,
@@ -185,12 +186,23 @@ export default function Viewport() {
   const v = model.v;
   const snapTo = (dir: Snap) => setUi({ snap: { dir, n: ui.snap.n + 1 }, pointViewFov: undefined, pointView: undefined });
   const [fromPoint, setFromPoint] = useState(false);
-  const onSelect = useCallback((id: string | null) => setUi({ selected: id }), [setUi]);
+  const onSelect = useCallback(
+    (id: string | null) => {
+      // with the object tabs open, clicking a shelf picks it there (its arrows move it)
+      const part = id && useStore.getState().ui.objectsMode ? modelRef.current.sliced.parts.find((p) => p.id === id) : undefined;
+      const shelf = part?.family === 'H' ? modelRef.current.shelfCuts?.[part.index] : undefined;
+      if (shelf) {
+        openSideTab('shelves');
+        setUi({ objectSel: shelf.id });
+      } else setUi({ selected: id });
+    },
+    [setUi],
+  );
   const onPaint = useCallback((key: string, shift: boolean) => paintClick(modelRef.current, key, shift), []);
   const opts = useMemo(
     () => ({
       selected: ui.selected,
-      onSelect: ui.measureMode ? undefined : onSelect,
+      onSelect: ui.measureMode || ui.placing ? undefined : onSelect,
       showMoulds: ui.showMoulds,
       explode: ui.explode,
       xray: ui.xray,
@@ -201,8 +213,24 @@ export default function Viewport() {
       moveMode: ui.moveMode && !ui.paintMode && !ui.measureMode,
       onPaint: ui.paintMode && !ui.measureMode ? onPaint : undefined,
     }),
-    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.viewportLayers, ui.viewAids, ui.moveMode, ui.paintMode, ui.measureMode, onSelect, onPaint],
+    [ui.selected, ui.showMoulds, ui.explode, ui.xray, ui.showIssues, ui.showSource, ui.viewportLayers, ui.viewAids, ui.moveMode, ui.paintMode, ui.measureMode, ui.placing, onSelect, onPaint],
   );
+  // placing a shelf or candle: Esc stops, and so does leaving the object tabs
+  const placing = ui.placing;
+  useEffect(() => {
+    if (!placing) return;
+    if (!ui.objectsMode || ui.measureMode) {
+      setUi({ placing: null });
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setUi({ placing: null });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [placing, ui.objectsMode, ui.measureMode, setUi]);
   const bucketed = Object.keys(useStore((s) => s.project.appearance?.assign) ?? {}).length;
   const movedCount = Object.keys(useStore((s) => s.project.moves) ?? {}).length;
   const objectCount = useStore((s) => s.project.objects?.length ?? 0);
@@ -405,6 +433,11 @@ export default function Viewport() {
           </span>
           {ui.selected && <span style={{ color: 'var(--accent)' }}>selected {ui.selected}</span>}
         </div>
+        {placing && ui.objectsMode && (
+          <div className="overlay placing-note status-bar-field" role="status" data-testid="placing-note">
+            {placing.kind === 'shelf' ? 'Click a plate where the shelf should go. Esc cancels.' : 'Click a shelf, a plate top or the concrete to stand a candle there. Esc stops.'}
+          </div>
+        )}
         {v.sunOn && <SunBar model={model} />}
         {v.pourView !== 'plain' && model.pour.rows.length > 0 && (
           <div className="overlay br info">

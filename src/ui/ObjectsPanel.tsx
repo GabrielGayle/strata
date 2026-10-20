@@ -3,6 +3,7 @@ import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import ShelfPanel from './ShelfPanel';
 import CandlePanel from './CandlePanel';
+import ShelvesPanel, { SurfaceCandles } from './ShelvesPanel';
 import { Fold } from './Fold';
 import type { ObjectsView } from './sidebarState';
 import { isWall } from '../core/mount';
@@ -51,21 +52,38 @@ const DEFAULT_HINT = 'Objects are cut out of every plate they pass through, so t
 /** Placed objects, the postcard shelf or the candelabra: one sidebar tab each in the 3D view. */
 export default function ObjectsPanel({ view }: { view: ObjectsView }) {
   return (
-    <div className="objects" role="group" aria-label={view === 'candles' ? 'Candelabra' : view === 'shelf' ? 'Postcard shelf' : 'Objects'}>
-      <ShowRow view={view} />
-      <Fold id={`${view}:main`} title={view === 'candles' ? 'Candelabra' : view === 'shelf' ? 'Postcard shelf' : 'Placed objects'}>
-        {view === 'shelf' ? <ShelfPanel /> : view === 'candles' ? <CandlePanel /> : <ObjectList />}
-      </Fold>
+    <div className="objects" role="group" aria-label={view === 'candles' ? 'Candelabra' : view === 'shelf' ? 'Postcard shelf' : view === 'shelves' ? 'Shelves' : 'Objects'}>
+      {view !== 'shelves' && <ShowRow view={view} />}
+      {view === 'shelves' ? (
+        <Fold id="shelves:main" title="Shelves">
+          <ShelvesPanel />
+        </Fold>
+      ) : (
+        <>
+          {view === 'candles' && (
+            <Fold id="candles:surface" title="Add candle to surface">
+              <SurfaceCandles />
+            </Fold>
+          )}
+          <Fold id={`${view}:main`} title={view === 'candles' ? 'Candelabra' : view === 'shelf' ? 'Postcard shelf' : 'Placed objects'}>
+            {view === 'shelf' ? <ShelfPanel /> : view === 'candles' ? <CandlePanel /> : <ObjectList />}
+          </Fold>
+        </>
+      )}
     </div>
   );
 }
 
-/** Which objects each tab owns, by id: placed ones are o1, o2…, cards shelf1…, candles candle1… */
+/** A candle placed on a surface: pc1, pc2… (its well is pc1well). */
+export const isPlacedCandle = (id: string) => /^pc\d+$/.test(id);
+
+/** Which objects each tab owns, by id: placed ones are o1, o2…, cards shelf1…, candles candle1… and pc1… */
 export function tabOwns(view: ObjectsView, o: CutObject): boolean {
-  if (o.look === 'hidden') return false; // a candle holder's well: never drawn
+  if (o.look === 'hidden') return false; // a candle holder's well, a shelf's plate slots: never drawn
+  if (view === 'shelves') return false; // shelves are plates, not objects
   if (view === 'shelf') return o.id.startsWith('shelf');
-  if (view === 'candles') return o.id.startsWith('candle');
-  return !o.id.startsWith('shelf') && !o.id.startsWith('candle') && !o.id.startsWith('well');
+  if (view === 'candles') return o.id.startsWith('candle') || isPlacedCandle(o.id);
+  return !o.id.startsWith('shelf') && !o.id.startsWith('candle') && !o.id.startsWith('well') && !o.id.startsWith('pc');
 }
 
 /** Show or hide objects in the 3D view: all at once, or one by one. View only. */

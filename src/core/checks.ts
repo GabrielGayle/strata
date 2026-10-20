@@ -1,6 +1,6 @@
 // Fabrication fit checks: everything that would make a part uncuttable or
 // make it not fit once it's cut.
-import { difference, pointInShape, shapeArea, shapeBBox, signedArea, type Path, type Shape, type Vec2 } from './geom2d';
+import { difference, offset, pointInShape, shapeArea, shapeBBox, signedArea, type Path, type Shape, type Vec2 } from './geom2d';
 import { cached } from './memo';
 import type { Values } from './params';
 import type { Part, SliceResult } from './slicer';
@@ -220,6 +220,7 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
     if (v.embedMode === 'slot') issues.push({ partId: null, type: 'general', severity: 'warn', message: 'The support ring is cast in with the plates: set Concrete › Plate fixing to "Cast in".' });
   }
   issues.push(...moveChecks(v, sliced));
+  issues.push(...shelfChecks(sliced));
   // threaded rods and laser-cut spacers
   if (sliced.brace) {
     const byKey = new Map(sliced.parts.map((p) => [p.plateKey, p.id]));
@@ -250,8 +251,18 @@ export function runChecks(v: Values, sliced: SliceResult): Issue[] {
 
 const dot3 = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
+const faceCache = new WeakMap<Part, Vec2[]>();
+
 /** Grid points across a part's face (plate coords), at most ~1200 of them. */
 function facePoints(p: Part): Vec2[] {
+  const hit = faceCache.get(p);
+  if (hit) return hit;
+  const pts = gridPoints(p);
+  faceCache.set(p, pts);
+  return pts;
+}
+
+function gridPoints(p: Part): Vec2[] {
   const { minX, minY, maxX, maxY } = p.bbox;
   const step = Math.max(2, Math.sqrt(((maxX - minX) * (maxY - minY)) / 1200));
   const pts: Vec2[] = [];
@@ -279,6 +290,66 @@ function overlapAt(a: Part, b: Part): Vec2 | null {
     }
   }
   return null;
+}
+
+/** Shelves and the candle fins standing on them: no steel of theirs may sit inside another part. */
+function shelfChecks(sliced: SliceResult): Issue[] {
+  const shelves = sliced.parts.filter((p) => p.family === 'H');
+  if (!shelves.length) return [];
+  const issues: Issue[] = [];
+  const fins = sliced.parts.filter((p) => p.family === 'K');
+  const rest = sliced.parts.filter((p) => p.family !== 'H' && p.family !== 'S');
+  const seen = new Set<string>();
+  // a part's box in the world, so pairs nowhere near each other are skipped at once
+  const boxes = new Map<Part, [V3, V3]>();
+  const box = (p: Part) => {
+    let b = boxes.get(p);
+    if (!b) {
+      const lo: V3 = [Infinity, Infinity, Infinity];
+      const hi: V3 = [-Infinity, -Infinity, -Infinity];
+      for (const [x, y] of [[p.bbox.minX, p.bbox.minY], [p.bbox.maxX, p.bbox.minY], [p.bbox.minX, p.bbox.maxY], [p.bbox.maxX, p.bbox.maxY]])
+        for (const w of [-p.thickness / 2, p.thickness / 2]) {
+          const q = planeToWorld(p.plane, x, y, w);
+          for (let i = 0; i < 3; i++) {
+            lo[i] = Math.min(lo[i], q[i]);
+            hi[i] = Math.max(hi[i], q[i]);
+          }
+        }
+      b = [lo, hi];
+      boxes.set(p, b);
+    }
+    return b;
+  };
+  const near = (a: Part, b: Part) => {
+    const [la, ha] = box(a);
+    const [lb, hb] = box(b);
+    return la.every((x, i) => x <= hb[i] && lb[i] <= ha[i]);
+  };
+  // parts that only touch along a slot's edge are fine: test each against the other eased in a hair
+  const eased = new Map<Part, Part>();
+  const ease = (p: Part) => eased.get(p) ?? (eased.set(p, { ...p, shape: offset(p.shape, -0.05) }), eased.get(p)!);
+  for (const a of [...shelves, ...fins]) {
+    for (const b of rest) {
+      if (b.plateKey === a.plateKey || (a.family === 'K' && b.family === 'K')) continue;
+      const pair = [a.id, b.id].sort().join('|');
+      if (seen.has(pair)) continue;
+      seen.add(pair);
+      if (!near(a, b)) continue;
+      const at = overlapAt(a, ease(b));
+      const back = at ? null : overlapAt(b, ease(a));
+      if (!at && !back) continue;
+      const shelf = a.family === 'H' ? a : b.family === 'H' ? b : null;
+      issues.push({
+        partId: at ? a.id : b.id,
+        plateKey: at ? a.plateKey : b.plateKey,
+        type: 'collision',
+        severity: 'error',
+        message: shelf ? `${a.id} runs into ${b.id}: their steel overlaps. Move the shelf or the candle on it.` : `Candle fin ${a.id} runs into ${b.id}: their steel overlaps. Move the candle or turn its fins (Spin).`,
+        at: at ?? back ?? undefined,
+      });
+    }
+  }
+  return issues;
 }
 
 /** Plates moved by hand: they must not run into each other, and must still sit in the base. */

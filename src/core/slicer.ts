@@ -56,9 +56,11 @@ import {
 } from './stackRods';
 import { orientMapPlatePlane } from './mapPlateHeight';
 import { MAP_WIDTH_AXIS_NOTE } from './mapStack';
-import { chokeSpans, crossPedestal, finSlots, targetFins } from './candles';
+import { chokeSpans, crossPedestal, finSlots, finTabSlots, targetFins } from './candles';
+import type { HolderSpec } from './objects';
+import { shelfOutline, shelfPlane, type ShelfCut } from './shelfPlates';
 
-export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T' | 'K' | 'B';
+export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T' | 'K' | 'B' | 'H';
 
 export interface PlateDef {
   key: string;
@@ -236,7 +238,9 @@ export interface SliceInput {
   /** The project asked for sliceAxis 'width' on a map face, which was evaluated as 'length'. */
   mapAxisForced?: boolean;
   /** Candlesticks held by target fins: where each stands and how its fins grip it. */
-  candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number; cross?: boolean } }[];
+  candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: HolderSpec }[];
+  /** Shelves across the plates (the plates are already slotted for them by their hidden cutters in `objects`). */
+  shelves?: ShelfCut[];
 }
 
 const UP: V3 = [0, 1, 0];
@@ -1480,6 +1484,16 @@ function labelPlatePiece(
   return { paths, at: lab?.at ?? null };
 }
 
+/** Whether an upright plate's plane runs through a shelf's plan rectangle. */
+function crossesShelf(plane: Plane, sc: ShelfCut): boolean {
+  if (Math.abs(plane.normal[1]) > 0.5) return false;
+  const n = plane.normal;
+  const o = plane.origin;
+  const d = (x: number, z: number) => (x - o[0]) * n[0] + (z - o[2]) * n[2];
+  const ds = [d(sc.x - sc.sx / 2, sc.z - sc.sz / 2), d(sc.x + sc.sx / 2, sc.z - sc.sz / 2), d(sc.x - sc.sx / 2, sc.z + sc.sz / 2), d(sc.x + sc.sx / 2, sc.z + sc.sz / 2)];
+  return Math.min(...ds) <= 0 && Math.max(...ds) >= 0;
+}
+
 export function partLabel(v: Values, family: Family, index: number, count: number): string {
   const prefix = String(v.partPrefix || 'S').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'S';
   const digits = Math.max(2, String(count).length);
@@ -1889,7 +1903,15 @@ export function slice(input: SliceInput): SliceResult {
 
     // 6. waffle slots
     if (slots[di].length) cuts.push(slots[di]);
-    for (const s of finSlotsByPlate.get(def.key) ?? []) cuts.push(s);
+    const finCut = finSlotsByPlate.get(def.key);
+    if (finCut) {
+      // steel left thinner than Min feature between a fin slot and another cut (the candle's socket) would be
+      // widened back into the slot by the neck repair, and the fin would run into it: clear it instead
+      const slotsHere = unionShapes(...finCut);
+      const r = v.minFeature / 2 + 0.05;
+      const closed = offset(offset(unionShapes(slotsHere, ...cuts), r, 'miter'), -r, 'miter');
+      cuts.push(slotsHere, intersection(closed, offset(slotsHere, v.minFeature + 0.1, 'miter')));
+    }
     if (cuts.length) shape = difference(shape, cuts.flat());
 
     // 7. split into physical pieces; islands inside holes would fall out
@@ -2164,6 +2186,48 @@ export function slice(input: SliceInput): SliceResult {
       anchored: true,
       kind: 'plate',
     });
+  });
+  // 11. shelves: flat plates through the stack, slotted for the tabs of the fins standing on them
+  const shelves = input.shelves ?? [];
+  if (shelves.length && v.sliceMode === 'radial') warnings.push('Shelves slide through parallel plates: radial plates fan out, so a shelf can be cut but not slid in. Weld it on instead, or use parallel plates.');
+  shelves.forEach((sc, i) => {
+    let shape = shelfOutline(sc);
+    const tabs = fins.flatMap(({ f }) => (input.candles![f.holder].holder.shelf?.id === sc.id ? finTabSlots(f, t, 0.15) : []));
+    if (tabs.length) shape = difference(shape, union(tabs));
+    const pieces = shape.filter((ex) => (ex.depth ?? 0) === 0 && shapeArea([ex]) > 0.5);
+    if (pieces.length > 1) warnings.push(`${sc.name} falls apart into ${pieces.length} pieces where the candle fin slots cut across it. Turn the fins (Spin) or make it deeper.`);
+    const base = partLabel(v, 'H', i, shelves.length);
+    const plane = shelfPlane(sc);
+    pieces.forEach((ex, pi) => {
+      const id = pieces.length > 1 ? `${base}${String.fromCharCode(97 + (pi % 26))}` : base;
+      const bb = bboxOf([ex.outer]);
+      const lab = placeLabel(id, ex, [bb.minX + Math.min(20, (bb.maxX - bb.minX) / 4), bb.minY + Math.min(10, (bb.maxY - bb.minY) / 4)], v.labelHeight);
+      allParts.push({
+        id,
+        plateKey: `H${i}`,
+        family: 'H',
+        index: i,
+        piece: pi,
+        plane,
+        thickness: sc.t,
+        shape: [ex],
+        etch: [],
+        labelPaths: lab?.paths ?? [],
+        labelAt: lab?.at ?? null,
+        area: shapeArea([ex]),
+        perimeter: shapePerimeter([ex]),
+        bbox: bb,
+        anchored: true,
+        plateId: base,
+        kind: 'plate',
+      });
+    });
+    // a slot right across a plate leaves the part above it hanging on the shelf
+    // (Small fragments drops the loose top, or keeps it with an error that it does not reach the concrete)
+    const loose = new Set(fragmentEvents.filter((ev) => ev.reason === 'unanchored').map((ev) => ev.plateKey));
+    const cut = plates.filter((pl) => (loose.has(pl.def.key) || pl.parts.some((p) => !p.anchored)) && crossesShelf(pl.def.plane, sc));
+    const name = (pl: PlateInfo) => partLabel(v, pl.def.family, pl.def.index, pl.def.count);
+    if (cut.length) warnings.push(`${sc.name} cuts ${cut.slice(0, 4).map(name).join(', ')}${cut.length > 4 ? ` and ${cut.length - 4} more` : ''} in two: the part above the shelf only hangs on it, so it is left off. Make the shelf shallower (Depth) or move it so the plates keep steel beside it.`);
   });
   const brace: BraceResult | null = rods || spacers ? { rods, spacers, hardware: rods ? rodHardware(rods) : [], issues: braceIssues } : braceIssues.length ? { rods: null, spacers: null, hardware: [], issues: braceIssues } : null;
 

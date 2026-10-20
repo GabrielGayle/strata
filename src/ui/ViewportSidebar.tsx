@@ -23,6 +23,8 @@ export default function ViewportSidebar({ move, parked, counts }: { move: ReactN
   const tab = useSideTab();
   const candles = useStore((s) => !!s.project.candles);
   const shelf = useStore((s) => !!s.project.shelf);
+  const shelves = useStore((s) => !!s.project.shelves);
+  const placed = useStore((s) => !!s.project.placedCandles);
   const width = useSidebar((s) => s.width);
   const asideRef = useRef<HTMLElement | null>(null);
 
@@ -67,6 +69,7 @@ export default function ViewportSidebar({ move, parked, counts }: { move: ReactN
   const tabs: TabDef[] = [
     { id: 'candles', label: 'Candles', title: 'Candelabra: candlesticks and tealights along a curve, a path or a shape, the plates rising to hold them' },
     { id: 'shelf', label: 'Shelf', title: 'Postcard shelf: a list of postcards laid along an arc, each held in a notch' },
+    { id: 'shelves', label: 'Shelves', title: 'Shelves: flat metal plates slid through the plates, for candles to stand on. Add one by clicking the plates' },
     { id: 'objects', label: `Objects${n(counts.objects)}`, title: 'Place postcards, boxes and other objects; each is cut out of the plates it passes through' },
     { id: 'materials', label: `Materials${n(counts.bucketed)}`, title: 'Material buckets: click plates to choose what each is cut from (shift-click a run)' },
     { id: 'move', label: `Move plates${n(counts.moved)}`, title: 'Click a plate, then drag the gizmo to move or turn it (W move, E rotate, Q world / local)' },
@@ -87,7 +90,7 @@ export default function ViewportSidebar({ move, parked, counts }: { move: ReactN
               </div>
             </div>
             <div className="vs-body">
-              {(tab === 'candles' || tab === 'shelf' || tab === 'objects') && (
+              {(tab === 'candles' || tab === 'shelf' || tab === 'shelves' || tab === 'objects') && (
                 <>
                   <ObjectsPanel view={tab} />
                   {tab === 'shelf' && <UnobstructedDevDock />}
@@ -114,7 +117,7 @@ export default function ViewportSidebar({ move, parked, counts }: { move: ReactN
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
-            className={`vs-tab${tab === t.id ? ' on' : ''}${(t.id === 'candles' && candles) || (t.id === 'shelf' && shelf) ? ' used' : ''}`}
+            className={`vs-tab${tab === t.id ? ' on' : ''}${(t.id === 'candles' && (candles || placed)) || (t.id === 'shelf' && shelf) || (t.id === 'shelves' && shelves) ? ' used' : ''}`}
             data-testid={`sidebar-tab-${t.id}`}
             onClick={() => openSideTab(tab === t.id ? null : t.id)}
             title={`${t.title}. Click again to shut the sidebar (N).`}

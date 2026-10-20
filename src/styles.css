@@ -4179,3 +4179,13 @@ body.vs-resizing * {
 .vs-fold-body {
   padding: 4px 2px 2px;
 }
+
+/* placing a shelf or a candle: what the next click does, centred over the 3D view */
+.overlay.placing-note {
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  pointer-events: none;
+  white-space: nowrap;
+}

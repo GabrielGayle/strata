@@ -14,6 +14,8 @@ import { cleanShadow, type ShadowSpec } from './shadow';
 import { cleanObjects, type CutObject } from './objects';
 import { cleanShelf, type ShelfSpec } from './shelf';
 import { cleanCandles, type CandleSpec } from './candles';
+import { cleanShelfPlates, type ShelfPlate } from './shelfPlates';
+import { cleanPlacedCandles, type PlacedCandle } from './surfaceCandles';
 import { cleanSavedNest, type SavedNest } from './nest';
 import { cleanSavedHero, type SavedHero } from './heroSaved';
 import { cleanOrigin, type WorldOrigin } from './origin';
@@ -94,6 +96,10 @@ export interface Project {
   shelf?: ShelfSpec;
   /** Candlesticks and tealights laid along a path, the plates stepping up to hold each one. */
   candles?: CandleSpec;
+  /** Shelves: flat plates slid through the stack, for candles to stand on. */
+  shelves?: ShelfPlate[];
+  /** Candles placed one by one on a shelf, the plate tops or the concrete. */
+  placedCandles?: PlacedCandle[];
   /** Where placed objects and the shelf are measured from (the middle of the floor under the base when missing). */
   origin?: WorldOrigin;
   /** Parameter ids the user set; auto-dimension and design size patches must not overwrite them. */
@@ -385,6 +391,8 @@ export function deserialize(text: string): Project {
     objects: cleanObjects(raw.objects),
     shelf: cleanShelf(raw.shelf),
     candles: cleanCandles(raw.candles),
+    shelves: cleanShelfPlates(raw.shelves),
+    placedCandles: cleanPlacedCandles(raw.placedCandles),
     origin: cleanOrigin(raw.origin),
     userParamOverrides: cleanUserParamOverrides(raw.userParamOverrides),
     savedView: cleanEarthView(raw.savedView),

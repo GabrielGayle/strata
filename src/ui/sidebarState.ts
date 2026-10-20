@@ -5,7 +5,7 @@
 import { create } from 'zustand';
 import { useStore, type UiState } from '../state/store';
 
-export type ObjectsView = 'objects' | 'shelf' | 'candles';
+export type ObjectsView = 'objects' | 'shelf' | 'shelves' | 'candles';
 export type SideTab = ObjectsView | 'materials' | 'move' | 'measure';
 
 const KEY = 'strata.sidebar.v1';
@@ -64,7 +64,7 @@ export function useSideTab(): SideTab | null {
 
 /** Open a sidebar tab (and switch on its mode), or shut the sidebar with null. */
 export function openSideTab(tab: SideTab | null) {
-  if (tab) rememberSidebar(tab === 'candles' || tab === 'shelf' || tab === 'objects' ? { last: tab, objects: tab } : { last: tab });
+  if (tab) rememberSidebar(tab === 'candles' || tab === 'shelf' || tab === 'shelves' || tab === 'objects' ? { last: tab, objects: tab } : { last: tab });
   useStore.getState().setUi(modesFor(tab));
 }
 
