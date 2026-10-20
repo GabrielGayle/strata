@@ -1903,7 +1903,15 @@ export function slice(input: SliceInput): SliceResult {
 
     // 6. waffle slots
     if (slots[di].length) cuts.push(slots[di]);
-    for (const s of finSlotsByPlate.get(def.key) ?? []) cuts.push(s);
+    const finCut = finSlotsByPlate.get(def.key);
+    if (finCut) {
+      // steel left thinner than Min feature between a fin slot and another cut (the candle's socket) would be
+      // widened back into the slot by the neck repair, and the fin would run into it: clear it instead
+      const slotsHere = unionShapes(...finCut);
+      const r = v.minFeature / 2 + 0.05;
+      const closed = offset(offset(unionShapes(slotsHere, ...cuts), r, 'miter'), -r, 'miter');
+      cuts.push(slotsHere, intersection(closed, offset(slotsHere, v.minFeature + 0.1, 'miter')));
+    }
     if (cuts.length) shape = difference(shape, cuts.flat());
 
     // 7. split into physical pieces; islands inside holes would fall out

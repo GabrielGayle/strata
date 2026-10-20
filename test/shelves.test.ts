@@ -148,3 +148,13 @@ describe('placed candles with two-piece fins', () => {
     expect(runChecks(m.v, m.sliced).filter((i) => i.type === 'collision')).toEqual([]);
   });
 });
+
+describe('slotted fins beside a candle socket', () => {
+  it('clear the thin steel between slot and socket instead of the neck repair growing it back into the slot', async () => {
+    const { PRESETS, applyPreset } = await import('../src/core/project');
+    const p = applyPreset(newProject(), PRESETS.find((x) => x.name.startsWith('Vermilion 40'))!);
+    const m = createPipeline()({ ...p, shelves: [shelf({ x: 150, y: 200 })], placedCandles: [{ id: 'pc1', size: 'taper', on: 'plates', x: 150, z: 0 }] }, assets);
+    expect(m.sliced.parts.filter((q) => q.family === 'K').length).toBe(4);
+    expect(runChecks(m.v, m.sliced).filter((i) => i.type === 'collision')).toEqual([]);
+  });
+});
