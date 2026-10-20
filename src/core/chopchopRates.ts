@@ -12,7 +12,12 @@
 // where the regression intercept is −£0.30. Dropping that intercept misses the
 // 200 mm square and the 100×400 rectangle by more than £0.70.
 //
-// Other thicknesses are a straight line through these gauges and are estimates.
+// Thicknesses between gauges are a straight line through them; thicker than
+// the thickest gauge carries that line on. Thinner than the thinnest gauge is
+// held at the thinnest gauge's rate: carrying the 1.5–2 mm line down drove the
+// 1.5 mm intercept to −£0.60 at 1 mm and priced small parts at £0.00, and thin
+// sheet costs about the same per part to load, cut and handle. Every part also
+// costs at least CHOPCHOP_PART_FLOOR. All of these are estimates.
 // Corten is not offered; mild steel is the floor.
 //
 // Order-size discount (same calibration). Chop Chop's unit price for every
@@ -60,6 +65,13 @@ export const CHOPCHOP_GAUGES: readonly ChopGauge[] = [
   { material: 'aluminium', thickness: 3, coeff: { area: 0.0111, cut: 4.62, pierce: 0.06, fixed: 0 } },
 ];
 
+/**
+ * £ ex VAT, the least any one part is priced at (qty 1, before the order-size
+ * factor). The cheapest quoted part was the 50 mm square at 1.5 mm, £0.66; the
+ * 1.5 mm intercept would price smaller parts near £0. A guess, not a quote.
+ */
+export const CHOPCHOP_PART_FLOOR = 0.5;
+
 /** £ ex VAT. Chop Chop's order minimum on 16 Oct 2026. */
 export const CHOPCHOP_MINIMUM = 55;
 
@@ -92,7 +104,8 @@ export interface ChopRate {
   coeff: ChopCoeff;
   /** False only on a thickness Chop Chop actually quoted for this material. */
   estimated: boolean;
-  how: 'fitted' | 'interpolated' | 'extrapolated';
+  /** 'held': thinner than every gauge, priced at the thinnest one. */
+  how: 'fitted' | 'interpolated' | 'extrapolated' | 'held';
   /** Corten is priced on the mild-steel line. */
   corten: boolean;
   /** Quoted thicknesses for this material, ascending. */
@@ -123,21 +136,21 @@ export function chopRates(material: string, thickness: number): ChopRate {
   const thicknesses = gauges.map((g) => g.thickness);
   const exact = gauges.find((g) => Math.abs(g.thickness - thickness) < 1e-6);
   if (exact) return { coeff: exact.coeff, estimated: false, how: 'fitted', corten, gauges: thicknesses };
-  if (gauges.length === 1) return { coeff: gauges[0].coeff, estimated: true, how: 'extrapolated', corten, gauges: thicknesses };
+  if (gauges.length === 1) return { coeff: gauges[0].coeff, estimated: true, how: 'held', corten, gauges: thicknesses };
   const span = (i: number) => {
     const a = gauges[i];
     const b = gauges[i + 1];
     return lerp(a.coeff, b.coeff, (thickness - a.thickness) / (b.thickness - a.thickness));
   };
-  if (thickness < gauges[0].thickness) return { coeff: span(0), estimated: true, how: 'extrapolated', corten, gauges: thicknesses };
+  if (thickness < gauges[0].thickness) return { coeff: gauges[0].coeff, estimated: true, how: 'held', corten, gauges: thicknesses };
   for (let i = 0; i < gauges.length - 1; i++) {
     if (thickness <= gauges[i + 1].thickness) return { coeff: span(i), estimated: true, how: 'interpolated', corten, gauges: thicknesses };
   }
   return { coeff: span(gauges.length - 2), estimated: true, how: 'extrapolated', corten, gauges: thicknesses };
 }
 
-/** Qty-1 unit price, ex VAT. Area and cut are in mm and mm of path. */
+/** Qty-1 unit price, ex VAT, never under CHOPCHOP_PART_FLOOR. Area and cut are in mm and mm of path. */
 export function chopUnit(areaMm2: number, cutMm: number, pierces: number, coeff: ChopCoeff): number {
   const unit = (areaMm2 / 100) * coeff.area + (cutMm / 1000) * coeff.cut + pierces * coeff.pierce + coeff.fixed;
-  return Math.max(0, unit);
+  return Math.max(CHOPCHOP_PART_FLOOR, unit);
 }

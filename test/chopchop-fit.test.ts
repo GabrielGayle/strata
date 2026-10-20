@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Bom, CutRow } from '../src/core/bom';
-import { CHOPCHOP_CALIBRATED, CHOPCHOP_MINIMUM, chopRates, chopUnit, orderSizeFactor } from '../src/core/chopchopRates';
+import { CHOPCHOP_CALIBRATED, CHOPCHOP_MINIMUM, CHOPCHOP_PART_FLOOR, chopRates, chopUnit, orderSizeFactor } from '../src/core/chopchopRates';
 import { createPipeline, type Assets } from '../src/core/pipeline';
 import { DEFAULT_RATES, estimateMix, estimatePrice, priceText, usesShopRates } from '../src/core/price';
 import { applyPreset, newProject, PRESETS } from '../src/core/project';
@@ -138,10 +138,10 @@ describe('Chop Chop fit, 16 Oct 2026', () => {
     expect(mid.coeff.pierce).toBeCloseTo((0.037 + 0.059) / 2, 8);
     expect(mid.coeff.fixed).toBe(0);
     const below = chopRates('steel', 1);
-    expect(below.how).toBe('extrapolated');
-    expect(below.coeff.fixed).toBeCloseTo(-0.3 + (0 - -0.3) * ((1 - 1.5) / (2 - 1.5)), 8);
+    expect(below.how).toBe('held');
+    expect(below.coeff).toEqual(chopRates('steel', 1.5).coeff);
     const alu = chopRates('aluminium', 1.5);
-    expect(alu.how).toBe('extrapolated');
+    expect(alu.how).toBe('held');
     expect(alu.coeff).toEqual(chopRates('aluminium', 3).coeff);
     const row = rowFrom('P02-sq100.dxf', 'steel');
     const steel = estimatePrice(bomOf([row]), 'steel', 3);
@@ -150,6 +150,26 @@ describe('Chop Chop fit, 16 Oct 2026', () => {
     expect(corten.warnings.some((w) => /Corten/.test(w) && /floor/.test(w))).toBe(true);
     expect(steel.warnings.some((w) => /estimate/i.test(w))).toBe(false);
     expect(estimatePrice(bomOf([row]), 'steel', 6).warnings.some((w) => /estimate/i.test(w))).toBe(true);
+  });
+
+  it('never prices a part at £0, at any thickness', () => {
+    // A 40 mm ring, like the 1 mm candle-circle parts that all came out £0.00.
+    const ring: CutRow = { id: 'SR-01', w: 40, h: 40, area: 700, cut: 220, etch: 0, pierces: 2, mass: 0, material: 'steel' };
+    const prices: number[] = [];
+    for (const t of [0.5, 1, 1.2, 1.5, 2, 2.5, 3, 4, 6, 10, 12]) {
+      const rate = chopRates('steel', t);
+      for (const k of ['area', 'cut', 'pierce'] as const) expect(rate.coeff[k]).toBeGreaterThan(0);
+      const e = estimatePrice(bomOf([ring]), 'steel', t, { ...DEFAULT_RATES, minimum: 0 });
+      expect(e.lines[0].cost).toBeGreaterThanOrEqual(CHOPCHOP_PART_FLOOR * e.orderFactor - 1e-9);
+      prices.push(e.lines[0].cost);
+    }
+    for (let i = 1; i < prices.length; i++) expect(prices[i]).toBeGreaterThanOrEqual(prices[i - 1] - 1e-9);
+    const thin = estimatePrice(bomOf([ring]), 'steel', 1);
+    expect(thin.warnings.some((w) => /thinner than the fitted gauges/.test(w) && /1\.5 mm rate/.test(w))).toBe(true);
+    for (const t of [1, 3, 6]) expect(estimatePrice(bomOf([ring]), 'aluminium', t).lines[0].cost).toBeGreaterThan(0);
+    // Sixty-one of them make a real parts total, not just the order minimum.
+    const many = estimatePrice(bomOf(Array.from({ length: 61 }, (_, i) => ({ ...ring, id: `SR-${i + 1}` }))), 'steel', 1);
+    expect(many.subtotal).toBeGreaterThan(61 * CHOPCHOP_PART_FLOOR * 0.99);
   });
 
   it('lets a rates file replace the fit with the shop model', () => {

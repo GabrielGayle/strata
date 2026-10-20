@@ -41,6 +41,14 @@ export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
     kind: 'fix',
+    title: 'Thin steel parts get a real price',
+    body: 'Parts in steel thinner than 1.5 mm, such as 1 mm, were priced at £0.00 each, so the estimate was only the order minimum. Thinner gauges now use the 1.5 mm rate, and no part is ever priced under 50p, so many small parts add up as they would on a quote.',
+    where: 'Right column › Chop Chop price',
+    target: { path: ['chop-chop-price'] },
+  },
+  {
+    date: '2026-10-20',
+    kind: 'fix',
     title: 'Wall pieces hang face out in phone AR',
     body: 'On the phone viewer, AR put a wall piece on the wall lying face down. It now hangs the way it does in the 3D view: upright, its back against the wall and its face towards you.',
     where: 'Phone viewer (/m) › View in AR',
