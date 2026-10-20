@@ -31,6 +31,7 @@ const SHORTCUTS: { where: string; keys: [string[], string][] }[] = [
       [['Enter'], 'Apply a typed value'],
       [['↑', '↓'], 'Step a number (Shift: ×10)'],
       [['Esc'], 'Undo typing in an expression'],
+      [['Ctrl', 'Space'], 'List the names a formula can use (ƒ box)'],
     ],
   },
   {

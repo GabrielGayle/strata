@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
 import { GROUPS, PARAMS, PARAM_MAP, FLAG_NAMES } from '../core/params';
+import { FUNC_NAMES } from '../core/expr';
 
 const NODE_W = 168;
 const NODE_H = 36;
@@ -171,7 +172,7 @@ export default function GraphView() {
           </div>
           <div className="note">
             Click a node to find it in the panel. Make a link by pressing ƒ on any parameter and typing an expression, e.g. <span className="mono">pitch = thickness * 2</span> or{' '}
-            <span className="mono">plateCount = floor(stackLength / pitch)</span>. Functions: floor ceil round min max clamp abs sqrt sin cos tan lerp. Flags: {FLAG_NAMES.join(', ')}.
+            <span className="mono">plateCount = floor(stackLength / pitch)</span>. Functions: {FUNC_NAMES.join(' ')}. Flags: {FLAG_NAMES.join(', ')}.
           </div>
         </div>
       </div>

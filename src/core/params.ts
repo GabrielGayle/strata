@@ -830,6 +830,8 @@ export interface EvalResult {
   clamped: Record<string, boolean>;
   deps: Record<string, string[]>;
   order: string[];
+  /** The model flags formulas can read besides parameters (isWaffle, imgAspect…), as evaluated. */
+  flags?: Record<string, number>;
 }
 
 const parseCache = new Map<string, Node | Error>();
@@ -1061,7 +1063,7 @@ export function evaluateParams(rawArg: Record<string, RawValue>, extra: Record<s
     scope[id] = v;
     values[id] = v;
   }
-  return { values, overrides, errors, clamped, deps, order: fullOrder };
+  return { values, overrides, errors, clamped, deps, order: fullOrder, flags };
 }
 
 /** Parameters downstream of `id` (everything that depends on it, transitively). */
