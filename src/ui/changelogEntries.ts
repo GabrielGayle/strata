@@ -40,6 +40,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'new',
+    title: 'Cutter-only objects and card sizes',
+    body: 'A placed object can now be a cutter only: untick Drawn and it still cuts the plates but is not drawn in the 3D view, renders or AR, so a box can open a pocket in front of a card without hiding it. It stays that way after saving and reopening. Cards get a size menu with postcard, tarot, poker and bridge sizes.',
+    where: '3D view › sidebar › Objects › Placed objects (pick an object)',
+    target: side('objects'),
+  },
+  {
+    date: '2026-10-20',
     kind: 'fix',
     title: 'Fixing holes keep clear of the plates',
     body: 'A fixing hole or keyhole on the steel base could land right under a plate, where no screw could reach it and a keyhole could never hang. Each one now slides on until no plate stands over it or its screw head, into a gap between plates. One that finds no gap is left out and the fit checks say so. A base cut round the plates also no longer keeps hairline pinholes that showed up as "Hole Ø0.0 mm" warnings.',
