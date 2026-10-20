@@ -12,7 +12,15 @@ export const DEPTH_SETTING_KEYS: DepthSettingKey[] = [
   'resolution',
   'matte',
   'invert',
+  'squash',
+  'detail',
+  'outline',
+  'outlineWidth',
+  'feather',
 ];
+
+/** Bas-relief shaping: user-only, so a rebuild keeps whatever was set. */
+const BAS_RELIEF_KEYS = ['squash', 'detail', 'outline', 'outlineWidth', 'feather'] as const;
 
 export function markDepthSettingOverrides(
   prev: DepthSettingsOverrides | undefined,
@@ -35,6 +43,7 @@ function applyOverridesToSettings(base: DepthSettings, prev: DepthSettings, over
   if (overrides.resolution) out.resolution = prev.resolution;
   if (overrides.matte) out.matte = prev.matte;
   if (overrides.invert) out.invert = prev.invert;
+  for (const k of BAS_RELIEF_KEYS) if (overrides[k] && prev[k] !== undefined) out[k] = prev[k];
   return out;
 }
 

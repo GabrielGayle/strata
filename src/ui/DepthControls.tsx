@@ -124,7 +124,8 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
         title="Anything farther than this is background: white, left uncut"
       />
       <Num label="Curve" value={s.curve} min={0.3} max={3} step={0.05} show={s.curve.toFixed(2)} onChange={(v) => set({ curve: v })} title="Below 1 lifts the low parts, above 1 sinks them so only the nearest parts stand out" />
-      <Num label="Flatten" value={s.flatten} min={0} max={1} step={0.05} show={`${Math.round(s.flatten * 100)}%`} onChange={(v) => set({ flatten: v })} title="Bas-relief squash: flattens the big shapes and keeps the fine detail, so it reads in a few millimetres" />
+      <Num label="Flatten" value={s.flatten} min={0} max={1} step={0.05} show={`${Math.round(s.flatten * 100)}%`} onChange={(v) => set({ flatten: v })} title="Flattens the big shapes and lifts what sits on them. For soft, low reliefs try Bas-relief below." />
+      {!mapFace && <BasReliefControls s={s} hasMask={!!depth.mask} set={set} />}
       <div className="field-row pm-row">
         <span>Spacing</span>
         <span className="seg pm-seg">
@@ -166,6 +167,57 @@ export default function DepthControls({ slot, depth }: { slot: Slot; depth: Dept
       </div>
       {slot === 'side' && !mapFace && <SideCutControls />}
       <FlatPlateControls depth={depth} set={set} />
+    </div>
+  );
+}
+
+/** Bas-relief (squash the jumps), incised outline and feathered cut-out: image depth only. */
+function BasReliefControls({ s, hasMask, set }: { s: DepthSettings; hasMask: boolean; set: (patch: Partial<DepthSettings>) => void }) {
+  const squash = s.squash ?? 0;
+  const outline = s.outline ?? 0;
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  return (
+    <div className="depth-bas" data-testid="bas-relief">
+      <Num
+        label="Bas-relief"
+        value={squash}
+        min={0}
+        max={1}
+        step={0.05}
+        show={squash > 0 ? pct(squash) : 'off'}
+        onChange={(v) => set({ squash: v })}
+        title="Squashes the big jumps (a hand on a body, the figure's edge) into soft ramps and keeps the fine detail, so a figure reads in a few millimetres without walls"
+      />
+      {squash > 0 && (
+        <>
+          <Num label="Keep detail" value={s.detail ?? 1} min={1} max={3} step={0.1} show={`${(s.detail ?? 1).toFixed(1)}×`} onChange={(v) => set({ detail: v })} title="Sharpens the fine forms (knuckles, folds) that the squash would otherwise soften" />
+          <Num
+            label="Outline"
+            value={outline}
+            min={0}
+            max={0.3}
+            step={0.01}
+            show={outline > 0 ? pct(outline) : 'off'}
+            onChange={(v) => set({ outline: v })}
+            title="Cuts a fine groove where the depth used to jump, so fingers and edges stay crisp. Depth as a share of the relief."
+          />
+          {outline > 0 && (
+            <Num label="Line width" value={s.outlineWidth ?? 1.5} min={0.5} max={6} step={0.25} show={`${(s.outlineWidth ?? 1.5).toFixed(2)} px`} onChange={(v) => set({ outlineWidth: v })} title="How wide the groove is, in pixels of a 512 px depth map" />
+          )}
+        </>
+      )}
+      {hasMask && s.matte && (
+        <Num
+          label="Feather"
+          value={s.feather ?? 0}
+          min={0}
+          max={10}
+          step={0.25}
+          show={(s.feather ?? 0) > 0 ? `${(s.feather ?? 0).toFixed(2)}%` : 'off'}
+          onChange={(v) => set({ feather: v })}
+          title="The subject rolls down into the background over this share of the picture, instead of stopping at a wall"
+        />
+      )}
     </div>
   );
 }
