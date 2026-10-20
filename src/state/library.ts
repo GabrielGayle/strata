@@ -3,6 +3,7 @@
 // persist.ts). Cloud copies live in Vercel Blob via /api/projects so preview
 // URLs and production share one list (hybridLibrary.ts).
 import { deserialize, serialize, type Project } from '../core/project';
+import { reopeningDb } from './idb';
 import { describeProject } from './libraryDescribe';
 
 export type ProjectKind = 'Vermilion' | 'Stamped' | 'Map' | 'Image';
@@ -298,45 +299,37 @@ function done(tx: IDBTransaction): Promise<void> {
 }
 
 export function indexedDbLibrary(idb: IDBFactory): LibraryStore {
-  let db: Promise<IDBDatabase> | null = null;
-  const open = () =>
-    (db ??= new Promise((res, rej) => {
-      const r = idb.open(DB, 1);
-      r.onupgradeneeded = () => {
-        r.result.createObjectStore('meta', { keyPath: 'id' });
-        r.result.createObjectStore('data');
-      };
-      r.onsuccess = () => res(r.result);
-      r.onerror = () => rej(r.error);
-      r.onblocked = () => rej(new Error('The library is blocked by another Strata tab'));
-    }));
+  const withDb = reopeningDb(
+    () =>
+      new Promise((res, rej) => {
+        const r = idb.open(DB, 1);
+        r.onupgradeneeded = () => {
+          r.result.createObjectStore('meta', { keyPath: 'id' });
+          r.result.createObjectStore('data');
+        };
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+        r.onblocked = () => rej(new Error('The library is blocked by another Strata tab'));
+      }),
+  );
   return {
-    async list() {
-      const d = await open();
-      return (await req(d.transaction('meta').objectStore('meta').getAll())) as LibraryMeta[];
-    },
-    async getMeta(id) {
-      const d = await open();
-      return (await req(d.transaction('meta').objectStore('meta').get(id))) as LibraryMeta | undefined;
-    },
-    async getData(id) {
-      const d = await open();
-      return (await req(d.transaction('data').objectStore('data').get(id))) as string | undefined;
-    },
-    async put(meta, data) {
-      const d = await open();
-      const tx = d.transaction(data === undefined ? ['meta'] : ['meta', 'data'], 'readwrite');
-      tx.objectStore('meta').put(meta);
-      if (data !== undefined) tx.objectStore('data').put(data, meta.id);
-      await done(tx);
-    },
-    async remove(id) {
-      const d = await open();
-      const tx = d.transaction(['meta', 'data'], 'readwrite');
-      tx.objectStore('meta').delete(id);
-      tx.objectStore('data').delete(id);
-      await done(tx);
-    },
+    list: () => withDb(async (d) => (await req(d.transaction('meta').objectStore('meta').getAll())) as LibraryMeta[]),
+    getMeta: (id) => withDb(async (d) => (await req(d.transaction('meta').objectStore('meta').get(id))) as LibraryMeta | undefined),
+    getData: (id) => withDb(async (d) => (await req(d.transaction('data').objectStore('data').get(id))) as string | undefined),
+    put: (meta, data) =>
+      withDb(async (d) => {
+        const tx = d.transaction(data === undefined ? ['meta'] : ['meta', 'data'], 'readwrite');
+        tx.objectStore('meta').put(meta);
+        if (data !== undefined) tx.objectStore('data').put(data, meta.id);
+        await done(tx);
+      }),
+    remove: (id) =>
+      withDb(async (d) => {
+        const tx = d.transaction(['meta', 'data'], 'readwrite');
+        tx.objectStore('meta').delete(id);
+        tx.objectStore('data').delete(id);
+        await done(tx);
+      }),
   };
 }
 
