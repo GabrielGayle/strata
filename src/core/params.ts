@@ -118,6 +118,8 @@ const hasCross = (v: Values) => isUpright(v) && (v.spacerMode === 'cross' || v.s
 const hasTemplate = (v: Values) => isUpright(v) && (v.spacerMode === 'template' || v.spacerMode === 'both');
 const hasSpacers = (v: Values) => hasCross(v) || hasTemplate(v);
 const strataSource = (v: Values) => v.stackSource === 'strata';
+/** Side image as height, with the relief set in millimetres instead of Plate height ± mix × range. */
+const reliefMm = (v: Values) => strataSource(v) && v.imgSideMode === 'heightmap' && v.imgReliefSet === 'mm';
 const isTuned = (v: Values) => strataSource(v) && (v.sliceMode === 'parallel' || v.sliceMode === 'radial') && v.tuneMode !== 'off';
 
 /** Chop Chop CR4 mild steel. Cut list, BOM and price all read this default. */
@@ -377,8 +379,14 @@ export const PARAMS: ParamDef[] = [
     { value: 'heightmap', label: 'Image as height (strip per plate)' },
     { value: 'silhouette', label: 'Traced silhouette' },
   ], { show: strataSource }),
-  num('imgMix', 'Strata ↔ image mix', 'Image', 0.6, 0, 1, { step: 0.01, unit: '', show: (v) => strataSource(v) && v.imgSideMode !== 'off', rand: true }),
-  num('imgRange', 'Image height range', 'Image', 140, 0, 2000, { show: (v) => strataSource(v) && v.imgSideMode !== 'off' }),
+  choice('imgReliefSet', 'Side relief set by', 'Image', 'mix', [
+    { value: 'mix', label: 'Plate height ± mix × range' },
+    { value: 'mm', label: 'Millimetres (background + depth)' },
+  ], { show: (v) => strataSource(v) && v.imgSideMode === 'heightmap', help: 'Millimetres: the picture\'s darkest level (its background) sits at Background height and its brightest Relief depth above that, so nothing is cut flat at the 4 mm floor. Strata erosion is left out.' }),
+  num('imgReliefBase', 'Background height', 'Image', 'max(4, stackHeight - imgRange * imgMix / 2)', 4, 2000, { show: reliefMm, help: 'Plate top above the base where the side picture is darkest' }),
+  num('imgReliefDepth', 'Relief depth', 'Image', 'imgRange * imgMix', 0, 2000, { show: reliefMm, help: 'How far the brightest part of the side picture stands above the background' }),
+  num('imgMix', 'Strata ↔ image mix', 'Image', 0.6, 0, 1, { step: 0.01, unit: '', show: (v) => strataSource(v) && v.imgSideMode !== 'off' && !reliefMm(v), rand: true }),
+  num('imgRange', 'Image height range', 'Image', 140, 0, 2000, { show: (v) => strataSource(v) && v.imgSideMode !== 'off' && !reliefMm(v) }),
   num('imgCutLow', 'No plate below', 'Image', 0, 0, 100, {
     step: 1,
     unit: '%',
