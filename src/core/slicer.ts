@@ -56,7 +56,7 @@ import {
 } from './stackRods';
 import { orientMapPlatePlane } from './mapPlateHeight';
 import { MAP_WIDTH_AXIS_NOTE } from './mapStack';
-import { chokeSpans, finSlots, targetFins } from './candles';
+import { chokeSpans, crossPedestal, finSlots, targetFins } from './candles';
 
 export type Family = 'P' | 'X' | 'R' | 'S' | 'C' | 'T' | 'K' | 'B';
 
@@ -236,7 +236,7 @@ export interface SliceInput {
   /** The project asked for sliceAxis 'width' on a map face, which was evaluated as 'length'. */
   mapAxisForced?: boolean;
   /** Candlesticks held by target fins: where each stands and how its fins grip it. */
-  candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number } }[];
+  candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number; cross?: boolean } }[];
 }
 
 const UP: V3 = [0, 1, 0];
@@ -2135,8 +2135,11 @@ export function slice(input: SliceInput): SliceResult {
   // 10. candle holders: target fins standing in the concrete round each candlestick
   const unslotted = fins.filter(({ f, slots: fs }) => input.candles![f.holder].holder.slotted && !fs.length).length;
   if (unslotted) warnings.push(`${unslotted} slotted candle fin${unslotted > 1 ? 's run' : ' runs'} along the plates, so ${unslotted > 1 ? 'they have' : 'it has'} nothing to slot into: turn the fins with Spin (45° crosses them all).`);
+  const flat2 = (input.candles ?? []).filter((c, i) => c.holder.cross && !fins.some(({ f }) => f.holder === i && f.notch)).length;
+  if (flat2) warnings.push(`${flat2} candlestick${flat2 > 1 ? 's sit' : ' sits'} too low for two-piece fins (the pieces need ${crossPedestal(v.minFeature)} mm under the candle to halve together), so ${flat2 > 1 ? 'they get' : 'it gets'} separate fins: raise Lift${(input.candles ?? []).some((c) => c.holder.slotted) ? ' or deepen Slot' : ''}.`);
   fins.forEach(({ f, slots: fs }, j) => {
-    const cut = fs.length ? difference(f.shape, unionShapes(...fs.map((s) => rect(...s.finRect)))) : f.shape;
+    const holes = [...fs.map((s) => rect(...s.finRect)), ...(f.notch ? [rect(...f.notch)] : [])];
+    const cut = holes.length ? difference(f.shape, unionShapes(...holes)) : f.shape;
     // keep the biggest piece should a slot ever cut a fin through
     const ex = cut.reduce((a, b) => (shapeArea([b]) > shapeArea([a]) ? b : a), cut[0] ?? f.shape[0]);
     const id = partLabel(v, 'K', j, fins.length);

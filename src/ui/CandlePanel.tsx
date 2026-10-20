@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../state/store';
 import { useModel, fmt } from './model';
-import { addCandle, candleList, candlesCsv, candleShopping, CHOKE_NAMES, DEFAULT_CANDLES, SIT_NAMES, SNAP_NAMES, type Choke, type Sit, type Snap, HOLDER_NAMES, parseCandles, PATH_NAMES, PRESETS, writeCandles, type CandlePath, type CandleRow, type CandleSize, type CandleSpec, type Holder } from '../core/candles';
+import { addCandle, candleList, candlesCsv, candleShopping, CHOKE_NAMES, DEFAULT_CANDLES, FIN_JOIN_NAMES, type FinJoin, SIT_NAMES, SNAP_NAMES, type Choke, type Sit, type Snap, HOLDER_NAMES, parseCandles, PATH_NAMES, PRESETS, writeCandles, type CandlePath, type CandleRow, type CandleSize, type CandleSpec, type Holder } from '../core/candles';
 import type { Model } from '../core/pipeline';
 import type { RawValue } from '../core/params';
 import { baseTop } from '../core/slicer';
@@ -47,7 +47,7 @@ const FIELDS: Field[] = [
   { key: 'ramp', show: (s) => !sitsIn(s), label: 'Climb', step: 5, hint: 'How much higher the last candle stands than the first (mm).' },
   { key: 'grip', label: 'Grip', step: 1, hint: 'How far up each candlestick its holder reaches (mm). 25 to 35 holds a dinner candle steady.', show: hasStick },
   { key: 'cup', label: 'Cup', step: 1, hint: 'How deep each tealight sits in its cup (mm). About half its height shows off the metal rim and keeps it safe.' },
-  { key: 'fins', label: 'Fins', step: 1, hint: 'Fin holders: how many fins stand round each candlestick. 4 makes the crosshair target; 3 a tripod; 6 or 8 a star.', show: hasTarget },
+  { key: 'fins', label: 'Fins', step: 1, hint: 'Fin holders: how many fins stand round each candlestick. 4 makes the crosshair target; 3 a tripod; 6 or 8 a star.', show: (s) => hasTarget(s) && s.finJoin !== 'cross' },
   { key: 'reach', label: 'Reach', step: 1, hint: 'Fin holders: how far each fin reaches out from the candle (mm). For target fins the plates are cleared a little wider than this.', show: hasTarget },
   { key: 'spin', label: 'Spin', step: 5, hint: 'Fin holders: turn the fins round the candle (degrees). 45 sets a 4-fin cross across the plates, which slotted fins need so every fin crosses them.', show: hasTarget },
   { key: 'engage', label: 'Slot', step: 1, hint: 'Slotted fins: how deep each fin and plate overlap where they slot together (mm). The plate is slotted from its top down half this, the fin from its bottom up the other half, so the fin drops on and locks square.', show: hasSlotted },
@@ -153,6 +153,15 @@ export default function CandlePanel() {
               </option>
             ))}
           </select>
+          {hasTarget(s) && (
+            <select aria-label="Fin pieces" value={s.finJoin} onChange={(e) => edit({ finJoin: e.target.value as FinJoin })} {...help('How the fins are cut. Separate fins: one part per fin, as many as Fins says. Two-piece cross: two fins each run right across under the candle and slot together through a halving slot in the middle, one from the top and one from the bottom, so four arms come from two parts. Fewer parts to cut and weld, and the cross squares itself.')}>
+              {(Object.keys(FIN_JOIN_NAMES) as FinJoin[]).map((k) => (
+                <option key={k} value={k}>
+                  {FIN_JOIN_NAMES[k]}
+                </option>
+              ))}
+            </select>
+          )}
           <select aria-label="Snap" value={s.snap} onChange={(e) => edit({ snap: e.target.value as Snap })} {...help('Line the candles up with the plates. Onto plates: each candle slides along the stack to stand centred on the nearest plate. Between plates: centred in the gap between two. A grid then spaces its columns by whole plates (see Every).')}>
             {(Object.keys(SNAP_NAMES) as Snap[]).map((k) => (
               <option key={k} value={k}>

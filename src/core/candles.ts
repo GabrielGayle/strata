@@ -25,6 +25,14 @@ export const PATH_NAMES: Record<CandlePath, string> = {
 
 export type Holder = 'target' | 'slotted' | 'socket';
 
+/** How a candlestick's fins are cut: one part per fin, or two full-width fins halved into a cross. */
+export type FinJoin = 'separate' | 'cross';
+
+export const FIN_JOIN_NAMES: Record<FinJoin, string> = {
+  separate: 'Separate fins (one part each)',
+  cross: 'Two-piece cross (halving slot)',
+};
+
 export const HOLDER_NAMES: Record<Holder, string> = {
   target: 'Target fins (set in the concrete)',
   slotted: 'Slotted fins (keyed into the plates)',
@@ -154,6 +162,8 @@ export interface CandleSpec {
   fins: number;
   reach: number;
   spin: number;
+  /** Fin holders: separate fins, or two pieces that halve together into a cross (always four arms). */
+  finJoin: FinJoin;
   /** Slotted fins: how far each fin and plate overlap where they slot together (mm). */
   engage: number;
   /** Gap around each candle (mm). */
@@ -196,6 +206,7 @@ export const DEFAULT_CANDLES: CandleSpec = {
   fins: 4,
   reach: 18,
   spin: 45,
+  finJoin: 'separate',
   engage: 16,
   slack: 0.8,
   shoulder: 6,
@@ -313,6 +324,8 @@ export interface CandleBuy {
   tealight: boolean;
   qty: number;
   holder: Holder;
+  /** Held by two-piece crossed fins (candlesticks with fins only). */
+  cross?: boolean;
   /** The hole they drop into (candle plus the gap all round), mm. */
   hole: number;
 }
@@ -325,22 +338,25 @@ export function candleShopping(spec: CandleSpec | null | undefined): CandleBuy[]
     const holder: Holder = c.tealight ? c.holder ?? 'socket' : c.holder ?? spec.holder;
     const key = `${c.name.toLowerCase()}|${c.d}|${c.h}|${holder}`;
     const row = out.get(key);
+    const cross = !c.tealight && holder !== 'socket' && spec.finJoin === 'cross';
     if (row) row.qty++;
-    else out.set(key, { name: c.name, d: c.d, h: c.h, tealight: c.tealight, qty: 1, holder, hole: c.d + 2 * spec.slack });
+    else out.set(key, { name: c.name, d: c.d, h: c.h, tealight: c.tealight, qty: 1, holder, ...(cross ? { cross } : {}), hole: c.d + 2 * spec.slack });
   }
   return [...out.values()];
 }
 
 const HOLDER_SHORT: Record<Holder, string> = { target: 'target fins', slotted: 'slotted fins', socket: 'socket in the plates' };
 
+const heldBy = (b: CandleBuy) => (b.tealight ? 'cup' : `${HOLDER_SHORT[b.holder]}${b.cross ? ' (2-piece cross)' : ''}`);
+
 export function candleNote(b: CandleBuy): string {
-  return `${b.tealight ? 'cup' : HOLDER_SHORT[b.holder]}, hole Ø${+b.hole.toFixed(1)} mm`;
+  return `${heldBy(b)}, hole Ø${+b.hole.toFixed(1)} mm`;
 }
 
 export function candlesCsv(rows: CandleBuy[]): string {
   const q = (s: string) => (/[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   const lines = ['candle,diameter_mm,height_mm,qty,kind,held_by,hole_mm'];
-  for (const r of rows) lines.push([r.name, String(r.d), String(r.h), String(r.qty), r.tealight ? 'tealight' : 'candlestick', r.tealight ? 'cup' : HOLDER_SHORT[r.holder], String(+r.hole.toFixed(1))].map(q).join(','));
+  for (const r of rows) lines.push([r.name, String(r.d), String(r.h), String(r.qty), r.tealight ? 'tealight' : 'candlestick', heldBy(r), String(+r.hole.toFixed(1))].map(q).join(','));
   lines.push(['Total', '', '', String(rows.reduce((a, r) => a + r.qty, 0)), '', '', ''].join(','));
   return lines.join('\n') + '\n';
 }
@@ -376,6 +392,7 @@ export function cleanCandles(raw: unknown): CandleSpec | undefined {
     fins: Math.round(num(r.fins, d.fins, 2, 8)),
     reach: num(r.reach, d.reach, 3),
     spin: num(r.spin, d.spin),
+    finJoin: r.finJoin === 'cross' ? 'cross' : 'separate',
     engage: num(r.engage, d.engage, 4),
     slack: num(r.slack, d.slack, 0),
     shoulder: num(r.shoulder, d.shoulder, 0),
@@ -630,7 +647,7 @@ export function candleObjects(spec0: CandleSpec | undefined, baseTop: number, on
       return;
     }
     const slotted = holder === 'slotted';
-    out.push({ ...base, id, name: c.name, w: c.d, h: c.h, d: c.d, y: yb + c.h / 2, clearance: spec.slack, look: c.tealight ? 'tealight' : 'candle', ...choke, ...sink, holder: { fins: spec.fins, reach: spec.reach, grip, spin: spec.spin, ...(slotted ? { slotted, engage: spec.engage } : {}) } });
+    out.push({ ...base, id, name: c.name, w: c.d, h: c.h, d: c.d, y: yb + c.h / 2, clearance: spec.slack, look: c.tealight ? 'tealight' : 'candle', ...choke, ...sink, holder: { fins: spec.fins, reach: spec.reach, grip, spin: spec.spin, ...(spec.finJoin === 'cross' ? { cross: true } : {}), ...(slotted ? { slotted, engage: spec.engage } : {}) } });
     if (slotted && onSurface) return;
     if (slotted) {
       // slotted fins sit in the plates rather than a cleared well: the plates under them only step up to the candle's bottom
@@ -656,6 +673,8 @@ export interface CandleFin {
   shape: Shape;
   labelAt: [number, number];
   labelMax: number;
+  /** Two-piece cross: the halving slot (u0, y0, u1, y1) where this fin's partner passes through it. */
+  notch?: [number, number, number, number];
 }
 
 /**
@@ -666,10 +685,12 @@ export interface CandleFin {
  */
 export function targetFins(
   c: { x: number; z: number; r: number; bottom: number; ry: number },
-  h: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number },
-  o: { t: number; embed: number; baseTop: number; slack: number; minFeature: number },
+  h: { fins: number; reach: number; grip: number; spin: number; slotted?: boolean; engage?: number; cross?: boolean },
+  o: { t: number; embed: number; baseTop: number; slack: number; minFeature: number; fit?: number },
   index: number,
 ): CandleFin[] {
+  const cross = h.cross ? crossFins(c, h, o, index) : null;
+  if (cross) return cross;
   const n = Math.max(2, Math.min(8, Math.round(h.fins)));
   const out: CandleFin[] = [];
   // inner ends meet at the centre without overlapping
@@ -692,6 +713,52 @@ export function targetFins(
     out.push({ holder: index, fin: k, plane, shape: [{ outer, holes: [] }], labelAt: h.slotted ? [(rc + uOut) / 2, yb + (yTop - yb) / 3] : [(uIn + uOut) / 2, (y0 + Math.max(yb, 0)) / 2], labelMax: Math.max(2, (h.slotted ? Math.min(uOut - rc, yTop - yb) : Math.min(uOut - uIn, Math.max(yb, 0) - y0)) * 0.5) });
   }
   return out;
+}
+
+/** Shortest pedestal (mm) a two-piece cross needs under the candle: each half of the halving joint keeps at least this much. */
+export function crossPedestal(minFeature: number): number {
+  return 2 * Math.max(minFeature, 3);
+}
+
+/**
+ * Two-piece target: two full-width fins, each running right across under the
+ * candle, that halve together into a cross. The first is slotted from its top
+ * down to half the pedestal, the second from its bottom up to the same line,
+ * so the second drops onto the first and they lock square, four arms from two
+ * parts. Needs a pedestal under the candle tall enough to halve
+ * (`crossPedestal`); without one it returns null and the fins stay separate.
+ */
+function crossFins(
+  c: { x: number; z: number; r: number; bottom: number; ry: number },
+  h: { reach: number; grip: number; spin: number; slotted?: boolean; engage?: number },
+  o: { t: number; embed: number; baseTop: number; slack: number; minFeature: number; fit?: number },
+  index: number,
+): CandleFin[] | null {
+  const rc = c.r + o.slack;
+  const uOut = rc + Math.max(h.reach, o.minFeature);
+  const yb = c.bottom - o.baseTop;
+  const yTop = yb + h.grip;
+  const tip = Math.min(uOut, rc + Math.max(o.minFeature, 3));
+  const y0 = h.slotted ? Math.max(0, yb - (h.engage ?? 16)) : -o.embed;
+  if (yb - y0 < crossPedestal(o.minFeature)) return null;
+  const yMid = (y0 + yb) / 2;
+  const w = o.t + (o.fit ?? 0.3);
+  const outer: P2[] = [[-uOut, y0], [uOut, y0], [uOut, yb], [tip, yTop], [rc, yTop], [rc, yb], [-rc, yb], [-rc, yTop], [-tip, yTop], [-uOut, yb]];
+  return [0, 1].map((k) => {
+    const a = (h.spin + c.ry) * D + (k * Math.PI) / 2;
+    const d: P2 = [Math.cos(a), -Math.sin(a)];
+    const plane: Plane = { origin: [c.x, o.baseTop, c.z], normal: [-d[1], 0, d[0]], u: [d[0], 0, d[1]], v: [0, 1, 0] };
+    // the label sits on one arm's grip, clear of the middle slot
+    return {
+      holder: index,
+      fin: k,
+      plane,
+      shape: [{ outer: outer.map(([u, y]) => [u, y] as P2), holes: [] }],
+      labelAt: h.slotted ? [(rc + uOut) / 2, yb + (yTop - yb) / 3] : [(rc + uOut) / 2, (y0 + Math.max(yb, 0)) / 2],
+      labelMax: Math.max(2, (h.slotted ? Math.min(uOut - rc, yTop - yb) : Math.min(uOut - rc, Math.max(yb, 0) - y0)) * 0.5),
+      notch: k === 0 ? [-w / 2, yMid, w / 2, yb + 1] : [-w / 2, y0 - 1, w / 2, yMid],
+    };
+  });
 }
 
 /** Where a slotted fin crosses a plate: the halving slot cut in each, in their own plate coordinates. */
