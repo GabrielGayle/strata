@@ -474,7 +474,7 @@ export function ProjectsButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="tb" onClick={() => setOpen(true)} title="Saves browser: cloud and local projects">
+      <button className="tb" data-hl="projects" onClick={() => setOpen(true)} title="Saves browser: cloud and local projects">
         Projects
       </button>
       {open && <LibraryPanel onClose={() => setOpen(false)} />}
@@ -629,7 +629,7 @@ export function ShareButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="tb" onClick={() => setOpen(true)} title="Copy a link that opens this design's settings (not its images)">
+      <button className="tb" data-hl="share" onClick={() => setOpen(true)} title="Copy a link that opens this design's settings (not its images)">
         Share
       </button>
       {open && <ShareDialog onClose={() => setOpen(false)} />}

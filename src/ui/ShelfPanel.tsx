@@ -447,6 +447,7 @@ export function UnobstructedDevDock() {
           Use current camera
         </button>
         <button
+          data-hl="shelf-look"
           className="btn sm"
           onClick={() => {
             const ui = useStore.getState().ui;

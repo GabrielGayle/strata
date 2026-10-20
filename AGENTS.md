@@ -4,6 +4,15 @@
 
 These rules are non-negotiable. Regressions are guarded by unit tests and Playwright e2e.
 
+### Every feature or fix adds a changelog entry
+
+Any PR that adds a feature or fixes something a person would notice adds **one entry at the top** of `CHANGELOG` in `src/ui/changelogEntries.ts` (Help › Changelog in the app). Newest first; dates are the day it ships (`YYYY-MM-DD`).
+
+- `title` and `body`: plain words about what it does for the person, not how it was built. `where`: the path in words ("3D view › Rake", "Parameters › Steel base › Fixing holes"), shown when the control isn't on screen.
+- `target` is what **Show me** opens and lights up: `tab`, `ui` (store state to set), `param` (a parameter row; its panel opens), `group` (a parameter panel), and `path`: names opened in order, the last one lit. Names are `data-hl` (or existing `data-testid`) values, never CSS paths, so panels can move. Put `data-hl="your-name"` on the new control (and on whatever must be clicked to reach it: menus take `hl`, Inspector sections take `hl`).
+- When you move or rename a control, keep its `data-hl`. `test/changelog.test.ts` fails when a target names a `data-hl`/`data-testid`, param, group or tab that no longer exists; `e2e/changelog.spec.ts` checks that Show me lights the right control.
+- Internal-only work (tests, CI, refactors nobody sees) needs no entry.
+
 ### Nested sheet holes travel with their parent
 
 Round holes (`CIRCLE` in cut DXF) are detected on the part in local coordinates, then transformed with that part’s nest placement. A CIRCLE must lie inside **exactly one** part outline and must not overlap another part. Irregular cut-outs stay LWPOLYLINE. Enforced by `test/sheet-dxf-cut.test.ts`.

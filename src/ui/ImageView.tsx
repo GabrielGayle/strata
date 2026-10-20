@@ -277,17 +277,17 @@ export default function ImageView() {
                     <button className={`btn sm ${sourceOf(s.slot) === 'image' ? 'on' : ''}`} onClick={() => setSource({ ...source, [s.slot]: 'image' })}>
                       Image
                     </button>
-                    <button className={`btn sm ${sourceOf(s.slot) === 'graphic' ? 'on' : ''}`} onClick={() => setSource({ ...source, [s.slot]: 'graphic' })}>
+                    <button className={`btn sm ${sourceOf(s.slot) === 'graphic' ? 'on' : ''}`} data-hl="source-graphic" onClick={() => setSource({ ...source, [s.slot]: 'graphic' })}>
                       Graphic
                     </button>
-                    <button className={`btn sm ${sourceOf(s.slot) === 'sound' ? 'on' : ''}`} onClick={() => setSource({ ...source, [s.slot]: 'sound' })} title="A tone, chord or recording drawn as a picture">
+                    <button className={`btn sm ${sourceOf(s.slot) === 'sound' ? 'on' : ''}`} data-hl="source-sound" onClick={() => setSource({ ...source, [s.slot]: 'sound' })} title="A tone, chord or recording drawn as a picture">
                       Sound
                     </button>
-                    <button className={`btn sm ${sourceOf(s.slot) === 'compose' ? 'on' : ''}`} onClick={() => setSource({ ...source, [s.slot]: 'compose' })} title="Several images, patterns and drawings placed freely">
+                    <button className={`btn sm ${sourceOf(s.slot) === 'compose' ? 'on' : ''}`} data-hl="source-composer" onClick={() => setSource({ ...source, [s.slot]: 'compose' })} title="Several images, patterns and drawings placed freely">
                       Composer
                     </button>
                   </span>
-                  <button className="btn sm" onClick={() => live.addImages(s.slot)} title="Add one or more pictures to this surface as layers you can move, pin and lay out">
+                  <button className="btn sm" data-hl="add-images" onClick={() => live.addImages(s.slot)} title="Add one or more pictures to this surface as layers you can move, pin and lay out">
                     Add images…
                   </button>
                 </div>
@@ -326,6 +326,7 @@ export default function ImageView() {
                   </button>
                   <button
                     className="btn"
+                    data-hl="depth-from-photo"
                     disabled={!DEPTH_URL || depthBusy !== null}
                     title={
                       DEPTH_URL
@@ -375,6 +376,7 @@ export default function ImageView() {
                   {asset && fitFor(s.slot) && (
                     <button
                       className={`btn ${v[fitFor(s.slot)!.id] !== 'off' ? 'on' : ''}`}
+                      data-hl="fit-face"
                       title={fitFor(s.slot)!.title}
                       onClick={() => toggleFit(s.slot)}
                     >

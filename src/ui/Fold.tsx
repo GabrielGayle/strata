@@ -25,7 +25,7 @@ export function Fold({ id, title, children }: { id: string; title: string; child
   };
   return (
     <section className={`vs-fold${shut ? ' shut' : ''}`} aria-label={title}>
-      <button className="vs-fold-head" aria-expanded={!shut} onClick={flip} title={shut ? 'Show this panel' : 'Fold this panel away'}>
+      <button className="vs-fold-head" aria-expanded={!shut} onClick={flip} data-hl={`fold-${id}`} title={shut ? 'Show this panel' : 'Fold this panel away'}>
         <span className="vs-fold-arrow" aria-hidden="true">
           {shut ? '▸' : '▾'}
         </span>
