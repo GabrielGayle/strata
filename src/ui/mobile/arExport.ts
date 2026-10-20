@@ -126,11 +126,30 @@ export function arSizeMm(scene: THREE.Scene): { x: number; y: number; z: number 
 export async function exportUsdz(scene: THREE.Scene, wall = false): Promise<Uint8Array> {
   const { USDZExporter } = await import('three/examples/jsm/exporters/USDZExporter.js');
   const exporter = new USDZExporter();
-  const out = await exporter.parseAsync(scene, {
-    quickLookCompatible: true,
-    ar: { anchoring: { type: 'plane' }, planeAnchoring: { alignment: wall ? 'vertical' : 'horizontal' } },
-  });
-  return out instanceof Uint8Array ? out : new Uint8Array(out as ArrayBuffer);
+  // Quick Look puts a model's +Y along a wall's normal (out of the wall) and its −Z up
+  // the wall, so a piece built y-up and facing +z would lie face down: tip it back a
+  // quarter turn for the file only (facing +z → +y, up +y → −z)
+  const tipped = wall ? onWall(scene) : null;
+  try {
+    const out = await exporter.parseAsync(tipped ?? scene, {
+      quickLookCompatible: true,
+      ar: { anchoring: { type: 'plane' }, planeAnchoring: { alignment: wall ? 'vertical' : 'horizontal' } },
+    });
+    return out instanceof Uint8Array ? out : new Uint8Array(out as ArrayBuffer);
+  } finally {
+    if (tipped) for (const c of [...tipped.children[0].children]) scene.add(c);
+  }
+}
+
+/** A scene holding `scene`'s children in a group turned for Quick Look's wall anchor (moves them; exportUsdz puts them back). */
+function onWall(scene: THREE.Scene): THREE.Scene {
+  const turn = new THREE.Group();
+  turn.rotation.x = -Math.PI / 2;
+  for (const c of [...scene.children]) turn.add(c);
+  const out = new THREE.Scene();
+  out.add(turn);
+  out.updateMatrixWorld(true);
+  return out;
 }
 
 /** Safari on iPhone and iPad opens <a rel="ar"> links in AR Quick Look. */
