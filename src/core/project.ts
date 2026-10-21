@@ -18,6 +18,7 @@ import { cleanShelfPlates, type ShelfPlate } from './shelfPlates';
 import { cleanPlacedCandles, type PlacedCandle } from './surfaceCandles';
 import { cleanSavedNest, type SavedNest } from './nest';
 import { cleanSavedHero, type SavedHero } from './heroSaved';
+import { cleanProposal, type ProposalSpec } from './proposalSpec';
 import { cleanOrigin, type WorldOrigin } from './origin';
 import { cleanEarthView, type EarthView } from './earthView';
 import { compactCloudAsset } from './mapTopAsset';
@@ -110,6 +111,8 @@ export interface Project {
   nest?: SavedNest;
   /** The cloud's hero render of the finished piece; in the build pack while the design still matches its fingerprint. */
   hero?: SavedHero;
+  /** The client proposal's words (price band, timeline, finish…); the page itself is drawn from the model. */
+  proposal?: ProposalSpec;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -398,5 +401,6 @@ export function deserialize(text: string): Project {
     savedView: cleanEarthView(raw.savedView),
     nest: cleanSavedNest(raw.nest),
     hero: cleanSavedHero(raw.hero),
+    proposal: cleanProposal(raw.proposal),
   };
 }

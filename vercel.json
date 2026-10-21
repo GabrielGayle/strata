@@ -10,6 +10,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/p",
+      "destination": "/index.html"
+    },
+    {
       "source": "/api/geo/:path*",
       "destination": "/api/geo?path=:path*"
     }

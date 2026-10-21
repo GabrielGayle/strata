@@ -22,6 +22,7 @@ import type { CandleSpec } from '../core/candles';
 import type { ShelfPlate } from '../core/shelfPlates';
 import type { PlacedCandle } from '../core/surfaceCandles';
 import type { WorldOrigin } from '../core/origin';
+import type { ProposalSpec } from '../core/proposalSpec';
 import { applyTheme, loadTheme, saveTheme, type ThemeChoice } from '../ui/theme';
 import { loadViewportLayers, saveViewportLayers, type ViewportLayerId, type ViewportLayers } from '../ui/viewportLayers';
 import { loadViewAids, saveViewAids, type ViewAids } from '../ui/viewAids';
@@ -149,6 +150,8 @@ interface Store {
   setOrigin: (origin: WorldOrigin | undefined, key?: string) => void;
   /** Persist the 3D View-from-point camera with the project (local + cloud saves). */
   setSavedView: (view: EarthView | undefined) => void;
+  /** The client proposal's words; typing in one field merges into one undo step. */
+  setProposal: (proposal: ProposalSpec, key?: string) => void;
   setName: (name: string) => void;
   setAsset: (kind: 'image' | 'mesh', slot: string, asset: any) => void;
   /** Attach or update MapSpec on the top face (map window / design parser). */
@@ -406,6 +409,7 @@ export const useStore = create<Store>((set, get) => {
     setShelves: (shelves, key = `shelves:${performance.now()}`) => commit({ ...get().project, shelves: shelves.length ? shelves : undefined }, key),
     setPlacedCandles: (placedCandles, key = `placed-candles:${performance.now()}`) => commit({ ...get().project, placedCandles: placedCandles.length ? placedCandles : undefined }, key),
     setOrigin: (origin, key = `origin:${performance.now()}`) => commit({ ...get().project, origin }, key),
+    setProposal: (proposal, key = `proposal:${performance.now()}`) => commit({ ...get().project, proposal }, key),
     setSavedView: (view) => commit({ ...get().project, savedView: view }, `saved-view:${performance.now()}`),
     setName: (name) => commit({ ...get().project, name }, 'name'),
     setAsset: (kind, slot, asset) => {

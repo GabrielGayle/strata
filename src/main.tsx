@@ -14,6 +14,7 @@ import { preloadView } from './ui/Workspace';
 import { installE2eMapTileFixtures } from './core/mapBrowserTiles';
 import { preloadModel } from './state/results';
 import { choseDesktop, isViewerPath, looksLikePhone, phoneRedirect } from './ui/mobile/route';
+import { isProposalPath } from './ui/proposal/route';
 
 installE2eMapTileFixtures();
 
@@ -23,7 +24,16 @@ applyTheme(loadTheme());
 const goTo = phoneRedirect(location, looksLikePhone(), choseDesktop());
 if (goTo) history.replaceState(null, '', goTo);
 
-if (isViewerPath(location.pathname)) {
+if (isProposalPath(location.pathname)) {
+  // a client proposal from a link: built from the link alone, the last session is never read (or written)
+  void import('./ui/proposal/ProposalPage').then(({ default: ProposalPage }) =>
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <ProposalPage />
+      </StrictMode>,
+    ),
+  );
+} else if (isViewerPath(location.pathname)) {
   // the phone viewer: it only reads saved projects, so the last session is never read back (or written)
   void import('./ui/mobile/MobileApp').then(({ default: MobileApp }) =>
     createRoot(document.getElementById('root')!).render(

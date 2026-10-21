@@ -112,10 +112,10 @@ interface Box {
 const boxOf = (pts: P2[]): Box =>
   pts.reduce((b, [x, y]) => ({ minX: Math.min(b.minX, x), maxX: Math.max(b.maxX, x), minY: Math.min(b.minY, y), maxY: Math.max(b.maxY, y) }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
 
-/** Fit a box of drawing units into W × H px, with margins (left, right, top, bottom); y runs up. */
-function fitBox(b: Box, maxW: number, maxH: number, m: [number, number, number, number]) {
+/** Fit a box of drawing units into W × H px, with margins (left, right, top, bottom); y runs up. `scale` (px per unit) fixes the scale instead. */
+function fitBox(b: Box, maxW: number, maxH: number, m: [number, number, number, number], scale?: number) {
   const bw = Math.max(1e-6, b.maxX - b.minX), bh = Math.max(1e-6, b.maxY - b.minY);
-  const s = Math.min((maxW - m[0] - m[1]) / bw, (maxH - m[2] - m[3]) / bh);
+  const s = scale ?? Math.min((maxW - m[0] - m[1]) / bw, (maxH - m[2] - m[3]) / bh);
   const w = bw * s + m[0] + m[1], h = bh * s + m[2] + m[3];
   return { s, w, h, X: (x: number) => m[0] + (x - b.minX) * s, Y: (y: number) => m[2] + (b.maxY - y) * s };
 }
@@ -255,7 +255,28 @@ function wallOut(f: V3[], n: V3): 1 | -1 {
   return -dz * n[0] + dx * n[2] > 0 ? 1 : -1;
 }
 
+interface DrawingOpts {
+  maxW?: number;
+  maxH?: number;
+  /** px per mm; set to draw several views at one scale. */
+  scale?: number;
+  /** No part names, notes or FRONT/BACK words: the outline and the sizes only (the client proposal). */
+  bare?: boolean;
+}
+
+interface Drawing {
+  svg: string;
+  /** px per mm */
+  s: number;
+  w: number;
+  h: number;
+}
+
 function planSvg(m: Model, view: View, names: Map<string, string>): string {
+  return planDrawing(m, view, names).svg;
+}
+
+function planDrawing(m: Model, view: View, names: Map<string, string>, opts: DrawingOpts = {}): Drawing {
   const v = m.v;
   const flat = v.sliceMode === 'flat';
   const parts = m.sliced.parts;
@@ -263,13 +284,13 @@ function planSvg(m: Model, view: View, names: Map<string, string>): string {
   const foot = new Map(parts.map((p) => [p, footprint(p, view)]));
   const ins = insertPoints(m).map((w) => view.plan(w));
   const all = [...basePts, ...[...foot.values()].flat(2), ...ins];
-  if (!all.length) return '';
+  if (!all.length) return { svg: '', s: 0, w: 0, h: 0 };
   const b = boxOf(all);
   const radial = v.sliceMode === 'radial';
-  const f = fitBox(b, 690, 880, radial ? [70, 70, 50, 70] : [92, 92, 54, 72]);
+  const f = opts.bare ? fitBox(b, opts.maxW ?? 690, opts.maxH ?? 880, [24, 24, 24, 44], opts.scale) : fitBox(b, 690, 880, radial ? [70, 70, 50, 70] : [92, 92, 54, 72]);
   const font = 11;
   const out: string[] = [];
-  if (basePts.length) out.push(`<path d="${pathD(basePts, f.X, f.Y)}" fill="#efefef" stroke="#000" stroke-width="1.4"/>`);
+  if (basePts.length) out.push(`<path class="base" d="${pathD(basePts, f.X, f.Y)}" fill="#efefef" stroke="#000" stroke-width="1.4"/>`);
   if (ins.length > 2) out.push(`<path d="${pathD(hull(ins), f.X, f.Y)}" fill="#fff" stroke="#000" stroke-dasharray="5 3" stroke-width="1"/>`);
   // the steel base plate: filled like the concrete, its slots showing through
   for (const p of parts.filter((q) => q.family === 'B')) out.push(`<path class="steel-base" d="${foot.get(p)!.map((pl) => pathD(pl, f.X, f.Y)).join('')}" fill="#e2e4e6" stroke="#000" stroke-width="1.4" fill-rule="evenodd"/>`);
@@ -366,10 +387,18 @@ function planSvg(m: Model, view: View, names: Map<string, string>): string {
   const frontText = `<text x="${px(f.w / 2)}" y="${px(fy + 22)}" text-anchor="middle" font-size="15" font-weight="800" letter-spacing="3">FRONT</text>`;
   const backText = `<text x="${px(f.w / 2)}" y="${px(topEdge - (radial ? 30 : v.sliceMode === 'waffle' || parts.some((q) => q.family === 'C' || q.family === 'T') ? 40 : 14))}" text-anchor="middle" font-size="11" fill="#444" letter-spacing="2">BACK</text>`;
   const bar = scaleBar(12, f.h - 14, f.s, b.maxX - b.minX);
-  return `<svg class="drawing" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="Plate layout seen from above, front at the bottom">${out.join('')}${labels.join('')}${front}${frontText}${backText}${bar}</svg>`;
+  if (opts.bare) {
+    const wide = dim(f.X(b.minX), f.Y(b.minY) + 18, f.X(b.maxX), f.Y(b.minY) + 18, mm(b.maxX - b.minX), 'below');
+    return { svg: `<svg class="drawing" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="Plan, seen from above">${out.join('')}${front}${wide}</svg>`, s: f.s, w: f.w, h: f.h };
+  }
+  return { svg: `<svg class="drawing" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="Plate layout seen from above, front at the bottom">${out.join('')}${labels.join('')}${front}${frontText}${backText}${bar}</svg>`, s: f.s, w: f.w, h: f.h };
 }
 
 function elevationSvg(m: Model, right: P2, title: string, opts: { labels?: boolean; maxH?: number } = {}): string {
+  return elevationDrawing(m, right, title, opts).svg;
+}
+
+function elevationDrawing(m: Model, right: P2, title: string, opts: DrawingOpts & { labels?: boolean } = {}): Drawing {
   const v = m.v;
   const parts = m.sliced.parts;
   const outl = new Map(parts.map((p) => [p, elevation(p, right)]));
@@ -378,10 +407,10 @@ function elevationSvg(m: Model, right: P2, title: string, opts: { labels?: boole
   const baseBox = basePts.length ? boxOf(basePts) : null;
   const ins = insertPoints(m).map(at);
   const all = [...[...outl.values()].flat(), ...(baseBox ? [[baseBox.minX, 0], [baseBox.maxX, v.baseHeight]] as P2[] : []), ...ins];
-  if (!all.length) return '';
+  if (!all.length) return { svg: '', s: 0, w: 0, h: 0 };
   const b = boxOf(all);
   b.minY = Math.min(b.minY, 0);
-  const f = fitBox(b, 690, opts.maxH ?? 400, [70, 80, opts.labels ? 46 : 18, 44]);
+  const f = fitBox(b, opts.maxW ?? 690, opts.maxH ?? 400, opts.bare ? [24, 90, 18, 44] : [70, 80, opts.labels ? 46 : 18, 44], opts.scale);
   const out: string[] = [];
   if (baseBox) out.push(`<rect x="${px(f.X(baseBox.minX))}" y="${px(f.Y(v.baseHeight))}" width="${px((baseBox.maxX - baseBox.minX) * f.s)}" height="${px(v.baseHeight * f.s)}" fill="#e4e4e4" stroke="#000" stroke-width="1.2"/>`);
   if (ins.length > 2) out.push(`<path d="${pathD(hull(ins), f.X, f.Y)}" fill="none" stroke="#000" stroke-dasharray="5 3"/>`);
@@ -426,7 +455,7 @@ function elevationSvg(m: Model, right: P2, title: string, opts: { labels?: boole
       g.push(`<line x1="${px(f.X(q.x))}" y1="${px(f.Y(q.top) - 2)}" x2="${px(f.X(q.x))}" y2="${px(ty + 3)}" stroke="#bbb" stroke-width="0.5"/><text x="${px(f.X(q.x))}" y="${px(ty)}" text-anchor="middle" font-size="10" font-weight="600">${esc((names.get(q.key) ?? q.key).replace(/^.*?-/, ''))}</text>`);
     });
   }
-  return `<svg class="drawing" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="${esc(title)}">${out.join('')}${g.join('')}</svg>`;
+  return { svg: `<svg class="drawing" width="${px(f.w)}" height="${px(f.h)}" viewBox="0 0 ${px(f.w)} ${px(f.h)}" role="img" aria-label="${esc(title)}">${out.join('')}${g.join('')}</svg>`, s: f.s, w: f.w, h: f.h };
 }
 
 // --- angled view ----------------------------------------------------------------------
@@ -1267,6 +1296,69 @@ function weldSection(m: Model, names: Map<string, string>): string {
 
 // --- the page ---------------------------------------------------------------------------
 
+/** Overall size (the base or the plates in plan, and the highest point of anything), weight and finishes. */
+function pieceFacts(project: Project, m: Model, view: View) {
+  const v = m.v;
+  const parts = m.sliced.parts;
+  const planPts = [...(v.baseOn ? baseRing(v, m.sliced.baseOutline).map(([x, pz]) => view.plan([x, 0, -pz])) : []), ...parts.flatMap((p) => footprint(p, view).flat())];
+  const pb = planPts.length ? boxOf(planPts) : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  let top = v.baseOn ? v.baseHeight : 0;
+  for (const p of parts) for (const [a, b] of [[p.bbox.minX, p.bbox.maxY], [p.bbox.maxX, p.bbox.maxY], [p.bbox.minX, p.bbox.minY], [p.bbox.maxX, p.bbox.minY]]) top = Math.max(top, planeToWorld(p.plane, a, b)[1] + (upright(p) ? 0 : p.thickness / 2));
+  if (m.insert && v.insShape !== 'none') top = Math.max(top, m.insert.form.bbox.max.y);
+  const weight = m.bom.plateMass + (v.baseOn ? m.bom.concreteMass : 0);
+  const finishes = [...new Set(parts.map((p) => metalOf(project, m, p.plateKey).label))];
+  return { size: { w: pb.maxX - pb.minX, d: pb.maxY - pb.minY, h: top }, weight, finishes };
+}
+
+/** What the client proposal shows of the piece: plan, front and side drawn at one scale, an angled view in its metals, and the plain facts. */
+export interface ProposalViews {
+  /** Front and side side by side, the plan under the front (third angle), all at one scale in one drawing. */
+  ortho: string;
+  angled: string;
+  /** px per mm shared by plan, front and side. */
+  scale: number;
+  size: { w: number; d: number; h: number };
+  weight: number;
+  finishes: string[];
+  plates: number;
+  parts: number;
+  /** "Flat stack of 40 layers" and the like. */
+  mode: string;
+}
+
+export function proposalViews(project: Project, m: Model, opts: { maxW?: number; maxH?: number } = {}): ProposalViews {
+  const v = m.v;
+  const view = viewOf(m);
+  const names = keyNames(m);
+  const fit = { bare: true, maxW: opts.maxW ?? 420, maxH: opts.maxH ?? 320 };
+  const sideRight: P2 = [view.back[0], view.back[1]];
+  const hasSide = v.sliceMode !== 'radial';
+  // each view's own scale, then all three at the smallest so they read against each other
+  const natural = [planDrawing(m, view, names, fit).s, elevationDrawing(m, view.right, 'Front', fit).s, ...(hasSide ? [elevationDrawing(m, sideRight, 'Side', fit).s] : [])].filter((x) => x > 0);
+  const scale = natural.length ? Math.min(...natural) : 1;
+  const at = { ...fit, scale };
+  const front = elevationDrawing(m, view.right, 'Front elevation', at);
+  const side = hasSide ? elevationDrawing(m, sideRight, 'Side elevation', at) : null;
+  const plan = planDrawing(m, view, names, at);
+  const gap = 28, cap = 22;
+  const topH = Math.max(front.h, side?.h ?? 0);
+  const W = Math.max(front.w + (side ? gap + side.w : 0), plan.w);
+  const H = topH + cap + gap + plan.h + cap;
+  const place = (d: Drawing, x: number, y: number, label: string) =>
+    d.svg ? `${d.svg.replace(/^<svg class="drawing"/, `<svg x="${px(x)}" y="${px(y)}"`)}<text class="caption" x="${px(x + d.w / 2)}" y="${px(y + d.h + 14)}" text-anchor="middle">${label}</text>` : '';
+  const ortho = `<svg class="drawing ortho-set" width="${px(W)}" height="${px(H)}" viewBox="0 0 ${px(W)} ${px(H)}" role="img" aria-label="Plan, front and side at one scale">${place(front, 0, topH - front.h, 'Front')}${side ? place(side, front.w + gap, topH - side.h, 'Side') : ''}${place(plan, 0, topH + cap + gap, 'Plan')}</svg>`;
+  const mains = m.sliced.plates.filter((pl) => pl.def.family === 'P' || pl.def.family === 'X' || pl.def.family === 'R');
+  return {
+    ortho,
+    angled: angledSvg(project, m, view, 'The piece from the front right', { maxW: 760, maxH: 460 }),
+    scale,
+    ...pieceFacts(project, m, view),
+    plates: m.sliced.plates.length,
+    parts: m.sliced.parts.length,
+    mode: modeText(m, mains),
+  };
+}
+
 export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions = {}): string {
   const v = m.v;
   const view = viewOf(m);
@@ -1280,14 +1372,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
   const date = opts.date ?? new Date();
   const rates = opts.rates ?? DEFAULT_RATES;
 
-  // overall size: the base (or the plates) in plan, and the highest point of anything
-  const planPts = [...(v.baseOn ? baseRing(v, m.sliced.baseOutline).map(([x, pz]) => view.plan([x, 0, -pz])) : []), ...parts.flatMap((p) => footprint(p, view).flat())];
-  const pb = planPts.length ? boxOf(planPts) : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
-  let top = v.baseOn ? v.baseHeight : 0;
-  for (const p of parts) for (const [a, b] of [[p.bbox.minX, p.bbox.maxY], [p.bbox.maxX, p.bbox.maxY], [p.bbox.minX, p.bbox.minY], [p.bbox.maxX, p.bbox.minY]]) top = Math.max(top, planeToWorld(p.plane, a, b)[1] + (upright(p) ? 0 : p.thickness / 2));
-  if (m.insert && v.insShape !== 'none') top = Math.max(top, m.insert.form.bbox.max.y);
-  const weight = m.bom.plateMass + (v.baseOn ? m.bom.concreteMass : 0);
-  const finishes = [...new Set(parts.map((p) => metalOf(project, m, p.plateKey).label))];
+  const { size, weight, finishes } = pieceFacts(project, m, view);
   const errors = m.issues.filter((i) => i.severity === 'error').length + (m.sliced.brace?.issues.filter((i) => i.severity === 'error').length ?? 0);
 
   const tunes = new Map<string, string>();
@@ -1345,7 +1430,7 @@ export function buildPackHtml(project: Project, m: Model, opts: BuildPackOptions
 
   const facts: [string, string][] = [
     ['Design', modeText(m, mains)],
-    ['Overall size', `${n1(pb.maxX - pb.minX)} wide × ${n1(pb.maxY - pb.minY)} deep × ${n1(top)} high (mm)`],
+    ['Overall size', `${n1(size.w)} wide × ${n1(size.d)} deep × ${n1(size.h)} high (mm)`],
     ['Plates', `${m.sliced.plates.length} plates · ${parts.length} laser-cut parts`],
     ['Weight', `about ${weight.toFixed(0)} kg${v.baseOn ? ` (steel ${m.bom.plateMass.toFixed(1)} kg, concrete ${m.bom.concreteMass.toFixed(0)} kg)` : ''}`],
     ['Materials', `${parts.length ? `${finishes.map(esc).join('; ')}; ${mm(v.thickness)} sheet` : 'No sheet metal'}${m.sliced.steelBase ? `; steel base plate ${steelSize(m)} × ${mm(m.sliced.steelBase.spec.thickness)}, ${m.sliced.steelBase.spec.fixing === 'twist' ? 'twist tabs' : 'welded from underneath'}` : ''}${v.baseOn ? `; cast concrete base ${concreteSize(m)} × ${mm(v.baseHeight)}` : ''}`],

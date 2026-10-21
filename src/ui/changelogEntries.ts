@@ -40,6 +40,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-20',
+    kind: 'new',
+    title: 'Client proposal page',
+    body: 'Proposal makes a page to send a client: the place and a local quotation first, then the piece drawn in plan, front and side at one scale, then the price band, timeline, finish and upkeep, with the full spec folded into a technical sheet. Anything you have not filled in prints as [… to confirm], and a price can be marked est. Open it, download it as one HTML file, or copy a link that opens it.',
+    where: 'Toolbar › Proposal',
+    target: { path: ['proposal'] },
+  },
+  {
+    date: '2026-10-20',
     kind: 'fix',
     title: 'Thin steel parts get a real price',
     body: 'Parts in steel thinner than 1.5 mm, such as 1 mm, were priced at £0.00 each, so the estimate was only the order minimum. Thinner gauges now use the 1.5 mm rate, and no part is ever priced under 50p, so many small parts add up as they would on a quote.',

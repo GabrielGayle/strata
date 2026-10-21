@@ -26,6 +26,8 @@ export interface ShareState {
   shelf?: Project['shelf'];
   candles?: Project['candles'];
   origin?: Project['origin'];
+  /** The client proposal's words, so a link can open as the proposal page. */
+  proposal?: Project['proposal'];
   /** Variants with their settings only (no pictures, composition or shadow pictures). */
   variants?: Pick<Project['variants'][number], 'id' | 'name' | 'params' | 'locks' | 'pour' | 'moves' | 'appearance' | 'objects' | 'shelf' | 'candles' | 'origin' | 'createdAt'>[];
   /** Plain-language list of what the sender had that the link leaves out. */
@@ -57,6 +59,7 @@ export function shareState(p: Project): ShareState {
   if (p.shelf) s.shelf = p.shelf;
   if (p.candles) s.candles = p.candles;
   if (p.origin) s.origin = p.origin;
+  if (p.proposal) s.proposal = p.proposal;
   if (p.variants.length) {
     s.variants = p.variants.map((v) => ({
       id: v.id,
@@ -98,6 +101,7 @@ export function projectFromShare(s: ShareState): Project {
       shelf: s.shelf,
       candles: s.candles,
       origin: s.origin,
+      proposal: s.proposal,
     }),
   );
 }

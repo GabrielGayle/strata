@@ -4470,3 +4470,50 @@ body.vs-resizing * {
 .vs-tab.dragging {
   opacity: 0.4;
 }
+
+/* Client proposal dialog: labelled boxes in three fieldsets, scrolling inside the window */
+.proposal-form {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+}
+.proposal-form fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+.proposal-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.proposal-row > span:first-child {
+  padding-top: 3px;
+}
+.proposal-row input[type='text'],
+.proposal-row textarea {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  resize: vertical;
+}
+.proposal-row.check > span:last-child {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.proposal-link input {
+  font-family: var(--mono);
+  font-size: 12px;
+  width: 100%;
+}
+@media (max-width: 560px) {
+  .proposal-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
