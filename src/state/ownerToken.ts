@@ -1,5 +1,7 @@
 /** The owner passphrase, kept in this browser after you enter it once. */
 
+import { cockpitToken } from './cockpitAuth';
+
 export const OWNER_TOKEN_KEY = 'strata.owner.token';
 
 export function readOwnerToken(ls?: Storage): string | null {
@@ -21,4 +23,9 @@ export function writeOwnerToken(token: string | null, ls?: Storage): void {
   } catch {
     /* quota / private mode */
   }
+}
+
+/** What cloud requests send: the passphrase if one is stored, else a cockpit yoga sign-in. */
+export function ownerBearer(ls?: Storage): string | null {
+  return readOwnerToken(ls) ?? cockpitToken();
 }

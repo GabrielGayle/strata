@@ -12,7 +12,8 @@ import { cloudSyncLabel, getCloudSync, subscribeCloudSync, subscribeCloudWarning
 import {
   defaultProjectLibrary, flushPendingUploads, hasMigrated, localProjectsPendingMigration, markMigrated, migrateLocalToCloud, migrateSkippedThisSession, skipMigrateThisSession, startPendingRetry,
 } from '../state/hybridLibrary';
-import { readOwnerToken, writeOwnerToken } from '../state/ownerToken';
+import { ownerBearer, readOwnerToken, writeOwnerToken } from '../state/ownerToken';
+import { cockpitConfigured, cockpitSignInUrl, cockpitSignOut, getCockpitSession, subscribeCockpit } from '../state/cockpitAuth';
 import { isOneOffAddress, MAIN_HOST } from '../state/persist';
 import { download } from '../core/exporters';
 import { isProjectZipName, projectFromZip } from '../core/projectZip';
@@ -147,7 +148,8 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
   const [lnk, setLnk] = useState(() => linkOf(setup));
   const current = lnk && list?.find((m) => m.id === lnk.id);
   const dirty = useMemo(() => hasUnsavedChanges(project, current ? lnk : undefined), [project, current, lnk]);
-  const unlocked = !!token;
+  const cockpit = useSyncExternalStore(subscribeCockpit, getCockpitSession, getCockpitSession);
+  const unlocked = !!token || !!cockpit;
 
   const refresh = useCallback(async () => {
     try {
@@ -161,7 +163,7 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => subscribeLibraryChange(() => void refresh()), [refresh]);
 
   const considerMigrate = useCallback(async () => {
-    if (!readOwnerToken() || hasMigrated() || migrateSkippedThisSession()) {
+    if (!ownerBearer() || hasMigrated() || migrateSkippedThisSession()) {
       setMigrate(null);
       return;
     }
@@ -180,6 +182,8 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (unlocked) void considerMigrate();
   }, [unlocked, considerMigrate]);
+  // signing in (or out) of cockpit yoga elsewhere changes what the cloud lets us do
+  useEffect(() => subscribeCockpit(() => void probeCloud()), []);
 
   const relink = (l: LibraryLink | null) => {
     link(setup, l);
@@ -354,7 +358,7 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
         </span>
       </div>
       {!unlocked && (
-        <form className="lib-gate" onSubmit={unlock} data-testid="projects-token-form">
+        <form className="lib-gate" onSubmit={unlock} data-testid="projects-token-form" data-hl="projects-access">
           <label>
             <span>Access token</span>
             <input
@@ -371,13 +375,26 @@ function LibraryPanel({ onClose }: { onClose: () => void }) {
             Unlock cloud
           </button>
           <small>Without it this address cannot read or write cloud projects.</small>
+          {cockpitConfigured && (
+            <a className="btn sm" href={cockpitSignInUrl(location.href)}>
+              Sign in with cockpit yoga
+            </a>
+          )}
         </form>
       )}
-      {unlocked && (
-        <div className="lib-note">
+      {unlocked && token && (
+        <div className="lib-note" data-hl="projects-access">
           Cloud unlocked.{' '}
           <button className="btn sm" type="button" onClick={forgetToken}>
             Forget token
+          </button>
+        </div>
+      )}
+      {unlocked && !token && cockpit && (
+        <div className="lib-note" data-hl="projects-access">
+          Signed in with cockpit yoga as {cockpit.email}.{' '}
+          <button className="btn sm" type="button" onClick={() => void cockpitSignOut()}>
+            Sign out
           </button>
         </div>
       )}

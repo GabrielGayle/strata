@@ -39,6 +39,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-10-22',
+    kind: 'new',
+    title: 'Sign in with cockpit yoga',
+    body: 'Cloud projects can now be opened with your cockpit yoga account, the same sign-in as lace and cockpit.yoga, instead of typing the owner passphrase. Signed in once on cockpit.yoga, strata is unlocked too. The passphrase still works.',
+    where: 'Toolbar › Projects',
+    target: { path: ['projects', 'projects-access'] },
+  },
+  {
     date: '2026-10-20',
     kind: 'fix',
     title: 'Thin steel parts get a real price',
