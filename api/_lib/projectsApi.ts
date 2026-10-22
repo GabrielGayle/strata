@@ -1,6 +1,6 @@
 /** Shared /api/projects handler for Vercel (`api/projects.ts`) and Vite middleware. */
 
-import { assertOwner, OwnerAuthError } from './ownerAuth.js';
+import { assertOwnerOrCockpit, OwnerAuthError } from './ownerAuth.js';
 import {
   assertProjectId,
   PROJECT_ID_RE,
@@ -26,6 +26,8 @@ export interface ProjectsApiDeps {
   store: LibraryStore;
   env?: NodeJS.ProcessEnv;
   now?: number;
+  /** For checking a cockpit yoga sign-in with Supabase (tests pass a fake). */
+  fetch?: typeof fetch;
 }
 
 function isMeta(raw: unknown): raw is LibraryMeta {
@@ -48,7 +50,7 @@ function jsonBody(body: unknown): Record<string, unknown> {
 export async function handleProjectsApi(req: ProjectsApiRequest, deps: ProjectsApiDeps): Promise<ProjectsApiResponse> {
   const env = deps.env ?? process.env;
   try {
-    assertOwner(req.authorization, env);
+    await assertOwnerOrCockpit(req.authorization, env, deps.fetch);
   } catch (e) {
     if (e instanceof OwnerAuthError) return { status: e.status, json: { error: e.message } };
     throw e;

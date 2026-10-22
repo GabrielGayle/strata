@@ -74,6 +74,7 @@ Server-only environment variables (never `VITE_`-prefixed, never logged):
 | Name | Where | What |
 | --- | --- | --- |
 | `STRATA_OWNER_TOKEN` | Vercel | already set for cloud projects |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `STRATA_OWNER_EMAILS` | Vercel | optional: a cockpit yoga sign-in for a listed email works instead of the passphrase |
 | `MODAL_GEO_URL` | Vercel | the URL `modal deploy` prints for `api` (`https://…--strata-cloud-api.modal.run`) |
 | `MODAL_KEY`, `MODAL_SECRET` | Vercel | a Modal proxy auth token (Modal dashboard → Settings → Proxy Auth Tokens) |
 | `RENDER_CACHE_STORE_ID` | Vercel (set when `strata-render-cache` is connected with prefix `RENDER_CACHE`) | the site reaches the store through Vercel OIDC, no token needed |

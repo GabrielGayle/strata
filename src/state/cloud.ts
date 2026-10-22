@@ -29,7 +29,7 @@ import { serialize, type Project } from '../core/project';
 import type { PriceRates } from '../core/price';
 import type { ImageAsset } from '../core/project';
 import { ENGINE_BUILD } from '../core/resultCache';
-import { readOwnerToken } from './ownerToken';
+import { ownerBearer } from './ownerToken';
 
 export const BOOST_KEY = 'strata.boost';
 
@@ -156,9 +156,9 @@ export function cloudReady(): boolean {
 /** Every /api/geo request goes through here, and none leaves while Boost is off. */
 async function geoFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!useCloud.getState().boost) throw new CloudUnavailableError('off');
-  const token = readOwnerToken();
+  const token = ownerBearer();
   if (!token) {
-    useCloud.setState({ phase: 'locked', reason: 'enter the owner passphrase in Projects' });
+    useCloud.setState({ phase: 'locked', reason: 'enter the owner passphrase or sign in with cockpit yoga in Projects' });
     throw new CloudUnavailableError('locked');
   }
   let res: Response;

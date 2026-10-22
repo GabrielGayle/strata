@@ -1,5 +1,5 @@
 /** HTTP client for /api/projects. Never imports Node or @vercel/blob. */
-import { readOwnerToken } from './ownerToken';
+import { ownerBearer } from './ownerToken';
 import { setCloudSync, setCloudWarning } from './cloudSync';
 import type { LibraryMeta, LibraryStore } from './library';
 import { hasPendingUploads } from './pendingUploads';
@@ -71,7 +71,7 @@ function errOf(json: unknown, fallback: string): string {
 
 export function createCloudLibrary(opts?: { fetch?: typeof fetch; token?: () => string | null }): CloudLibrary {
   const fetchImpl = opts?.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
-  const tokenOf = opts?.token ?? (() => readOwnerToken());
+  const tokenOf = opts?.token ?? (() => ownerBearer());
   const seen = new Map<string, number>();
   const load = (id: string) => {
     let p = inflight.get(id);
@@ -150,7 +150,7 @@ export function defaultCloudLibrary(): CloudLibrary {
 }
 
 export async function probeCloud(cloud: CloudLibrary = defaultCloudLibrary()): Promise<void> {
-  if (!readOwnerToken()) {
+  if (!ownerBearer()) {
     setCloudSync('locked');
     return;
   }

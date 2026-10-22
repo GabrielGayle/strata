@@ -14,7 +14,7 @@
  * without it. Modal is reached with a proxy auth token (MODAL_KEY / MODAL_SECRET);
  * neither it nor the Blob token is ever sent to the browser or logged.
  */
-import { assertOwner, OwnerAuthError } from './ownerAuth.js';
+import { assertOwnerOrCockpit, OwnerAuthError } from './ownerAuth.js';
 import {
   ARTIFACT_FILES,
   ARTIFACT_PART_BYTES,
@@ -186,7 +186,7 @@ export async function handleGeoApi(req: GeoApiRequest, deps: GeoApiDeps = {}): P
   const env = deps.env ?? process.env;
   const f = deps.fetch ?? fetch;
   try {
-    assertOwner(req.authorization, env);
+    await assertOwnerOrCockpit(req.authorization, env, f);
   } catch (e) {
     if (e instanceof OwnerAuthError) return { status: e.status, json: { error: e.message, reason: e.status === 401 ? 'locked' : 'not-configured' } };
     throw e;

@@ -14,8 +14,11 @@ import { preloadView } from './ui/Workspace';
 import { installE2eMapTileFixtures } from './core/mapBrowserTiles';
 import { preloadModel } from './state/results';
 import { choseDesktop, isViewerPath, looksLikePhone, phoneRedirect } from './ui/mobile/route';
+import { startCockpitAuth } from './state/cockpitAuth';
 
 installE2eMapTileFixtures();
+// the cockpit yoga sign-in shared with lace and cockpit.yoga (no-op unless configured)
+void startCockpitAuth();
 
 // apply the saved window appearance before the first paint
 applyTheme(loadTheme());

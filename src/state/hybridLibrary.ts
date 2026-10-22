@@ -17,7 +17,7 @@ import {
 } from './library';
 import { applyCloudError, defaultCloudLibrary, probeCloud, type CloudLibrary } from './cloudLibrary';
 import { isNetworkCloudError, setCloudSync, setCloudWarning } from './cloudSync';
-import { readOwnerToken } from './ownerToken';
+import { ownerBearer } from './ownerToken';
 import {
   dequeuePending,
   hasPendingUploads,
@@ -143,7 +143,7 @@ async function pushRemove(cloud: CloudLibrary, id: string): Promise<void> {
 export function hybridLibrary(
   local: LibraryStore,
   cloud: CloudLibrary,
-  tokenOf: () => string | null = readOwnerToken,
+  tokenOf: () => string | null = ownerBearer,
   opts: HybridLibraryOpts = {},
 ): LibraryStore {
   const storage = opts.storage;
