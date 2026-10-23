@@ -378,7 +378,7 @@ function PricePanel({ panel }: { panel: PanelPlace }) {
   );
   return (
     <>
-      <Section panel={panel} title="Chop Chop price" hl="chop-chop-price" count="estimate" collapsedSummary={chopSummary}>
+      <Section panel={panel} title="Price estimate" hl="chop-chop-price" count="estimate" collapsedSummary={chopSummary}>
         <PriceEstimate bom={b} material={v.plateMaterial} thickness={v.thickness} />
       </Section>
 

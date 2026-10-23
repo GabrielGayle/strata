@@ -1,5 +1,5 @@
 import type { Bom } from '../core/bom';
-import { DEFAULT_RATES, estimateMix, withHardware, type PriceRates } from '../core/price';
+import { DEFAULT_RATES, fullEstimate, type PriceRates } from '../core/price';
 
 const gbp = (x: number) => `£${x.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -16,10 +16,9 @@ export function chopChopCollapsedSummary(
   opts: ChopChopSummaryOpts = {},
 ): string {
   const maxLen = opts.maxLen ?? 52;
-  const includeEtch = opts.includeEtch ?? true;
-  const est = withHardware(estimateMix(bom, thickness, rates, { includeEtch }), bom.hardware, rates);
+  const est = fullEstimate(bom, thickness, rates, opts.includeEtch == null ? {} : { includeEtch: opts.includeEtch });
   const plates = bom.rows.length;
-  const head = `${gbp(est.total)} inc VAT`;
+  const head = est.labour ? `${gbp(est.allIn)} all in` : `${gbp(est.total)} ${est.vat > 0 ? 'inc VAT' : 'no VAT'}`;
   if (!plates) return truncate(head, maxLen);
 
   const platesBit = `${plates} plate${plates === 1 ? '' : 's'}`;

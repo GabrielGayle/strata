@@ -9,6 +9,7 @@ import { decodeImageNode } from './core/imageNode';
 import { depthToGray } from './core/depth';
 import { createPipeline, type Assets, type DeferredOptions, type Model } from './core/pipeline';
 import { DEFAULT_RATES, type PriceRates } from './core/price';
+import { isSupplierId, SUPPLIER_IDS } from './core/suppliers';
 import type { ImageAsset, MeshAsset, Project } from './core/project';
 
 setNodeImageDecoder(decodeImageNode);
@@ -63,7 +64,7 @@ export async function loadAssets(project: Project, images: Partial<Record<Slot, 
 }
 
 
-const RATE_KEYS = ['perKg', 'waste', 'machinePerHour', 'setup', 'perPart', 'minimum', 'vat', 'hardware'] as const;
+const RATE_KEYS = ['perKg', 'waste', 'machinePerHour', 'setup', 'perPart', 'minimum', 'vat', 'hardware', 'supplier', 'includeEtch', 'labour'] as const;
 
 function numField(v: unknown, name: string): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`Rate ${name} must be a finite number`);
@@ -101,6 +102,23 @@ export function readRates(text: string): PriceRates {
       if (k !== 'rodPerM' && k !== 'nut' && k !== 'washer') throw new Error(`unknown rate 'hardware.${k}'`);
     }
     for (const k of ['rodPerM', 'nut', 'washer'] as const) if (k in hw) rates.hardware[k] = numField(hw[k], `hardware.${k}`);
+  }
+  if (obj.supplier != null) {
+    if (!isSupplierId(obj.supplier)) throw new Error(`Rate supplier must be one of ${SUPPLIER_IDS.join(', ')}`);
+    rates.supplier = obj.supplier;
+  }
+  if (obj.includeEtch != null) {
+    if (typeof obj.includeEtch !== 'boolean') throw new Error('Rate includeEtch must be true or false');
+    rates.includeEtch = obj.includeEtch;
+  }
+  if (obj.labour != null) {
+    if (typeof obj.labour !== 'object' || Array.isArray(obj.labour)) throw new Error('Rate labour must be an object');
+    const lab = obj.labour as Record<string, unknown>;
+    for (const k of Object.keys(lab)) {
+      if (k !== 'days' && k !== 'dayRate') throw new Error(`unknown rate 'labour.${k}'`);
+    }
+    rates.labour = { ...DEFAULT_RATES.labour!, ...rates.labour };
+    for (const k of ['days', 'dayRate'] as const) if (k in lab) rates.labour[k] = numField(lab[k], `labour.${k}`);
   }
   return rates;
 }
