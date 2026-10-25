@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { defaultDepthSettings, depthFromPhoto, depthToGray, parseDepthResponse, sampleDepthMetres, wakeDepth, type DepthData } from '../src/core/depth';
+import { defaultDepthSettings, depthFromPhoto, depthToGray, parseDepthResponse, sampleDepthMetres, unreachableMessage, wakeDepth, type DepthData } from '../src/core/depth';
 import {
   applyFlatCliPatch,
   autoFlatLevel,
@@ -46,6 +46,14 @@ describe('depth from photo', () => {
 
   it('refuses to run without an endpoint', async () => {
     await expect(depthFromPhoto('x', { url: '' })).rejects.toThrow('not configured');
+  });
+
+  it('explains a blocked or offline service instead of "Failed to fetch"', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    }));
+    await expect(depthFromPhoto('x', { url: 'https://x' })).rejects.toThrow("Couldn't reach the depth service");
+    expect(unreachableMessage('https://strata.cockpit.yoga')).toContain('from strata.cockpit.yoga');
   });
 
   it('wakes the service with one quiet GET every few minutes, ignoring failures', async () => {

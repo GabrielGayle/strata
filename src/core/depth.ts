@@ -170,18 +170,34 @@ export function parseDepthResponse(body: unknown): DepthResult {
   return { png: b.png, width: Number(b.width) || 0, height: Number(b.height) || 0, coldStart: !!b.cold_start, ...(depth ? { depth } : {}) };
 }
 
+/**
+ * What to say when the browser gets no answer at all ("Failed to fetch"). That is
+ * almost always the service refusing this site's address (CORS: it only lists the
+ * addresses Strata is served from), or the service being stopped / offline.
+ */
+export function unreachableMessage(origin?: string): string {
+  const site = origin ? ` from ${origin.replace(/^https?:\/\//, '')}` : '';
+  return `Couldn't reach the depth service${site}. Either it doesn't allow this web address yet, or it is stopped or offline. Try again in a minute; if it keeps failing, the depth service needs redeploying.`;
+}
+
 export async function depthFromPhoto(
   photo: string,
   opts: { mode?: DepthMode; url?: string; signal?: AbortSignal } = {},
 ): Promise<DepthResult> {
   const url = opts.url ?? DEPTH_URL;
   if (!url) throw new Error('Depth service not configured (set VITE_DEPTH_URL)');
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image: photo, mode: opts.mode ?? 'relief', max_side: 512, return_depth: true, depth_side: 512 }),
-    signal: opts.signal,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: photo, mode: opts.mode ?? 'relief', max_side: 512, return_depth: true, depth_side: 512 }),
+      signal: opts.signal,
+    });
+  } catch (e) {
+    if (opts.signal?.aborted) throw e;
+    throw new Error(unreachableMessage(typeof location !== 'undefined' ? location.origin : undefined));
+  }
   let body: unknown = null;
   try {
     body = await res.json();
