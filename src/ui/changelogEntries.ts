@@ -39,6 +39,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-10-25',
+    kind: 'fix',
+    title: 'Depth from photo works on strata.cockpit.yoga',
+    body: 'Depth from photo said only "Failed to fetch" when Strata was opened at strata.cockpit.yoga, because the depth service only answered the old vercel.app address. It now answers the new address too, and if it ever can\'t be reached the message says why and what to try.',
+    where: 'Image tab › Depth from photo…',
+    target: { tab: 'image', path: ['depth-from-photo'] },
+  },
+  {
     date: '2026-10-22',
     kind: 'new',
     title: 'Sign in with cockpit yoga',
