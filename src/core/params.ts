@@ -326,6 +326,7 @@ export const PARAMS: ParamDef[] = [
   choice('stackSource', 'Slice what', 'Slicer', 'strata', [
     { value: 'strata', label: 'Eroded strata block' },
     { value: 'form', label: 'Source form' },
+    { value: 'lace', label: 'Lace plates' },
   ]),
   num('radialCount', 'Radial plates', 'Slicer', 24, 3, 180, { int: true, unit: '', show: (v) => v.sliceMode === 'radial', scaleCount: true }),
   num('radialHub', 'Hub radius', 'Slicer', 30, 0, 500, { show: (v) => v.sliceMode === 'radial' }),

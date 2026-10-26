@@ -60,6 +60,7 @@ import { chokeSpans, crossPedestal, finSlots, finTabSlots, targetFins, wallCheek
 import type { HolderSpec } from './objects';
 import { shelfOutline, shelfPlane, type ShelfCut } from './shelfPlates';
 import { footprintBox } from './overlap';
+import { laceOutline, type LaceLoft } from './lace';
 
 /** Gap left round a candle fin where it passes through a plate (mm). */
 const FIN_FIT = 0.15;
@@ -251,6 +252,8 @@ export interface SliceInput {
   candles?: { x: number; z: number; r: number; bottom: number; ry: number; slack: number; holder: HolderSpec; wall?: WallHold }[];
   /** Shelves across the plates (the plates are already slotted for them by their hidden cutters in `objects`). */
   shelves?: ShelfCut[];
+  /** A stack drawn in lace: with Slice what on Lace plates, plate i is its plate i. */
+  lace?: LaceLoft | null;
 }
 
 const UP: V3 = [0, 1, 0];
@@ -1539,8 +1542,14 @@ export function slice(input: SliceInput): SliceResult {
   const defs = placeDefs(homeDefs, input.moves);
   const t = v.thickness;
   const e = embedOf(v);
-  const useForm = v.stackSource === 'form';
-  if (useForm && !input.source) warnings.push('Source form is missing (import a mesh or pick a shape).');
+  const useLace = v.stackSource === 'lace';
+  // lace plates are drawn, not sliced: nothing below reads the source form or the strata block for them
+  const useForm = v.stackSource === 'form' || useLace;
+  if (v.stackSource === 'form' && !input.source) warnings.push('Source form is missing (import a mesh or pick a shape).');
+  if (useLace && !input.lace) warnings.push('Lace plates: no lace stack yet. In lace, Export › loft for strata, then Import › Lace plates here.');
+  const laceMain = homeDefs.filter((d) => d.family === 'P' || d.family === 'R').length;
+  if (useLace && input.lace && laceMain !== input.lace.plates.length)
+    warnings.push(`Lace plates: the lace stack has ${input.lace.plates.length} plates but there are ${laceMain} here; ${laceMain > input.lace.plates.length ? 'plates past the stack are left empty' : 'the top of the stack is left out'}.`);
   if (v.sliceMode !== 'radial') {
     const run = (v.plateCount - 1) * v.pitch + t;
     const { stackLen } = stackFrame(v);
@@ -1565,7 +1574,7 @@ export function slice(input: SliceInput): SliceResult {
 
   // flat stack: one sampled surface (strata top, stamped by the image) serves every layer
   let flat: FlatGrid | null = null;
-  if (isFlat && (useForm ? input.source : hf)) {
+  if (isFlat && !useLace && (useForm ? input.source : hf)) {
     let formTop = 0;
     if (useForm && input.source) {
       const pos = input.source.pos;
@@ -1578,6 +1587,7 @@ export function slice(input: SliceInput): SliceResult {
     if (defs.length * t < top - t) warnings.push(`Flat stack: ${defs.length} layers × ${t} mm only reach ${(defs.length * t).toFixed(0)} mm of the ${top.toFixed(0)} mm block; raise Plate count to keep the top.`);
   }
   const outlines = homeDefs.map((d, di) => {
+    if (useLace) return input.lace && (d.family === 'P' || d.family === 'R') ? laceOutline(input.lace, d.index, { flat: isFlat, embed: e, inset: v.tabInset }) : [];
     if (useForm) return input.source ? formOutline(d, input.source, v) : [];
     const tune = tuning?.[di];
     // a free bar's cut length includes nothing below the concrete line; the

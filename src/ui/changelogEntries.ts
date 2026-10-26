@@ -39,6 +39,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-10-26',
+    kind: 'new',
+    title: 'Lace plates: a stack drawn in lace as the plates',
+    body: 'Import a stack drawn in lace (its .lace-loft.json, from lace’s Export › loft for strata) and each lace plate becomes a plate here, exactly as drawn, spaced by the pitch and checked and cut like any other. On a lace plate, Open in lace takes you to that plate in lace to change its drawing.',
+    where: 'Toolbar › Import › Lace plates',
+    target: { path: ['menu-import', 'import-lace'] },
+  },
+  {
     date: '2026-10-25',
     kind: 'fix',
     title: 'Depth from photo works on strata.cockpit.yoga',

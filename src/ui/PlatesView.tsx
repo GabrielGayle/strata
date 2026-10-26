@@ -6,6 +6,7 @@ import { fitShape, download, partDxf, shapeSvg } from '../core/exporters';
 import { countArcs } from '../core/arcs';
 import type { Part } from '../core/slicer';
 import { embedOf } from '../core/slicer';
+import { laceLink } from '../core/lace';
 import { asCut } from './TuningTable';
 import { playModes, playStrike } from './audio';
 import { heardPartials } from './TuningTable';
@@ -28,6 +29,8 @@ function Detail({ part }: { part: Part }) {
   const plateIdx = model.sliced.plates.findIndex((p) => p.def.key === part.plateKey);
   const plate = model.sliced.plates[plateIdx];
   const tune = model.sliced.tuning?.[plateIdx] ?? null;
+  const lace = useStore((s) => s.project.lace);
+  const laceHref = lace && v.stackSource === 'lace' && (plate?.def.family === 'P' || plate?.def.family === 'R') ? laceLink(lace, plate.def.index) : '';
   const issues = model.issues.filter((i) => i.partId === part.id || (i.plateKey === part.plateKey && i.type === 'collision'));
   const fitted = useMemo(() => (showFit || showKerf ? fitShape(part.shape, v) : null), [part, v.kerf, v.arcTolerance, showFit, showKerf]); // eslint-disable-line react-hooks/exhaustive-deps
   const counts = useMemo(() => {
@@ -113,6 +116,11 @@ function Detail({ part }: { part: Part }) {
           <button className={`btn sm ${showKerf ? 'on' : ''}`} onClick={() => setShowKerf(!showKerf)}>
             Kerf path
           </button>
+          {laceHref && (
+            <a className="btn sm" data-hl="open-in-lace" href={laceHref} target="_blank" rel="noopener" title={`Open ${lace!.plates[plate!.def.index].name} in lace, to change its drawing`}>
+              Open in lace
+            </a>
+          )}
         </div>
         <div className="overlay tr info">
           <span className="legend">

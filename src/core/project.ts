@@ -1,4 +1,5 @@
 // The project file: parameters + pour plan + source assets, as one readable JSON.
+import { readLaceLoft, type LaceLoft } from './lace';
 import { defaultRaw, PARAM_MAP, type RawValue } from './params';
 import type { PourLayer } from './mould';
 import type { PatternSpec } from './pattern';
@@ -110,6 +111,8 @@ export interface Project {
   nest?: SavedNest;
   /** The cloud's hero render of the finished piece; in the build pack while the design still matches its fingerprint. */
   hero?: SavedHero;
+  /** A stack drawn in lace, used as the plates (Slicer › Slice what › Lace plates). */
+  lace?: LaceLoft;
 }
 
 export const DEFAULT_POUR: PourLayer[] = [
@@ -369,6 +372,14 @@ function readImages(raw: unknown): Project['images'] {
   return out;
 }
 
+function cleanLace(raw: unknown): LaceLoft | undefined {
+  try {
+    return readLaceLoft(raw) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function deserialize(text: string): Project {
   const raw = JSON.parse(text);
   if (!raw || raw.format !== 'strata-project') throw new Error('Not a Strata project file');
@@ -398,5 +409,6 @@ export function deserialize(text: string): Project {
     savedView: cleanEarthView(raw.savedView),
     nest: cleanSavedNest(raw.nest),
     hero: cleanSavedHero(raw.hero),
+    lace: cleanLace(raw.lace),
   };
 }
