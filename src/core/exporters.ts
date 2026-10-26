@@ -19,7 +19,7 @@ import { cutListCsv, hardwareCsv } from './bom';
 import { candlesCsv, candleShopping } from './candles';
 import { masterText } from './candleMaster';
 import { stackRodsCsv } from './stackRods';
-import { DEFAULT_RATES, estimateMix, priceText, withHardware, type PriceRates } from './price';
+import { DEFAULT_RATES, fullEstimate, priceText, type PriceRates } from './price';
 import { baseGeometry } from './base';
 import { serialize, type Project } from './project';
 import { strokeTextCentered } from './strokefont';
@@ -518,7 +518,7 @@ export function buildZip(model: Model, project: Project, rates: PriceRates = DEF
   // a steel base plate has nothing to pour
   if (!steelBaseSpec(v)) files['pour-plan.txt'] = strToU8(pourPlanText(model));
   if (model.bom.partCount) {
-    const estimate = withHardware(estimateMix(model.bom, v.thickness, rates), model.bom.hardware, rates);
+    const estimate = fullEstimate(model.bom, v.thickness, rates);
     files['price-estimate.txt'] = strToU8(priceText(estimate, rates));
     files['price-estimate.json'] = strToU8(JSON.stringify(estimate, null, 2) + '\n');
   }

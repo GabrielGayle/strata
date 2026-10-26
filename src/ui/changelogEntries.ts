@@ -64,6 +64,14 @@ export const CHANGELOG: ChangeEntry[] = [
   },
   {
     date: '2026-10-20',
+    kind: 'new',
+    title: 'Pick the laser supplier, add labour, leave etch out',
+    body: 'The price estimate now prices for Chop Chop, Unicorn Sheet Metal or Cut It Out, each with its own minimum and VAT, and warns when the plates are a thickness the supplier can’t cut (Unicorn has no 0.5 mm). Unicorn and Cut It Out part prices are estimates on the Chop Chop fit and say so. Set labour days and a day rate to see an all-in figure. Leaving etch out is remembered and carries into the fabrication ZIP and build pack.',
+    where: 'Right column › Price estimate',
+    target: { path: ['chop-chop-price', 'price-supplier'] },
+  },
+  {
+    date: '2026-10-20',
     kind: 'fix',
     title: 'Wall pieces hang face out in phone AR',
     body: 'On the phone viewer, AR put a wall piece on the wall lying face down. It now hangs the way it does in the 3D view: upright, its back against the wall and its face towards you.',

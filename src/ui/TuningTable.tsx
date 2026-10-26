@@ -7,6 +7,7 @@ import type { SoundingMode } from '../core/pipeline';
 import { wordsOnsets } from '../core/chantWords';
 import { speechPlateCount, speechPlatesPerSyllable, speechHasFundamental } from '../core/speechTuning';
 import { estimateMix } from '../core/price';
+import { supplierOf } from '../core/suppliers';
 import { loadRates } from './PriceEstimate';
 import { playChant, playCluster, playModes, playStrike } from './audio';
 
@@ -59,7 +60,7 @@ export default function TuningTable() {
       {speechMode && (
         <div className="perr" style={{ color: 'var(--muted)' }}>
           Plates: <strong>{rows.length}</strong>
-          {speechPlates !== rows.length ? ` (layout expects ${speechPlates} — change the phrase or formant count)` : ''} · Chop Chop estimate: <strong>£{priceEst.total.toFixed(0)}</strong> incl. VAT (not a quote).
+          {speechPlates !== rows.length ? ` (layout expects ${speechPlates} — change the phrase or formant count)` : ''} · {supplierOf(priceEst.supplier).name} estimate: <strong>£{priceEst.total.toFixed(0)}</strong> {priceEst.vat > 0 ? 'incl. VAT' : 'no VAT'} (not a quote).
         </div>
       )}
       <table className="tbl" style={{ fontSize: 11 }}>

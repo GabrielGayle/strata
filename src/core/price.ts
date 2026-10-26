@@ -1,4 +1,7 @@
-// Laser cutting price estimate for Chop Chop Laser (chopchoplaser.co.uk).
+// Laser cutting price estimate. Chop Chop Laser (chopchoplaser.co.uk) is the
+// default supplier; Unicorn and Cut It Out are priced on the same fit as a proxy
+// with their own minimum, VAT and gauges (suppliers.ts). Labour can be added
+// on top as days × a day rate.
 //
 // The default is the per-part fit in chopchopRates.ts (calibrated 16 Oct 2026).
 // A rates file can still replace that fit with the older shop model: pass a
@@ -8,6 +11,7 @@
 import type { Bom, CutRow, MaterialGroup } from './bom';
 import type { HardwareRow } from './brace';
 import { CHOPCHOP_CALIBRATED, CHOPCHOP_MINIMUM, chopRates, chopUnit, orderSizeFactor, type ChopRate } from './chopchopRates';
+import { supplierCutWarnings, supplierOf, supplierPriceNote, type SupplierId, type SupplierProfile } from './suppliers';
 
 export const CHOPCHOP_URL = 'https://www.chopchoplaser.co.uk/';
 export const CHOPCHOP_QUOTE_URL = 'https://qm.tempustools.com/store/3bf51dae-32c7-4592-9ec5-17fea51a6558';
@@ -28,7 +32,16 @@ export interface PriceRates {
   vat: number; // fraction
   /** Bracing hardware bought in (not from Chop Chop): £ per metre of threaded bar, £ per nut, £ per washer. */
   hardware: { rodPerM: number; nut: number; washer: number };
+  /** Who cuts the plates. Default Chop Chop; `minimum` applies to Chop Chop only, the others use their own. */
+  supplier?: SupplierId;
+  /** Price ETCH-layer lines as cut. Default true; false leaves etch out of the quote. */
+  includeEtch?: boolean;
+  /** Making, finishing and packing time: days × £ per day, no VAT. 0 days leaves it out. */
+  labour?: { days: number; dayRate: number };
 }
+
+/** Planning day rate: about 2.5 days ≈ £750 for a 1200 × 800 mm wall relief (est.). */
+export const DEFAULT_DAY_RATE = 300;
 
 export const DEFAULT_RATES: PriceRates = {
   perKg: { steel: 1.4, corten: 2.6, aluminium: 6.5 },
@@ -40,7 +53,16 @@ export const DEFAULT_RATES: PriceRates = {
   vat: 0.2,
   // zinc-plated M6–M8 from a fastener supplier, small-pack prices
   hardware: { rodPerM: 3, nut: 0.08, washer: 0.05 },
+  supplier: 'chopchop',
+  includeEtch: true,
+  labour: { days: 0, dayRate: DEFAULT_DAY_RATE },
 };
+
+/** Minimum (ex VAT) and VAT rate the chosen supplier charges. */
+function supplierTerms(rates: PriceRates): { s: SupplierProfile; minimum: number; vat: number } {
+  const s = supplierOf(rates.supplier);
+  return { s, minimum: s.id === 'chopchop' ? rates.minimum : s.minimum, vat: s.chargesVat ? rates.vat : 0 };
+}
 
 /** True when `rates` replaces the fitted Chop Chop prices with the shop model. */
 export function usesShopRates(rates: PriceRates): boolean {
@@ -105,10 +127,18 @@ export interface PriceEstimate {
   etchM: number;
   /** Multiplier on the qty-1 parts total. 1 for the shop model and for a tiny order. */
   orderFactor: number;
+  /** Who the estimate is for. */
+  supplier: SupplierId;
+  /** VAT rate applied (0 for a supplier that doesn't charge VAT). */
+  vatRate: number;
+  /** Labour (days × day rate), outside the supplier's total and VAT. */
+  labour?: { days: number; dayRate: number; cost: number };
+  /** Supplier total plus labour. Equals `total` when there is no labour. */
+  allIn: number;
 }
 
 export interface EstimateOpts {
-  /** Chop Chop prices ETCH-layer lines as cut. Default true. */
+  /** Price ETCH-layer lines as cut. Default `rates.includeEtch`, else true. */
   includeEtch?: boolean;
   /**
    * True area (mm²) of the whole order, when `bom` is only one metal of a mix.
@@ -117,6 +147,8 @@ export interface EstimateOpts {
   orderAreaMm2?: number;
   /** Map gift sizing discount 0..1 (ticket T27). */
   mapGiftPriceFactor?: number;
+  /** Leave the order minimum off (estimateMix applies it to the lot). */
+  noMinimum?: boolean;
 }
 
 const METAL_LABEL: Record<string, string> = { steel: 'Mild steel (CR4)', corten: 'Corten', aluminium: 'Aluminium' };
@@ -131,7 +163,8 @@ function machineOf(bom: Bom, material: string, thickness: number, rates: PriceRa
   return { minutes: (cutMin + pierceMin) * 1.1, sheetKg };
 }
 
-function rangeAndBed(material: string, thickness: number, bom: Bom): string[] {
+function rangeAndBed(material: string, thickness: number, bom: Bom, s: SupplierProfile): string[] {
+  if (s.id !== 'chopchop') return supplierCutWarnings(s, material, thickness);
   const warnings: string[] = [];
   const range = CHOPCHOP_RANGE[family(material)];
   if (thickness < range[0] || thickness > range[1])
@@ -168,14 +201,15 @@ interface Priced {
   orderFactor: number;
 }
 
-function applyMinimum(base: Priced, rates: PriceRates): PriceEstimate {
-  const floor = base.partCount > 0 ? rates.minimum : 0;
+function applyMinimum(base: Priced, rates: PriceRates, noMinimum = false): PriceEstimate {
+  const { s, minimum, vat: vatRate } = supplierTerms(rates);
+  const floor = base.partCount > 0 && !noMinimum ? minimum : 0;
   const charge = Math.max(0, floor - base.subtotal);
   const lines = charge > 1e-9
-    ? [...base.lines, { label: 'Minimum order charge', detail: `Parts total £${base.subtotal.toFixed(2)}, order minimum £${floor.toFixed(2)} ex VAT`, cost: charge }]
+    ? [...base.lines, { label: 'Minimum order charge', detail: `Parts total £${base.subtotal.toFixed(2)}, ${s.name} minimum £${floor.toFixed(2)} ex VAT`, cost: charge }]
     : base.lines;
   const net = base.subtotal + charge;
-  const vat = net * rates.vat;
+  const vat = net * vatRate;
   return {
     lines,
     subtotal: base.subtotal,
@@ -188,15 +222,21 @@ function applyMinimum(base: Priced, rates: PriceRates): PriceEstimate {
     fitted: base.fitted,
     etchM: base.etchM,
     orderFactor: base.orderFactor,
+    supplier: s.id,
+    vatRate,
+    allIn: net + vat,
   };
 }
+
+const etchOn = (rates: PriceRates, opts: EstimateOpts) => opts.includeEtch ?? rates.includeEtch ?? true;
 
 function rowCutMm(row: CutRow, includeEtch: boolean): number {
   return row.cut + (includeEtch ? (row.etch ?? 0) : 0);
 }
 
 function estimateFitted(bom: Bom, material: string, thickness: number, rates: PriceRates, opts: EstimateOpts): PriceEstimate {
-  const includeEtch = opts.includeEtch !== false;
+  const includeEtch = etchOn(rates, opts);
+  const s = supplierOf(rates.supplier);
   const rate = chopRates(material, thickness);
   const rows = bom.rows ?? [];
   const lines: PriceLine[] = rows.map((row) => {
@@ -214,20 +254,21 @@ function estimateFitted(bom: Bom, material: string, thickness: number, rates: Pr
   const orderFactor = orderSizeFactor(areaMm2);
   if (orderFactor !== 1) for (const line of lines) line.cost *= orderFactor;
   const etchMm = rows.reduce((a, r) => a + (r.etch ?? 0), 0);
-  const warnings = [...rangeAndBed(material, thickness, bom)];
-  if (rate.corten) warnings.unshift('Corten isn’t offered by Chop Chop. This estimate uses mild steel rates as a floor.');
+  const warnings = [...rangeAndBed(material, thickness, bom, s)];
+  if (rate.corten) warnings.unshift(s.id === 'chopchop' ? 'Corten isn’t offered by Chop Chop. This estimate uses mild steel rates as a floor.' : 'Corten is priced on mild steel rates as a floor.');
   const estimated = estimatedWarning(material, thickness, rate);
   if (estimated) warnings.push(estimated);
   if (etchMm > 0 && includeEtch) warnings.push(`Etch adds ${(etchMm / 1000).toFixed(2)} m and is priced at the cut rate.`);
-  if (etchMm > 0 && !includeEtch) warnings.push(`Etch (${(etchMm / 1000).toFixed(2)} m) is left out of this estimate. Chop Chop prices etch at the cut rate.`);
+  if (etchMm > 0 && !includeEtch) warnings.push(`Etch (${(etchMm / 1000).toFixed(2)} m) is left out of this estimate. ${s.id === 'chopchop' ? 'Chop Chop prices' : 'Chop Chop, the proxy, prices'} etch at the cut rate.`);
   const { minutes, sheetKg } = machineOf(bom, material, thickness, rates);
   return applyMinimum(
     { lines, subtotal: lines.reduce((a, l) => a + l.cost, 0), minutes, sheetKg, warnings, fitted: true, etchM: includeEtch ? etchMm / 1000 : 0, partCount: rows.length || bom.partCount, orderFactor },
     rates,
+    opts.noMinimum,
   );
 }
 
-function estimateShop(bom: Bom, material: string, thickness: number, rates: PriceRates): PriceEstimate {
+function estimateShop(bom: Bom, material: string, thickness: number, rates: PriceRates, opts: EstimateOpts): PriceEstimate {
   const { minutes, sheetKg } = machineOf(bom, material, thickness, rates);
   const perKg = rates.perKg[material] ?? rates.perKg.steel ?? 0;
   const lines: PriceLine[] = [
@@ -236,17 +277,19 @@ function estimateShop(bom: Bom, material: string, thickness: number, rates: Pric
     { label: 'Setup', detail: 'Programming and loading', cost: rates.setup },
     { label: 'Handling', detail: `${bom.partCount} parts at £${rates.perPart.toFixed(2)}`, cost: bom.partCount * rates.perPart },
   ];
+  const s = supplierOf(rates.supplier);
   const warnings: string[] = [];
-  if (material === 'corten') warnings.push('Corten isn’t listed on Chop Chop’s site (they list mild steel). Ask whether they stock it or will cut supplied sheet.');
-  warnings.push(...rangeAndBed(material, thickness, bom));
+  if (material === 'corten' && s.id === 'chopchop') warnings.push('Corten isn’t listed on Chop Chop’s site (they list mild steel). Ask whether they stock it or will cut supplied sheet.');
+  warnings.push(...rangeAndBed(material, thickness, bom, s));
   return applyMinimum(
     { lines, subtotal: lines.reduce((a, l) => a + l.cost, 0), minutes, sheetKg, warnings, fitted: false, etchM: 0, partCount: bom.partCount, orderFactor: 1 },
     rates,
+    opts.noMinimum,
   );
 }
 
 export function estimatePrice(bom: Bom, material: string, thickness: number, rates: PriceRates = DEFAULT_RATES, opts: EstimateOpts = {}): PriceEstimate {
-  if (usesShopRates(rates)) return estimateShop(bom, material, thickness, rates);
+  if (usesShopRates(rates)) return estimateShop(bom, material, thickness, rates, opts);
   return estimateFitted(bom, material, thickness, rates, opts);
 }
 
@@ -264,6 +307,7 @@ function applyMapGiftFactor(est: PriceEstimate, factor: number): PriceEstimate {
     net: est.net * factor,
     vat: est.vat * factor,
     total: est.total * factor,
+    allIn: est.allIn - est.total + est.total * factor,
     hardware: est.hardware != null ? est.hardware * factor : est.hardware,
   };
 }
@@ -274,20 +318,30 @@ export function estimateMix(bom: Bom, thickness: number, rates: PriceRates = DEF
   const main = bom.byMaterial?.[0]?.material ?? 'steel';
   if (groups.length <= 1) return applyMapGiftFactor(estimatePrice(bom, groups[0]?.material ?? main, groups[0]?.thickness ?? thickness, rates, opts), mapFactor);
   const orderAreaMm2 = opts.orderAreaMm2 ?? groups.reduce((a, g) => a + g.rows.reduce((b, r) => b + r.area, 0), 0);
+  const { s, minimum } = supplierTerms(rates);
+  const perGauge = s.minimumPer === 'gauge';
+  // each metal is priced with no minimum; the minimum goes on once for the lot, or once per gauge
   const parts = groups.map((g) => {
     const sub = { ...bom, rows: g.rows, partCount: g.partCount, cutLength: g.cutLength, pierces: g.pierces };
-    return { g, est: estimatePrice(sub, g.material, g.thickness ?? thickness, { ...rates, minimum: 0 }, { ...opts, orderAreaMm2 }) };
+    return { g, est: estimatePrice(sub, g.material, g.thickness ?? thickness, rates, { ...opts, orderAreaMm2, noMinimum: true }) };
   });
   const groupName = (g: MaterialGroup) => `${metalName(g.material)}${g.thickness != null ? ` ${g.thickness} mm` : ''}`;
   const lines: PriceLine[] = parts.flatMap(({ g, est }) =>
     est.lines.map((l) => ({ ...l, label: est.fitted ? `${groupName(g)} ${l.label}` : `${groupName(g)} ${l.label.toLowerCase()}` })),
   );
+  if (perGauge)
+    for (const { g, est } of parts) {
+      const charge = Math.max(0, minimum - est.subtotal);
+      if (charge > 1e-9)
+        lines.push({ label: `Minimum charge, ${groupName(g)}`, detail: `Parts £${est.subtotal.toFixed(2)}, ${s.name} minimum £${minimum.toFixed(2)} ex VAT per material and thickness`, cost: charge });
+    }
+  const gaugeCharges = perGauge ? parts.reduce((a, { est }) => a + Math.max(0, minimum - est.subtotal), 0) : 0;
   const warnings = [...new Set(parts.flatMap((p) => p.est.warnings))];
   return applyMapGiftFactor(
     applyMinimum(
       {
         lines,
-        subtotal: parts.reduce((a, p) => a + p.est.subtotal, 0),
+        subtotal: parts.reduce((a, p) => a + p.est.subtotal, 0) + gaugeCharges,
         minutes: parts.reduce((a, p) => a + p.est.minutes, 0),
         sheetKg: parts.reduce((a, p) => a + p.est.sheetKg, 0),
         warnings,
@@ -297,6 +351,7 @@ export function estimateMix(bom: Bom, thickness: number, rates: PriceRates = DEF
         orderFactor: parts[0]?.est.orderFactor ?? 1,
       },
       rates,
+      perGauge || opts.noMinimum,
     ),
     mapFactor,
   );
@@ -324,8 +379,23 @@ export function withHardware(est: PriceEstimate, rows: HardwareRow[], rates: Pri
   if (!add.length) return est;
   const extra = add.reduce((a, l) => a + l.cost, 0);
   const net = est.net + extra;
-  const vat = net * rates.vat;
-  return { ...est, lines: [...est.lines, ...add], hardware: extra, net, vat, total: net + vat };
+  // the fastener supplier charges VAT even when the laser supplier doesn't
+  const vat = est.vat + extra * rates.vat;
+  return { ...est, lines: [...est.lines, ...add], hardware: extra, net, vat, total: net + vat, allIn: est.allIn - est.total + net + vat };
+}
+
+/** Add labour (days × day rate, no VAT) on top of the supplier total. */
+export function withLabour(est: PriceEstimate, rates: PriceRates = DEFAULT_RATES): PriceEstimate {
+  const days = rates.labour?.days ?? 0;
+  const dayRate = rates.labour?.dayRate ?? DEFAULT_DAY_RATE;
+  if (!(days > 0) || !(dayRate > 0)) return est;
+  const cost = days * dayRate;
+  return { ...est, labour: { days, dayRate, cost }, allIn: est.total + cost };
+}
+
+/** Laser parts, bracing hardware and labour: the estimate every panel and export shows. */
+export function fullEstimate(bom: Bom, thickness: number, rates: PriceRates = DEFAULT_RATES, opts: EstimateOpts = {}): PriceEstimate {
+  return withLabour(withHardware(estimateMix(bom, thickness, rates, opts), bom.hardware, rates), rates);
 }
 
 const gbp = (x: number) => `£${x.toFixed(2)}`;
@@ -335,14 +405,19 @@ export function priceText(est: PriceEstimate, rates: PriceRates = DEFAULT_RATES)
   const lines = ['Strata price estimate (not a quote)', ''];
   for (const l of est.lines) lines.push(`${l.label.padEnd(28)} ${gbp(l.cost).padStart(10)}   ${l.detail}`);
   lines.push(`${'Ex VAT'.padEnd(28)} ${gbp(est.net).padStart(10)}`);
-  lines.push(`${`VAT ${Math.round(rates.vat * 100)}%`.padEnd(28)} ${gbp(est.vat).padStart(10)}`);
+  const s = supplierOf(est.supplier);
+  lines.push(`${(est.vat > 0 ? `VAT ${Math.round(rates.vat * 100)}%` : 'No VAT').padEnd(28)} ${gbp(est.vat).padStart(10)}`);
   lines.push(`${'Total'.padEnd(28)} ${gbp(est.total).padStart(10)}`);
+  if (est.labour) {
+    lines.push(`${'Labour (est.)'.padEnd(28)} ${gbp(est.labour.cost).padStart(10)}   ${est.labour.days} days at £${est.labour.dayRate.toFixed(0)}/day, no VAT`);
+    lines.push(`${'All-in (est.)'.padEnd(28)} ${gbp(est.allIn).padStart(10)}`);
+  }
   if (est.warnings.length) lines.push('', ...est.warnings.map((w) => `NOTE: ${w}`));
-  lines.push('');
+  lines.push('', `Supplier: ${s.name}.${s.id === 'chopchop' ? '' : ` ${supplierPriceNote(s)}`}`);
   if (est.fitted) {
     const off = (1 - est.orderFactor) * 100;
     lines.push(
-      `Fitted to Chop Chop Laser quotes on ${CHOPCHOP_CALIBRATED}: true part area, cut length (etch included) and pierces.`,
+      `Fitted to Chop Chop Laser quotes on ${CHOPCHOP_CALIBRATED}: true part area, cut length (etch ${etchOn(rates, {}) ? 'included' : 'left out'}) and pierces.`,
       off >= 0.05
         ? `Order-size discount ${off.toFixed(1)}% off the qty-1 parts total, from the order’s true part area.`
         : 'Order-size discount is negligible at this part area.',
@@ -351,6 +426,7 @@ export function priceText(est: PriceEstimate, rates: PriceRates = DEFAULT_RATES)
   } else {
     lines.push('Laser cutting uses the shop rates from the rates file, in place of the fitted Chop Chop prices.', 'Delivery is not included.');
   }
-  lines.push(`For a real price, upload laser/parts to their instant quote: ${CHOPCHOP_QUOTE_URL}`);
+  if (s.quoteUrl) lines.push(`For a real price, upload laser/parts to their instant quote: ${s.quoteUrl}`);
+  else lines.push(`For a real price, send laser/parts to ${s.name} for a quote.`);
   return lines.join('\n') + '\n';
 }
