@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { LaceLoft } from '../core/lace';
 import { isLiteral } from '../core/expr';
 import { PARAMS, PARAM_MAP, type RawValue } from '../core/params';
 import type { SavedNest } from '../core/nest';
@@ -129,6 +130,8 @@ interface Store {
   /** Keep the cloud's tight nest in the project (or drop it, for the local nest). */
   setNest: (nest: SavedNest | undefined) => void;
   setHero: (hero: SavedHero | undefined) => void;
+  /** Use a stack drawn in lace as the plates: Slice what › Lace plates, its plate count and thickness (one undo step). */
+  setLace: (lace: LaceLoft) => void;
   /** Shadow pictures and their times; `key` merges rapid edits (a time being typed) into one undo step. */
   setShadow: (shadow: ShadowSpec | undefined, key?: string) => void;
   /** Place one plate by hand (null puts it back where it was designed). */
@@ -382,6 +385,11 @@ export const useStore = create<Store>((set, get) => {
     setPour: (pour) => commit({ ...get().project, pour }, 'pour'),
     setNest: (nest) => commit({ ...get().project, nest }, `nest:${performance.now()}`),
     setHero: (hero) => commit({ ...get().project, hero }, `hero:${performance.now()}`),
+    setLace: (lace) => {
+      const p = get().project;
+      const patch: Record<string, RawValue> = { platesOn: true, stackSource: 'lace', plateCount: String(lace.plates.length), radialCount: String(lace.plates.length), thickness: String(lace.thickness) };
+      commitParams({ ...p, lace, params: { ...p.params, ...patch }, userParamOverrides: markUserParamOverrides(p.userParamOverrides, Object.keys(patch)) }, `lace:${performance.now()}`);
+    },
     setShadow: (shadow, key = 'shadow') => commit({ ...get().project, shadow: shadow?.frames.length ? shadow : undefined }, key),
     movePart: (key, move) => {
       const p = get().project;

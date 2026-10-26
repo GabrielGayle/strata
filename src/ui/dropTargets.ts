@@ -60,7 +60,7 @@ export function dropTargets(kinds: Set<DropKind>, shadowOpen: boolean): DropTarg
       { id: 'ins', kind: 'mesh', label: 'Insert', hint: 'STL / OBJ as the cavity cutter' },
       { id: 'src', kind: 'mesh', label: 'Source form', hint: 'STL / OBJ to slice into plates' },
     );
-  if (kinds.has('project')) out.push({ id: 'open', kind: 'project', label: 'Open project', hint: '.strata.json or fabrication zip, replaces the working copy' });
+  if (kinds.has('project')) out.push({ id: 'open', kind: 'project', label: 'Open project', hint: '.strata.json or fabrication zip, replaces the working copy; a .lace-loft.json becomes the plates' });
   if (kinds.has('video')) out.push({ id: 'video', kind: 'video', label: 'Shadow video', hint: 'pull stills from a clip for the shadow kitchen' });
   return out;
 }

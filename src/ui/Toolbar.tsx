@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { readLaceLoft } from '../core/lace';
 import { useStore } from '../state/store';
 import { PRESETS, deserialize, serialize, type Project } from '../core/project';
 import { MAP_PRESET_CATALOG, mapPresetSpecKeepingUser } from '../core/mapPresets';
@@ -94,6 +95,21 @@ export async function importMeshInto(slot: 'ins' | 'src', dropped?: File) {
     st.setAsset('mesh', slot, asset);
     st.setParams(slot === 'ins' ? { insShape: 'mesh' } : { srcShape: 'mesh', stackSource: 'form' }, 'import');
     st.toast(`Imported ${file.name}: ${(bb.max.x - bb.min.x).toFixed(0)} × ${(bb.max.y - bb.min.y).toFixed(0)} × ${(bb.max.z - bb.min.z).toFixed(0)} mm`);
+  } catch (e) {
+    st.toast(`Could not read ${file.name}: ${(e as Error).message}`);
+  }
+}
+
+/** Use a stack drawn in lace (its `.lace-loft.json`) as the plates. */
+export async function importLace(dropped?: File) {
+  const st = useStore.getState();
+  const file = dropped ?? (await pickFile('.json,application/json'));
+  if (!file) return;
+  try {
+    const loft = readLaceLoft(JSON.parse(await file.text()));
+    if (!loft) return st.toast(`${file.name} is not a lace loft: in lace, use Export › loft for strata`);
+    st.setLace(loft);
+    st.toast(`Lace plates: ${loft.plates.length} plates from ${loft.name}, ${loft.thickness} mm`);
   } catch (e) {
     st.toast(`Could not read ${file.name}: ${(e as Error).message}`);
   }
@@ -714,6 +730,11 @@ export default function Toolbar() {
               <button className="item" onClick={() => (close(), importMeshInto('src'))}>
                 <span>As source form (to slice)</span>
                 <small>re-slice a design</small>
+              </button>
+              <div className="head">From lace</div>
+              <button className="item" data-hl="import-lace" onClick={() => (close(), importLace())}>
+                <span>Lace plates</span>
+                <small>.lace-loft.json: each plate as drawn</small>
               </button>
             </>
           )}

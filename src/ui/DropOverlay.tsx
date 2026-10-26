@@ -7,7 +7,7 @@ import { activeLayout, useWorkspaces } from '../state/workspaces';
 import { visibleTabs } from '../core/workspace';
 import { dragKinds, dropTargets, fileKind, type DropKind, type DropTarget } from './dropTargets';
 import { readImageFile, SURFACE_INFO } from './surfaces';
-import { importMeshInto, openProjectFile } from './Toolbar';
+import { importLace, importMeshInto, openProjectFile } from './Toolbar';
 import { sendToShadow } from './dropInbox';
 
 const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
@@ -46,6 +46,7 @@ async function deliver(t: DropTarget, all: File[]) {
     case 'src':
       return importMeshInto(t.id, f);
     case 'open':
+      if (/\.lace-loft\.json$/i.test(f.name)) return importLace(f);
       if (window.confirm(`Open ${f.name}? It replaces the working copy (Undo brings it back).`)) return openProjectFile(f, { offerKeep: true });
   }
 }

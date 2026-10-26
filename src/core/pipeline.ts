@@ -369,17 +369,17 @@ export function createFrontPipeline(options: FrontOptions = {}) {
     // wall pieces: candles and cards come to rest on the plates as they are without them
     const wallBare =
       wall && (candles.length || laid.cards.length)
-        ? stage('Plates to stand on', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, project.objects, origin, !!mapTop], () => {
+        ? stage('Plates to stand on', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, project.objects, origin, !!mapTop, project.lace], () => {
             const b = buildObjects((project.objects ?? []).map((o) => toWorld(o, origin)));
-            return slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: mapTop ? null : topImg, topMask: mapTop ? null : topMask, moves: project.moves, materialFor, objects: b.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut })), mapTerrain: !!mapTop });
+            return slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: mapTop ? null : topImg, topMask: mapTop ? null : topMask, moves: project.moves, materialFor, objects: b.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut })), mapTerrain: !!mapTop, lace: project.lace ?? null });
           })
         : null;
     const others = wallBare && origin.room ? stage('Cards on the wall', [others0, wallBare], () => restOnWall(others0, wallBare.parts, origin.room!)) : others0;
     // candles sitting into the plates need the plates as they are without them first
     const bare = (onSurface || onPlates) && !wall
-      ? stage('Plate surface', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, others, !!mapTop], () => {
+      ? stage('Plate surface', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, others, !!mapTop, project.lace], () => {
           const b = buildObjects(others);
-          return slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: mapTop ? null : topImg, topMask: mapTop ? null : topMask, moves: project.moves, materialFor, objects: b.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut })), mapTerrain: !!mapTop });
+          return slice({ v, hf, source: source?.mesh ?? null, insert: insert?.mesh ?? null, front: frontImg, top: mapTop ? null : topImg, topMask: mapTop ? null : topMask, moves: project.moves, materialFor, objects: b.map((o) => ({ mesh: o.mesh, clearance: o.object.clearance, seat: o.object.seat, shoulder: o.object.shoulder, noCut: o.object.noCut })), mapTerrain: !!mapTop, lace: project.lace ?? null });
         })
       : null;
     const snap = project.candles?.snap ?? 'off';
@@ -421,7 +421,7 @@ export function createFrontPipeline(options: FrontOptions = {}) {
           ]
         : [],
     );
-    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, sight, !!mapTop, mapParams.forced, shelves], () =>
+    const sliced = stage('Slice plates', [...pick(v, SLICE_KEYS), hf, insert, source, frontImg, topImg, topMask, project.moves, tuningActive(v) ? mats : '', objects, sight, !!mapTop, mapParams.forced, shelves, project.lace], () =>
       share(
         cache.get('Slice plates')?.value as SliceResult | undefined,
         slice({
@@ -441,6 +441,7 @@ export function createFrontPipeline(options: FrontOptions = {}) {
           choke,
           mapTerrain: !!mapTop,
           mapAxisForced: mapParams.forced,
+          lace: project.lace ?? null,
         }),
       ),
     );
