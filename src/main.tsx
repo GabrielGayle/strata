@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import '98.css/dist/98.css';
+import './ds-clean.css';
 import './styles.css';
-import './win98.css';
+import './ds-chrome.css';
 import './form-chrome.css';
 import './busy98.css';
 import App from './ui/App';

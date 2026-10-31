@@ -94,8 +94,8 @@ Vite dev and preview serve `/api/ea-proxy` and `/api/overpass` so browser map bu
 
 `npm run e2e:smoke` runs `e2e/ui-smoke.spec.ts` (every workspace tab, every parameter group fold, toolbar menus, a preset, no page errors) and `e2e/a11y.spec.ts` (axe-core on every workspace tab in Paper, Dusk and Ink, plus keyboard tabs). Rules for new UI:
 - Tabs: use `Tab` from `src/ui/Tab.tsx` (li is the focusable tab, inner `a` has no href; arrows/Home/End move). Never put a focusable control inside a tab; a close ✕ is `tabIndex={-1}` with a keyboard shortcut instead.
-- Text on silver (`#c0c0c0`) or on white sunken lists/tables gets the silver-safe `--muted/--ok/--warn/--err` from `form-chrome.css`; add new silver containers to that selector rather than hard-coding greys. Themed surfaces (`.view`, panels) use `--ink`/`--muted`.
-- `target-size` is deliberately not checked: the 18px 98.css icon buttons are the look.
+- Text on the white DS chrome (windows, side panels, sunken lists/tables) gets the chrome-safe `--muted/--ok/--warn/--err` from `form-chrome.css`; add new chrome containers to that selector rather than hard-coding greys. The look lives in `ds-clean.css` (base controls, 98.css class names) and `ds-chrome.css` (Strata's pieces); Strata's orange `--ds-theme` is only for picked or active things. Themed surfaces (`.view`, panels) use `--ink`/`--muted`.
+- `target-size` is deliberately not checked: the 18px icon buttons are the look.
 
 ### The engine runs in a Web Worker
 
