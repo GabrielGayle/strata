@@ -108,7 +108,7 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
         {est.lines.map((l, i) => (
           <div key={`${l.label}-${i}`} style={{ display: 'contents' }}>
             <dt title={l.detail}>
-              {l.label} <span style={{ fontSize: 11 }}>· {l.detail}</span>
+              {l.label} <span style={{ fontSize: 10 }}>· {l.detail}</span>
             </dt>
             <dd>{gbp(l.cost)}</dd>
           </div>
@@ -141,7 +141,7 @@ export function PriceEstimate({ bom, material, thickness }: { bom: Bom; material
       {editing && (
         <dl className="kv">
           <div style={{ display: 'contents' }}>
-            <dt style={{ gridColumn: '1 / -1', color: 'var(--muted)', fontSize: 11 }}>
+            <dt style={{ gridColumn: '1 / -1', color: 'var(--muted)', fontSize: 10 }}>
               Sheet, laser, setup and handling replace the fitted prices with the shop model. Minimum, VAT and hardware still apply to the fit.
             </dt>
           </div>

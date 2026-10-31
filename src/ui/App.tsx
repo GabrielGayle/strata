@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ToolboxMenu } from './ToolboxMenu';
 import { assemble, createDeferredPipeline, createFrontPipeline, deferredInput, type DeferredInput, type DeferredModel, type FrontModel, type Model } from '../core/pipeline';
 import { EngineWorker, type EngineMode } from '../core/engine';
 import type { Assets } from '../core/pipeline';
@@ -338,6 +339,7 @@ export default function App() {
               STRATA
             </span>
           </div>
+          <ToolboxMenu />
         </div>
         <Toolbar />
         <SideColumn side="a" />

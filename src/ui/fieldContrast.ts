@@ -1,19 +1,19 @@
 /** Canonical colours (must match `src/styles.css` custom properties). */
 
 export const CHROME = {
-  bg: '#c0c0c0',
-  fg: '#222222',
-  muted: '#444444',
-  listBg: '#000080',
+  bg: '#ffffff',
+  fg: '#282828',
+  muted: '#5e5e5e',
+  listBg: '#ba4900',
   listFg: '#ffffff',
 } as const;
 
-/** Left/right Win98 side panels (Parameters, Inspector): always dark-on-silver, not --ink/--muted. */
+/** Left/right side panels (Parameters, Inspector): clean DS white windows, always dark grey type, not --ink/--muted. */
 export const PARAM_PANEL = {
   bg: CHROME.bg,
   fg: CHROME.fg,
   muted: CHROME.muted,
-  disabled: '#4a4a4a',
+  disabled: '#5e5e5e',
   heading: CHROME.fg,
 } as const;
 
@@ -24,11 +24,11 @@ export const THEME_SURFACES = {
 
 export const FIELD = {
   bg: '#ffffff',
-  fg: '#141414',
+  fg: '#282828',
   placeholder: '#6a6862',
-  disabledBg: '#dfdfdf',
-  disabledFg: '#565656',
-  readonlyFg: '#565656',
+  disabledBg: '#fbfbfb',
+  disabledFg: '#5e5e5e',
+  readonlyFg: '#5e5e5e',
 } as const;
 
 export const FIELD_CSS_VAR_NAMES = [

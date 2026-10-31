@@ -1,4 +1,4 @@
-/* Win98 chrome + form fields: paired fg/bg tokens, isolated from :root color-scheme: dark. */
+/* DS chrome + form fields: paired fg/bg tokens, isolated from :root color-scheme: dark. */
 
 body {
   color: var(--chrome-fg);
@@ -42,11 +42,11 @@ table.tbl,
   color: var(--ink);
 }
 
-/* Map tab: fieldset/legend inherit win98 chrome-fg (#222) unless reset — unreadable on dark panels */
+/* Map tab: fieldset/legend inherit the chrome's dark grey type unless reset — unreadable on dark panels */
 .map-view :is(fieldset, legend, label, h2, h3) {
   color: var(--ink);
 }
-/* 98.css paints legends silver; on a themed panel that leaves light ink on silver */
+/* legends sit on the white window page; on a themed panel that leaves light ink on white */
 .map-view legend {
   background: transparent;
 }
@@ -60,9 +60,9 @@ table.tbl,
   text-shadow: none;
 }
 
-/* Silver Win98 surfaces (and the white sunken lists/tables on them): themed --muted / --ok / --warn / --err are tuned for the theme's
-   panels and fail contrast on #c0c0c0 (light ones too pale, dark ones far too pale),
-   so give anything drawn on silver its own AA-safe set. */
+/* White DS chrome surfaces (and the white sunken lists/tables on them): themed --muted / --ok / --warn / --err are tuned for the theme's
+   panels and fail contrast on the white chrome (light ones too pale, dark ones far too pale),
+   so give anything drawn on the chrome its own AA-safe set. */
 .left.window,
 .right.window,
 .topbar,
@@ -81,7 +81,7 @@ table.tbl,
   --err: #8f1a13;
 }
 
-/* A themed viewport set into a silver window (Image tab relief preview): its notes sit on
+/* A themed viewport set into a white window (Image tab relief preview): its notes sit on
    --viewport, so they take the theme's own --muted back. */
 :root {
   --theme-muted: var(--muted);
@@ -90,12 +90,12 @@ table.tbl,
   --muted: var(--theme-muted);
 }
 
-/* Materials, Move plates and Objects windows over the 3D view are silver in every theme: dark ink, not the theme's pale --ink */
+/* Materials, Move plates and Objects windows over the 3D view are white in every theme: dark ink, not the theme's pale --ink */
 .appearance.overlay {
   color: var(--chrome-fg);
 }
 
-/* Parameters + Inspector side panels: Win98 silver, never themed --ink/--muted on labels */
+/* Parameters + Inspector side panels: white DS windows, never themed --ink/--muted on labels */
 .left.window,
 .right.window {
   background: var(--param-bg);
@@ -175,7 +175,7 @@ table.tbl,
   color: var(--param-fg);
 }
 
-/* All sunken text fields (98.css white inset) */
+/* All sunken text fields (white, hairline frame) */
 :is(
     input:not([type]),
     input[type='text'],
@@ -287,7 +287,7 @@ table.tbl tbody tr.highlighted td {
 }
 
 /* Projects window: the saves cards and the section headings are themed panels inside the
-   silver window, so their notes take the theme's own --muted, not the silver one. */
+   white window, so their notes take the theme's own --muted, not the chrome one. */
 .pm.lib .lib-head,
 .pm.lib .lib-card,
 .pm.lib .lib-line,

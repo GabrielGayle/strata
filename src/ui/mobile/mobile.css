@@ -13,14 +13,14 @@ body,
   height: 100dvh;
   margin: 0;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  font-size: 13px;
+  font-size: 15px;
 }
 .mv .title-bar {
   min-height: 26px;
   flex: none;
 }
 .mv .title-bar-text {
-  font-size: 13px;
+  font-size: 15px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -33,7 +33,7 @@ body,
 .mv a.btn {
   min-height: 36px;
   min-width: 44px;
-  font-size: 13px;
+  font-size: 15px;
   padding: 0 10px;
 }
 .mv button.btn.sm {
@@ -66,7 +66,7 @@ body,
   display: flex;
   align-items: center;
   padding: 0 14px;
-  font-size: 13px;
+  font-size: 15px;
 }
 .mv-gate {
   padding: 0 4px 4px;
@@ -118,7 +118,7 @@ body,
 }
 .mv .mv-item:active,
 .mv .mv-item:focus-visible {
-  background: #000080;
+  background: var(--ds-theme);
   color: #fff;
   outline: 1px dotted #fff;
   outline-offset: -2px;
@@ -129,7 +129,7 @@ body,
   object-fit: cover;
   flex: none;
   background: var(--viewport);
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080;
+  box-shadow: inset 0 0 0 1px var(--ds-hair);
 }
 .mv-thumb-empty {
   background: repeating-linear-gradient(0deg, #d4521c 0 3px, #141414 3px 6px);
@@ -143,7 +143,7 @@ body,
   min-width: 0;
 }
 .mv-item-text strong {
-  font-size: 14px;
+  font-size: 15px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -157,7 +157,7 @@ body,
   text-align: center;
   background: #fff;
   color: #222;
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  box-shadow: var(--ds-sunken);
 }
 .mv .status-bar {
   flex: none;
@@ -182,7 +182,7 @@ body,
   padding: 0;
   min-width: 0;
   min-height: 0;
-  color: #000080;
+  color: var(--ds-theme);
   text-decoration: underline;
   font: inherit;
 }
@@ -190,7 +190,7 @@ body,
 .mv-stage {
   position: relative;
   overflow: hidden;
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  box-shadow: var(--ds-sunken);
   background: var(--viewport);
 }
 .mv-3d {
@@ -230,7 +230,7 @@ body,
   font-size: 12px;
   min-height: 1em;
   color: var(--chrome-fg);
-  background: rgba(192, 192, 192, 0.85);
+  background: rgb(255 255 255 / 0.9);
   align-self: center;
   padding: 0 6px;
 }
@@ -242,7 +242,7 @@ body,
   inset: 2px;
   overflow: auto;
   padding: 6px;
-  background: #c0c0c0;
+  background: #fff;
 }
 .mv-details dl {
   margin: 0;

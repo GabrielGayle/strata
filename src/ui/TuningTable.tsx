@@ -62,7 +62,7 @@ export default function TuningTable() {
           {speechPlates !== rows.length ? ` (layout expects ${speechPlates} — change the phrase or formant count)` : ''} · Chop Chop estimate: <strong>£{priceEst.total.toFixed(0)}</strong> incl. VAT (not a quote).
         </div>
       )}
-      <table className="tbl" style={{ fontSize: 11 }}>
+      <table className="tbl" style={{ fontSize: 10 }}>
         <thead>
           <tr>
             <th>Plate</th>

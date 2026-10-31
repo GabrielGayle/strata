@@ -60,7 +60,7 @@ function useViewerHead() {
       add('link', { rel: 'manifest', href: '/viewer.webmanifest' }),
       add('link', { rel: 'apple-touch-icon', href: '/viewer-icon-180.png' }),
       add('meta', { name: 'apple-mobile-web-app-title', content: 'Strata' }),
-      add('meta', { name: 'theme-color', content: '#000080' }),
+      add('meta', { name: 'theme-color', content: '#fbfbfb' }),
     ];
     const vp = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
     const before = vp?.content;

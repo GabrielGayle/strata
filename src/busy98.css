@@ -1,13 +1,10 @@
 /* Animated wait UI (src/ui/BusyAnim.tsx, src/ui/BusyWindow.tsx).
 
-   Open source this builds on, both MIT licensed:
-   - 98.css v0.1.21 (https://github.com/jdan/98.css, © Jordan Scales):
-     the .progress-indicator.segmented bar and window chrome, already loaded
-     in main.tsx.
-   - XP.css v0.2.6 (https://github.com/botoxparty/XP.css, © Adam Hammad,
-     Jordan Scales): the indeterminate bar, a striped block that slides along
-     the track on a pseudo-element (its `sliding` keyframes), redrawn here
-     with 98.css's navy segments.
+   The bar and window chrome are ds-clean.css's .progress-indicator.segmented and .window
+   (the clean DS look, after 98.css's class names). The indeterminate bar, a striped block
+   that slides along the track on a pseudo-element, follows XP.css v0.2.6
+   (https://github.com/botoxparty/XP.css, MIT, © Adam Hammad, Jordan Scales), its `sliding`
+   keyframes, drawn here in Strata's orange segments.
 
    Every animation here moves only transform or opacity, so the browser's
    compositor keeps it playing while an export blocks the main thread. */
@@ -22,7 +19,7 @@
   z-index: 130;
 }
 .busy-window {
-  background: #c0c0c0;
+  background: #fff;
   color: #222;
   width: 300px;
 }

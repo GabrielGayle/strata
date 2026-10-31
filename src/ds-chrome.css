@@ -1,9 +1,11 @@
-/* Chrome bridge for 98.css.
-   98.css (imported first) paints buttons, fields, windows, tabs and lists.
-   Strata's stylesheet still owns layout. Rules here only undo chrome paints
-   that would hide that look, and keep dense toolbars from growing to the
-   library's 75px command-button width. The 3D / SVG viewport keeps its own
-   colours (see .view and .svgwrap in styles.css). */
+/* Chrome bridge for the clean DS look.
+   ds-clean.css (imported first, in 98.css's place) draws buttons, fields, windows, tabs and
+   lists. Strata's stylesheet still owns layout. Rules here fit Strata's own pieces to that
+   look: white windows in one-pixel grey frames on the grid paper, light grey tab buttons,
+   dark-grey type, and Strata's orange (--ds-theme) only on what is picked or active. Frames
+   are drawn as inset shadows (--ds-raised, --ds-sunken…) so no control changes size, and
+   dense toolbars don't grow to a command button's width. The 3D / SVG viewport keeps its
+   own colours (see .view and .svgwrap in styles.css). */
 
 .app > .title-bar {
   grid-area: title;
@@ -11,14 +13,14 @@
 .status-bar {
   grid-area: status;
 }
-/* Silver like the rest of the chrome; on the theme panel its #222 text vanished in dark themes */
+/* On the paper like the rest of the chrome; on the theme panel its text vanished in dark themes */
 .statusbar {
-  background: #c0c0c0;
+  background: transparent;
 }
 
 .topbar {
   align-items: center;
-  background: #c0c0c0;
+  background: transparent;
   border-bottom: none;
   gap: 3px;
   min-height: 0;
@@ -35,13 +37,14 @@
 }
 .brand {
   border-right: none;
-  color: #fff;
+  color: var(--ds-type);
   letter-spacing: 0;
   padding: 0;
 }
+/* the mark: Strata's orange strata, stacked like plates */
 .brand .mark {
-  background: repeating-linear-gradient(0deg, #fff 0 2px, transparent 2px 4px);
-  border: 1px solid #fff;
+  background: repeating-linear-gradient(0deg, var(--ds-theme) 0 2px, transparent 2px 4px);
+  border: 1px solid var(--ds-theme);
 }
 
 .left,
@@ -51,7 +54,7 @@
 }
 .left.window,
 .right.window {
-  background: #c0c0c0;
+  background: #fff;
   margin: 2px;
   min-height: 0;
   overflow: auto;
@@ -68,7 +71,7 @@
 }
 .main-head,
 .ws-head {
-  background: #c0c0c0;
+  background: transparent;
   border-bottom: none;
 }
 
@@ -85,12 +88,12 @@ button.setup-name,
 button.setup-x,
 button.setup-add,
 button.ws-menu {
-  background: silver;
+  background: var(--ds-tab);
   border: none;
   border-radius: 0;
-  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
-  color: transparent;
-  text-shadow: 0 0 #222;
+  box-shadow: var(--ds-raised);
+  color: var(--ds-type);
+  text-shadow: none;
 }
 button.btn:hover:not(:disabled),
 button.tb:hover:not(:disabled),
@@ -104,17 +107,18 @@ button.setup-name:hover:not(:disabled),
 button.setup-x:hover:not(:disabled),
 button.setup-add:hover:not(:disabled),
 button.ws-menu:hover:not(:disabled) {
-  background: silver;
-  color: transparent;
-  text-shadow: 0 0 #222;
+  background: #fff;
+  color: var(--ds-type);
+  text-shadow: none;
 }
 button.btn:disabled,
 button.tb:disabled,
 button.ibtn:disabled,
 button.section-head:disabled {
-  background: silver;
-  color: grey;
-  text-shadow: 1px 1px 0 #fff;
+  background: var(--ds-paper);
+  box-shadow: inset 0 0 0 1px var(--ds-hair);
+  color: var(--ds-soft);
+  text-shadow: none;
 }
 button.btn.on,
 button.ibtn.on,
@@ -124,27 +128,50 @@ button.theme-swatch.on,
 button.vs-tab.on,
 button.card.sel,
 button[aria-pressed='true'] {
-  background: silver;
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px grey;
-  color: transparent;
-  text-shadow: 1px 1px #222;
+  background: #fff;
+  box-shadow: var(--ds-pressed);
+  color: var(--ds-theme);
+  text-shadow: none;
 }
+/* the main command of a window: framed twice in grey, as the DS frames its default */
 button.btn.default,
 button.tb.default,
 button.btn.primary,
 button.tb.primary {
-  background: silver;
-  box-shadow: inset -2px -2px #0a0a0a, inset 1px 1px #0a0a0a, inset 2px 2px #fff, inset -3px -3px grey, inset 3px 3px #dfdfdf;
-  color: transparent;
-  font-weight: bold;
-  text-shadow: 0 0 #222;
+  background: var(--ds-tab);
+  box-shadow: inset 0 0 0 1px var(--ds-type), inset 0 -3px 0 var(--ds-grid);
+  color: var(--ds-type);
+  font-weight: normal;
+  text-shadow: none;
 }
 button.btn.default:hover:not(:disabled),
 button.tb.default:hover:not(:disabled),
 button.btn.primary:hover:not(:disabled),
 button.tb.primary:hover:not(:disabled) {
-  background: silver;
-  color: transparent;
+  background: #fff;
+  color: var(--ds-type);
+}
+/* a button held down: the grid step moves to its head */
+button.btn:active:not(:disabled),
+button.tb:active:not(:disabled),
+button.ibtn:active:not(:disabled),
+button.section-head:active:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--ds-frame), inset 0 2px 0 var(--ds-grid);
+}
+/* keyboard focus: the DS slate on the frame */
+button.btn:focus-visible,
+button.tb:focus-visible,
+button.ibtn:focus-visible,
+button.tab:focus-visible,
+button.section-head:focus-visible,
+button.issue:focus-visible,
+button.theme-swatch:focus-visible,
+button.card:focus-visible,
+button.setup-name:focus-visible,
+button.setup-add:focus-visible,
+button.ws-menu:focus-visible {
+  outline: 1px solid var(--ds-focus);
+  outline-offset: 0;
 }
 
 button.btn.sm,
@@ -197,7 +224,7 @@ button.issue {
   padding: 0;
 }
 .menu-pop.window {
-  background: #c0c0c0;
+  background: #fff;
 }
 .menu-pop .window-body {
   margin: 4px;
@@ -205,7 +232,7 @@ button.issue {
 .menu-pop .head {
   background: transparent;
   border: none;
-  color: #222;
+  color: var(--ds-soft);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -213,7 +240,7 @@ ul.tree-view > li > button,
 ul.tree-view ul button:not(.btn) {
   background: transparent;
   box-shadow: none;
-  color: #222;
+  color: var(--ds-type);
   display: flex;
   justify-content: space-between;
   gap: 8px;
@@ -228,7 +255,7 @@ ul.tree-view > li > button:hover,
 ul.tree-view > li > button.on,
 ul.tree-view ul button:not(.btn):hover,
 ul.tree-view ul button:not(.btn).on {
-  background: #000080;
+  background: var(--ds-theme);
   color: #fff;
   text-shadow: none;
 }
@@ -236,7 +263,7 @@ ul.tree-view ul button:not(.btn).on {
 .menu-pop .tree-view button:not(.btn) {
   background: transparent;
   box-shadow: none;
-  color: #222;
+  color: var(--ds-type);
   display: flex;
   gap: 12px;
   justify-content: space-between;
@@ -252,7 +279,7 @@ ul.tree-view ul button:not(.btn).on {
 .menu-pop .tree-view button:not(.btn):hover,
 .menu-pop .tree-view button:not(.btn):focus,
 .menu-pop .tree-view a:focus {
-  background: #000080;
+  background: var(--ds-theme);
   color: #fff;
   outline: none;
   text-shadow: none;
@@ -262,16 +289,16 @@ ul.tree-view ul button:not(.btn).on {
   color: inherit;
 }
 
-/* Projects window actions menu: a silver Win98 menu in every theme, so its text never sits dark on a dark panel. */
+/* Projects window actions menu: a white DS menu in every theme, so its text never sits light on a light panel or dark on a dark one. */
 .lib-menu {
-  background: #c0c0c0;
-  color: #222;
-  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px #808080, inset 2px 2px #fff;
+  background: #fff;
+  color: var(--ds-type);
+  box-shadow: var(--ds-window);
 }
 .lib-menu button {
   background: transparent;
   box-shadow: none;
-  color: #222;
+  color: var(--ds-type);
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -285,7 +312,7 @@ ul.tree-view ul button:not(.btn).on {
 }
 .lib-menu button:hover,
 .lib-menu button:focus {
-  background: #000080;
+  background: var(--ds-theme);
   color: #fff;
   outline: none;
   text-shadow: none;
@@ -298,13 +325,13 @@ ul.tree-view ul button:not(.btn).on {
 }
 .lib-menu-head {
   padding: 4px 6px 2px 20px;
-  color: #555;
-  font-size: 11px;
+  color: var(--ds-soft);
+  font-size: 10px;
 }
 .lib-menu-sep {
   border: none;
-  border-top: 1px solid #808080;
-  border-bottom: 1px solid #fff;
+  border-top: 1px solid var(--ds-grid);
+  border-bottom: none;
   margin: 3px 2px;
 }
 
@@ -319,7 +346,7 @@ textarea {
   background-color: var(--field-bg);
   border: none;
   border-radius: 0;
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  box-shadow: var(--ds-sunken);
   color: var(--field-fg);
   color-scheme: light;
   outline: none;
@@ -332,9 +359,18 @@ textarea {
 select.sel:focus {
   outline: none;
 }
+input.numbox:focus,
+input.inp:focus,
+input.exprbox:focus,
+input.search:focus,
+input.name-input:focus,
+select.sel:focus-visible,
+textarea:focus {
+  box-shadow: inset 0 0 0 1px var(--ds-focus), inset 0 2px 0 var(--ds-grid);
+}
 .exprbox.err,
 .numbox.err {
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #c0281f, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  box-shadow: inset 0 0 0 1px #c0281f, inset 0 2px 0 var(--ds-grid);
 }
 .name-input {
   background-color: var(--field-bg);
@@ -353,7 +389,7 @@ select.sel:focus {
 }
 .save-mark {
   border-right: none;
-  color: #222;
+  color: var(--ds-type);
   padding: 2px 6px;
 }
 .save-mark.failed {
@@ -398,29 +434,11 @@ select.sel:focus {
   width: auto;
 }
 
-/* Checkboxes wrapped by their label are not the input + label pair 98.css draws.
-   Give those a sunken box so they stay visible. The group switch keeps its hit target. */
+/* Checkboxes wrapped by their label: ds-clean.css draws every box on the input itself;
+   keep the gap before the label text. The group switch keeps its hit target. */
 label:not(.gswitch) > input[type='checkbox'],
 label:not(.gswitch) > input[type='radio'] {
-  appearance: none;
-  -webkit-appearance: none;
-  background: #fff;
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
-  flex: none;
-  height: 13px;
   margin: 0 6px 0 0;
-  min-width: 13px;
-  opacity: 1;
-  padding: 0;
-  position: static;
-  width: 13px;
-}
-label:not(.gswitch) > input[type='checkbox']:checked {
-  background-color: #fff;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 7'><path d='M1 3.2 L2.6 5.2 L6 1' fill='none' stroke='%23000' stroke-width='1.2'/></svg>");
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: 7px 7px;
 }
 .gswitch .track,
 .gswitch .track::after {
@@ -428,7 +446,7 @@ label:not(.gswitch) > input[type='checkbox']:checked {
 }
 .gswitch .track {
   background: #fff;
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  box-shadow: var(--ds-sunken);
   height: 13px;
   width: 13px;
 }
@@ -443,7 +461,7 @@ label:not(.gswitch) > input[type='checkbox']:checked {
   background: #fff;
 }
 .gswitch.on .track::after {
-  background: #000;
+  background: var(--ds-theme);
   left: 3px;
 }
 
@@ -466,11 +484,12 @@ button.section-head {
 .panel-title.title-bar,
 .title-bar.box-head,
 .title-bar.vp-head {
-  background: linear-gradient(90deg, #000080, #1084d0);
+  background: #fff;
   border: none;
-  color: #fff;
-  font-size: 11px;
-  font-weight: bold;
+  border-bottom: 1px solid var(--ds-hair);
+  color: var(--ds-type);
+  font-size: 10px;
+  font-weight: normal;
   letter-spacing: 0;
   padding: 3px 2px 3px 3px;
   text-transform: none;
@@ -485,11 +504,11 @@ button.section-head {
 .title-bar.panel-title span,
 .title-bar.vp-head,
 .title-bar.vp-head strong {
-  color: #fff;
+  color: var(--ds-type);
 }
 .box,
 .window.box {
-  background: #c0c0c0;
+  background: #fff;
   border: none;
 }
 .pm {
@@ -498,7 +517,7 @@ button.section-head {
 }
 .pm.window,
 .window.help-sheet {
-  /* 98.css --surface is inlined away in the production CSS; chrome-bg is the same silver. */
+  /* chrome-bg is the white DS window page */
   background: var(--chrome-bg);
 }
 .pm > .window-body.pm-body,
@@ -506,7 +525,7 @@ button.section-head {
   margin: 6px;
 }
 .video-picker {
-  background: #c0c0c0;
+  background: #fff;
   border: none;
   padding: 3px;
 }
@@ -515,11 +534,11 @@ button.section-head {
   text-transform: none;
 }
 .pm-preview {
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px grey;
+  box-shadow: var(--ds-pressed);
   border: none;
 }
 
-/* Tabs: 98.css draws menu[role=tablist]. Don't flatten them. */
+/* Tabs: ds-clean.css draws menu[role=tablist]. Don't flatten them. */
 .setup-tabs,
 .ws-tabs,
 .tabs {
@@ -528,16 +547,15 @@ button.section-head {
   letter-spacing: 0;
   text-transform: none;
 }
-/* The li is the focusable tab (see ui/Tab.tsx); draw 98.css's dotted focus on its label. */
+/* The li is the focusable tab (see ui/Tab.tsx); its focus is the DS slate on its frame. */
 menu[role='tablist'] > li[role='tab'] {
-  background: #c0c0c0;
   cursor: default;
 }
 menu[role='tablist'] > li[role='tab']:focus {
   outline: none;
 }
-menu[role='tablist'] > li[role='tab']:focus-visible > a {
-  outline: 1px dotted #222;
+menu[role='tablist'] > li[role='tab']:focus-visible {
+  border-color: var(--ds-focus);
 }
 .setup-tabs {
   align-items: flex-end;
@@ -557,23 +575,23 @@ button.setup-x,
 button.setup-add {
   background: transparent;
   box-shadow: none;
-  color: #222;
+  color: var(--ds-type);
   text-shadow: none;
 }
 .ws-menu {
   background: transparent;
   border: none;
-  color: #222;
+  color: var(--ds-type);
 }
 .ws-pick {
-  color: #222;
+  color: var(--ds-type);
   letter-spacing: 0;
   text-transform: none;
 }
 .ws-float {
-  background: #c0c0c0;
+  background: #fff;
   border: none;
-  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px grey, inset 2px 2px #fff;
+  box-shadow: var(--ds-window);
 }
 .ws-float .title-bar {
   cursor: move;
@@ -584,29 +602,29 @@ button.setup-add {
   background: #fff;
   border-right: none;
 }
-/* Column headers are silver like 98 list headers (was the theme panel, dark in dark themes) */
+/* Column headers sit on the paper like DS list headers (was the theme panel, dark in dark themes) */
 table.tbl th {
-  background: #c0c0c0;
+  background: #fff;
 }
 table.tbl tbody tr.sel td,
 table.tbl tbody tr.highlighted td {
-  background: #000080;
+  background: var(--ds-theme);
   color: #fff;
 }
 .card,
 button.card {
-  background: silver;
+  background: var(--ds-tab);
   border: none;
 }
 button.card.sel {
-  background: silver;
+  background: var(--ds-tab);
 }
 
 .stats {
   border-bottom: none;
 }
 .stat {
-  border-color: #808080;
+  border-color: var(--ds-grid);
 }
 .note,
 .kv dt {
@@ -615,11 +633,11 @@ button.card.sel {
 .toast {
   background: transparent;
   border: none;
-  color: #222;
+  color: var(--ds-type);
   padding: 0;
 }
 .toast.window {
-  background: #c0c0c0;
+  background: #fff;
   min-width: 240px;
 }
 .toast .window-body {
@@ -628,12 +646,12 @@ button.card.sel {
 
 /* Viewport frame only. Grid, fills and the WebGL canvas are unchanged. */
 .view {
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px grey;
+  box-shadow: var(--ds-pressed);
 }
 .overlay {
-  background: #c0c0c0;
+  background: #fff;
   border: none;
-  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
+  box-shadow: var(--ds-raised);
   gap: 2px;
   padding: 2px;
 }
@@ -646,9 +664,9 @@ button.card.sel {
   padding: 0 6px;
 }
 .overlay.info {
-  background: #c0c0c0;
-  box-shadow: inset -1px -1px #dfdfdf, inset 1px 1px grey;
-  color: #222;
+  background: #fff;
+  box-shadow: var(--ds-status);
+  color: var(--ds-type);
 }
 .movepanel .mp-row,
 .sunbar .sb-row {
@@ -674,7 +692,7 @@ button.card.sel {
 }
 .round-zoom {
   display: block;
-  box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px grey;
+  box-shadow: var(--ds-pressed);
   padding: 2px;
   background: #fff;
   max-width: 100%;
@@ -683,14 +701,14 @@ button.card.sel {
 .round-note {
   margin: 4px 0;
   max-width: 236px;
-  font-size: 11px;
+  font-size: 10px;
 }
 .round-note.bad {
   color: #c00000;
 }
 .round-legend {
   gap: 4px;
-  font-size: 11px;
+  font-size: 10px;
 }
 .round-legend .key {
   display: inline-block;
@@ -709,7 +727,7 @@ button.card.sel {
 }
 .round-steps {
   gap: 6px;
-  font-size: 11px;
+  font-size: 10px;
 }
 .round-steps button {
   min-width: 28px;
@@ -717,41 +735,40 @@ button.card.sel {
 
 /* object panels size their text inputs; keep wrapped checkboxes square */
 .appearance .ap-edit label > input[type='checkbox'] {
-  width: 13px;
+  width: 11px;
 }
 
-/* Parameters / Saves switch sits on the navy title bar: white text, no raised button
-   (it was inheriting #222 button text, unreadable on navy) */
+/* Parameters / Saves switch sits on the white title bar: plain names, no raised button */
 .title-bar.left-panes button {
   background: transparent;
   box-shadow: none;
-  color: #fff;
+  color: var(--ds-type);
   min-height: 0;
   min-width: 0;
 }
 .title-bar.left-panes button:focus-visible {
-  outline: 1px dotted #fff;
+  outline: 1px solid var(--ds-focus);
 }
 
-/* 3D view sidebar: silver chrome like the panels it replaced floating over the view */
+/* 3D view sidebar: white chrome like the panels it replaced floating over the view */
 .vp-sidebar {
-  background: #c0c0c0;
+  background: #fff;
   border-left: none;
-  box-shadow: inset 1px 0 #fff, inset 2px 0 #dfdfdf;
+  box-shadow: inset 1px 0 var(--ds-hair);
 }
 .vp-sidebar .vs-main.window {
-  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
+  box-shadow: var(--ds-raised);
 }
 .vp-sidebar .vs-body {
-  color: #222;
-  --muted: #444;
+  color: var(--ds-type);
+  --muted: var(--ds-soft);
 }
 .vs-fold-head {
   min-width: 0;
   padding: 1px 4px;
 }
 
-/* Formula names list under a parameter's ƒ box: a silver Win98 drop-down in every theme */
+/* Formula names list under a parameter's ƒ box: a white DS drop-down in every theme */
 .ibtn.fx-open {
   min-width: 18px;
   padding: 0 2px;
@@ -761,19 +778,20 @@ button.card.sel {
   position: fixed;
   z-index: 1000;
   overflow-y: auto;
-  background: #c0c0c0;
-  color: #222;
+  background: #fff;
+  color: var(--ds-type);
   color-scheme: light;
-  font-size: 11px;
+  font-size: 10px;
   padding: 2px;
-  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px #808080, inset 2px 2px #fff;
+  box-shadow: var(--ds-window);
 }
 .fx-head {
   position: sticky;
   top: -2px;
-  background: #808080;
-  color: #fff;
-  font-weight: bold;
+  background: var(--ds-paper);
+  border-bottom: 1px solid var(--ds-grid);
+  color: var(--ds-soft);
+  font-weight: normal;
   padding: 1px 4px;
 }
 .fx-row {
@@ -791,15 +809,15 @@ button.card.sel {
 .fx-row .fx-label {
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #444;
+  color: var(--ds-soft);
 }
 .fx-row .fx-val {
   font-family: var(--mono);
-  color: #444;
+  color: var(--ds-soft);
   text-align: right;
 }
 .fx-row.on {
-  background: #000080;
+  background: var(--ds-theme);
   color: #fff;
 }
 .fx-row.on .fx-label,
@@ -807,11 +825,39 @@ button.card.sel {
   color: #fff;
 }
 .fx-row.blocked {
-  color: #444;
+  color: var(--ds-soft);
   font-style: italic;
   text-decoration: line-through;
 }
 .fx-none {
   padding: 4px;
-  color: #444;
+  color: var(--ds-soft);
+}
+
+/* The app itself is not a window: the grid paper shows between its panels. */
+.app.window {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* The app's own bar: the mark and the name, with the cockpit yoga toolbox menu at its right end. */
+.app > .title-bar {
+  height: 24px;
+  padding: 0 2px 0 6px;
+  background: #fff;
+  border-bottom: 1px solid var(--ds-hair);
+}
+.app > .title-bar::before {
+  display: none;
+}
+.toolbox-slot {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+/* align="right" also reads as a text-align hint; the menu's rows stay left-aligned */
+.toolbox-slot cockpit-toolbox {
+  text-align: left;
 }
