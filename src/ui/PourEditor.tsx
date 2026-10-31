@@ -23,7 +23,7 @@ export default function PourEditor({ compact = false }: { compact?: boolean }) {
   return (
     <div style={{ padding: compact ? '4px 10px 8px' : 0 }}>
       {compact && (
-        <div className="plabel" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', margin: '6px 0 4px' }}>
+        <div className="plabel" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', margin: '6px 0 4px' }}>
           Strata pour layers (bottom → top)
         </div>
       )}

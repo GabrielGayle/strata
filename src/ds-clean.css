@@ -1,0 +1,701 @@
+/* Strata's controls in the clean DS look: the original DS system menu, the same look as the
+   cockpit yoga toolbox picker (/tools?look=clean on the site) and lace. Near-white on a faint
+   pixel grid, one-pixel grey frames, dark-grey type in the nitro DS font at 10px (one font
+   pixel is one screen pixel). Grey does the structure; colour is kept for meaning: Strata's
+   orange marks what is picked or active, the DS slate marks keyboard focus. No images.
+   It replaces 98.css and keeps 98.css's class names (window, title-bar, field-row,
+   sunken-panel, status-bar…), so the ui code builds the same markup as before.
+   styles.css owns layout; ds-chrome.css (imported after it) fits Strata's own pieces. */
+
+@font-face {
+  font-family: 'ds-system';
+  src: url('./ds/fonts/nitrods-font.ttf') format('truetype');
+}
+
+:root {
+  /* the clean DS greys (the site's tool-picker-clean.css) */
+  --ds-paper: #fbfbfb; /* the page under everything */
+  --ds-grid: #e0e0e0; /* grid lines, quiet rules */
+  --ds-hair: #a2a2a2; /* boxes inside a window */
+  --ds-frame: #797979; /* windows, buttons */
+  --ds-type: #282828; /* text */
+  --ds-soft: #6b6b6b; /* quiet text: 5.3:1 on white */
+  --ds-tab: #e7e7e7; /* a button's face */
+  --ds-focus: #4f7590; /* the DS slate, deepened to 4.9:1 on white: keyboard focus only */
+  /* Strata's ink in the toolbox (lib/toolbox.ts on the site): the one colour pop */
+  --ds-theme: #ba4900;
+  --ds-theme-50: color-mix(in oklab, var(--ds-theme), white 50%);
+  --ds-theme-80: color-mix(in oklab, var(--ds-theme), white 85%);
+  --font-system: 'ds-system', system-ui, sans-serif;
+  /* frames drawn as shadows, so the 98-era layout keeps its sizes:
+     raised = a button (frame, a step of grid grey at its foot), window = a window's frame,
+     sunken = a field or list (hairline, a grid line under its top), pressed = held down,
+     status = a status box */
+  --ds-raised: inset 0 0 0 1px var(--ds-frame), inset 0 -3px 0 var(--ds-grid);
+  --ds-window: inset 0 0 0 1px var(--ds-frame);
+  --ds-sunken: inset 0 0 0 1px var(--ds-hair), inset 0 2px 0 var(--ds-grid);
+  --ds-pressed: inset 0 0 0 1px var(--ds-theme), inset 0 -2px 0 var(--ds-theme-80);
+  --ds-status: inset 0 0 0 1px var(--ds-hair);
+  /* the faint 16px pixel grid the DS menu sits on */
+  --ds-grid-paper:
+    linear-gradient(to right, var(--ds-grid) 1px, transparent 1px) -1px -1px / 16px 16px,
+    linear-gradient(var(--ds-grid) 1px, transparent 1px) -1px -1px / 16px 16px,
+    var(--ds-paper);
+}
+
+body,
+button,
+input,
+select,
+textarea,
+table,
+label,
+legend {
+  font-family: var(--font-system);
+  font-size: 10px;
+  font-synthesis-weight: none;
+  -webkit-font-smoothing: none;
+}
+
+body {
+  color: var(--ds-type);
+}
+
+/* the nitro font has no bold: bold text keeps its weight and takes the theme ink instead */
+b,
+strong,
+th,
+h1,
+h2,
+h3,
+h4,
+h5 {
+  font-weight: normal;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-size: 10px;
+}
+
+* {
+  scrollbar-color: var(--ds-hair) var(--ds-paper);
+}
+
+::selection {
+  background: var(--ds-theme-80);
+  color: var(--ds-type);
+}
+
+a {
+  color: var(--ds-theme);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration: none;
+}
+
+a:focus-visible {
+  outline: 1px solid var(--ds-focus);
+  outline-offset: 1px;
+}
+
+/* windows: a white page in a one-pixel frame, under a white bar with a hairline */
+.window {
+  background: #fff;
+  border: 1px solid var(--ds-frame);
+  box-shadow: 2px 2px 0 rgb(0 0 0 / 0.12);
+}
+
+/* the bar: a small square in Strata's orange, then the name, like the DS's top screen */
+.title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 17px;
+  padding: 0 2px 0 4px;
+  border-bottom: 1px solid var(--ds-hair);
+  color: var(--ds-type);
+  background: #fff;
+}
+
+.title-bar::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  background: var(--ds-theme);
+}
+
+/* inactive: the square goes grey and the name goes quiet */
+.title-bar.inactive {
+  color: var(--ds-soft);
+}
+
+.title-bar.inactive::before {
+  background: var(--ds-hair);
+}
+
+.title-bar-text {
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  margin-right: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.title-bar-controls {
+  display: flex;
+  gap: 2px;
+}
+
+.title-bar-controls button {
+  min-width: 0;
+  min-height: 0;
+  width: 15px;
+  height: 13px;
+  padding: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: none;
+}
+
+/* pixel glyphs in the type grey */
+.title-bar-controls button[aria-label='minimize' i] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='7' shape-rendering='crispEdges'%3E%3Cpath fill='%23282828' d='M0 5h7v2H0z'/%3E%3C/svg%3E");
+  background-size: 7px 7px;
+}
+
+.title-bar-controls button[aria-label='maximize' i] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='7' shape-rendering='crispEdges'%3E%3Cpath fill='%23282828' fill-rule='evenodd' d='M0 0h7v7H0zM1 2v4h5V2z'/%3E%3C/svg%3E");
+  background-size: 7px 7px;
+}
+
+.title-bar-controls button[aria-label='close' i] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='7' shape-rendering='crispEdges'%3E%3Cpath fill='%23282828' d='M0 0h2v1h1v1h1V1h1V0h2v1H6v1H5v1H4v1h1v1h1v1h1v1H5V6H4V5H3v1H2v1H0V6h1V5h1V4h1V3H2V2H1V1H0z'/%3E%3C/svg%3E");
+  background-size: 7px 7px;
+}
+
+.title-bar-controls button:active:not(:disabled) {
+  background-position: center calc(50% + 1px);
+}
+
+.window-body {
+  margin: 8px;
+}
+
+/* buttons: a light grey tab in a one-pixel frame, a step of grid grey at its foot. The frame
+   is an inset shadow, so a button keeps the size its layout gave it. */
+button {
+  min-width: 52px;
+  min-height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  color: var(--ds-type);
+  background: var(--ds-tab);
+  box-shadow: var(--ds-raised);
+  cursor: pointer;
+}
+
+button:not(:disabled):hover {
+  background-color: #fff;
+}
+
+button:not(:disabled):active {
+  background-color: #fff;
+  box-shadow: inset 0 0 0 1px var(--ds-frame), inset 0 2px 0 var(--ds-grid);
+}
+
+/* focus: the DS slate, on the frame */
+button:focus-visible {
+  outline: 1px solid var(--ds-focus);
+  outline-offset: 0;
+}
+
+button:disabled {
+  color: var(--ds-soft);
+  background-color: var(--ds-paper);
+  box-shadow: inset 0 0 0 1px var(--ds-hair);
+  cursor: default;
+}
+
+/* held down: a toggle that is on is framed twice in Strata's orange, as the DS frames its pick */
+button[aria-pressed='true'] {
+  color: var(--ds-theme);
+  background-color: #fff;
+  box-shadow: var(--ds-pressed);
+}
+
+/* fields: white boxes in a hairline frame */
+input[type='text'],
+input[type='number'],
+input[type='search'],
+input[type='email'],
+input[type='password'],
+input[type='url'],
+input[type='tel'],
+select,
+textarea {
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  padding: 2px 4px;
+  color: var(--ds-type);
+  background: #fff;
+  box-shadow: var(--ds-sunken);
+  color-scheme: light;
+  outline: none;
+}
+
+input[type='text'],
+input[type='number'],
+input[type='search'],
+input[type='email'],
+input[type='password'],
+input[type='url'],
+input[type='tel'],
+select {
+  height: 20px;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+input[type='text']:focus,
+input[type='number']:focus,
+input[type='search']:focus,
+textarea:focus {
+  box-shadow: inset 0 0 0 1px var(--ds-focus), inset 0 2px 0 var(--ds-grid);
+  outline: none;
+}
+
+input:disabled,
+input:read-only:not([type='checkbox']):not([type='radio']):not([type='range']),
+select:disabled,
+textarea:disabled {
+  color: var(--ds-soft);
+  background: var(--ds-paper);
+  box-shadow: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ds-hair);
+}
+
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-decoration {
+  display: none;
+}
+
+/* a select is a field with a little grey tab at its end */
+select {
+  appearance: none;
+  padding-right: 20px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4' shape-rendering='crispEdges'%3E%3Cpath fill='%23282828' d='M0 0h7v1H6v1H5v1H4v1H3V3H2V2H1V1H0z'/%3E%3C/svg%3E") right 4px center / 7px 4px no-repeat,
+    linear-gradient(var(--ds-hair), var(--ds-hair)) right 14px top / 1px 100% no-repeat,
+    linear-gradient(var(--ds-tab), var(--ds-tab)) right top / 14px 100% no-repeat,
+    #fff;
+  cursor: pointer;
+}
+
+select[multiple],
+select[size] {
+  padding-right: 4px;
+  background: #fff;
+}
+
+option,
+optgroup {
+  color: var(--ds-type);
+  background: #fff;
+}
+
+/* checkbox and radio: drawn on the input itself, so ones without a label show too */
+input[type='checkbox'],
+input[type='radio'] {
+  appearance: none;
+  flex: none;
+  box-sizing: border-box;
+  width: 11px;
+  height: 11px;
+  margin: 0;
+  border: 1px solid var(--ds-frame);
+  background: #fff;
+  box-shadow: inset 0 1px 0 var(--ds-grid);
+  vertical-align: -2px;
+  cursor: pointer;
+}
+
+/* a radio: the box with its corners clipped off a pixel */
+input[type='radio'] {
+  clip-path: polygon(1px 0, calc(100% - 1px) 0, 100% 1px, 100% calc(100% - 1px), calc(100% - 1px) 100%, 1px 100%, 0 calc(100% - 1px), 0 1px);
+}
+
+input[type='checkbox']:checked {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='7' shape-rendering='crispEdges'%3E%3Cpath fill='%23fff' d='M5 0h2v2H5zM4 2h2v2H4zM0 2h2v2H0zM1 4h2v2H1zM3 4h2v2H3zM2 5h2v2H2z'/%3E%3C/svg%3E") center / 7px 7px no-repeat,
+    var(--ds-theme);
+  border-color: var(--ds-theme);
+  box-shadow: none;
+}
+
+input[type='radio']:checked {
+  border-color: var(--ds-theme);
+  background: #fff;
+  box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 5px var(--ds-theme);
+}
+
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: none;
+  border-color: var(--ds-focus);
+}
+
+input[type='checkbox']:disabled,
+input[type='radio']:disabled {
+  border-color: var(--ds-hair);
+  background: var(--ds-paper);
+  cursor: default;
+}
+
+input[type='checkbox']:disabled:checked {
+  background-color: var(--ds-hair);
+}
+
+input:disabled + label {
+  color: var(--ds-hair);
+}
+
+label {
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+
+/* range: a hairline groove and a small grey tab for the thumb */
+input[type='range'] {
+  appearance: none;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']:focus {
+  outline: none;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--ds-hair);
+  border-bottom: 1px solid #fff;
+  box-sizing: content-box;
+}
+
+input[type='range']::-moz-range-track {
+  height: 2px;
+  background: var(--ds-hair);
+  border-bottom: 1px solid #fff;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 14px;
+  margin-top: -6px;
+  border: 1px solid var(--ds-frame);
+  background: var(--ds-tab);
+  box-shadow: inset 0 -2px 0 var(--ds-grid);
+}
+
+input[type='range']::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 8px;
+  height: 14px;
+  border: 1px solid var(--ds-frame);
+  border-radius: 0;
+  background: var(--ds-tab);
+  box-shadow: inset 0 -2px 0 var(--ds-grid);
+}
+
+input[type='range']:hover::-webkit-slider-thumb {
+  background: #fff;
+}
+
+input[type='range']:hover::-moz-range-thumb {
+  background: #fff;
+}
+
+input[type='range']:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ds-focus);
+}
+
+input[type='range']:focus-visible::-moz-range-thumb {
+  border-color: var(--ds-focus);
+}
+
+input[type='range']:active::-webkit-slider-thumb {
+  border-color: var(--ds-theme);
+  background: var(--ds-theme);
+  box-shadow: none;
+}
+
+input[type='range']:active::-moz-range-thumb {
+  border-color: var(--ds-theme);
+  background: var(--ds-theme);
+  box-shadow: none;
+}
+
+input[type='range']:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* groups: a grid-grey frame with its name set into the top line */
+fieldset {
+  margin: 0;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--ds-grid);
+}
+
+legend {
+  padding: 0 4px;
+  color: var(--ds-soft);
+  background: #fff;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+}
+
+[class^='field-row'] + [class^='field-row'] {
+  margin-top: 6px;
+}
+
+.field-row > * + * {
+  margin-left: 6px;
+}
+
+.field-row-stacked {
+  display: flex;
+  flex-direction: column;
+}
+
+.field-row-stacked * + * {
+  margin-top: 6px;
+}
+
+/* tabs: grey tabs in a one-pixel frame; the picked one turns white with an orange cap */
+menu[role='tablist'] {
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 0 2px;
+  list-style: none;
+}
+
+menu[role='tablist'] > li {
+  padding: 0 8px;
+  line-height: 15px;
+  border: 1px solid var(--ds-frame);
+  border-bottom: 0;
+  color: var(--ds-type);
+  background: var(--ds-tab);
+  cursor: pointer;
+}
+
+menu[role='tablist'] > li:hover {
+  color: var(--ds-type);
+  background: #fff;
+}
+
+menu[role='tablist'] > li[aria-selected='true'] {
+  color: var(--ds-theme);
+  background: #fff;
+  box-shadow: inset 0 2px 0 var(--ds-theme);
+}
+
+menu[role='tablist'] > li:focus-visible {
+  outline: none;
+  border-color: var(--ds-focus);
+}
+
+menu[role='tablist'] > li > a {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* lists and tables in a hairline box */
+.sunken-panel {
+  box-sizing: border-box;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--ds-hair);
+}
+
+table {
+  border-collapse: collapse;
+  text-align: left;
+  white-space: nowrap;
+  background: #fff;
+}
+
+table > thead > tr > * {
+  position: sticky;
+  top: 0;
+  height: 15px;
+  padding: 0 6px;
+  font-weight: normal;
+  text-align: left;
+  color: var(--ds-soft);
+  border-right: 1px solid var(--ds-grid);
+  border-bottom: 1px solid var(--ds-hair);
+  background: var(--ds-paper);
+}
+
+table > tbody > tr > * {
+  height: 14px;
+  padding: 0 6px;
+}
+
+table > tbody > tr:nth-child(even) {
+  background: var(--ds-paper);
+}
+
+table.interactive > tbody > tr {
+  cursor: pointer;
+}
+
+table.interactive > tbody > tr:hover {
+  box-shadow: inset 0 0 0 1px var(--ds-theme-50);
+}
+
+/* the picked row: Strata's orange, white type, as the DS lights its picked name */
+table > tbody > tr.highlighted {
+  color: #fff;
+  background: var(--ds-theme);
+}
+
+/* trees (the curve lab) */
+ul.tree-view {
+  display: block;
+  margin: 0;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--ds-hair);
+}
+
+ul.tree-view li {
+  list-style: none;
+}
+
+ul.tree-view ul {
+  margin: 2px 0 0 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--ds-grid);
+}
+
+ul.tree-view details > summary {
+  list-style: none;
+}
+
+ul.tree-view details > summary::-webkit-details-marker {
+  display: none;
+}
+
+ul.tree-view details > summary::before {
+  content: '+';
+  display: inline-block;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  line-height: 7px;
+  text-align: center;
+  color: var(--ds-type);
+  border: 1px solid var(--ds-frame);
+  background: var(--ds-tab);
+}
+
+ul.tree-view details[open] > summary::before {
+  content: '-';
+  color: var(--ds-theme);
+  border-color: var(--ds-theme);
+  background: #fff;
+}
+
+summary:focus-visible {
+  outline: 1px solid var(--ds-focus);
+}
+
+/* status bar: hairline boxes on the page */
+.status-bar {
+  display: flex;
+  gap: 2px;
+  margin: 0;
+}
+
+.status-bar-field {
+  flex-grow: 1;
+  margin: 0;
+  padding: 1px 4px;
+  line-height: 13px;
+  color: var(--ds-type);
+  background: #fff;
+  border: 1px solid var(--ds-hair);
+}
+
+/* progress: Strata's orange in pixel blocks, in a hairline box */
+.progress-indicator {
+  position: relative;
+  box-sizing: border-box;
+  height: 16px;
+  padding: 2px;
+  background: #fff;
+  border: 1px solid var(--ds-hair);
+}
+
+.progress-indicator > .progress-indicator-bar {
+  display: block;
+  height: 100%;
+  background-color: var(--ds-theme);
+}
+
+.progress-indicator.segmented > .progress-indicator-bar {
+  background-color: transparent;
+  background-image: linear-gradient(90deg, var(--ds-theme) 4px, transparent 4px);
+  background-size: 6px 100%;
+}
+
+.field-border {
+  padding: 2px;
+  background: #fff;
+  border: 1px solid var(--ds-hair);
+}
+
+hr {
+  height: 0;
+  border: 0;
+  border-top: 1px solid var(--ds-grid);
+}
+
+kbd {
+  font-family: inherit;
+}
+
+pre,
+code {
+  font-family: ui-monospace, monospace;
+}

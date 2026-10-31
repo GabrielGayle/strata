@@ -103,7 +103,7 @@ export default function GraphView() {
                   }}
                   title={STAGE_INPUTS[s.name]}
                 >
-                  <div style={{ fontWeight: 700, fontSize: 12 }}>{s.name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 10 }}>{s.name}</div>
                   <div className="mono" style={{ fontSize: 10 }}>
                     {s.stale ? 'pending' : s.cached ? 'cached' : 'rebuilt'} · {fmt(s.ms, 0)} ms
                   </div>

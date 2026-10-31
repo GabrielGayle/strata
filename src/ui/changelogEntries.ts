@@ -39,6 +39,14 @@ const shelf = (...rest: string[]) => side('shelf', ...rest);
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-10-31',
+    kind: 'new',
+    title: 'A clean new look, and the cockpit yoga tools menu',
+    body: 'Strata now wears the same clean look as the rest of the cockpit yoga tools: white windows on faint grid paper, thin grey frames, and Strata\'s orange only on what is picked or on. Nothing moved and everything works as before. The menu at the right end of the title bar opens the other tools.',
+    where: 'Title bar › tools menu (right end)',
+    target: { path: ['toolbox-menu'] },
+  },
+  {
     date: '2026-10-25',
     kind: 'fix',
     title: 'Depth from photo works on strata.cockpit.yoga',
